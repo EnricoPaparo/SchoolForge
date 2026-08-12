@@ -1324,18 +1324,24 @@
       function initialState() {
         return {
           /*
-           * Forma del documento etichetta: sette chiavi (labelId, ownerUid,
-           * name, nameKey, assignedCount, createdAt, updatedAt). Il prototipo
-           * ne rappresenta le tre che hanno un effetto osservabile in UI —
-           * labelId, name e assignedCount — perché ownerUid e i due timestamp
-           * non cambiano nulla di ciò che si deve approvare qui.
-           * `assignedCount` è il contatore transazionale: è ciò che autorizza
-           * l'eliminazione, mentre il numero mostrato sulla card è derivato.
+           * Forma del documento etichetta: otto chiavi (labelId, ownerUid,
+           * name, nameKey, assignedCount, draftUsageCount, createdAt,
+           * updatedAt). Il prototipo rappresenta le quattro che hanno un
+           * effetto osservabile in UI — labelId, name e i due contatori —
+           * perché ownerUid e i due timestamp non cambiano nulla di ciò che si
+           * deve approvare qui.
+           *
+           * I due contatori sono transazionali: sono l'unica fonte che
+           * autorizza l'eliminazione. I numeri mostrati sulla card sono invece
+           * derivati e non autorizzano nulla (§5.E.2).
+           *
+           * `draftUsageCount` conta le VERIFICHE in bozza, non le varianti:
+           * una bozza che usa la stessa etichetta su otto domande conta uno.
            */
           labels: [
-            { id: 'lab-a', name: 'Percorso A', assignedCount: 2 },
-            { id: 'lab-b', name: 'Obiettivi essenziali', assignedCount: 1 },
-            { id: 'lab-c', name: 'Gruppo 2', assignedCount: 0 },
+            { id: 'lab-a', name: 'Percorso A', assignedCount: 2, draftUsageCount: 1 },
+            { id: 'lab-b', name: 'Obiettivi essenziali', assignedCount: 1, draftUsageCount: 1 },
+            { id: 'lab-c', name: 'Gruppo 2', assignedCount: 0, draftUsageCount: 0 },
           ],
           classes: [
             { id: 'cls-1', name: '4A Informatica' },
@@ -1531,6 +1537,47 @@
       }
 
       /**
+       * Insieme dei labelId riferiti dalla configurazione differenziata della
+       * VERIFICA — insieme, non lista: un'etichetta usata su otto domande
+       * compare una volta sola. È esattamente il calcolo del passo 2 di §5.F.1.
+       */
+      function labelIdsInDraft(differentiation) {
+        var set = {};
+        for (var qid in differentiation) {
+          if (!Object.prototype.hasOwnProperty.call(differentiation, qid)) continue;
+          var choices = differentiation[qid];
+          for (var lid in choices) {
+            if (!Object.prototype.hasOwnProperty.call(choices, lid)) continue;
+            if (choices[lid].kind !== 'base') set[lid] = true;
+          }
+        }
+        return set;
+      }
+
+      /**
+       * Diff di insiemi -> `draftUsageCount`. Simula il commit unico di §5.F.1:
+       * +1 per ogni etichetta ENTRATA, -1 per ogni etichetta USCITA, nessuna
+       * variazione per quelle presenti in entrambi gli insiemi. Un decremento
+       * che porterebbe sotto zero è un errore, non un `max(0, …)`.
+       */
+      function applyDraftUsageDiff(prev, next) {
+        for (var lid in next) {
+          if (!Object.prototype.hasOwnProperty.call(next, lid) || prev[lid]) continue;
+          var entered = labelById(lid);
+          if (entered) entered.draftUsageCount = entered.draftUsageCount + 1;
+        }
+        for (var lid2 in prev) {
+          if (!Object.prototype.hasOwnProperty.call(prev, lid2) || next[lid2]) continue;
+          var left = labelById(lid2);
+          if (!left) continue;
+          if (left.draftUsageCount <= 0) {
+            throw new Error('draftUsageCount sotto zero per ' + lid2);
+          }
+          left.draftUsageCount = left.draftUsageCount - 1;
+        }
+      }
+
+      /**
        * Motivo di blocco dell'eliminazione, o null se libera.
        *
        * Nel prototipo il conteggio mostrato sulla card è **derivato** dagli
@@ -1542,14 +1589,21 @@
        */
       function deleteBlockReason(labelId) {
         var label = labelById(labelId);
-        var assigned = label ? label.assignedCount : 0;
-        var inDraft = labelUsedInDraft(labelId);
-        if (!assigned && !inDraft) return null;
+        if (!label) return null;
+        var assigned = label.assignedCount;
+        var drafts = label.draftUsageCount;
+        if (!assigned && !drafts) return null;
         var parts = [];
         if (assigned) {
           parts.push('assegnata a ' + assigned + (assigned === 1 ? ' studente' : ' studenti'));
         }
-        if (inDraft) parts.push('usata nella bozza «Reti di calcolatori»');
+        if (drafts) {
+          // Il dettaglio leggibile («in quale bozza») arriva dalla query
+          // diagnostica di §5.E.1, che NON autorizza: qui è testo, non permesso.
+          parts.push(
+            drafts === 1 ? 'usata nella bozza «Reti di calcolatori»' : 'usata in ' + drafts + ' bozze',
+          );
+        }
         return 'Non eliminabile: ' + parts.join(' e ') + '.';
       }
 
@@ -1849,6 +1903,19 @@
           var lab = sorted[i];
           var count = studentsWithLabel(lab.id);
           var block = deleteBlockReason(lab.id);
+          /*
+           * Il conteggio delle bozze compare SOLO quando è diverso da zero:
+           * una riga «0 bozze» su ogni card sarebbe rumore costante per
+           * un'informazione che serve di rado. Quando c'è, sta sulla stessa
+           * riga semantica del titolo, quindi non aggiunge altezza alla card.
+           */
+          var draftMeta =
+            lab.draftUsageCount > 0
+              ? '<span class="titleSep"> · </span><span class="titleMeta">' +
+                lab.draftUsageCount +
+                (lab.draftUsageCount === 1 ? ' bozza' : ' bozze') +
+                '</span>'
+              : '';
           var hintId = 'label-' + lab.id + '-hint';
           var deleteBtn =
             '<button type="button" role="menuitem" class="menuDanger" data-label-delete="' +
@@ -1867,10 +1934,12 @@
             esc(lab.name) +
             '<span class="titleSep"> · </span><span class="titleMeta">' +
             (count === 0 ? 'Nessuno studente' : count + (count === 1 ? ' studente' : ' studenti')) +
-            '</span></span>' +
+            '</span>' +
+            draftMeta +
+            '</span>' +
             (block
               ? '<p class="metaLine">' + esc(block) + '</p>'
-              : '<p class="metaLine">Eliminabile: nessuno studente e nessuna bozza la usano.</p>') +
+              : '<p class="metaLine">Eliminabile: entrambi i contatori sono a zero.</p>') +
             '</header>' +
             '<div class="actions">' +
             menuMarkup(
@@ -2271,7 +2340,14 @@
           }
           saving = true;
           if (existing) existing.name = name;
-          else state.labels.push({ id: 'lab-' + Date.now(), name: name, assignedCount: 0 });
+          // Nasce con entrambi i contatori a zero (invariante 2 di §5.A.7).
+          else
+            state.labels.push({
+              id: 'lab-' + Date.now(),
+              name: name,
+              assignedCount: 0,
+              draftUsageCount: 0,
+            });
           closeDialog();
           render();
         }
@@ -2312,6 +2388,9 @@
             '<p>Eliminare «' +
             esc(lab.name) +
             '»? Nessuno studente e nessuna bozza la usano, quindi l’eliminazione non modifica nulla.</p>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Al momento dell’eliminazione i due contatori vengono riletti dentro la transazione: se nel frattempo qualcosa fosse cambiato, l’operazione fallisce invece di lasciare uno stato incoerente.</span></p>' +
             '<p class="note note--info">' +
             ICON_INFO +
             '<span>Le verifiche già attivate non sono toccate: la loro configurazione è congelata al momento dell’attivazione, nome dell’etichetta compreso, e resta leggibile anche dopo l’eliminazione.</span></p>' +
@@ -2490,9 +2569,19 @@
             any = true;
           }
           saving = true;
+          /*
+           * Nel portale reale questa e' la transazione di §5.F.1: gli insiemi
+           * prima/dopo si confrontano e i contatori si muovono nello stesso
+           * commit del salvataggio bozza. Qui la configurazione resta locale
+           * (nessuna scrittura finche' non si preme «Salva bozza»), ma il diff
+           * di insiemi e' lo stesso, cosi' si vede che il conteggio e' per
+           * verifica e non per variante.
+           */
+          var before = labelIdsInDraft(state.differentiation);
           if (any) state.differentiation[questionId] = next;
           else delete state.differentiation[questionId];
-          state.draftDirty = true; // nessuna scrittura: solo la bozza locale
+          applyDraftUsageDiff(before, labelIdsInDraft(state.differentiation));
+          state.draftDirty = true;
           closeDialog();
           render();
         }
@@ -2751,6 +2840,7 @@
          */
         state.demoBlocker = !state.demoBlocker;
         var q2 = questionById('q2');
+        var usageBefore = labelIdsInDraft(state.differentiation);
         if (state.demoBlocker) {
           q2.role = 'common';
           for (var i = 0; i < state.questions.length; i++) {
@@ -2769,6 +2859,9 @@
             if (Object.keys(set).length === 0) delete state.differentiation[id];
           }
         }
+        // Anche la simulazione passa dal diff di insiemi: i contatori non si
+        // toccano mai a mano, nemmeno in un prototipo.
+        applyDraftUsageDiff(usageBefore, labelIdsInDraft(state.differentiation));
         event.currentTarget.setAttribute('aria-pressed', state.demoBlocker ? 'true' : 'false');
         state.screen = 'draft';
         render();

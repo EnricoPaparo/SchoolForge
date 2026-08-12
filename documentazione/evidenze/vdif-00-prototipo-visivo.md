@@ -40,7 +40,7 @@ sessione): non è codice di prodotto e non entra nel diff.
 
 | Immagine | Viewport | Che cosa mostra |
 |---|---|---|
-| [`vdif-00-prototipo/1440-etichette.png`](vdif-00-prototipo/1440-etichette.png) | 1440 × 900 | **Scheda Etichette**: tablist a tre schede con «Etichette» selezionata, pulsante full-width «Nuova etichetta», tre card full-width con titolo ciano, conteggio studenti, motivo di eliminabilità e menu «…» in alto a destra |
+| [`vdif-00-prototipo/1440-etichette.png`](vdif-00-prototipo/1440-etichette.png) | 1440 × 900 | **Scheda Etichette**: tablist a tre schede con «Etichette» selezionata, pulsante full-width «Nuova etichetta», tre card full-width con titolo ciano, conteggio studenti, **conteggio bozze mostrato solo quando è diverso da zero** (sulla stessa riga semantica del titolo, quindi senza altezza aggiuntiva), motivo di eliminabilità e menu «…» in alto a destra |
 | [`vdif-00-prototipo/1024-riepilogo.png`](vdif-00-prototipo/1024-riepilogo.png) | 1024 × 800 | **Riepilogo di attivazione**: domanda VEX con «Varianti» disabilitato e motivo leggibile, sei riquadri di sintesi, conteggio domande per etichetta, assenza di blocker e il discriminante pubblico neutro `assignmentMode: server_resolved` |
 | [`vdif-00-prototipo/390-studenti.png`](vdif-00-prototipo/390-studenti.png) | 390 × 844 | **Card studente mobile** con **Classe + Etichetta**, ciascuna su riga propria a larghezza piena, etichette visibili, nessun troncamento, trigger «…» in alto a destra, Stato a riga intera e i due accessi affiancati |
 | [`vdif-00-prototipo/320-varianti.png`](vdif-00-prototipo/320-varianti.png) | 320 × 640 | **Dialog Varianti** a larghezza minima: intestazione, testo e soluzione base, spiegazione del filtro, prima card etichetta con le tre scelte a tutta larghezza e focus visibile arancione |
@@ -84,7 +84,13 @@ Eseguiti su Chromium reale, su tutte e tre le schede e sulla bozza, a 1440 /
 - **dirty guard** verificata: dialog pulito chiuso da Escape; dialog dirty che
   apre la conferma su Escape, backdrop e «Annulla»; «Continua modifica» che
   conserva la scelta e la larghezza; doppio Escape che non produce due conferme;
-  un solo elemento `.dialog` presente in ogni istante.
+  un solo elemento `.dialog` presente in ogni istante;
+- **contatori** verificati sul prototipo: una seconda variante della **stessa**
+  etichetta nella stessa verifica **non** muove `draftUsageCount` (conteggio per
+  verifica, non per variante); entrata `0 → 1`, uscita dell'ultima variante
+  `1 → 0`, uscita di una variante fra molte **invariata**, sostituzione `A → B`
+  che decrementa `A` e incrementa `B` in un solo passaggio, e decremento sotto
+  zero **rifiutato con errore** invece che silenziosamente azzerato.
 
 ## 5. Che cosa resta al docente
 

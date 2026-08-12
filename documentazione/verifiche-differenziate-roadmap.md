@@ -90,7 +90,7 @@ un'etichetta senza scelta per quella domanda, riceve la domanda base.
 | D4 | Alternative non già selezionate | altrimenti lo studente riceverebbe la stessa domanda due volte |
 | D5 | «Nessuna domanda» ammessa | la riduzione resta possibile, ma come eccezione decisa domanda per domanda, non come impostazione globale |
 | D6 | Punteggio massimo diverso ammesso | la percentuale è già derivata dal proprio massimo: una verifica ridotta resta confrontabile senza penalizzazioni artificiali |
-| D7 | Congelamento all'attivazione | coerente con `teacherSnapshot`, già immutabile per Rules. Cambiare idea richiede di riportare la verifica in bozza — gesto esplicito |
+| D7 | Congelamento all'attivazione | coerente con `teacherSnapshot`, già immutabile per Rules. **Non esiste alcun ritorno da `active` a `draft`** nei servizi (§5.F.0): cambiare idea significa creare una nuova bozza e riconfigurarla |
 | D8 | Etichette in una **collezione owner-only separata**, non su `students/{uid}` | `students/{uid}` è leggibile dallo studente stesso e Firestore non nasconde singoli campi in lettura (§5.B.1) |
 | D9 | Le configurazioni referenziano **`labelId` stabili**, mai il nome | una rinomina non deve rompere le bozze né cambiare l'assegnazione |
 | D10 | Scelta **esplicita a tre valori**, mai un booleano o un campo assente | «base», «alternativa» e «nessuna» sono tre intenzioni diverse: l'assenza non può significare né la prima né la terza |
@@ -184,7 +184,7 @@ indipendentemente dagli studenti che la usano (può esistere senza assegnazioni,
 e sopravvive alla rimozione di uno studente), ed è referenziata anche dalle
 bozze di verifica, che non appartengono ad alcuno studente.
 
-**Il documento ha esattamente sette chiavi.** Sono queste, e sono le stesse
+**Il documento ha esattamente otto chiavi.** Sono queste, e sono le stesse
 elencate nelle Rules previste (§5.A.10), negli esempi e nel cost model (§14):
 
 | # | Campo | Tipo | Regola |
@@ -194,11 +194,12 @@ elencate nelle Rules previste (§5.A.10), negli esempi e nel cost model (§14):
 | 2 | `ownerUid` | `string` | `== request.auth.uid`, **immutabile** |
 | 3 | `name` | `string` | trim applicato prima della scrittura; **1–40 caratteri** e **≤ 120 byte UTF-8**; nessun carattere di controllo, nessun newline |
 | 4 | `nameKey` | `string` | forma normalizzata **usata esclusivamente per il confronto di unicità** (§5.A.5). Mai mostrata, mai esportata, mai usata come chiave di configurazione |
-| 5 | `assignedCount` | `number` | intero `>= 0`, **contatore transazionale** delle assegnazioni studente vive (§5.A.7). È l'unica fonte che autorizza l'eliminazione |
-| 6 | `createdAt` | `Timestamp` | `== request.time` |
-| 7 | `updatedAt` | `Timestamp` | `== request.time` a ogni scrittura |
+| 5 | `assignedCount` | `number` | intero `>= 0`, **contatore transazionale** delle assegnazioni studente correnti (§5.A.7) |
+| 6 | `draftUsageCount` | `number` | intero `>= 0`, **contatore transazionale** delle **verifiche in bozza** che riferiscono l'etichetta (§5.A.7) |
+| 7 | `createdAt` | `Timestamp` | `== request.time`, **immutabile** |
+| 8 | `updatedAt` | `Timestamp` | `== request.time` a ogni scrittura |
 
-**Contratto chiuso:** `keys().hasOnly([...])` e `hasAll([...])` sulle **sette**
+**Contratto chiuso:** `keys().hasOnly([...])` e `hasAll([...])` sulle **otto**
 chiavi sopra. Nessun campo `color`, `note`, `description`, `category`,
 `priority` o `order`: ognuno di essi sarebbe l'appiglio per scriverci una
 motivazione, ed è esattamente ciò che il principio 2 vieta.
@@ -276,18 +277,43 @@ l'operazione senza scrivere**, mai riparazioni silenziose:
   una creazione: **non** viene riusata né sovrascritta; è segnalata come
   conflitto e richiede un'azione esplicita di riparazione.
 
-**5.A.7 — `assignedCount`: contatore transazionale, non contatore di UI.**
+**5.A.7 — I due contatori transazionali.**
 
-Il numero mostrato sulla card etichetta è **derivato** dalle assegnazioni già
-caricate nella scheda Studenti (§14): è un dato di presentazione e **non
-autorizza nulla**. Ciò che autorizza l'eliminazione è `assignedCount`, letto
-**dentro** la transazione di eliminazione, per path deterministico.
+Sono la **fonte autorevole** che blocca l'eliminazione. Non sono contatori di
+interfaccia: i numeri mostrati sulle card sono derivati dai dati già in memoria
+(§14) e **non autorizzano nulla**.
 
-`assignedCount` è mantenuto esclusivamente da transazioni che toccano insieme
-l'assegnazione e l'etichetta, quindi non può divergere per una scrittura
-parziale:
+| Contatore | Semantica esatta |
+|---|---|
+| `assignedCount` | numero di **assegnazioni studente correnti** che riferiscono l'etichetta |
+| `draftUsageCount` | numero di **verifiche in stato `draft`** la cui `config.differentiation` riferisce il `labelId` **almeno una volta** con scelta non-base |
 
-| Evento | Transazione |
+**Regola di conteggio di `draftUsageCount`, senza ambiguità:** l'unità è la
+**verifica**, non la variante. Una bozza che usa la stessa etichetta su otto
+domande diverse conta **uno**. Il contatore cambia solo quando l'etichetta
+**entra** in una bozza (da assente a presente) o **esce** da una bozza (da
+presente ad assente): configurare una nona domanda con quell'etichetta, o
+toglierne una lasciandone altre, **non lo tocca**.
+
+**Invarianti, validi per entrambi:**
+
+1. interi **finiti** e `>= 0`;
+2. nascono a `0` alla creazione dell'etichetta;
+3. aggiornabili **solo** dai servizi canonici, e solo dentro le transazioni di
+   §5.A.7a / §5.F;
+4. **non autorizzano la UI da soli** — ma sono l'unica fonte che autorizza
+   l'eliminazione;
+5. contatore **mancante, non intero, negativo o incoerente** ⇒ **fail-closed**:
+   l'operazione si ferma con errore leggibile, prima di ogni scrittura;
+6. **nessuna riparazione silenziosa.** Un contatore che risulta incoerente non
+   viene ricalcolato al volo da una query: sarebbe una correzione invisibile di
+   uno stato che nessuno ha spiegato. Serve un'azione esplicita del docente.
+
+Nessuno dei due è un dato didattico; nessuno dei due lascia il lato docente.
+
+**5.A.7a — Transazioni che muovono `assignedCount`.**
+
+| Evento | Transazione (un solo commit) |
 |---|---|
 | assegnazione a uno studente senza etichetta | `set` assegnazione + `increment(+1)` su `L` |
 | rimozione dell'etichetta da uno studente | `delete` assegnazione + `increment(−1)` su `L` |
@@ -296,12 +322,13 @@ parziale:
 
 Ogni transazione **legge prima** `differentiationLabels/{labelId}`: se
 l'etichetta non esiste, l'assegnazione **fallisce fail-closed** invece di creare
-un puntatore a un documento inesistente. Questo è ciò che chiude la corsa
-«elimina in una scheda, assegna nell'altra» in entrambe le direzioni: o
-l'eliminazione vede `assignedCount > 0` e rifiuta, o l'assegnazione non trova
-l'etichetta e rifiuta.
+un puntatore a un documento inesistente. Questo chiude la corsa «elimina in una
+scheda, assegna nell'altra» in entrambe le direzioni: o l'eliminazione vede
+`assignedCount > 0` e rifiuta, o l'assegnazione non trova l'etichetta e rifiuta.
 
-`assignedCount` non è un dato didattico e non lascia mai il lato docente.
+I decrementi non usano `FieldValue.increment(−1)` alla cieca: il valore corrente
+è **letto nella transazione** e un decremento che porterebbe sotto zero è un
+errore fail-closed (§5.F.6), non un `max(0, …)` silenzioso.
 
 **5.A.8 — Audit.** Tre nuove azioni: `label.created`, `label.updated`,
 `label.deleted`. `targetId == labelId`. **`reason` resta `null`**: il registro
@@ -319,22 +346,44 @@ riparato in silenzio.
 
 ```
 match /differentiationLabels/{labelId} {
+  function keysOk(d) {
+    return d.keys().hasOnly(['labelId','ownerUid','name','nameKey',
+                             'assignedCount','draftUsageCount','createdAt','updatedAt'])
+        && d.keys().hasAll(['labelId','ownerUid','name','nameKey',
+                            'assignedCount','draftUsageCount','createdAt','updatedAt']);
+  }
+  function shapeOk(d) {
+    return d.labelId == labelId
+        && d.ownerUid == request.auth.uid
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 40
+        && d.nameKey is string && d.nameKey.size() > 0
+        && d.assignedCount is int && d.assignedCount >= 0
+        && d.draftUsageCount is int && d.draftUsageCount >= 0
+        && d.updatedAt == request.time;
+  }
   allow read, delete: if isOwner();
-  allow create, update: if isOwner()
-    && request.resource.data.keys().hasOnly(
-         ['labelId','ownerUid','name','nameKey','assignedCount','createdAt','updatedAt'])
-    && request.resource.data.keys().hasAll(
-         ['labelId','ownerUid','name','nameKey','assignedCount','createdAt','updatedAt'])
-    && request.resource.data.labelId == labelId
-    && request.resource.data.ownerUid == request.auth.uid
-    && request.resource.data.name is string
-    && request.resource.data.name.size() > 0
-    && request.resource.data.name.size() <= 40
-    && request.resource.data.nameKey is string
-    && request.resource.data.nameKey.size() > 0
-    && request.resource.data.assignedCount is int
-    && request.resource.data.assignedCount >= 0
-    && request.resource.data.updatedAt == request.time;
+  allow create: if isOwner()
+    && keysOk(request.resource.data) && shapeOk(request.resource.data)
+    && request.resource.data.createdAt == request.time
+    // Nascono a zero: nessun percorso può creare un'etichetta già "in uso".
+    && request.resource.data.assignedCount == 0
+    && request.resource.data.draftUsageCount == 0;
+  allow update: if isOwner()
+    && keysOk(request.resource.data) && shapeOk(request.resource.data)
+    // Identità e data di nascita immutabili.
+    && request.resource.data.labelId == resource.data.labelId
+    && request.resource.data.ownerUid == resource.data.ownerUid
+    && request.resource.data.createdAt == resource.data.createdAt
+    // Un contatore si muove di UNA unità per volta, come i servizi canonici:
+    // una scrittura che salta da 0 a 7 non è un aggiornamento legittimo.
+    && request.resource.data.assignedCount
+         >= resource.data.assignedCount - 1
+    && request.resource.data.assignedCount
+         <= resource.data.assignedCount + 1
+    && request.resource.data.draftUsageCount
+         >= resource.data.draftUsageCount - 1
+    && request.resource.data.draftUsageCount
+         <= resource.data.draftUsageCount + 1;
 }
 
 match /differentiationLabelNames/{reservationId} {
@@ -350,14 +399,30 @@ match /differentiationLabelNames/{reservationId} {
 match /studentLabelAssignments/{studentUid} { allow read, write: if isOwner(); /* + contratto chiuso, §5.B */ }
 ```
 
-**Confine Rules/service dichiarato.** Le Rules non possono verificare che
-`reservationId == SHA-256(ownerUid + " " + nameKey)`: CEL non ha funzioni di
-hash. Quella coerenza è responsabilità del **service owner-only**, che la
-verifica **in lettura** su ogni prenotazione toccata (fail-closed, §5.A.6) — lo
-stesso confine già in vigore per `evaluations`/`teacherSnapshot`
-(`sicurezza.md` §3): l'unico principal che può scrivere è l'owner. Le Rules
-garantiscono ownership, contratto chiuso e immutabilità; l'unicità è garantita
-dalla **transazione**, non dal servizio e non da una query.
+**Lo studente è sempre negato**, su entrambe le collezioni e in entrambe le
+direzioni: non esiste alcuna regola che conceda `read`, `list`, `create`,
+`update` o `delete` a un principal diverso dall'owner. In particolare **nessuno
+studente può leggere i contatori**: vivono su documenti che non compaiono in
+alcun percorso student-readable, e non sono replicati in nessuna proiezione
+(§5.D.5c).
+
+**Confine Rules/service dichiarato.** Due cose che CEL non può fare, e che
+restano quindi responsabilità del **service owner-only** — lo stesso confine già
+in vigore per `evaluations`/`teacherSnapshot` (`sicurezza.md` §3), dove l'unico
+principal che può scrivere è l'owner:
+
+1. verificare che `reservationId == SHA-256(ownerUid + U+0000 + nameKey)`: CEL
+   non ha funzioni di hash;
+2. verificare che una variazione di contatore corrisponda a un **cambiamento
+   reale** in una bozza o in un'assegnazione: le Rules non possono leggere la
+   configurazione di un'altra collezione e contarne i riferimenti.
+
+Ciò che le Rules **sì** garantiscono, ed è il perimetro utile: ownership,
+contratto chiuso a otto chiavi, tipi, non-negatività, immutabilità di
+`labelId`/`ownerUid`/`createdAt`, e il fatto che un contatore possa muoversi
+**solo di una unità per scrittura** — quindi nessun salto arbitrario. L'unicità
+del nome e l'esattezza dei contatori sono garantite dalle **transazioni**, non
+dal servizio e non da una query.
 
 ### B. Assegnazione studente → etichetta
 
@@ -690,9 +755,9 @@ in `publishedProjection`, `SubmissionDoc`, `SubmissionReceiptDoc`,
 callable, nei PDF studente, negli export o nella UI studente:
 
 `differentiated` · `differentiation` · `labelId` · `labelName` · `labels` ·
-`nameKey` · `assignedCount` · il **nome** di una qualunque etichetta · qualunque
-formulazione del **motivo** della selezione («percorso», «adattata»,
-«personalizzata», «ridotta», «semplificata»).
+`nameKey` · `assignedCount` · `draftUsageCount` · il **nome** di una qualunque
+etichetta · qualunque formulazione del **motivo** della selezione («percorso»,
+«adattata», «personalizzata», «ridotta», «semplificata»).
 
 Il test **T26** (§15) è la verifica automatica di questo elenco, e il test
 **T39** verifica che la proiezione pubblica non contenga alcun campo
@@ -774,7 +839,7 @@ limite di `verificationSnapshotLimits.ts` già esteso per `labelAssignments`
 | Nomi unici per docente | garantita dalla **prenotazione transazionale** su `nameKey` (§5.A.6), non da una query e non da un controllo in memoria. Un duplicato è rifiutato con errore leggibile che nomina l'etichetta in conflitto |
 | La rinomina conserva l'ID | `labelId` immutabile; cambiano solo `name`, `nameKey`, `updatedAt`, più prenotazione nuova e rilascio della vecchia nello **stesso commit**. Assegnazioni, bozze e snapshot **non** vengono toccati |
 | Etichetta assegnata ⇒ non eliminabile | `assignedCount > 0` letto **dentro** la transazione di eliminazione |
-| Etichetta usata in almeno una bozza ⇒ non eliminabile | almeno una `verifications` in `status == 'draft'` la cui `config.differentiation` contiene il `labelId` con scelta non-base |
+| Etichetta usata in almeno una bozza ⇒ non eliminabile | `draftUsageCount > 0` letto **dentro** la transazione di eliminazione |
 | Verifiche **attive o chiuse** | **non** contano come uso: lo snapshot è autosufficiente (§5.D.10) |
 | Eliminazione fail-closed | ogni accertamento **precede** qualunque scrittura. Se un accertamento non è eseguibile (errore di lettura), l'eliminazione **non parte**: mai «probabilmente libera» |
 | Nessuna cascata silenziosa | eliminare un'etichetta non modifica né rimuove assegnazioni o configurazioni. Se è in uso, non si elimina — punto |
@@ -782,75 +847,178 @@ limite di `verificationSnapshotLimits.ts` già esteso per `labelAssignments`
 
 **5.E.1 — Come il servizio determina che un'etichetta è usata (esatto).**
 
-Non «un preflight». Sono due accertamenti distinti con due meccanismi diversi,
-perché i due usi hanno proprietà diverse.
-
-**Uso 1 — assegnazioni studente. Meccanismo: contatore transazionale.**
+Non «un preflight», e **nessuna query**: entrambi gli usi sono accertati da un
+contatore riletto **dentro la transazione che elimina**.
 
 | | |
 |---|---|
-| documenti letti | **1**: `differentiationLabels/{labelId}`, per path, **dentro la transazione di eliminazione** |
+| documenti letti nella transazione | **2**: `differentiationLabels/{labelId}` e `differentiationLabelNames/{reservationId}`, entrambi per path deterministico |
 | query | **nessuna** |
 | indici | **nessuno** |
-| condizione | `assignedCount == 0`; qualunque altro valore ⇒ rifiuto |
-| costo | **O(1)**, indipendente dal numero `E` di assegnazioni |
-| race | **chiusa in entrambe le direzioni** (§5.A.7): la transazione di eliminazione legge il documento etichetta e fallisce se è cambiato prima del commit; la transazione di assegnazione legge lo stesso documento e fallisce se l'etichetta non esiste più |
+| condizioni, tutte obbligatorie | `assignedCount === 0` · `draftUsageCount === 0` · prenotazione presente, con `labelId` e `nameKey` coerenti con l'etichetta · `ownerUid` coerente su entrambi i documenti |
+| scritture, nello stesso commit | `delete` etichetta + `delete` prenotazione + audit `label.deleted` |
+| costo | **O(1)**: indipendente sia dal numero `E` di assegnazioni sia dal numero `V` di verifiche |
 
-Questo è il «controllo ripetuto dentro la transazione» richiesto: il valore che
-autorizza è riletto nella transazione che scrive, non prima.
+Qualunque condizione non soddisfatta — contatore diverso da zero, mancante, non
+intero o negativo; prenotazione assente o incoerente; `ownerUid` che non torna —
+**ferma l'operazione prima di ogni scrittura**, con un errore leggibile. Nessuna
+riparazione, nessun ricalcolo al volo.
 
-**Uso 2 — bozze di verifica. Meccanismo: query di preflight + guardia di
-attivazione.**
+**La query sulle bozze resta, ma cambia ruolo.** Serve **solo** a costruire un
+messaggio leggibile («Usata in 2 bozze: *Reti — 12/03*, *Chimica — 05/04*») e
+come strumento diagnostico quando un contatore appare incoerente. **Non
+autorizza**, non è eseguita dentro la transazione e la sua assenza non impedisce
+la decisione: se non è disponibile, il rifiuto dice semplicemente «usata in una o
+più bozze». È l'inverso esatto del modello precedente, dove la query era la
+garanzia e il contatore non esisteva.
 
-| | |
-|---|---|
-| query | **1**: `where('ownerUid','==',uid)` + `where('status','==','draft')` su `verifications` |
-| documenti letti | `V_draft`, cioè le sole **bozze**, non tutte le verifiche |
-| filtro | in memoria su `config.differentiation` di ciascuna: `labelId` presente con scelta non-base |
-| indici | **nessuno nuovo**. Due filtri di uguaglianza sono serviti dalla fusione degli indici a campo singolo automatici di Firestore; l'indice composito già presente `verifications (ownerUid, status, onlineEnabled)` ne copre inoltre il prefisso |
-| più bozze | tutte quelle che usano l'etichetta sono elencate per titolo e data nel messaggio; il rifiuto è unico e la lista è completa, non troncata a una |
-| costo | **O(V_draft)** letture, una sola volta, **solo alla pressione di «Elimina»** — mai al caricamento della lista, mai per card |
+**Perché il contatore ora c'è, dopo essere stato scartato.** Nella stesura
+precedente `draftUsageCount` era stato rifiutato con la motivazione che avrebbe
+introdotto una transazione multi-documento nel percorso caldo del builder. Quella
+valutazione era sbagliata su due punti: (a) il percorso caldo è la **modifica
+locale** della bozza, che non scrive nulla, mentre «Salva bozza» è un'azione
+esplicita e rara; (b) soprattutto, il costo evitato non compensava un buco nel
+contratto — «un'etichetta usata da una variante non è eliminabile» era una
+promessa che il database non manteneva. Il costo reale è misurato in §14 ed è
+**zero letture e zero scritture aggiuntive quando l'insieme di etichette della
+bozza non cambia**, che è il caso della quasi totalità dei salvataggi.
 
-**Perché questo uso non è dentro la transazione.** Una transazione client
-Firestore **non può eseguire query**: `getDocs` dentro `runTransaction` non
-esiste. Non c'è quindi modo di rileggere «tutte le bozze che usano L» nel commit.
-Le tre alternative sono state valutate:
+**Verifiche attive e chiuse:** non contano, non vengono lette, non compaiono nel
+messaggio. §5.D.10 dimostra perché non serve.
 
-| Alternativa | Perché scartata |
-|---|---|
-| contatore `draftUsageCount` sull'etichetta | dovrebbe essere aggiornato transazionalmente a ogni salvataggio bozza, che oggi è **una sola** scrittura su un documento; introdurrebbe una transazione multi-documento nel percorso più caldo del builder per proteggere un'operazione rara |
-| Cloud Function di eliminazione | una Function per un'operazione che il docente compie forse dieci volte in un anno, in un sistema single-owner |
-| bloccare l'eliminazione se esiste **una qualunque** bozza | rende l'etichetta ostaggio di una bozza dimenticata e non usata |
+**5.E.2 — I conteggi mostrati sulla card non autorizzano nulla.**
 
-**Che cosa succede davvero nella finestra rimasta.** L'unico principal capace di
-creare quella corsa è il docente stesso, in due schede: elimina L in una mentre
-nell'altra sta configurando una variante che usa L. Esito: la bozza resta con un
-`labelId` che non esiste più. **Non degrada in silenzio**, ed è questo che conta:
+La card etichetta mostra «4 studenti» e, quando utile, «usata in 2 bozze»,
+derivandoli dai dati **già caricati**: zero letture aggiuntive, zero query per
+card. Sono dati di presentazione e possono essere stantii di qualche secondo. La
+voce **Elimina** è disabilitata a partire da quei dati **come affordance**, ma
+l'autorizzazione reale sono i due contatori riletti in transazione: se l'UI
+dicesse «libera» e la realtà fosse diversa, l'eliminazione **fallirebbe** con un
+invito a ricaricare. Il contrario — UI che dice «in uso» e transazione che
+permetterebbe — costa solo un'azione in più, mai un dato perso.
 
-- il **builder** mostra quella riga come «etichetta non più esistente», con la
-  scelta ancora leggibile e un'azione esplicita per rimuoverla;
-- l'**attivazione** è bloccata dalla guardia **G04** (`labelId` inesistente) con
-  un errore leggibile che nomina domanda ed etichetta;
-- nessuna verifica può quindi essere attivata su una configurazione che punta a
-  un'etichetta eliminata.
+### F. Ciclo di vita dei contatori — transazioni esatte
 
-Il limite è dichiarato in §16 (R2) e coperto dal test **T35**.
+**5.F.0 — Transizioni realmente supportate dai servizi.** Verificate nel codice,
+non ipotizzate:
 
-**Uso 3 — verifiche attive e chiuse. Meccanismo: nessuno, per scelta.**
+| Transizione | Servizio | Esiste? |
+|---|---|---|
+| creazione bozza | `createVerification` | **sì** — nasce **sempre vuota** (`questionRefs: []`, nessuna `differentiation`) |
+| modifica bozza | `updateVerificationConfig` | **sì** — ammessa **solo** con `status === 'draft'` |
+| `draft → active` | `activateVerification` | **sì** |
+| `active → closed` | `closeVerification` | **sì** |
+| `closed → active` | `reopenVerification` | **sì** — riapre una verifica **chiusa**, non riporta in bozza |
+| `active → draft` | — | **NO** |
+| `closed → draft` | — | **NO** |
+| duplicazione di una verifica | — | **NO** — `createVerification` accetta solo titolo, classe, corso, import e data |
+| eliminazione verifica | `deleteVerification` | **sì** — solo `draft` o `closed`, **mai** `active` |
 
-Non vengono lette, non vengono contate, non compaiono nel messaggio. §5.D.10
-dimostra perché non serve.
+Non esiste quindi alcun percorso che riporti una configurazione differenziata
+dallo stato congelato allo stato di bozza. **Non viene inventata alcuna
+transizione**: se un domani ne venisse aggiunta una, dovrà **incrementare**
+`draftUsageCount` per ogni etichetta della configurazione ripristinata, nello
+stesso commit — vincolo registrato qui perché chi la implementerà lo trovi.
 
-**5.E.2 — Il conteggio mostrato sulla card non autorizza nulla.**
+**5.F.1 — Salvataggio della bozza.** È il cuore del meccanismo.
+`updateVerificationConfig` diventa **transazionale** per il percorso che tocca
+`differentiation` (oggi è una `getDoc` seguita da un `setDoc` con `merge` e da
+un audit separato).
 
-La card etichetta mostra «4 studenti» derivandolo dalle assegnazioni **già
-caricate** nella scheda Studenti: zero letture aggiuntive, zero query per card.
-È un dato di presentazione e può essere stantio di qualche secondo. La voce
-**Elimina** è disabilitata a partire da quel dato **come affordance**, ma
-l'autorizzazione reale è `assignedCount` riletto in transazione: se il dato di UI
-dicesse «0 studenti» e la realtà fosse diversa, l'eliminazione **fallirebbe**,
-con un messaggio che invita a ricaricare. Il contrario — UI che dice «in uso» e
-transazione che permetterebbe — non causa perdita di dati, solo un'azione in più.
+```
+runTransaction:
+  1. leggi verifications/{id}
+     - deve esistere, ownerUid coerente, status === 'draft'   -> altrimenti ERRORE
+  2. prev := insieme dei labelId riferiti da config.differentiation PERSISTITA
+     next := insieme dei labelId riferiti dalla NUOVA differentiation
+     (insiemi, non liste: un labelId usato su 8 domande compare UNA volta)
+  3. added   := next \ prev
+     removed := prev \ next
+     invariati (next ∩ prev) -> NESSUNA lettura, NESSUNA scrittura
+  4. per ogni L in added ∪ removed: leggi differentiationLabels/{L}
+     - deve esistere (per added: etichetta inesistente -> ERRORE, bozza NON salvata)
+     - ownerUid coerente, forma valida, draftUsageCount intero >= 0
+  5. per ogni L in removed: se draftUsageCount === 0 -> ERRORE (mai sotto zero)
+  6. scrivi:
+     - verifications/{id}.config  (+ updatedAt)
+     - per ogni L in added:   draftUsageCount += 1, updatedAt
+     - per ogni L in removed: draftUsageCount -= 1, updatedAt
+     - auditEvents  verification.updated
+  tutto in un solo commit
+```
+
+**Proprietà volute:**
+
+- **conteggio per verifica, non per variante** (passo 2): gli insiemi rendono
+  l'invariante vero per costruzione, non per disciplina di chi scrive il codice;
+- **costo nullo quando nulla cambia** (passo 3): un salvataggio che tocca titolo,
+  data, domande o gruppi VEX senza cambiare le etichette non legge né scrive
+  alcuna etichetta;
+- **la bozza non si salva se un'etichetta aggiunta non esiste** (passo 4): non
+  esiste uno stato intermedio in cui la configurazione punta a un'etichetta
+  eliminata;
+- **nessun decremento sotto zero** (passo 5), fail-closed invece di `max(0, …)`.
+
+**5.F.2 — Gli eventi del ciclo di vita, uno per uno.**
+
+| Evento | Effetto sui contatori | Transazione |
+|---|---|---|
+| **prima variante di `L` in una bozza** (`L` assente → presente) | `draftUsageCount(L) += 1` | §5.F.1, `added = {L}` |
+| **variante aggiuntiva della stessa `L`** nella stessa bozza | **nessuno** | §5.F.1, `added = removed = ∅`: zero letture, zero scritture |
+| **rimozione dell'ultima variante di `L`** (presente → assente) | `draftUsageCount(L) -= 1` | §5.F.1, `removed = {L}` |
+| **rimozione di una variante fra molte** della stessa `L` | **nessuno** | §5.F.1, insiemi invariati |
+| **sostituzione `A → B`** su una domanda, con `A` non più usata altrove nella bozza | `A -= 1`, `B += 1` | §5.F.1, un solo commit con entrambe |
+| **sostituzione `A → B`** con `A` ancora usata su un'altra domanda | `B += 1` soltanto | §5.F.1: `A` resta in `next` |
+| **eliminazione di una bozza** (`deleteVerification`, `status === 'draft'`) | `-1` per **ogni** `L` in `prev` | transazione: legge la verifica, ricava `prev`, legge le etichette coinvolte, elimina verifica + proiezione, decrementa, scrive audit — **un solo commit** |
+| **attivazione `draft → active`** | `-1` per **ogni** `L` congelata | **stesso commit** dell'attivazione (§7.1, T2/T3): la configurazione non è più una bozza, quindi non deve più trattenere l'etichetta |
+| **`active → closed`** e **`closed → active`** | **nessuno** | i contatori riguardano le sole bozze; queste transizioni non ne creano né ne distruggono |
+| **eliminazione di una verifica `closed`** | **nessuno** | già decrementata all'attivazione |
+| **creazione di una verifica** | **nessuno** | nasce vuota (§5.F.0) |
+| **rinomina di un'etichetta** | **nessuno** | i riferimenti sono per `labelId` |
+
+**5.F.3 — Perché l'attivazione decrementa.** Dopo l'attivazione la
+configurazione differenziata **non è più modificabile** e lo snapshot è
+autosufficiente (§5.D.10): l'etichetta non è più «usata da una bozza» in alcun
+senso utile. Se non decrementasse, ogni verifica attivata bloccherebbe per sempre
+l'eliminazione della propria etichetta — cioè esattamente l'effetto «etichette
+immortali» che §5.D.10 rifiuta, reintrodotto da una porta di servizio.
+
+**5.F.4 — Replay e retry.**
+
+- **Retry di una transazione fallita per contesa** (il caso normale in
+  Firestore): la transazione **rilegge tutto** e ricalcola `added`/`removed` da
+  capo. Non esistono incrementi applicati «a metà»: o il commit avviene per
+  intero, o non avviene.
+- **Replay dopo una risposta persa** (il commit è passato ma il client non lo ha
+  saputo): il secondo tentativo rilegge la configurazione **già aggiornata**,
+  quindi `prev == next`, `added` e `removed` sono vuoti e **non scrive nulla**.
+  L'idempotenza non richiede un marcatore dedicato: deriva dal fatto che i
+  contatori sono calcolati da un **diff di stato**, non da un delta accumulato.
+- Lo stesso vale per l'eliminazione di una bozza e per l'attivazione: la seconda
+  esecuzione trova rispettivamente la verifica assente e lo stato non più
+  `draft`, e si ferma senza scrivere (G02, G21).
+
+**5.F.5 — Le quattro race obbligatorie.**
+
+| # | Scenario | Esito garantito |
+|---|---|---|
+| **A** | il **salvataggio della variante vince**: committa mentre l'eliminazione è in corso | la transazione di eliminazione ha letto `differentiationLabels/{L}`; quel documento è cambiato (`draftUsageCount` 0 → 1) prima del commit, quindi Firestore **fa fallire e ritentare** l'eliminazione; al nuovo tentativo legge `draftUsageCount === 1` e **rifiuta** con motivo leggibile. L'etichetta resta, la bozza resta coerente |
+| **B** | l'**eliminazione vince** | il salvataggio della variante ritenta, al passo 4 non trova più `differentiationLabels/{L}` e **fallisce senza salvare la bozza**. Non resta alcuna bozza che riferisce un'etichetta inesistente |
+| **C** | **attivazione concorrente** all'eliminazione | l'attivazione decrementa nello stesso commit in cui congela; l'eliminazione ha letto l'etichetta e la vede cambiare, quindi ritenta. I due ordini possibili sono entrambi coerenti: se l'attivazione passa prima, l'eliminazione rilegge `draftUsageCount === 0` e **riesce** (corretto: la bozza non esiste più); se passa prima l'eliminazione, l'attivazione al retry non trova l'etichetta e **fallisce fail-closed** con G04, senza congelare nulla |
+| **D** | **due schede rimuovono l'ultimo utilizzo** della stessa etichetta | la prima decrementa 1 → 0; la seconda ritenta, rilegge `prev` dalla configurazione **già aggiornata**, trova `removed = ∅` e **non decrementa**. Anche se arrivasse a un decremento, il passo 5 lo bloccherebbe: **nessun valore negativo è raggiungibile** |
+
+Nessuno di questi esiti dipende da una query, da un ordine di esecuzione
+fortunato o da una finestra temporale stretta: dipendono dal fatto che ogni
+decisione legge, **dentro la transazione che scrive**, il documento su cui la
+decisione si basa.
+
+**5.F.6 — Contatore incoerente: che cosa succede.** Se una transazione trova un
+contatore mancante, non intero, negativo, o un decremento che porterebbe sotto
+zero, l'operazione **fallisce** con un errore che nomina l'etichetta e invita a
+ricaricare. Non viene ricalcolato dalla query diagnostica, non viene azzerato,
+non viene «aggiustato». La riparazione è un'azione esplicita del docente,
+registrata in audit come tale — e resta fuori dallo scope di VDIF-01, perché uno
+stato che non dovrebbe esistere non si progetta prima di averlo osservato.
 
 ---
 
@@ -954,12 +1122,23 @@ FASE 1 — transazione (client Firestore SDK, come oggi)
   G18 questionRefs invariati                (sameQuestionRefs, già esistente)
   G19 config.differentiation invariata      (confronto strutturale profondo)
   G20 fingerprint assegnazioni invariato    (§7.3)
+  T1b transaction.get differentiationLabels/{L} per ogni L congelata
+      - deve esistere, ownerUid coerente, draftUsageCount intero >= 1
+      - altrimenti ERRORE (G04) senza scrivere nulla
   T2  transaction.update verifications/{id} (status, visibility, teacherSnapshot)
   T3  transaction.set    publishedProjection/data
+  T4  transaction.update differentiationLabels/{L}: draftUsageCount -= 1
+      per ogni L congelata (§5.F.3) — STESSO COMMIT di T2/T3
 
 FASE 2 — dopo la transazione
   W1  setDoc auditEvents (verification.activated)     — invariato
 ```
+
+**Perché il decremento sta in T4 e non dopo.** Se l'attivazione committasse e il
+decremento fallisse subito dopo, l'etichetta resterebbe bloccata per sempre da
+una bozza che non esiste più — un contatore che non torna mai a zero e nessuno
+che sappia spiegare perché. Nello stesso commit, o passano entrambi o non passa
+nessuno dei due.
 
 **Confine transazionale.** Resta quello attuale: una transazione client
 Firestore SDK sul solo documento verifica più la sua proiezione, come descritto
@@ -1167,7 +1346,12 @@ Struttura, dall'alto:
     canonico corrente salva soltanto con **«Salva bozza»**, e VDIF non lo
     cambia. `differentiation` viaggia nello **stesso**
     `updateVerificationConfig` di titolo, classe, data, perimetro, domande e
-    gruppi VEX — **zero scritture aggiuntive**.
+    gruppi VEX. Quel salvataggio diventa **transazionale** (§5.F.1) perché deve
+    aggiornare `draftUsageCount` nello stesso commit: **nessuna scrittura
+    aggiuntiva quando l'insieme delle etichette non cambia**, e una scrittura
+    per etichetta **entrata o uscita** quando cambia. Un'etichetta aggiunta che
+    nel frattempo è stata eliminata **impedisce il salvataggio** invece di
+    lasciare una bozza incoerente.
 
 **Riuso di `VexQuestionSelect`.** Il selettore delle alternative riusa il
 componente esistente, **senza duplicarne accessibilità e anteprima**. È già una
@@ -1371,10 +1555,10 @@ completate escluse, copertura dichiarata, numero di domande per riga).
 | Fase | Scope | Dipende da | DoD |
 |---|---|---|---|
 | **VDIF-00** ✅ | Contratto tecnico, privacy, cost model, matrice di test e **prototipo UI**. Solo documentazione e prototipo statico. | GVEX PASS | Questo documento + `prototipi/verifiche-differenziate.html` + fasi in `piano-implementazione.md`. Zero runtime. |
-| **VDIF-01** | **Registro etichette owner-only**: tipi a **sette chiavi**, `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, replay idempotente, fail-closed su record incoerente), `labelNameKey.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit, **scheda Etichette** (card, dialog crea/rinomina con dirty guard §9.2, elimina protetta, stato vuoto). | VDIF-00 | CRUD reale su DEV; T34/T34b/T34c/T34d/T34e verdi; test Rules Emulator (owner ok, studente sempre negato, contratto chiuso, chiavi extra negate, `update` sulla prenotazione sempre negato); nessun indice nuovo. |
+| **VDIF-01** | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, replay idempotente, fail-closed su record incoerente), `labelNameKey.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit, **scheda Etichette** (card, dialog crea/rinomina con dirty guard §9.2, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | CRUD reale su DEV; T34→T34e e T41g/T41h verdi; test Rules Emulator (owner ok, **studente sempre negato**, contratto chiuso a otto chiavi, contatori a zero alla creazione, salto di contatore negato, `update` sulla prenotazione sempre negato); nessun indice nuovo. |
 | **VDIF-02** | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, **transazione con `assignedCount`** (esistenza dell'etichetta verificata in-transaction, `increment` ±1, cambio `L1→L2` in un solo commit), selettore nella card studente, ricerca per etichetta, Rules, audit, eliminazione studente nello stesso batch. | VDIF-01 | Assegnazione/rimozione reali; test Rules (studente non legge né scrive, altro owner negato); T35/T35b verdi; ricerca; nessuna etichetta in alcun dato studente. |
-| **VDIF-03** | **Builder delle varianti**: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da tutte le UI; test dei cinque scenari di §6.10; zero scritture aggiuntive. |
-| **VDIF-04** | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, riepilogo pre-attivazione. | VDIF-03 | Attivazione reale con ≥ 2 etichette, ≥ 1 sostituzione e ≥ 1 omissione; ogni guardia coperta da test; T36/T39/T40 verdi; idempotenza e replay verdi. |
+| **VDIF-03** | **Builder delle varianti**: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori con dirty guard, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **`updateVerificationConfig` reso transazionale** con il diff di insiemi `added`/`removed` su `draftUsageCount` (§5.F.1), **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da tutte le UI; test dei cinque scenari di §6.10 e T41/T41b/T41f; **zero letture e zero scritture di etichette quando l'insieme non cambia**. |
+| **VDIF-04** | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | Attivazione reale con ≥ 2 etichette, ≥ 1 sostituzione e ≥ 1 omissione; ogni guardia coperta da test; T36/T39/T40 e T41c/T41d/T41e verdi; idempotenza e replay verdi. |
 | **VDIF-05** | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | Ogni consumer opera sulla sola assegnazione; audit di privacy che dimostra l'assenza di etichette in ogni superficie di §4. |
 | **GVDIF** | **Rollout DEV e gate umano multi-studente**: smoke reale con più studenti etichettati e non, isolamento, correzione, restituzione, export. | VDIF-05 | Checklist firmata in `evidenze/gvdif-human-gate.md`. **Aperto.** |
 | **ESITI-01** | Vista di **sola lettura** degli esiti aggregati per UDA/lezione (§12). **Indipendente e successiva a GVDIF.** | GVDIF | §12, DoD. |
@@ -1408,17 +1592,32 @@ della sezione Studenti (`loadAll`).
 |---|---|---|---|
 | **Caricamento scheda Etichette** | **1 query** `differentiationLabels` (collezione intera, decine di documenti), unita al `Promise.all` esistente di `loadAll` | 0 | **nessuna query per etichetta**, **nessuna lettura per card** |
 | **Caricamento assegnazioni** | **1 query** `studentLabelAssignments`, nello stesso `Promise.all` | 0 | mappa `studentUid → labelId` in memoria; **nessun listener per studente**. Le prenotazioni **non** vengono mai caricate in lista |
-| **Creazione etichetta** | **1** in transazione: `differentiationLabelNames/{r}` per path | **3**: prenotazione + etichetta (stesso commit) + audit | unicità garantita dalla transazione, **nessuna query** |
-| **Rinomina** | **2** in transazione: prenotazione nuova + prenotazione vecchia, per path | **4**: `set` nuova + `update` etichetta + `delete` vecchia (stesso commit) + audit | `labelId` invariato ⇒ nessuna propagazione a bozze, assegnazioni o snapshot |
-| **Eliminazione** | **1 query** sulle bozze (`ownerUid` + `status == 'draft'`) ⇒ `V_draft` letture, **solo** alla pressione di «Elimina» + **2** in transazione: etichetta (per `assignedCount`) e prenotazione, per path | **3**: `delete` etichetta + `delete` prenotazione (stesso commit) + audit — **solo** se entrambi gli accertamenti sono verdi | **O(1) rispetto a `E`** assegnazioni (contatore), **O(V_draft)** rispetto alle verifiche, e `V_draft` sono le sole bozze, non tutte le verifiche. Fail-closed: accertamento non eseguibile ⇒ nessuna scrittura |
-| **Assegnazione a uno studente** | **1** in transazione: `differentiationLabels/{labelId}` per path (esistenza + contatore) | **3**: assegnazione + `increment` sull'etichetta (stesso commit) + audit. Cambio `L1→L2`: **4** (due `increment`) | il costo aggiuntivo rispetto a `assignStudentClass` è **una lettura e una scrittura per operazione**, ed è il prezzo dell'unica garanzia transazionale contro la corsa elimina/assegna (§5.A.7) |
+| **Creazione etichetta** | **1** in transazione: `differentiationLabelNames/{r}` per path | **3**: prenotazione + etichetta (stesso commit) + audit | unicità garantita dalla transazione, **nessuna query**. Contatori a `0` |
+| **Rinomina** | **2** in transazione: prenotazione nuova + prenotazione vecchia, per path | **4**: `set` nuova + `update` etichetta + `delete` vecchia (stesso commit) + audit | `labelId` invariato ⇒ nessuna propagazione a bozze, assegnazioni o snapshot; contatori invariati |
+| **Eliminazione etichetta** | **2** in transazione: etichetta (per i due contatori) e prenotazione, per path. **Nessuna query** nel percorso autorizzativo | **3**: `delete` etichetta + `delete` prenotazione (stesso commit) + audit — solo con `assignedCount === 0` **e** `draftUsageCount === 0` | **O(1)** rispetto sia a `E` assegnazioni sia a `V` verifiche. La query sulle bozze resta **solo** per il messaggio leggibile ed è facoltativa (§5.E.1) |
+| **Assegnazione a uno studente** | **1** in transazione: `differentiationLabels/{labelId}` per path (esistenza + contatore) | **3**: assegnazione + `increment` sull'etichetta (stesso commit) + audit. Cambio `L1→L2`: **4** (due `increment`) | il costo aggiuntivo rispetto a `assignStudentClass` è **una lettura e una scrittura per operazione**, ed è il prezzo dell'unica garanzia transazionale contro la corsa elimina/assegna (§5.A.7a) |
 | **Apertura builder varianti** | **0** | 0 | `questionIndex` e `questionPreview` sono già in memoria nella bozza |
-| **Salvataggio bozza** | 0 | **1**: lo `updateVerificationConfig` **esistente**, esteso con `differentiation` | **zero scritture aggiuntive** |
-| **Attivazione** | preflight: verifica + etichette + assegnazioni + studenti + **1** lettura Storage delle domande (già oggi) + udas/lessons (già oggi) | **3**: update verifica + set proiezione + audit — **invariato** | le alternative differenziate entrano nella **stessa** lettura Storage: nessuna lettura in più per alternativa |
+| **Salvataggio bozza — etichette invariate** | **1**: la verifica, in transazione | **2**: verifica + audit | **il caso normale.** Titolo, data, domande, gruppi VEX e anche l'aggiunta di una *ennesima* variante alla stessa etichetta ricadono qui: `added = removed = ∅` ⇒ **zero letture e zero scritture di etichette** |
+| **Salvataggio bozza — `L` etichette entrate** | **1 + L** | **2 + L** | una lettura e una scrittura per etichetta **entrata**, mai per variante |
+| **Salvataggio bozza — `L` etichette uscite** | **1 + L** | **2 + L** | simmetrico |
+| **Salvataggio bozza — sostituzione `A → B`** | **1 + 2** | **2 + 2** | `A` esce e `B` entra: due etichette toccate, un solo commit. Se `A` resta usata altrove nella bozza: **1 + 1** letture e **2 + 1** scritture |
+| **Attivazione con `L` etichette** | preflight (verifica + etichette + assegnazioni + studenti + **1** lettura Storage delle domande + udas/lessons, tutte già di oggi) + **1 + L** in transazione (verifica + una lettura per etichetta congelata) | **3 + L**: update verifica + set proiezione + **L** decrementi (stesso commit) + audit | le alternative differenziate entrano nella **stessa** lettura Storage: nessuna lettura in più per alternativa |
+| **Eliminazione bozza** (`status === 'draft'`) | **1 + L** in transazione: verifica + una lettura per etichetta riferita | **3 + L**: delete verifica + delete proiezione + **L** decrementi (stesso commit) + audit | `L = 0` su una bozza senza differenziazione ⇒ costo **identico a oggi** |
+| **Eliminazione verifica `closed`** | **1** | **3** | nessun decremento: già avvenuto all'attivazione |
 | **Primo avvio studente** | 1 callable + letture server-side già necessarie | **1**: `assignedQuestionOrders` + `assignedAnswerKeys` (stessa scrittura) | identico a VEX §4.3 |
 | **Replay / refresh** | 1 callable + lettura submission | **0** | read-or-assign idempotente |
 | **Retry transazionale** | rilettura in transazione | **0** in caso di replay | G21 |
 | **Consumer downstream** | **0 aggiuntive** | 0 | correzione, IA, restituzione, PDF e CSV riusano `resolveAssignedQuestions` su documenti già caricati |
+
+**I retry transazionali rifatturano le letture.** Firestore ritenta una
+transazione quando un documento letto cambia prima del commit, e **ogni
+tentativo paga le proprie letture**. Le formule sopra descrivono **un** tentativo:
+il costo reale è `tentativi × letture`, con le scritture fatturate una sola volta
+(solo il commit riuscito scrive). In pratica la contesa richiede due schede
+aperte dello stesso docente sullo stesso documento, quindi il numero di tentativi
+è ~1 salvo che nelle race di §5.F.5, dove un secondo tentativo è **esattamente
+ciò che rende corretto il risultato**. Nessuna delle transazioni VDIF ha un
+limite di tentativi personalizzato: si usa quello predefinito dell'SDK.
 
 ### 14.1 Vietati, senza eccezioni
 
@@ -1427,9 +1626,11 @@ della sezione Studenti (`loadAll`).
 - **listener per studente** o per etichetta;
 - **polling** di qualunque genere;
 - **duplicazione di dati** di etichetta su documenti pubblici;
-- **query come garanzia di unicità**: l'unicità è transazionale (§5.A.6), e una
-  query non può garantirla perché legge un istante già passato quando il commit
-  avviene;
+- **query come garanzia di unicità o di non-uso**: l'unicità è transazionale
+  (§5.A.6) e i due usi sono contatori transazionali (§5.A.7). Una query legge un
+  istante già passato nel momento in cui il commit avviene, quindi non può
+  autorizzare né l'una né l'altro. Resta ammessa **solo** per costruire messaggi
+  leggibili e per la diagnostica;
 - **caricamento in lista delle prenotazioni**: si leggono solo per path, solo
   dentro le tre transazioni che le toccano.
 
@@ -1444,10 +1645,10 @@ della sezione Studenti (`loadAll`).
   path deterministico dentro una transazione;
 - `studentLabelAssignments`: come `differentiationLabels` — collezione intera in
   una query, nessun filtro;
-- accertamento d'uso nelle bozze: `where('ownerUid','==',…)` +
-  `where('status','==','draft')` su `verifications`. Due filtri di uguaglianza
-  sono serviti dalla **fusione degli indici a campo singolo automatici** di
-  Firestore; inoltre l'indice composito già presente
+- **query diagnostica** sulle bozze (`ownerUid` + `status == 'draft'`, §5.E.1):
+  non è nel percorso autorizzativo e non è obbligatoria. Due filtri di
+  uguaglianza sono serviti dalla **fusione degli indici a campo singolo
+  automatici** di Firestore; inoltre l'indice composito già presente
   `verifications (ownerUid, status, onlineEnabled)` ne copre il prefisso. Se in
   VDIF-01 la misura reale mostrasse il contrario, l'indice va **dichiarato in
   quella PR con motivazione**, non introdotto qui a scatola chiusa.
@@ -1496,8 +1697,19 @@ della sezione Studenti (`loadAll`).
 | T34c | **rilascio della prenotazione**: dopo rinomina il vecchio `nameKey` è di nuovo disponibile; dopo eliminazione lo è quello corrente; entrambi i rilasci avvengono **nello stesso commit** dell'operazione | integrazione |
 | T34d | **replay idempotente**: ripetere creazione/rinomina/eliminazione dopo una risposta persa non scrive nulla e non produce errore | integrazione |
 | T34e | **prenotazione incoerente** (`nameKey` non corrispondente, `reservationId` non uguale all'hash, prenotazione orfana, etichetta senza prenotazione) ⇒ **fail-closed**, zero scritture | unit + integrazione |
-| T35 | **delete preflight concorrente**: assegnazione creata durante l'eliminazione ⇒ una delle due fallisce; bozza che acquisisce l'etichetta durante l'eliminazione ⇒ l'attivazione è poi bloccata da G04 e il builder mostra «etichetta non più esistente» | integrazione |
-| T35b | il conteggio mostrato sulla card **non autorizza**: con contatore di UI a `0` e `assignedCount > 0` reale, l'eliminazione **fallisce** con invito a ricaricare | integrazione |
+| T35 | **race delete/save, direzione A**: il salvataggio della variante committa per primo ⇒ l'eliminazione ritenta, legge `draftUsageCount > 0` e **fallisce**; l'etichetta resta e la bozza resta coerente | integrazione |
+| T35a | **race delete/save, direzione B**: l'eliminazione committa per prima ⇒ il salvataggio ritenta, non trova l'etichetta e **fallisce senza salvare la bozza**; **nessuna bozza orfana** resta a riferire un'etichetta inesistente | integrazione |
+| T35b | i conteggi mostrati sulla card **non autorizzano**: con dati di UI a `0` e contatore reale `> 0`, l'eliminazione **fallisce** con invito a ricaricare | integrazione |
+| T35c | **attivazione concorrente** all'eliminazione (§5.F.5 C): entrambi gli ordini producono stato e contatori coerenti; nessun contatore resta bloccato sopra zero dopo un'attivazione riuscita | integrazione |
+| T35d | **due schede rimuovono l'ultimo utilizzo** (§5.F.5 D): un solo decremento applicato, **nessun valore negativo** raggiungibile | integrazione |
+| T41 | `draftUsageCount` conta **per verifica, non per variante**: una bozza con 8 domande configurate sulla stessa etichetta produce `1`; aggiungere la nona e togliere la prima non cambiano il contatore | unit + integrazione |
+| T41b | **aggiunta / rimozione / sostituzione** di etichette in bozza: `added`/`removed` calcolati per differenza di insiemi; sostituzione `A → B` con `A` ancora usata altrove incrementa solo `B` | unit |
+| T41c | **eliminazione di una bozza** decrementa ogni etichetta riferita nello stesso commit; una bozza senza differenziazione costa quanto oggi | integrazione |
+| T41d | **attivazione** decrementa ogni etichetta congelata nello **stesso commit** di stato, snapshot e proiezione; un fallimento del decremento annulla anche l'attivazione | integrazione |
+| T41e | **`active → closed` e `closed → active` non toccano i contatori**; non esiste alcun percorso `active/closed → draft` (test strutturale sui servizi) | unit + strutturale |
+| T41f | **replay**: ripetere salvataggio bozza, attivazione o eliminazione bozza dopo una risposta persa non riapplica alcun delta (`prev == next` ⇒ zero scritture) | integrazione |
+| T41g | **contatore mancante, non intero, negativo o incoerente** ⇒ fail-closed su ogni operazione che lo tocca, con zero scritture e **nessuna riparazione silenziosa** | unit + Rules |
+| T41h | Rules: contratto chiuso a **otto** chiavi; creazione con contatori diversi da `0` negata; salto di contatore maggiore di una unità negato; `labelId`/`ownerUid`/`createdAt` immutabili; **studente sempre negato** in lettura e scrittura su etichette e prenotazioni | Rules Emulator |
 | T36 | **snapshot autosufficiente**: dopo rinomina e dopo eliminazione dell'etichetta, una verifica attiva resta eseguibile, risolve lo stesso insieme di domande e resta leggibile lato docente con il `labelName` congelato; **test strutturale** che vieta ai percorsi delle verifiche non-bozza di importare i service di etichette e assegnazioni | integrazione + strutturale |
 | T37 | **dirty guard**: su dialog dirty, Escape / backdrop / «Chiudi» aprono la conferma e **non** scartano; «Continua modifica» conserva tutto; «Abbandona modifiche» è l'unica azione che scarta; su dialog pulito i tre gesti chiudono direttamente | unit UI |
 | T37b | **un solo focus trap**: la conferma è una fase della stessa `DialogShell`, non una seconda shell; nessun cambio di larghezza fra le due fasi; doppio Escape e doppio click protetti | unit UI |
@@ -1518,8 +1730,8 @@ test statico che vieta a `textarea` di essere ridimensionabile e a
 | # | Rischio | Perché è accettato |
 |---|---|---|
 | R1 | **Il numero di domande rivela la differenziazione** a uno studente attento | è intrinseco alla funzionalità; ciò che si difende è il *motivo*, non il *fatto* (§4) |
-| R2 | Una **bozza** può acquisire un'etichetta mentre la si elimina (§5.E.1, uso 2) | una transazione client Firestore non può eseguire query, quindi «tutte le bozze che usano L» non è rileggibile nel commit. **Non degrada in silenzio**: il builder mostra «etichetta non più esistente» e l'attivazione è bloccata da G04. Le tre alternative valutate sono in §5.E.1 |
-| R3 | La **finestra** fra fingerprint delle assegnazioni e transazione di attivazione non è nulla (§7.3) | single-owner: la finestra reale è due schede dello stesso browser. Chiuderla richiederebbe una Cloud Function di attivazione, sproporzionata |
+| R3 | La **finestra** fra fingerprint delle assegnazioni e transazione di attivazione non è nulla (§7.3) | single-owner: la finestra reale è due schede dello stesso browser. Chiuderla richiederebbe una Cloud Function di attivazione, sproporzionata. **Nota:** questo riguarda le sole *assegnazioni studente* congelate nello snapshot, non l'eliminazione delle etichette, che è ora interamente transazionale (§5.E.1) |
+| R3c | I contatori sono **denormalizzati**: in teoria possono divergere dalla realtà | ogni percorso che li muove è una transazione che tocca insieme il fatto e il contatore, quindi non esiste scrittura parziale che li faccia divergere. Se divergessero comunque (manomissione, bug), il comportamento è **fail-closed** e mai una riparazione silenziosa (§5.F.6). La query diagnostica esiste proprio per spiegare, non per correggere |
 | R3b | La coerenza `reservationId == SHA-256(ownerUid, nameKey)` è verificata dal **service**, non dalle Rules | CEL non ha funzioni di hash. L'unicità però **non** dipende da questa verifica: dipende dal `create` mutuamente esclusivo su un path deterministico, che le Rules autorizzano e Firestore serializza. La verifica del service serve solo a rifiutare record manomessi, fail-closed |
 | R4 | Un docente può comunque **scrivere una diagnosi dentro il nome** di un'etichetta | SchoolForge non lo impedisce e non lo può impedire senza classificazione semantica, che il principio 4 vieta. Difesa: nessun esempio diagnostico nella UI, testo esplicito nello stato vuoto, e il nome non lascia mai il lato docente |
 | R5 | `same_questions` **con differenziazione** perde il percorso interamente client-side | è il prezzo dell'isolamento delle alternative; il costo resta 1 callable + 1 scrittura al primo avvio, poi zero |
