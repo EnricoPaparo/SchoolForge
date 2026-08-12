@@ -578,6 +578,28 @@ export type EquivalentGroupConfig = {
   questionIndexEntryIds: string[];
 };
 
+/** VDIF-03 — scelta della domanda per una singola etichetta operativa. */
+export type DifferentiatedChoice =
+  | { kind: 'base' }
+  | { kind: 'alternative'; questionIndexEntryId: string }
+  | { kind: 'none' };
+
+/** VDIF-03 — varianti di una domanda comune, indicizzate per `labelId`. */
+export type DifferentiatedQuestionConfig = {
+  baseQuestionIndexEntryId: string;
+  choices: Record<string, DifferentiatedChoice>;
+};
+
+/**
+ * VDIF-03 — configurazione draft-time delle verifiche differenziate.
+ * Il contratto è chiuso e versionato; i parser applicativi rifiutano proprietà
+ * extra e configurazioni incoerenti invece di correggerle silenziosamente.
+ */
+export type VerificationDifferentiationConfig = {
+  version: 1;
+  questions: DifferentiatedQuestionConfig[];
+};
+
 /**
  * UI-VERIFICHE-06B — una UDA del perimetro didattico della verifica. Contratto
  * **chiuso**: solo titoli, mai identificativi, ordini, testi, soluzioni o
@@ -623,6 +645,8 @@ export type VerificationConfig = {
    * inattivi e ignorati da attivazione/snapshot.
    */
   equivalentGroups?: EquivalentGroupConfig[];
+  /** VDIF-03 — assente quando tutte le etichette usano la domanda base. */
+  differentiation?: VerificationDifferentiationConfig;
   // `questionsPerStudent` RIMOSSO in VEX-01A: campo mai usato, assorbito dal
   // modello VEX (le domande per studente sono derivate, non configurabili).
 };

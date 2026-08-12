@@ -12,6 +12,10 @@ const mockQuery = vi.fn((...args: unknown[]) => ({ args }));
 const mockWhere = vi.fn((...args: unknown[]) => ({ where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 const mockRunTransaction = vi.fn();
+const mockTxGet = vi.fn();
+const mockTxUpdate = vi.fn();
+const mockTxSet = vi.fn();
+const mockTxDelete = vi.fn();
 const mockBatchSet = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
@@ -80,6 +84,7 @@ const fakeStorage = {} as FirebaseStorage;
 const OWNER_UID = 'owner-uid';
 const OTHER_UID = 'other-uid';
 const fakeDocRef = { id: 'new-ver-id' };
+const TEST_TIMESTAMP = { seconds: 1, nanoseconds: 0, toMillis: () => 1000 };
 
 const VALID_CONFIG: VerificationConfig = {
   title: 'Verifica 1',
@@ -107,6 +112,9 @@ beforeEach(() => {
   mockCollection.mockReturnValue({ id: 'verifications' });
   mockSetDoc.mockResolvedValue(undefined);
   mockBatchCommit.mockResolvedValue(undefined);
+  mockRunTransaction.mockImplementation(async (_db: unknown, callback: (tx: unknown) => unknown) =>
+    callback({ get: mockTxGet, update: mockTxUpdate, set: mockTxSet, delete: mockTxDelete }),
+  );
   mockListUdas.mockResolvedValue([{ dir: 'UDA1', titolo: 'Il Web' }]);
   mockListLessons.mockResolvedValue([
     { udaDir: 'UDA1', filename: 'lezione1.md', titolo: 'Come funziona Internet' },
@@ -270,20 +278,22 @@ describe('createVerification', () => {
   });
 
   it('accetta una data valida sulla bozza e rifiuta una data impossibile', async () => {
-    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
-    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockTxGet.mockResolvedValue({ exists: () => true, data: () => draftDoc });
 
     await updateVerificationConfig('ver-id', { verificationDate: '2026-03-15' }, OWNER_UID, fakeDb);
-    expect(mockSetDoc.mock.calls[0]?.[1].config.verificationDate).toBe('2026-03-15');
+    expect(mockTxUpdate.mock.calls[0]?.[1].config.verificationDate).toBe('2026-03-15');
 
     vi.clearAllMocks();
-    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
     await expect(
       updateVerificationConfig('ver-id', { verificationDate: '2026-02-30' }, OWNER_UID, fakeDb),
     ).rejects.toThrow(/AAAA-MM-GG/);
     // Validazione prima di qualunque lettura o scrittura.
-    expect(mockGetDoc).not.toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
   it('rejects a 101-character title before reads or writes', async () => {
@@ -430,15 +440,17 @@ describe('createVerification', () => {
 describe('updateVerificationConfig', () => {
   it('updates config when status is draft', async () => {
     const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
       status: 'draft',
       config: VALID_CONFIG,
     };
-    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    mockTxGet.mockResolvedValue({ exists: () => true, data: () => draftDoc });
 
     await updateVerificationConfig('ver-id', { title: 'Nuovo titolo' }, OWNER_UID, fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledTimes(2); // update + audit
-    const [, mergedData] = mockSetDoc.mock.calls[0];
+    expect(mockTxUpdate).toHaveBeenCalledTimes(1);
+    expect(mockTxSet).toHaveBeenCalledTimes(1);
+    const [, mergedData] = mockTxUpdate.mock.calls[0];
     expect(mergedData.config.title).toBe('Nuovo titolo');
   });
 
@@ -458,14 +470,147 @@ describe('updateVerificationConfig', () => {
 
   it('throws when status is not draft', async () => {
     const activeDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
       status: 'active',
       config: VALID_CONFIG,
     };
-    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+    mockTxGet.mockResolvedValue({ exists: () => true, data: () => activeDoc });
 
     await expect(
       updateVerificationConfig('ver-id', { title: 'X' }, OWNER_UID, fakeDb),
     ).rejects.toThrow('Verifica non modificabile: non è in bozza');
+  });
+
+  it('muove draftUsageCount solo per il diff di insiemi e nello stesso commit', async () => {
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        { baseQuestionIndexEntryId: 'qi-1', choices: { 'label-1': { kind: 'none' as const } } },
+      ],
+    };
+    const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockTxGet
+      .mockResolvedValueOnce({ exists: () => true, data: () => draftDoc })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          labelId: 'label-1',
+          ownerUid: OWNER_UID,
+          name: 'Percorso A',
+          nameKey: 'percorso a',
+          assignedCount: 0,
+          draftUsageCount: 2,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      });
+
+    await updateVerificationConfig('ver-id', { differentiation }, OWNER_UID, fakeDb);
+
+    expect(mockTxGet).toHaveBeenCalledTimes(2);
+    expect(mockTxUpdate).toHaveBeenCalledTimes(2);
+    expect(mockTxUpdate.mock.calls[0]?.[1]).toMatchObject({ draftUsageCount: 3 });
+    expect(mockTxUpdate.mock.calls[1]?.[1].config.differentiation).toEqual(differentiation);
+    expect(mockTxSet).toHaveBeenCalledOnce();
+  });
+
+  it('non legge né scrive etichette quando l’insieme resta invariato', async () => {
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        { baseQuestionIndexEntryId: 'qi-1', choices: { 'label-1': { kind: 'none' as const } } },
+      ],
+    };
+    mockTxGet.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        ownerUid: OWNER_UID,
+        status: 'draft',
+        config: { ...VALID_CONFIG, differentiation },
+      }),
+    });
+
+    await updateVerificationConfig('ver-id', { title: 'Titolo diverso' }, OWNER_UID, fakeDb);
+    expect(mockTxGet).toHaveBeenCalledOnce();
+    expect(mockTxUpdate).toHaveBeenCalledOnce();
+    expect(mockTxSet).toHaveBeenCalledOnce();
+  });
+
+  it('un replay identico è un no-op senza secondo audit', async () => {
+    mockTxGet.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ownerUid: OWNER_UID, status: 'draft', config: VALID_CONFIG }),
+    });
+    await updateVerificationConfig('ver-id', { title: VALID_CONFIG.title }, OWNER_UID, fakeDb);
+    expect(mockTxGet).toHaveBeenCalledOnce();
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
+  });
+
+  it('rifiuta il decremento sotto zero con zero scritture', async () => {
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        { baseQuestionIndexEntryId: 'qi-1', choices: { 'label-1': { kind: 'none' as const } } },
+      ],
+    };
+    mockTxGet
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          ownerUid: OWNER_UID,
+          status: 'draft',
+          config: { ...VALID_CONFIG, differentiation },
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          labelId: 'label-1',
+          ownerUid: OWNER_UID,
+          name: 'Percorso A',
+          nameKey: 'percorso a',
+          assignedCount: 0,
+          draftUsageCount: 0,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      });
+    await expect(
+      updateVerificationConfig('ver-id', { differentiation: undefined }, OWNER_UID, fakeDb),
+    ).rejects.toThrow(/contatore delle bozze incoerente/);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
+  });
+
+  it('rifiuta una base differenziata inserita contemporaneamente in VEX', async () => {
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        { baseQuestionIndexEntryId: 'qi-1', choices: { 'label-1': { kind: 'none' as const } } },
+      ],
+    };
+    mockTxGet.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ownerUid: OWNER_UID, status: 'draft', config: VALID_CONFIG }),
+    });
+    await expect(
+      updateVerificationConfig(
+        'ver-id',
+        {
+          differentiation,
+          equivalentGroups: [{ id: 'g', questionIndexEntryIds: ['qi-1'] }],
+        },
+        OWNER_UID,
+        fakeDb,
+      ),
+    ).rejects.toThrow(/gruppo equivalente/);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
   });
 });
 
@@ -488,6 +633,25 @@ describe('validateForActivation', () => {
     const result = validateForActivation({ ...VALID_CONFIG, questionRefs: [] });
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes('domanda'))).toBe(true);
+  });
+
+  it('VDIF-03 fail-closed — una bozza differenziata non è attivabile prima della distribuzione', () => {
+    const result = validateForActivation({
+      ...VALID_CONFIG,
+      differentiation: {
+        version: 1,
+        questions: [
+          {
+            baseQuestionIndexEntryId: 'qi-1',
+            choices: {
+              'label-1': { kind: 'alternative', questionIndexEntryId: 'qi-alt' },
+            },
+          },
+        ],
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContainEqual(expect.stringMatching(/differenziata.*bozza/i));
   });
 
   it('POOL-SIMPLE-02 — accepts difficoltà 5 with maxPoints 5', () => {
@@ -1357,56 +1521,165 @@ describe('reopenVerification', () => {
 
 describe('deleteVerification', () => {
   it('atomically deletes parent and student projection and writes an audit event when closed', async () => {
-    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    const closedDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'closed',
+      config: VALID_CONFIG,
+    };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
     mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    mockTxGet.mockResolvedValue({ exists: () => true, data: () => closedDoc });
 
     await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
-    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
-    expect(mockBatchDelete).toHaveBeenCalledTimes(2);
-    expect(mockBatchSet).toHaveBeenCalledTimes(1); // audit event only
-    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
-    const [, auditData] = mockBatchSet.mock.calls[0];
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(mockTxDelete).toHaveBeenCalledTimes(2);
+    expect(mockTxSet).toHaveBeenCalledTimes(1); // audit event only
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    const [, auditData] = mockTxSet.mock.calls[0];
     expect(auditData.action).toBe('verification.deleted');
     expect(auditData.actorUid).toBe(OWNER_UID);
     expect(auditData.targetId).toBe('ver-id');
   });
 
   it('atomically deletes parent and projection and writes an audit event when draft', async () => {
-    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
     mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    mockTxGet.mockResolvedValue({ exists: () => true, data: () => draftDoc });
 
     await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
-    expect(mockBatchDelete).toHaveBeenCalledTimes(2);
-    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
-    const [, auditData] = mockBatchSet.mock.calls[0];
+    expect(mockTxDelete).toHaveBeenCalledTimes(2);
+    const [, auditData] = mockTxSet.mock.calls[0];
     expect(auditData.action).toBe('verification.deleted');
   });
 
+  it('VDIF-03 — eliminando una bozza decrementa una volta ogni etichetta riferita', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'draft',
+      config: {
+        ...VALID_CONFIG,
+        differentiation: {
+          version: 1,
+          questions: [
+            {
+              baseQuestionIndexEntryId: 'qi-1',
+              choices: {
+                l1: { kind: 'none' },
+                l2: { kind: 'alternative', questionIndexEntryId: 'alt' },
+              },
+            },
+          ],
+        },
+      },
+    };
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    mockTxGet
+      .mockResolvedValueOnce({ exists: () => true, data: () => draftDoc })
+      .mockResolvedValueOnce({
+        data: () => ({
+          labelId: 'l1',
+          ownerUid: OWNER_UID,
+          name: 'A',
+          nameKey: 'a',
+          assignedCount: 0,
+          draftUsageCount: 1,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      })
+      .mockResolvedValueOnce({
+        data: () => ({
+          labelId: 'l2',
+          ownerUid: OWNER_UID,
+          name: 'B',
+          nameKey: 'b',
+          assignedCount: 0,
+          draftUsageCount: 3,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      });
+
+    await deleteVerification('ver-id', OWNER_UID, fakeDb);
+
+    expect(mockTxUpdate).toHaveBeenCalledTimes(2);
+    expect(mockTxUpdate.mock.calls.map((call) => call[1].draftUsageCount).sort()).toEqual([0, 2]);
+    expect(mockTxDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it('VDIF-03 fail-closed — non elimina una bozza se un contatore è già a zero', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'draft',
+      config: {
+        ...VALID_CONFIG,
+        differentiation: {
+          version: 1,
+          questions: [{ baseQuestionIndexEntryId: 'qi-1', choices: { l1: { kind: 'none' } } }],
+        },
+      },
+    };
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    mockTxGet
+      .mockResolvedValueOnce({ exists: () => true, data: () => draftDoc })
+      .mockResolvedValueOnce({
+        data: () => ({
+          labelId: 'l1',
+          ownerUid: OWNER_UID,
+          name: 'A',
+          nameKey: 'a',
+          assignedCount: 0,
+          draftUsageCount: 0,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      });
+
+    await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(/contatore/i);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxDelete).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
+  });
+
   it('rejects when status is active, without opening a batch', async () => {
-    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    const activeDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: VALID_CONFIG,
+    };
     mockGetDoc.mockResolvedValue({ data: () => activeDoc });
 
     await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
       'Verifica non eliminabile: deve essere in bozza o chiusa',
     );
-    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockTxDelete).not.toHaveBeenCalled();
   });
 
   it('refuses to delete a closed verification that still owns a submission, writing nothing', async () => {
-    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    const closedDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'closed',
+      config: VALID_CONFIG,
+    };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+    mockTxGet.mockResolvedValue({ exists: () => true, data: () => closedDoc });
     // Preflight query finds a linked submission.
     mockGetDocs.mockResolvedValue({ empty: false, docs: [{ id: 'v1_s1', data: () => ({}) }] });
 
     await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
       /Elimina prima tutte le consegne/i,
     );
-    expect(mockWriteBatch).not.toHaveBeenCalled();
-    expect(mockBatchSet).not.toHaveBeenCalled();
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
     // The preflight query is targeted (ownerUid + verificationId), never a full scan.
     expect(mockWhere).toHaveBeenCalledWith('ownerUid', '==', OWNER_UID);
     expect(mockWhere).toHaveBeenCalledWith('verificationId', '==', 'ver-id');

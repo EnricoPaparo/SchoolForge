@@ -1,11 +1,16 @@
 import { useMemo, useState } from 'react';
 import type { QuestionIndexEntry } from '../repository/verifications/questionIndexService.js';
+import type { QuestionParticipation } from '../repository/verifications/questionParticipation.js';
+import { IconTag } from '../../components/icons.js';
 import styles from './QuestionPicker.module.css';
 
 type Props = {
   entries: QuestionIndexEntry[];
   selectedIds: Set<string>;
   onChange: (next: Set<string>) => void;
+  participation?: ReadonlyMap<string, QuestionParticipation>;
+  variantCounts?: ReadonlyMap<string, number>;
+  onOpenVariants?: (entryId: string) => void;
 };
 
 const TIPO_LABELS: Record<QuestionIndexEntry['tipo'], string> = {
@@ -23,7 +28,14 @@ function uniqueSorted<T>(values: T[]): T[] {
  * present in QuestionIndexEntry is shown/searched — question text, answers
  * and solutions are never fetched or exposed here.
  */
-export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
+export function QuestionPicker({
+  entries,
+  selectedIds,
+  onChange,
+  participation,
+  variantCounts,
+  onOpenVariants,
+}: Props) {
   const [search, setSearch] = useState('');
   const [udaFilter, setUdaFilter] = useState('');
   const [lessonFilter, setLessonFilter] = useState('');
@@ -80,7 +92,9 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
 
   function selectAllFiltered() {
     const next = new Set(selectedIds);
-    filteredIds.forEach((id) => next.add(id));
+    filteredIds.forEach((id) => {
+      if (participation?.get(id) !== 'differentiated_alternative') next.add(id);
+    });
     onChange(next);
   }
 
@@ -237,35 +251,46 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
         <p className="state-empty">Nessuna domanda corrisponde ai filtri.</p>
       ) : (
         <ul className={styles.list} aria-label="Elenco domande filtrate">
-          {filtered.map((entry) => (
-            <li key={entry.id} className={styles.row}>
-              <input
-                type="checkbox"
-                id={`qp-check-${entry.id}`}
-                checked={selectedIds.has(entry.id)}
-                onChange={() => toggle(entry.id)}
-                aria-label={`Seleziona domanda ${entry.questionLocalId}`}
-              />
-              <label htmlFor={`qp-check-${entry.id}`} className={styles.rowContent}>
-                <span className={styles.rowPreviewLine}>
-                  <span className={styles.rowLocalId}>#{entry.questionLocalId}</span>
-                  {entry.questionPreview.trim() ? (
-                    <span className={styles.rowPreview} title={entry.questionPreview}>
-                      {entry.questionPreview}
-                    </span>
-                  ) : (
-                    <span className={styles.rowPreview}>
-                      <span className={styles.rowPreviewMissing}>Anteprima non disponibile</span>
+          {filtered.map((entry) => {
+            const blockedAlternative =
+              participation?.get(entry.id) === 'differentiated_alternative';
+            return (
+              <li key={entry.id} className={styles.row}>
+                <input
+                  type="checkbox"
+                  id={`qp-check-${entry.id}`}
+                  checked={selectedIds.has(entry.id)}
+                  disabled={blockedAlternative}
+                  onChange={() => toggle(entry.id)}
+                  aria-label={`Seleziona domanda ${entry.questionLocalId}`}
+                  aria-describedby={blockedAlternative ? `qp-blocked-${entry.id}` : undefined}
+                />
+                <label htmlFor={`qp-check-${entry.id}`} className={styles.rowContent}>
+                  <span className={styles.rowPreviewLine}>
+                    <span className={styles.rowLocalId}>#{entry.questionLocalId}</span>
+                    {entry.questionPreview.trim() ? (
+                      <span className={styles.rowPreview} title={entry.questionPreview}>
+                        {entry.questionPreview}
+                      </span>
+                    ) : (
+                      <span className={styles.rowPreview}>
+                        <span className={styles.rowPreviewMissing}>Anteprima non disponibile</span>
+                      </span>
+                    )}
+                  </span>
+                  <span className={styles.rowMeta}>
+                    {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]} · diff{' '}
+                    {entry.difficolta} · {entry.maxPoints}pt
+                  </span>
+                  {blockedAlternative && (
+                    <span id={`qp-blocked-${entry.id}`} className={styles.blockedReason}>
+                      Già usata come alternativa differenziata.
                     </span>
                   )}
-                </span>
-                <span className={styles.rowMeta}>
-                  {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]} · diff{' '}
-                  {entry.difficolta} · {entry.maxPoints}pt
-                </span>
-              </label>
-            </li>
-          ))}
+                </label>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -283,6 +308,32 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
                   {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]}
                 </span>
                 <span className={styles.summaryPoints}>{entry.maxPoints}pt</span>
+                {onOpenVariants &&
+                  (() => {
+                    const isVex = participation?.get(entry.id) === 'vex_member';
+                    const count = variantCounts?.get(entry.id) ?? 0;
+                    const reasonId = `qp-variant-reason-${entry.id}`;
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.variantBtn}
+                          disabled={isVex}
+                          aria-describedby={isVex ? reasonId : undefined}
+                          onClick={() => onOpenVariants(entry.id)}
+                        >
+                          <IconTag size={15} aria-hidden="true" /> Varianti
+                          {count > 0 ? ` (${count})` : ''}
+                        </button>
+                        {isVex && (
+                          <span id={reasonId} className={styles.srReason}>
+                            Le domande di un gruppo equivalente non possono avere varianti per
+                            etichetta.
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 <button
                   type="button"
                   className={styles.removeBtn}

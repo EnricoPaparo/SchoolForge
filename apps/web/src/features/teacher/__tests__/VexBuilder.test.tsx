@@ -5,6 +5,7 @@ import type {
   EquivalentGroupConfig,
   VerificationDistributionMode,
 } from '../../../types/firestore.js';
+import type { QuestionParticipation } from '../../repository/verifications/questionParticipation.js';
 
 afterEach(cleanup);
 
@@ -32,6 +33,7 @@ function setup(opts: {
   refs: VexBuilderQuestion[];
   groups?: EquivalentGroupConfig[];
   studentCount?: number;
+  participation?: ReadonlyMap<string, QuestionParticipation>;
 }) {
   const onModeChange = vi.fn();
   const onGroupsChange = vi.fn();
@@ -43,6 +45,7 @@ function setup(opts: {
       groups={opts.groups ?? []}
       onGroupsChange={onGroupsChange}
       studentCount={opts.studentCount}
+      participation={opts.participation}
     />,
   );
   return { onModeChange, onGroupsChange };
@@ -113,6 +116,22 @@ describe('VexBuilder (VEX-01A)', () => {
     expect(onGroupsChange).toHaveBeenCalledTimes(1);
     expect(onGroupsChange.mock.calls[0][0]).toHaveLength(1);
     expect(onGroupsChange.mock.calls[0][0][0].questionIndexEntryIds).toEqual([]);
+  });
+
+  it('VDIF-03 — una base differenziata resta comune ma non può entrare in un gruppo VEX', () => {
+    const participation = new Map<string, QuestionParticipation>([
+      ['a', 'differentiated_base'],
+      ['b', 'common_free'],
+    ]);
+    const { onGroupsChange } = setup({
+      refs: [ref('a'), ref('b')],
+      groups: [g('x', ['b'])],
+      participation,
+    });
+    expect(screen.getByText(/la domanda ha varianti per etichetta/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /aggiungi alternativa al gruppo 1/i }));
+    expect(screen.queryByRole('option', { name: /anteprima di a/i })).toBeNull();
+    expect(onGroupsChange).not.toHaveBeenCalled();
   });
 
   it('removing the last alternative auto-deletes the group', () => {

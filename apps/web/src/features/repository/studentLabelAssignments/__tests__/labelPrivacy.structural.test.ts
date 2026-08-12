@@ -155,8 +155,14 @@ describe('VDIF-02 — nessuna etichetta nei payload AI né nelle Functions', () 
       'apps/web/src/features/repository/differentiation/',
       'apps/web/src/features/repository/documentShape.ts',
       'apps/web/src/features/repository/students/studentsService.ts',
+      // VDIF-03 — le sole superfici owner-only autorizzate a costruire e
+      // persistere la configurazione differenziata. Il portale studente resta
+      // escluso e le Functions continuano a non conoscere le etichette.
+      'apps/web/src/features/repository/verifications/verificationsService.ts',
       'apps/web/src/features/teacher/StudentsView.tsx',
       'apps/web/src/features/teacher/LabelsTab.tsx',
+      'apps/web/src/features/teacher/DifferentiationVariantsDialog.tsx',
+      'apps/web/src/features/teacher/VerificationsView.tsx',
       'apps/web/src/types/firestore.ts',
       'apps/web/src/rules/',
     ];

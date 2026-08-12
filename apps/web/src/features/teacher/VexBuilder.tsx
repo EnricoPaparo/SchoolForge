@@ -11,6 +11,7 @@ import {
   type VexWarning,
 } from '../repository/verifications/vexGroups.js';
 import { VexQuestionSelect } from './VexQuestionSelect.js';
+import type { QuestionParticipation } from '../repository/verifications/questionParticipation.js';
 import { IconCircleX, IconInfo, IconRotateCcw, IconTriangleAlert } from '../../components/icons.js';
 import styles from './VexBuilder.module.css';
 
@@ -47,6 +48,7 @@ export interface VexBuilderProps {
   onGroupsChange: (groups: EquivalentGroupConfig[]) => void;
   /** Opzionale: se assente i warning basati sul numero studenti sono omessi. */
   studentCount?: number;
+  participation?: ReadonlyMap<string, QuestionParticipation>;
 }
 
 function tipoLabel(tipo: VexBuilderQuestion['tipo']): string {
@@ -70,6 +72,7 @@ export function VexBuilder({
   groups,
   onGroupsChange,
   studentCount,
+  participation,
 }: VexBuilderProps) {
   const creatingRef = useRef(false);
 
@@ -110,6 +113,7 @@ export function VexBuilder({
 
   function addAlternative(groupId: string, entryId: string) {
     if (!entryId) return;
+    if (participation && participation.get(entryId) !== 'common_free') return;
     onGroupsChange(
       groups.map((g) =>
         g.id === groupId && !g.questionIndexEntryIds.includes(entryId)
@@ -245,6 +249,11 @@ export function VexBuilder({
                         diff {r.difficolta} · {r.maxPoints} pt
                       </span>
                     </span>
+                    {participation?.get(id) === 'differentiated_base' && (
+                      <span className={`${styles.note} ${styles.warn}`}>
+                        Non disponibile: la domanda ha varianti per etichetta.
+                      </span>
+                    )}
                   </div>
                 );
               })
@@ -288,7 +297,10 @@ export function VexBuilder({
                       r.tipo !== first.tipo ||
                       r.difficolta !== first.difficolta),
                 );
-                const available = commonIds.map((id) => byId.get(id)!).filter(Boolean);
+                const available = commonIds
+                  .filter((id) => !participation || participation.get(id) === 'common_free')
+                  .map((id) => byId.get(id)!)
+                  .filter(Boolean);
                 const groupWarnings = warningByGroup.get(group.id) ?? [];
                 return (
                   <div key={group.id} className={styles.group} data-invalid={invalid}>
