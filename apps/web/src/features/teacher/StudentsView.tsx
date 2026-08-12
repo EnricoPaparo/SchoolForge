@@ -247,45 +247,62 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
     void loadAll();
   }, []);
 
-  async function loadAll() {
+  /**
+   * Dati «core» della vista: studenti, classi, impostazioni di accesso e classi
+   * eleggibili per la Modalità verifica. È **esattamente** ciò che veniva
+   * ricaricato prima di VDIF-01, e resta ciò che si ricarica dopo ogni azione
+   * su uno studente.
+   */
+  async function loadCore() {
     setLoadError(null);
-    setLabelsError(null);
     try {
-      /*
-       * VDIF-01 — le etichette entrano nel caricamento aggregato già esistente:
-       * **una sola query** in più, nello stesso `Promise.all`, senza listener,
-       * senza polling e senza alcuna lettura per card. `allSettled` sul solo
-       * ramo etichette perché un loro errore non deve impedire di lavorare su
-       * studenti e classi.
-       */
-      const [studentsList, classesList, accessSettings, activeOnlineClassIds, labelsResult] =
-        await Promise.all([
-          listStudents(ownerUid, db),
-          listClasses(ownerUid, db),
-          getStudentAccessSettings(db),
-          listActiveOnlineVerificationClassIds(ownerUid, db),
-          listDifferentiationLabels(ownerUid, db).then(
-            (value) => ({ ok: true as const, value }),
-            (error: unknown) => ({ ok: false as const, error }),
-          ),
-        ]);
+      const [studentsList, classesList, accessSettings, activeOnlineClassIds] = await Promise.all([
+        listStudents(ownerUid, db),
+        listClasses(ownerUid, db),
+        getStudentAccessSettings(db),
+        listActiveOnlineVerificationClassIds(ownerUid, db),
+      ]);
       setStudents(studentsList);
       setClasses(classesList);
       setAccess(accessSettings);
       setEligibleExamClassIds(activeOnlineClassIds);
-      if (labelsResult.ok) {
-        setLabels(labelsResult.value);
-      } else {
-        setLabels(null);
-        setLabelsError(
-          labelsResult.error instanceof Error && labelsResult.error.message
-            ? labelsResult.error.message
-            : 'Impossibile caricare le etichette.',
-        );
-      }
     } catch {
       setLoadError('Impossibile caricare gli studenti.');
     }
+  }
+
+  /**
+   * VDIF-01 — le etichette si caricano **una sola volta**, all'apertura della
+   * vista, e poi vivono in memoria: le mutazioni CRUD aggiornano la lista
+   * localmente (il service restituisce già il documento risultante).
+   *
+   * Deliberatamente **fuori** da `loadCore`: approvare uno studente, bloccarlo,
+   * cambiargli classe o rimuoverlo non tocca né le etichette né i loro
+   * contatori, quindi rileggerle dopo ogni azione sarebbe una query pagata per
+   * ottenere dati identici. Quando VDIF-02 introdurrà l'assegnazione — che
+   * muove `assignedCount` — sarà quel percorso ad aggiornare il contatore, non
+   * un refetch a tappeto.
+   *
+   * Un errore qui non impedisce di lavorare su studenti e classi: resta
+   * circoscritto alla scheda Etichette, che lo mostra invece di presentare una
+   * lista vuota come se fosse completa.
+   */
+  async function loadLabels() {
+    setLabelsError(null);
+    try {
+      setLabels(await listDifferentiationLabels(ownerUid, db));
+    } catch (error) {
+      setLabels(null);
+      setLabelsError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Impossibile caricare le etichette.',
+      );
+    }
+  }
+
+  async function loadAll() {
+    await Promise.all([loadCore(), loadLabels()]);
   }
 
   const classNameById = useMemo(() => {
@@ -408,7 +425,8 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
     setActionLoadingId(uid);
     try {
       await action();
-      await loadAll();
+      // Solo i dati core: nessuna azione su uno studente modifica le etichette.
+      await loadCore();
       onStudentsChanged?.();
     } catch {
       setActionError('Operazione non riuscita. Riprova.');
@@ -866,10 +884,16 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           className={styles.tabPanel}
         >
           {labelsError ? (
-            /* Errore esplicito: mai una lista vuota spacciata per completa. */
-            <p role="alert" className="text-error">
-              {labelsError}
-            </p>
+            /* Errore esplicito: mai una lista vuota spacciata per completa.
+               Il retry rilegge **solo** le etichette, non l'intera vista. */
+            <div className={styles.labelsErrorRow}>
+              <p role="alert" className="text-error">
+                {labelsError}
+              </p>
+              <button type="button" onClick={() => void loadLabels()}>
+                Riprova
+              </button>
+            </div>
           ) : labels === null ? (
             <p aria-busy="true" className="state-loading">
               Caricamento etichette…

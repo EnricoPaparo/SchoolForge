@@ -127,13 +127,35 @@ import {
   parseDifferentiationLabel,
   renameDifferentiationLabel,
 } from '../differentiationLabelsService.js';
-import { computeNameKey, normalizeLabelName } from '../labelName.js';
+import {
+  computeNameKey,
+  countCodePoints,
+  countUtf8Bytes,
+  normalizeLabelName,
+} from '../labelName.js';
 import { computeLabelReservationId } from '../labelReservationId.js';
 import type { Firestore } from 'firebase/firestore';
 
 const fakeDb = {} as Firestore;
 const OWNER_UID = 'owner-uid';
 const OTHER_UID = 'other-uid';
+
+/**
+ * Timestamp con la forma che il client SDK restituisce in lettura: il parser lo
+ * riconosce dalla struttura, non da `instanceof`, quindi qui basta riprodurla.
+ * Un sentinel `serverTimestamp()` non risolto **non** deve passare, ed è
+ * verificato da un test dedicato.
+ */
+function ts(millis: number) {
+  return {
+    seconds: Math.floor(millis / 1000),
+    nanoseconds: (millis % 1000) * 1e6,
+    toMillis: () => millis,
+  };
+}
+
+const CREATED_AT = ts(1_760_000_000_000);
+const UPDATED_AT = ts(1_760_000_500_000);
 
 function validLabel(over: Record<string, unknown> = {}) {
   return {
@@ -143,8 +165,8 @@ function validLabel(over: Record<string, unknown> = {}) {
     nameKey: 'percorso a',
     assignedCount: 0,
     draftUsageCount: 0,
-    createdAt: { __serverTimestamp: true },
-    updatedAt: { __serverTimestamp: true },
+    createdAt: CREATED_AT,
+    updatedAt: UPDATED_AT,
     ...over,
   };
 }
@@ -157,7 +179,7 @@ async function seedLabel(over: Record<string, unknown> = {}) {
     ownerUid: OWNER_UID,
     labelId: label.labelId,
     nameKey: label.nameKey,
-    createdAt: { __serverTimestamp: true },
+    createdAt: CREATED_AT,
   });
   return { label, reservationId };
 }
@@ -235,6 +257,110 @@ describe('parseDifferentiationLabel — fail-closed', () => {
         parseDifferentiationLabel('label-1', validLabel({ draftUsageCount: bad }), OWNER_UID),
       ).toThrow(DifferentiationLabelError);
     }
+  });
+
+  // ── Canonicità del nome ────────────────────────────────────────────────
+  // Un documento con spazi non canonici o un `nameKey` estraneo non è
+  // «leggermente sporco»: la sua prenotazione è derivata da un `nameKey`
+  // diverso e quindi punta a un altro documento. Va rifiutato, non ripulito.
+
+  it('rifiuta un nome con spazi esterni', () => {
+    expect(() =>
+      parseDifferentiationLabel(
+        'label-1',
+        validLabel({ name: ' Percorso A ', nameKey: 'percorso a' }),
+        OWNER_UID,
+      ),
+    ).toThrow(/forma canonica/);
+  });
+
+  it('rifiuta un nome con spazi interni non canonici', () => {
+    expect(() =>
+      parseDifferentiationLabel(
+        'label-1',
+        validLabel({ name: 'Percorso  A', nameKey: 'percorso  a' }),
+        OWNER_UID,
+      ),
+    ).toThrow(/forma canonica/);
+  });
+
+  it('rifiuta un nome con caratteri di controllo', () => {
+    expect(() =>
+      parseDifferentiationLabel(
+        'label-1',
+        validLabel({ name: 'Percorso\u0000A', nameKey: 'percorso\u0000a' }),
+        OWNER_UID,
+      ),
+    ).toThrow(/non valido/);
+  });
+
+  it('rifiuta un nome oltre i 40 code point', () => {
+    const long = 'a'.repeat(41);
+    expect(() =>
+      parseDifferentiationLabel('label-1', validLabel({ name: long, nameKey: long }), OWNER_UID),
+    ).toThrow(/non valido/);
+  });
+
+  it('rifiuta un nome oltre i 120 byte pur restando entro i code point', () => {
+    // 31 emoji = 31 code point (entro il limite) ma 124 byte (oltre).
+    const heavy = '🎯'.repeat(31);
+    expect(countCodePoints(heavy)).toBeLessThanOrEqual(40);
+    expect(countUtf8Bytes(heavy)).toBeGreaterThan(120);
+    expect(() =>
+      parseDifferentiationLabel('label-1', validLabel({ name: heavy, nameKey: heavy }), OWNER_UID),
+    ).toThrow(/non valido/);
+  });
+
+  it('rifiuta un nameKey non derivato dal nome', () => {
+    expect(() =>
+      parseDifferentiationLabel('label-1', validLabel({ nameKey: 'chiave-estranea' }), OWNER_UID),
+    ).toThrow(/non derivata dal nome/);
+  });
+
+  // ── Timestamp ──────────────────────────────────────────────────────────
+
+  it('rifiuta timestamp assenti', () => {
+    expect(() =>
+      parseDifferentiationLabel('label-1', validLabel({ createdAt: null }), OWNER_UID),
+    ).toThrow(/date mancanti/);
+    expect(() =>
+      parseDifferentiationLabel('label-1', validLabel({ updatedAt: undefined }), OWNER_UID),
+    ).toThrow(DifferentiationLabelError);
+  });
+
+  it('rifiuta timestamp non validi, sentinel non risolti inclusi', () => {
+    for (const bad of [
+      'ieri',
+      1_760_000_000_000,
+      new Date('2026-08-01'),
+      { __serverTimestamp: true },
+      { seconds: 'x', nanoseconds: 0, toMillis: () => 0 },
+    ]) {
+      expect(() =>
+        parseDifferentiationLabel('label-1', validLabel({ createdAt: bad }), OWNER_UID),
+      ).toThrow(/date mancanti/);
+    }
+  });
+
+  it('rifiuta updatedAt precedente a createdAt', () => {
+    expect(() =>
+      parseDifferentiationLabel(
+        'label-1',
+        validLabel({ createdAt: ts(2000), updatedAt: ts(1000) }),
+        OWNER_UID,
+      ),
+    ).toThrow(/date incoerenti/);
+  });
+
+  it('accetta updatedAt uguale a createdAt (documento appena creato)', () => {
+    const same = ts(1000);
+    expect(
+      parseDifferentiationLabel(
+        'label-1',
+        validLabel({ createdAt: same, updatedAt: same }),
+        OWNER_UID,
+      ).name,
+    ).toBe('Percorso A');
   });
 });
 
@@ -347,7 +473,7 @@ describe('createDifferentiationLabel', () => {
           ownerUid: OWNER_UID,
           labelId: 'label-altra-scheda',
           nameKey,
-          createdAt: { __serverTimestamp: true },
+          createdAt: CREATED_AT,
         });
         store.set(
           'differentiationLabels/label-altra-scheda',
@@ -374,6 +500,128 @@ describe('createDifferentiationLabel', () => {
     await createDifferentiationLabel('Obiettivi essenziali', OWNER_UID, fakeDb);
     expect(labelDocs()).toHaveLength(2);
     expect(reservationDocs()).toHaveLength(2);
+  });
+});
+
+/**
+ * Il replay va **dimostrato**, non dedotto dalla sola presenza della
+ * prenotazione: una prenotazione con il nostro `labelId` prova soltanto che
+ * qualcuno l'ha scritta, non che il commit sia arrivato in fondo.
+ */
+describe('createDifferentiationLabel — replay', () => {
+  /** Prepara lo stato «commit precedente riuscito» con il labelId che il mock genererà. */
+  async function seedReplayState(labelOver: Record<string, unknown> = {}) {
+    const labelId = 'label-new-1'; // primo id prodotto dal randomUUID deterministico
+    const nameKey = 'percorso a';
+    const reservationId = await computeLabelReservationId(OWNER_UID, nameKey);
+    store.set(`differentiationLabelNames/${reservationId}`, {
+      ownerUid: OWNER_UID,
+      labelId,
+      nameKey,
+      createdAt: CREATED_AT,
+    });
+    if (labelOver !== null) {
+      store.set(`differentiationLabels/${labelId}`, validLabel({ labelId, ...labelOver }));
+    }
+    return { labelId, reservationId };
+  }
+
+  it('prenotazione nostra + etichetta coerente ⇒ replay senza scritture né secondo audit', async () => {
+    const { labelId } = await seedReplayState();
+    const before = new Map(store);
+
+    const result = await createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb);
+
+    expect(result.labelId).toBe(labelId);
+    expect(result.name).toBe('Percorso A');
+    expect(auditWrites()).toHaveLength(0);
+    expect(store.size).toBe(before.size);
+  });
+
+  it('prenotazione nostra senza etichetta ⇒ corrupted_state', async () => {
+    const labelId = 'label-new-1';
+    const reservationId = await computeLabelReservationId(OWNER_UID, 'percorso a');
+    store.set(`differentiationLabelNames/${reservationId}`, {
+      ownerUid: OWNER_UID,
+      labelId,
+      nameKey: 'percorso a',
+      createdAt: CREATED_AT,
+    });
+
+    await expect(createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb)).rejects.toMatchObject(
+      {
+        code: 'corrupted_state',
+      },
+    );
+    expect(labelDocs()).toHaveLength(0);
+    expect(auditWrites()).toHaveLength(0);
+  });
+
+  it('etichetta malformata ⇒ corrupted_state', async () => {
+    await seedReplayState({ assignedCount: 'zero' });
+
+    await expect(createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb)).rejects.toMatchObject(
+      {
+        code: 'corrupted_state',
+      },
+    );
+    expect(auditWrites()).toHaveLength(0);
+  });
+
+  it('nome divergente sull’etichetta esistente ⇒ corrupted_state', async () => {
+    // Documento internamente coerente, ma non è quello che questa creazione
+    // avrebbe prodotto: la prenotazione dice «percorso a», l'etichetta no.
+    await seedReplayState({ name: 'Gruppo 2', nameKey: 'gruppo 2' });
+
+    await expect(createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb)).rejects.toMatchObject(
+      {
+        code: 'corrupted_state',
+      },
+    );
+    expect(auditWrites()).toHaveLength(0);
+  });
+
+  it('contatore già positivo ⇒ corrupted_state', async () => {
+    await seedReplayState({ assignedCount: 1 });
+
+    await expect(createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb)).rejects.toMatchObject(
+      {
+        code: 'corrupted_state',
+      },
+    );
+    expect(auditWrites()).toHaveLength(0);
+  });
+
+  it('prenotazione con chiavi extra ⇒ corrupted_state', async () => {
+    const { reservationId } = await seedReplayState();
+    store.set(`differentiationLabelNames/${reservationId}`, {
+      ...(store.get(`differentiationLabelNames/${reservationId}`) as Record<string, unknown>),
+      note: 'estranea',
+    });
+
+    await expect(createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb)).rejects.toMatchObject(
+      {
+        code: 'corrupted_state',
+      },
+    );
+    expect(auditWrites()).toHaveLength(0);
+  });
+
+  it('prenotazione senza createdAt valido ⇒ corrupted_state', async () => {
+    const { reservationId } = await seedReplayState();
+    store.set(`differentiationLabelNames/${reservationId}`, {
+      ownerUid: OWNER_UID,
+      labelId: 'label-new-1',
+      nameKey: 'percorso a',
+      createdAt: 'ieri',
+    });
+
+    await expect(createDifferentiationLabel('Percorso A', OWNER_UID, fakeDb)).rejects.toMatchObject(
+      {
+        code: 'corrupted_state',
+      },
+    );
+    expect(auditWrites()).toHaveLength(0);
   });
 });
 
@@ -458,7 +706,7 @@ describe('renameDifferentiationLabel', () => {
       ownerUid: OWNER_UID,
       labelId: 'label-diversa',
       nameKey: label.nameKey,
-      createdAt: { __serverTimestamp: true },
+      createdAt: CREATED_AT,
     });
 
     await expect(
@@ -471,6 +719,43 @@ describe('renameDifferentiationLabel', () => {
     await expect(
       renameDifferentiationLabel('label-assente', 'Gruppo 2', OWNER_UID, fakeDb),
     ).rejects.toMatchObject({ code: 'label_not_found' });
+  });
+
+  it('stato parziale (nuova prenotazione nostra ma etichetta non rinominata) ⇒ corrupted_state', async () => {
+    // Non è il replay di una rinomina riuscita: una rinomina valida è atomica e
+    // avrebbe già aggiornato l'etichetta e rilasciato la vecchia prenotazione.
+    const { label } = await seedLabel();
+    const nextReservationId = await computeLabelReservationId(OWNER_UID, 'gruppo 2');
+    store.set(`differentiationLabelNames/${nextReservationId}`, {
+      ownerUid: OWNER_UID,
+      labelId: label.labelId,
+      nameKey: 'gruppo 2',
+      createdAt: CREATED_AT,
+    });
+    const before = new Map(store);
+
+    await expect(
+      renameDifferentiationLabel(label.labelId, 'Gruppo 2', OWNER_UID, fakeDb),
+    ).rejects.toMatchObject({ code: 'corrupted_state' });
+
+    // Zero scritture: l'etichetta conserva il vecchio nome e nessuna
+    // prenotazione viene toccata.
+    expect(store.size).toBe(before.size);
+    expect(store.get(`differentiationLabels/${label.labelId}`)!.name).toBe('Percorso A');
+    expect(auditWrites()).toHaveLength(0);
+  });
+
+  it('il replay di una rinomina già committata è un no-op, non uno stato parziale', async () => {
+    // Rinomina già avvenuta: l'etichetta porta il nuovo nameKey e possiede la
+    // prenotazione corrispondente. Ripetere la stessa richiesta non scrive.
+    const { label } = await seedLabel({ name: 'Gruppo 2', nameKey: 'gruppo 2' });
+    const before = new Map(store);
+
+    const result = await renameDifferentiationLabel(label.labelId, 'Gruppo 2', OWNER_UID, fakeDb);
+
+    expect(result.name).toBe('Gruppo 2');
+    expect(store.size).toBe(before.size);
+    expect(auditWrites()).toHaveLength(0);
   });
 
   it('rinomina contro eliminazione: l’eliminazione vince, la rinomina fallisce', async () => {

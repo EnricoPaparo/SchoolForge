@@ -26,6 +26,9 @@ vi.mock('../../repository/differentiation/differentiationLabelsService.js', asyn
 });
 
 import { LabelsTab } from '../LabelsTab.js';
+// Il validatore vero: i test sui limiti devono vedere gli stessi messaggi che
+// il service farebbe emergere, non una loro imitazione.
+import { normalizeLabelName } from '../../repository/differentiation/labelName.js';
 
 const OWNER_UID = 'owner-uid';
 
@@ -126,12 +129,85 @@ describe('LabelsTab — creazione', () => {
     await waitFor(() => expect(screen.queryByLabelText('Nome etichetta')).toBeNull());
   });
 
-  it('mostra il contatore dei caratteri', () => {
+  it('mostra il contatore dei caratteri in code point', () => {
     renderTab();
     fireEvent.click(screen.getByRole('button', { name: /Nuova etichetta/ }));
     expect(screen.getByText('0/40')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Nome etichetta'), { target: { value: 'Abc' } });
     expect(screen.getByText('3/40')).toBeTruthy();
+    // Tre emoji = 3 code point, non 6 unità UTF-16.
+    fireEvent.change(screen.getByLabelText('Nome etichetta'), { target: { value: '🎯🎯🎯' } });
+    expect(screen.getByText('3/40')).toBeTruthy();
+  });
+
+  /**
+   * `maxLength` HTML conta unità UTF-16: lasciarlo taglierebbe a 20 un nome di
+   * 40 emoji, e lo farebbe **in silenzio**. Il limite lo decide il validatore.
+   */
+  it('nessun maxLength sugli input: il valore non viene mai troncato dal browser', () => {
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: /Nuova etichetta/ }));
+    const input = screen.getByLabelText('Nome etichetta') as HTMLInputElement;
+    expect(input.getAttribute('maxlength')).toBeNull();
+
+    // 40 code point fuori dal BMP: con maxLength=40 il campo ne terrebbe 20.
+    const forty = '🎯'.repeat(40);
+    fireEvent.change(input, { target: { value: forty } });
+    expect(input.value).toBe(forty);
+    expect([...input.value].length).toBe(40);
+    expect(screen.getByText('40/40')).toBeTruthy();
+  });
+
+  it('un nome entro entrambi i limiti è accettato, emoji comprese', async () => {
+    const created = {
+      labelId: 'new',
+      ownerUid: OWNER_UID,
+      name: '🎯'.repeat(30),
+      nameKey: '🎯'.repeat(30),
+      assignedCount: 0,
+      draftUsageCount: 0,
+    };
+    mockCreate.mockResolvedValue(created);
+    const handlers = renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: /Nuova etichetta/ }));
+    // 30 emoji = 30 code point e 120 byte: esattamente al limite in byte.
+    fireEvent.change(screen.getByLabelText('Nome etichetta'), {
+      target: { value: '🎯'.repeat(30) },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Nuova etichetta' }));
+
+    await waitFor(() => expect(handlers.onLabelCreated).toHaveBeenCalledWith(created));
+  });
+
+  it('oltre i code point mostra un errore leggibile e conserva il testo', async () => {
+    mockCreate.mockImplementation((raw: string) => Promise.resolve(normalizeLabelName(raw)));
+    renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: /Nuova etichetta/ }));
+    const input = screen.getByLabelText('Nome etichetta') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'a'.repeat(41) } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Nuova etichetta' }));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/40 caratteri/));
+    expect((screen.getByLabelText('Nome etichetta') as HTMLInputElement).value).toBe(
+      'a'.repeat(41),
+    );
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('oltre i byte, pur restando entro i code point, mostra l’errore sul limite in byte', async () => {
+    // 31 emoji: 31 code point (entro 40) ma 124 byte (oltre 120).
+    const heavy = '🎯'.repeat(31);
+    mockCreate.mockImplementation((raw: string) => Promise.resolve(normalizeLabelName(raw)));
+    renderTab();
+
+    fireEvent.click(screen.getByRole('button', { name: /Nuova etichetta/ }));
+    fireEvent.change(screen.getByLabelText('Nome etichetta'), { target: { value: heavy } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Nuova etichetta' }));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/120 byte/));
+    expect((screen.getByLabelText('Nome etichetta') as HTMLInputElement).value).toBe(heavy);
   });
 
   it('su errore conserva il testo digitato e mostra il messaggio', async () => {

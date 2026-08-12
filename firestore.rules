@@ -655,7 +655,18 @@ service cloud.firestore {
         && request.resource.data.assignedCount <= resource.data.assignedCount + 1
         && request.resource.data.draftUsageCount >= resource.data.draftUsageCount - 1
         && request.resource.data.draftUsageCount <= resource.data.draftUsageCount + 1;
-      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      // Difesa in profondita': un'etichetta ancora in uso non e' eliminabile
+      // nemmeno da una scrittura diretta che aggiri il service. Le Rules non
+      // possono garantire l'atomicita' semantica dell'operazione (eliminare
+      // anche la prenotazione e scrivere l'audit resta compito della
+      // transazione del service), ma questa condizione sui contatori la
+      // possono verificare, e allora la verificano.
+      allow delete: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.assignedCount is int
+        && resource.data.assignedCount == 0
+        && resource.data.draftUsageCount is int
+        && resource.data.draftUsageCount == 0;
     }
 
     // --- differentiationLabelNames/{reservationId} (VDIF-01) ---

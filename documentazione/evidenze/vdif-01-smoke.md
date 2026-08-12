@@ -41,6 +41,7 @@ ritagliato invece di un vero viewport mobile.
 | [`vdif-01-smoke/vdif01-1440-vuoto.png`](vdif-01-smoke/vdif01-1440-vuoto.png) | 1440 × 900 | stato vuoto |
 | [`vdif-01-smoke/vdif01-390-dialog.png`](vdif-01-smoke/vdif01-390-dialog.png) | 390 × 844 | dialog «Nuova etichetta» |
 | [`vdif-01-smoke/vdif01-320-dialog.png`](vdif-01-smoke/vdif01-320-dialog.png) | 320 × 640 | dialog alla larghezza minima |
+| [`vdif-01-smoke/vdif01-390-dialog-oltre-limite.png`](vdif-01-smoke/vdif01-390-dialog-oltre-limite.png) | 390 × 844 | **VDIF-01-REVIEW-FIX** — contatore oltre il limite (`41/40` in rosso) con il valore **integro** nel campo |
 
 ## 3. Misure raccolte
 
@@ -61,6 +62,22 @@ Su tutte e quattro le larghezze, lista e dialog aperti:
 - **eliminazione bloccata**: sulla card in uso la voce «Elimina etichetta» è
   `disabled` e porta `aria-describedby` verso un testo che nomina gli utilizzi
   reali — «assegnata a 2 studenti e usata in 1 bozza di verifica».
+
+## 3a. Smoke mirato dopo VDIF-01-REVIEW-FIX
+
+Il DOM dei dialog è cambiato (rimozione di `maxLength`, stato «oltre il limite»
+del contatore), quindi lo smoke è stato rieseguito sui dialog a 390 e 320 px:
+
+- **`maxlength` assente** dall'input di creazione e da quello di rinomina;
+- **40 emoji digitate restano 40 code point**: il campo non tronca (con
+  `maxLength=40` ne avrebbe tenute 20, contando unità UTF-16) e il contatore
+  legge `40/40`;
+- **41 caratteri** ⇒ contatore `41/40` colorato `rgb(248, 113, 113)`
+  (`--color-error`), valore integro, nessun troncamento;
+- dialog entro la viewport (270 px su 844 e su 640), input 44 px, pulsanti del
+  footer 44 px, focus iniziale sull'input, nessuna textarea;
+- **nessun overflow orizzontale** a 390 e 320 px, con e senza dialog aperto;
+- le card già approvate non cambiano: nessun intervento sul loro markup.
 
 ## 4. Console
 

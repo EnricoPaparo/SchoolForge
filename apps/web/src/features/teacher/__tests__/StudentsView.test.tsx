@@ -294,6 +294,94 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
   });
 
+  /**
+   * Il punto: `runAction` ricarica i dati **core** perché approvare o spostare
+   * uno studente li cambia davvero. Le etichette no — nessuna azione su uno
+   * studente le tocca in VDIF-01 — quindi rileggerle sarebbe una query pagata
+   * per ottenere gli stessi byte.
+   */
+  describe('nessuna rilettura delle etichette dopo le azioni studente', () => {
+    async function actOn(cardName: string, action: RegExp) {
+      fireEvent.click(studentMenuItem(cardName, action));
+      await waitFor(() => expect(mockListStudents.mock.calls.length).toBeGreaterThan(1));
+    }
+
+    it('al mount le etichette sono caricate una sola volta', async () => {
+      mockListStudents.mockResolvedValue(STUDENTS);
+      render(<StudentsView ownerUid={OWNER_UID} />);
+      await waitFor(() => screen.getByText('Ada Approved'));
+      expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('approvare uno studente ricarica i core ma non le etichette', async () => {
+      mockListStudents.mockResolvedValue(STUDENTS);
+      render(<StudentsView ownerUid={OWNER_UID} />);
+      await waitFor(() => screen.getByText('Pia Pending'));
+
+      await actOn('Pia Pending', /^Approva/);
+
+      expect(mockApproveStudent).toHaveBeenCalledOnce();
+      expect(mockListStudents).toHaveBeenCalledTimes(2);
+      expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('bloccare e rimettere in attesa non ricaricano le etichette', async () => {
+      mockListStudents.mockResolvedValue(STUDENTS);
+      render(<StudentsView ownerUid={OWNER_UID} />);
+      await waitFor(() => screen.getByText('Ada Approved'));
+
+      await actOn('Ada Approved', /^Blocca/);
+      await actOn('Bo Blocked', /^Rimetti in attesa/);
+
+      expect(mockBlockStudent).toHaveBeenCalledOnce();
+      expect(mockResetStudentToPending).toHaveBeenCalledOnce();
+      expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('cambiare classe non ricarica le etichette', async () => {
+      mockListStudents.mockResolvedValue(STUDENTS);
+      render(<StudentsView ownerUid={OWNER_UID} />);
+      await waitFor(() => screen.getByText('Ada Approved'));
+
+      const select = within(studentCard('Ada Approved')).getByLabelText(
+        'Classe di Ada Approved',
+      ) as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: 'class-2' } });
+
+      await waitFor(() => expect(mockAssignStudentClass).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockListStudents.mock.calls.length).toBeGreaterThan(1));
+      expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('rimuovere uno studente non ricarica le etichette', async () => {
+      mockListStudents.mockResolvedValue(STUDENTS);
+      render(<StudentsView ownerUid={OWNER_UID} />);
+      await waitFor(() => screen.getByText('Bo Blocked'));
+
+      fireEvent.click(studentMenuItem('Bo Blocked', /^Rimuovi/));
+      fireEvent.click(within(studentCard('Bo Blocked')).getByRole('button', { name: 'Conferma' }));
+
+      await waitFor(() => expect(mockRemoveStudent).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockListStudents.mock.calls.length).toBeGreaterThan(1));
+      expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('il retry della scheda Etichette rilegge solo le etichette', async () => {
+      mockListStudents.mockResolvedValue(STUDENTS);
+      mockListDifferentiationLabels.mockRejectedValueOnce(new Error('Etichette non leggibili.'));
+      render(<StudentsView ownerUid={OWNER_UID} />);
+
+      fireEvent.click(await screen.findByRole('tab', { name: 'Etichette' }));
+      const panel = screen.getByRole('tabpanel', { name: 'Etichette' });
+      fireEvent.click(within(panel).getByRole('button', { name: 'Riprova' }));
+
+      await waitFor(() => expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(2));
+      // Il retry non tocca studenti, classi o impostazioni.
+      expect(mockListStudents).toHaveBeenCalledTimes(1);
+      expect(mockListClasses).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('un errore sulle sole etichette non nasconde studenti e classi', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     mockListDifferentiationLabels.mockRejectedValue(new Error('Etichette non leggibili.'));

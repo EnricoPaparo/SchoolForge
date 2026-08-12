@@ -1787,17 +1787,54 @@ GVDIF **aperto**.
 Il contratto VDIF-00 non prevede un `requestId` persistito, e VDIF-01 **non ne
 inventa uno**. L'idempotenza realmente ottenuta è quella della transazione:
 
-- **retry interni all'SDK** (contesa) riusano lo stesso `labelId`, quindi una
-  prenotazione già presente con quel `labelId` è riconosciuta come il proprio
-  commit riuscito e **non scrive nulla**;
+- **retry interni all'SDK** (contesa) riusano lo stesso `labelId`. Una
+  prenotazione già presente con quel `labelId` **non basta** a dichiarare
+  riuscito il tentativo: prova solo che qualcuno l'ha scritta. Il replay viene
+  **dimostrato** rileggendo l'etichetta nella stessa transazione e verificando
+  che esista, sia integra, appartenga all'owner, abbia esattamente il nome e la
+  chiave richiesti e i due contatori a zero — cioè che lo stato sia *identico* a
+  quello che la chiamata produrrebbe. Solo allora restituisce il documento
+  esistente senza scrivere e senza un secondo audit;
+- **prenotazione presente ma etichetta assente, malformata, con nome diverso o
+  con un contatore già positivo** ⇒ `corrupted_state`, zero scritture. Uno stato
+  parziale non viene completato a posteriori;
 - **una risposta persa seguita da una nuova azione del docente** genera un
   `labelId` nuovo e produce `duplicate_name`. È l'esito **corretto e sicuro** —
   non nasce una seconda etichetta omonima — ma **non è un replay silenzioso**, e
   la UI lo mostra come conflitto di nome. Chi leggerà «replay idempotente» in
   §5.A.6 deve intendere questo.
 
+**Rinomina: nessun falso replay.** Se la nuova prenotazione esiste già con il
+*nostro* `labelId` **mentre l'etichetta porta ancora il vecchio `nameKey`**, lo
+stato è parziale, non un replay: una rinomina valida è atomica e avrebbe già
+aggiornato l'etichetta e rilasciato la vecchia prenotazione. Il servizio
+risponde `corrupted_state` con zero scritture. Il replay vero non passa mai di
+lì: a rinomina committata l'etichetta ha già il nuovo `nameKey`, quindi vecchia
+e nuova prenotazione coincidono e il ramo di uguaglianza la riconosce come
+no-op.
+
 Il doppio click è protetto in modo **sincrono** (un `ref`, non uno stato React:
 il secondo click parte prima del re-render).
+
+### 18.3a Canonicità verificata in lettura
+
+`parseDifferentiationLabel` non si limita a tipi e contatori: verifica che
+`name` sia **esattamente** ciò che `normalizeLabelName` produrrebbe (quindi
+niente spazi esterni o doppi, niente caratteri di controllo, entro 40 code point
+e 120 byte) e che `nameKey` sia **esattamente** `computeNameKey(name)`. Verifica
+inoltre che `createdAt` e `updatedAt` siano `Timestamp` Firestore validi — un
+sentinel `serverTimestamp()` non risolto **non** passa — e che `updatedAt` non
+preceda `createdAt`.
+
+Il motivo è concreto: la prenotazione è derivata dal `nameKey`. Un documento con
+un `nameKey` estraneo o un nome non canonico avrebbe la propria prenotazione
+**altrove**, e l'unicità smetterebbe di significare qualcosa. Nessuna
+correzione in lettura: il documento viene rifiutato, e con esso l'intera lista.
+
+Il parser della prenotazione è a sua volta **chiuso**: quattro chiavi esatte,
+`ownerUid`, `labelId`, `nameKey` attesi e `createdAt` valido. Il path resta
+derivato autorevolmente da `(ownerUid, nameKey)` dal chiamante; né qui né nelle
+Rules si ricalcola SHA-256.
 
 ### 18.4 Confine Rules/service, misurato
 
@@ -1806,6 +1843,13 @@ non-negatività, `labelId == document id`, immutabilità di
 `labelId`/`ownerUid`/`createdAt`, creazione con contatori a zero, movimento di
 **una sola unità** per scrittura, `update` sulla prenotazione **sempre negato**,
 e negazione totale per studente, altro utente autenticato e anonimo.
+
+**`delete` difeso anche dalle Rules.** Un'etichetta con `assignedCount` o
+`draftUsageCount` diversi da zero — o con un contatore mancante o malformato —
+**non è eliminabile nemmeno da una scrittura diretta** che aggirasse il service.
+È difesa in profondità, non un doppione: la transazione completa (etichetta +
+prenotazione + audit in un solo commit) resta compito del service, perché quella
+le Rules non la possono esprimere; la condizione «non è più in uso», invece, sì.
 
 CEL **non** può: calcolare SHA-256 (quindi non verifica che `reservationId` sia
 l'hash della coppia), normalizzare Unicode (quindi non verifica che `nameKey`
@@ -1822,8 +1866,10 @@ prenotazione. Nessuna scrittura non atomica è nascosta dietro il flusso.
 
 | Operazione | Letture query | Letture transazionali | Scritture |
 |---|---|---|---|
-| apertura sezione Studenti | +1 query etichette nel `Promise.all` esistente | 0 | 0 |
+| apertura sezione Studenti | +1 query etichette, in parallelo al caricamento core | 0 | 0 |
 | apertura scheda Etichette | **0** (già in memoria) | 0 | 0 |
+| **azione su uno studente** (approva, blocca, rimetti in attesa, cambia classe, rimuovi) | **0 query etichette** — si ricaricano solo i dati core, come prima di VDIF-01 | 0 | 0 |
+| retry esplicito della scheda Etichette | 1 query etichette, **nessun** ricaricamento di studenti/classi/impostazioni | 0 | 0 |
 | creazione | 0 | 1 (prenotazione) | 3 (etichetta + prenotazione + audit) |
 | rinomina verso un nuovo nome | 0 | 3 (etichetta + prenotazione vecchia + nuova) | 4 (prenotazione nuova + update + delete vecchia + audit) |
 | rinomina della sola grafia | 0 | 2 | 2 (update + audit) |

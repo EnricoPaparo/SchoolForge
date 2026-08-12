@@ -260,16 +260,29 @@ export function LabelsTab({
             <div className={styles.field}>
               <div className={styles.fieldHead}>
                 <label htmlFor="new-label-name">Nome etichetta</label>
-                <span className={styles.counter} aria-live="polite">
+                <span
+                  className={`${styles.counter} ${
+                    countCodePoints(createName) > LABEL_NAME_MAX_CODE_POINTS
+                      ? styles.counterOver
+                      : ''
+                  }`}
+                  aria-live="polite"
+                >
                   {countCodePoints(createName)}/{LABEL_NAME_MAX_CODE_POINTS}
                 </span>
               </div>
+              {/*
+                Nessun `maxLength`: l'attributo HTML conta **unità UTF-16**, non
+                code point, quindi taglierebbe a metà un nome di 40 emoji — e lo
+                farebbe in silenzio, che è il modo peggiore. Il limite lo decide
+                `normalizeLabelName`, che conta code point e byte separatamente
+                e produce un errore leggibile.
+              */}
               <input
                 id="new-label-name"
                 type="text"
                 className={styles.input}
                 value={createName}
-                maxLength={LABEL_NAME_MAX_CODE_POINTS}
                 autoFocus
                 aria-describedby="new-label-hint"
                 aria-invalid={createError ? true : undefined}
@@ -309,16 +322,21 @@ export function LabelsTab({
             <div className={styles.field}>
               <div className={styles.fieldHead}>
                 <label htmlFor="edit-label-name">Nome etichetta</label>
-                <span className={styles.counter} aria-live="polite">
+                <span
+                  className={`${styles.counter} ${
+                    countCodePoints(editName) > LABEL_NAME_MAX_CODE_POINTS ? styles.counterOver : ''
+                  }`}
+                  aria-live="polite"
+                >
                   {countCodePoints(editName)}/{LABEL_NAME_MAX_CODE_POINTS}
                 </span>
               </div>
+              {/* Nessun `maxLength`: vedi la nota nel dialog di creazione. */}
               <input
                 id="edit-label-name"
                 type="text"
                 className={styles.input}
                 value={editName}
-                maxLength={LABEL_NAME_MAX_CODE_POINTS}
                 autoFocus
                 aria-invalid={editError ? true : undefined}
                 aria-errormessage={editError ? 'edit-label-error' : undefined}

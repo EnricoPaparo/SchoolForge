@@ -353,6 +353,69 @@ describe('Firestore rules — differentiationLabels (VDIF-01)', () => {
     );
   });
 
+  /**
+   * Difesa in profondità sull'eliminazione: il service esegue la transazione
+   * completa (etichetta + prenotazione + audit), ma la condizione «non è più in
+   * uso» le Rules la possono verificare da sole, e allora la verificano. Una
+   * scrittura diretta che aggirasse il service non può cancellare un'etichetta
+   * ancora assegnata o ancora usata da una bozza.
+   */
+  describe('delete difeso dai contatori', () => {
+    it('consentito con entrambi i contatori a zero', async () => {
+      await seedOwner();
+      await seedLabel();
+      await assertSucceeds(deleteDoc(doc(ownerDb(), 'differentiationLabels', LABEL_ID)));
+    });
+
+    it('negato con assignedCount positivo', async () => {
+      await seedOwner();
+      await seedLabel({ assignedCount: 1 });
+      await assertFails(deleteDoc(doc(ownerDb(), 'differentiationLabels', LABEL_ID)));
+    });
+
+    it('negato con draftUsageCount positivo', async () => {
+      await seedOwner();
+      await seedLabel({ draftUsageCount: 2 });
+      await assertFails(deleteDoc(doc(ownerDb(), 'differentiationLabels', LABEL_ID)));
+    });
+
+    it('negato con entrambi positivi', async () => {
+      await seedOwner();
+      await seedLabel({ assignedCount: 3, draftUsageCount: 1 });
+      await assertFails(deleteDoc(doc(ownerDb(), 'differentiationLabels', LABEL_ID)));
+    });
+
+    it('negato con un contatore malformato', async () => {
+      await seedOwner();
+      await seedLabel({ assignedCount: 'zero' });
+      await assertFails(deleteDoc(doc(ownerDb(), 'differentiationLabels', LABEL_ID)));
+    });
+
+    it('negato con un contatore assente', async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'differentiationLabels', LABEL_ID), {
+          labelId: LABEL_ID,
+          ownerUid: OWNER_UID,
+          name: 'Percorso A',
+          nameKey: 'percorso a',
+          assignedCount: 0,
+          createdAt: new Date('2026-08-01'),
+          updatedAt: new Date('2026-08-01'),
+        });
+      });
+      await seedOwner();
+      await assertFails(deleteDoc(doc(ownerDb(), 'differentiationLabels', LABEL_ID)));
+    });
+
+    it('negato a un altro owner, allo studente e all’anonimo anche con contatori a zero', async () => {
+      await seedOwner();
+      await seedLabel();
+      for (const db of [otherDb(), studentDb(), anonDb()]) {
+        await assertFails(deleteDoc(doc(db, 'differentiationLabels', LABEL_ID)));
+      }
+    });
+  });
+
   it('un contatore non può scendere sotto zero', async () => {
     await seedOwner();
     await seedLabel();

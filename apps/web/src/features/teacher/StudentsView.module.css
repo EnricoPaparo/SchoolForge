@@ -301,6 +301,30 @@
   }
 }
 
+/*
+ * VDIF-01 — errore circoscritto alla scheda Etichette, con il proprio retry:
+ * rileggere solo le etichette costa una query, ricaricare tutta la vista ne
+ * costerebbe cinque per lo stesso risultato.
+ */
+.labelsErrorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.labelsErrorRow button {
+  min-height: 2.5rem;
+}
+
+@media (max-width: 44rem) {
+  .labelsErrorRow button {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
+  }
+}
+
 .pendingHint {
   font-size: 0.8125rem;
   color: var(--color-text-muted);

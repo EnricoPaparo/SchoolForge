@@ -72,80 +72,111 @@ function isFiniteNonNegativeInteger(value: unknown): value is number {
 }
 
 /**
+ * Un `Timestamp` Firestore, riconosciuto dalla forma invece che da
+ * `instanceof`: la stessa struttura arriva dal client SDK, dall'emulatore e
+ * dai test, e un controllo di identità di classe li distinguerebbe senza
+ * motivo. Un sentinel `serverTimestamp()` non ancora risolto **non** passa —
+ * ed è giusto: significa che stiamo leggendo qualcosa che non è mai stato
+ * committato.
+ */
+function isFirestoreTimestamp(value: unknown): value is { toMillis: () => number } {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { seconds?: unknown; nanoseconds?: unknown; toMillis?: unknown };
+  return (
+    typeof candidate.seconds === 'number' &&
+    Number.isFinite(candidate.seconds) &&
+    typeof candidate.nanoseconds === 'number' &&
+    Number.isFinite(candidate.nanoseconds) &&
+    typeof candidate.toMillis === 'function'
+  );
+}
+
+function corrupted(message: string): never {
+  throw new DifferentiationLabelError('corrupted_state', message);
+}
+
+const LABEL_KEYS = [
+  'assignedCount',
+  'createdAt',
+  'draftUsageCount',
+  'labelId',
+  'name',
+  'nameKey',
+  'ownerUid',
+  'updatedAt',
+];
+
+const RESERVATION_KEYS = ['createdAt', 'labelId', 'nameKey', 'ownerUid'];
+
+function hasExactKeys(data: DocumentData, expected: readonly string[]): boolean {
+  const keys = Object.keys(data).sort();
+  return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
+}
+
+/**
  * Parser **fail-closed** del documento etichetta.
  *
- * Verifica la forma chiusa a otto chiavi, l'identità (`labelId` == path),
- * l'ownership e i due contatori. Un documento che non passa non viene scartato
- * in silenzio: lancia, e chi legge la lista mostra un errore sull'**intera**
- * lista — una lista parziale presentata come completa è peggio di un errore,
- * perché il docente non ha modo di accorgersene.
+ * Verifica forma chiusa, identità, ownership, **canonicità del nome**,
+ * **derivazione di `nameKey` dal nome**, contatori e timestamp. Il punto che
+ * conta: `name` non è solo «una stringa non vuota», è *esattamente* ciò che
+ * `normalizeLabelName` produrrebbe, e `nameKey` è *esattamente*
+ * `computeNameKey(name)`. Senza questi due confronti un documento con spazi
+ * doppi, caratteri di controllo o una chiave estranea entrerebbe in lista come
+ * se fosse valido, e la sua prenotazione — derivata da un `nameKey` diverso —
+ * punterebbe altrove.
+ *
+ * Un documento che non passa non viene scartato né corretto in silenzio:
+ * lancia, e chi legge la lista mostra un errore sull'**intera** lista. Una
+ * lista parziale presentata come completa è peggio di un errore, perché il
+ * docente non ha modo di accorgersene.
  */
 export function parseDifferentiationLabel(
   labelId: string,
   data: DocumentData | undefined,
   ownerUid: string,
 ): DifferentiationLabelItem {
-  if (!data) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta ${labelId} non leggibile: documento assente.`,
-    );
-  }
-  const keys = Object.keys(data).sort();
-  const expected = [
-    'assignedCount',
-    'createdAt',
-    'draftUsageCount',
-    'labelId',
-    'name',
-    'nameKey',
-    'ownerUid',
-    'updatedAt',
-  ];
-  const shapeOk =
-    keys.length === expected.length && keys.every((key, index) => key === expected[index]);
-  if (!shapeOk) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta ${labelId} non leggibile: struttura del documento non riconosciuta.`,
-    );
+  if (!data) corrupted(`Etichetta ${labelId} non leggibile: documento assente.`);
+  if (!hasExactKeys(data, LABEL_KEYS)) {
+    corrupted(`Etichetta ${labelId} non leggibile: struttura del documento non riconosciuta.`);
   }
   if (data.labelId !== labelId) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta ${labelId} non leggibile: identità incoerente.`,
-    );
+    corrupted(`Etichetta ${labelId} non leggibile: identità incoerente.`);
   }
   if (data.ownerUid !== ownerUid) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta ${labelId} non leggibile: proprietario incoerente.`,
-    );
+    corrupted(`Etichetta ${labelId} non leggibile: proprietario incoerente.`);
   }
-  if (typeof data.name !== 'string' || data.name.length === 0) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta ${labelId} non leggibile: nome mancante.`,
-    );
+
+  // Canonicità: il nome persistito deve essere già la forma canonica. Se
+  // `normalizeLabelName` lo rifiuta (controlli, limiti) o lo cambierebbe
+  // (spazi), il documento non è valido — e non lo si aggiusta leggendolo.
+  let canonicalName: string;
+  try {
+    canonicalName = normalizeLabelName(data.name);
+  } catch {
+    corrupted(`Etichetta ${labelId} non leggibile: nome non valido.`);
   }
-  if (typeof data.nameKey !== 'string' || data.nameKey.length === 0) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta ${labelId} non leggibile: chiave di confronto mancante.`,
-    );
+  if (canonicalName !== data.name) {
+    corrupted(`Etichetta ${labelId} non leggibile: nome non in forma canonica.`);
   }
+  if (data.nameKey !== computeNameKey(canonicalName)) {
+    corrupted(`Etichetta ${labelId} non leggibile: chiave di confronto non derivata dal nome.`);
+  }
+
   if (!isFiniteNonNegativeInteger(data.assignedCount)) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta «${data.name}» non leggibile: contatore delle assegnazioni non valido.`,
-    );
+    corrupted(`Etichetta «${data.name}» non leggibile: contatore delle assegnazioni non valido.`);
   }
   if (!isFiniteNonNegativeInteger(data.draftUsageCount)) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
-      `Etichetta «${data.name}» non leggibile: contatore delle bozze non valido.`,
-    );
+    corrupted(`Etichetta «${data.name}» non leggibile: contatore delle bozze non valido.`);
   }
+  if (!isFirestoreTimestamp(data.createdAt) || !isFirestoreTimestamp(data.updatedAt)) {
+    corrupted(`Etichetta «${data.name}» non leggibile: date mancanti o non valide.`);
+  }
+  // Alla creazione i due timestamp coincidono (stesso commit), poi `updatedAt`
+  // può solo avanzare: un `updatedAt` anteriore descrive una storia impossibile.
+  if (data.updatedAt.toMillis() < data.createdAt.toMillis()) {
+    corrupted(`Etichetta «${data.name}» non leggibile: date incoerenti.`);
+  }
+
   return {
     labelId,
     ownerUid: data.ownerUid,
@@ -157,24 +188,32 @@ export function parseDifferentiationLabel(
 }
 
 /**
- * Verifica che una prenotazione sia coerente con l'etichetta che dovrebbe
- * detenerla. Non ricalcola l'hash del path — quello lo fa il chiamante, che
- * conosce `ownerUid` e `nameKey` e costruisce il path da lì.
+ * Parser **chiuso** della prenotazione: quattro chiavi esatte, ownership,
+ * identità dell'etichetta che la detiene, `nameKey` atteso e `createdAt`
+ * valido.
+ *
+ * Il `nameKey` atteso non viene *ricavato* da qui: è il chiamante che possiede
+ * `ownerUid` e `nameKey` e da quelli deriva il path. Questa funzione verifica
+ * che il **contenuto** concordi con quel path — è il solo modo di accorgersi di
+ * una prenotazione spostata a mano, dato che né qui né nelle Rules si può
+ * ricalcolare SHA-256.
  */
-function assertReservationMatches(
+function assertValidReservation(
   data: DocumentData | undefined,
   expected: { ownerUid: string; labelId: string; nameKey: string },
 ): void {
-  if (
-    !data ||
-    data.ownerUid !== expected.ownerUid ||
-    data.labelId !== expected.labelId ||
-    data.nameKey !== expected.nameKey
-  ) {
-    throw new DifferentiationLabelError(
-      'corrupted_state',
+  const incoherent = () =>
+    corrupted(
       `La prenotazione del nome «${expected.nameKey}» non è coerente con l’etichetta. Ricarica la pagina e riprova.`,
     );
+  if (!data || !hasExactKeys(data, RESERVATION_KEYS)) incoherent();
+  if (
+    data!.ownerUid !== expected.ownerUid ||
+    data!.labelId !== expected.labelId ||
+    data!.nameKey !== expected.nameKey ||
+    !isFirestoreTimestamp(data!.createdAt)
+  ) {
+    incoherent();
   }
 }
 
@@ -226,6 +265,14 @@ export async function listDifferentiationLabels(
  * quel labelId** è riconoscibile come il nostro stesso commit andato a buon
  * fine, non come un conflitto.
  *
+ * **Che cosa conta come replay.** Una prenotazione con il *nostro* `labelId`
+ * **non basta** a dichiarare riuscito il tentativo precedente: dimostra solo
+ * che qualcuno ha scritto quella prenotazione. Il replay è riconosciuto solo se
+ * esiste anche l'etichetta, è integra, appartiene a noi, ha esattamente il nome
+ * e la chiave richiesti e ha entrambi i contatori a zero — cioè se lo stato è
+ * *identico* a quello che questa chiamata produrrebbe. Qualunque divergenza è
+ * `corrupted_state`, non un successo silenzioso.
+ *
  * **Limite dichiarato dell'idempotenza.** Il contratto VDIF-00 non prevede un
  * `requestId` persistito, e questo service non ne inventa uno. Ne consegue che
  * l'idempotenza copre i retry *interni a questa chiamata*: se la risposta si
@@ -244,24 +291,45 @@ export async function createDifferentiationLabel(
   const reservationId = await computeLabelReservationId(ownerUid, nameKey);
   const labelId = crypto.randomUUID();
 
-  await runTransaction(db, async (transaction) => {
+  return runTransaction<DifferentiationLabelItem>(db, async (transaction) => {
     const reservationRef = doc(db, LABEL_NAMES_COLLECTION, reservationId);
     const labelRef = doc(db, LABELS_COLLECTION, labelId);
     const reservationSnap = await transaction.get(reservationRef);
 
     if (reservationSnap.exists()) {
       const data = reservationSnap.data();
-      if (data.labelId === labelId) {
-        // Replay del nostro stesso tentativo: nulla da scrivere.
-        assertReservationMatches(data, { ownerUid, labelId, nameKey });
-        return;
+      if (data.labelId !== labelId) {
+        // Prenotazione di un'altra etichetta (o orfana): mai riusata, mai
+        // sovrascritta. Per il docente è, in entrambi i casi, «nome occupato».
+        throw new DifferentiationLabelError(
+          'duplicate_name',
+          `Esiste già un’etichetta con questo nome: «${name}».`,
+        );
       }
-      // Prenotazione di un'altra etichetta (o orfana): mai riusata, mai
-      // sovrascritta. Per il docente è, in entrambi i casi, «nome occupato».
-      throw new DifferentiationLabelError(
-        'duplicate_name',
-        `Esiste già un’etichetta con questo nome: «${name}».`,
-      );
+      // Possibile replay del nostro stesso tentativo: va **dimostrato**.
+      assertValidReservation(data, { ownerUid, labelId, nameKey });
+      const existingSnap = await transaction.get(labelRef);
+      if (!existingSnap.exists()) {
+        // Prenotazione senza etichetta: il commit precedente non è mai avvenuto
+        // per intero. Non è un replay riuscito e non si ripara da soli.
+        corrupted(
+          `Il nome «${name}» risulta prenotato ma l’etichetta non esiste. Ricarica la pagina e riprova.`,
+        );
+      }
+      const existing = parseDifferentiationLabel(labelId, existingSnap.data(), ownerUid);
+      if (
+        existing.name !== name ||
+        existing.nameKey !== nameKey ||
+        existing.assignedCount !== 0 ||
+        existing.draftUsageCount !== 0
+      ) {
+        corrupted(
+          `Lo stato dell’etichetta «${name}» non corrisponde alla creazione richiesta. Ricarica la pagina e riprova.`,
+        );
+      }
+      // Stato identico a quello che avremmo prodotto: nessuna scrittura,
+      // nessun secondo evento di audit.
+      return existing;
     }
 
     transaction.set(labelRef, {
@@ -281,9 +349,8 @@ export async function createDifferentiationLabel(
       createdAt: serverTimestamp(),
     });
     writeAudit(transaction, db, ownerUid, 'label.created', labelId);
+    return { labelId, ownerUid, name, nameKey, assignedCount: 0, draftUsageCount: 0 };
   });
-
-  return { labelId, ownerUid, name, nameKey, assignedCount: 0, draftUsageCount: 0 };
 }
 
 /**
@@ -334,7 +401,7 @@ export async function renameDifferentiationLabel(
         `L’etichetta «${current.name}» non ha una prenotazione del nome valida. Ricarica la pagina e riprova.`,
       );
     }
-    assertReservationMatches(previousReservationSnap.data(), {
+    assertValidReservation(previousReservationSnap.data(), {
       ownerUid,
       labelId,
       nameKey: current.nameKey,
@@ -353,23 +420,34 @@ export async function renameDifferentiationLabel(
     const nextReservationRef = doc(db, LABEL_NAMES_COLLECTION, nextReservationId);
     const nextReservationSnap = await transaction.get(nextReservationRef);
     if (nextReservationSnap.exists()) {
-      const data = nextReservationSnap.data();
-      if (data.labelId !== labelId) {
+      if (nextReservationSnap.data().labelId !== labelId) {
         throw new DifferentiationLabelError(
           'duplicate_name',
           `Esiste già un’etichetta con questo nome: «${name}».`,
         );
       }
-      // Prenotazione già nostra: replay di questa stessa rinomina.
-      assertReservationMatches(data, { ownerUid, labelId, nameKey });
-    } else {
-      transaction.set(nextReservationRef, {
-        ownerUid,
-        labelId,
-        nameKey,
-        createdAt: serverTimestamp(),
-      });
+      /*
+       * Prenotazione nuova già nostra **mentre l'etichetta porta ancora il
+       * vecchio `nameKey`**: non è il replay di una rinomina riuscita. Una
+       * rinomina valida è atomica — avrebbe aggiornato l'etichetta e rilasciato
+       * la vecchia prenotazione nello stesso commit — quindi questo stato è
+       * parziale e non va completato a posteriori.
+       *
+       * Il replay vero non arriva mai qui: se la rinomina è già stata
+       * committata, l'etichetta ha già il nuovo `nameKey`, quindi
+       * `previousReservationId === nextReservationId` e il ramo precedente la
+       * riconosce come no-op.
+       */
+      corrupted(
+        `Il nome «${name}» risulta già prenotato da questa etichetta, ma l’etichetta non è stata rinominata. Ricarica la pagina e riprova.`,
+      );
     }
+    transaction.set(nextReservationRef, {
+      ownerUid,
+      labelId,
+      nameKey,
+      createdAt: serverTimestamp(),
+    });
 
     transaction.update(labelRef, { name, nameKey, updatedAt: serverTimestamp() });
     transaction.delete(doc(db, LABEL_NAMES_COLLECTION, previousReservationId));
@@ -416,7 +494,7 @@ export async function deleteDifferentiationLabel(
         `L’etichetta «${current.name}» non ha una prenotazione del nome valida. Ricarica la pagina e riprova.`,
       );
     }
-    assertReservationMatches(reservationSnap.data(), {
+    assertValidReservation(reservationSnap.data(), {
       ownerUid,
       labelId,
       nameKey: current.nameKey,

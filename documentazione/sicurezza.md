@@ -514,11 +514,20 @@ uno solo committa. L'audit (`label.created`/`updated`/`deleted`) porta
 `targetId == labelId` e **`reason` sempre `null`**: il registro è owner-only, ma
 il nome dell'etichetta è testo libero e non ha motivo di transitare nei log.
 
-**Eliminazione fail-closed.** Richiede `assignedCount === 0` **e**
-`draftUsageCount === 0`, riletti **dentro** la transazione che elimina, più una
-prenotazione coerente. VDIF-01 non muove ancora i contatori (lo faranno VDIF-02
-e VDIF-03/04) ma li difende già: nessuna cascata, nessuna riparazione
-silenziosa.
+**Eliminazione fail-closed, su due livelli.** Il service richiede
+`assignedCount === 0` **e** `draftUsageCount === 0`, riletti **dentro** la
+transazione che elimina, più una prenotazione coerente. Le **Rules** applicano
+la stessa condizione sui contatori come difesa in profondità: un'etichetta in
+uso non è eliminabile nemmeno da una scrittura diretta che aggirasse il service.
+VDIF-01 non muove ancora i contatori (lo faranno VDIF-02 e VDIF-03/04) ma li
+difende già: nessuna cascata, nessuna riparazione silenziosa.
+
+**Lettura fail-closed sulla canonicità.** Il parser rifiuta un documento il cui
+`name` non sia già la forma canonica o il cui `nameKey` non sia derivato dal
+nome, oltre a timestamp mancanti o incoerenti. Non è pedanteria: la prenotazione
+è indirizzata dall'hash di `(ownerUid, nameKey)`, quindi un `nameKey` estraneo
+avrebbe la propria prenotazione altrove e l'unicità del nome smetterebbe di
+essere garantita. Il documento viene rifiutato, mai corretto in lettura.
 
 ---
 

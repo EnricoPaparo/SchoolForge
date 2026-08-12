@@ -117,6 +117,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Oltre il limite in code point il contatore si colora, ma il campo **non**
+ * tronca: il valore resta intero e l'errore autorevole arriva al salvataggio da
+ * `normalizeLabelName`. Il colore anticipa, non decide.
+ */
+.counterOver {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
 .input {
   width: 100%;
   min-height: 2.75rem;
