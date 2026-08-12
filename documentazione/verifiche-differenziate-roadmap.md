@@ -484,10 +484,15 @@ default più restrittivo, come `students/{uid}` assente = `pending`
 (`sicurezza.md` §3.1). Rimuovere l'etichetta ⇒ `deleteDoc`.
 
 **5.B.3 — Studente eliminato.** `removeStudent` elimina anche
-`studentLabelAssignments/{uid}` **nello stesso batch**. Non è una cascata
+`studentLabelAssignments/{uid}` **nella stessa transazione**. Non è una cascata
 silenziosa: è la stessa operazione, già confermata dal docente, e il documento
-residuo sarebbe un puntatore a un utente inesistente. Se il batch fallisce,
-nulla viene eliminato. Un'assegnazione orfana eventualmente sopravvissuta è
+residuo sarebbe un puntatore a un utente inesistente. Serve una **transazione**
+e non un `writeBatch` perché prima di scrivere occorre **leggere**
+l'assegnazione e l'etichetta, per sapere quale `assignedCount` decrementare e
+per validarlo: un batch scriverebbe alla cieca, e un contatore già a zero o
+un'etichetta di un altro owner devono **impedire** la rimozione, non
+accompagnarla. Se la transazione fallisce, nulla viene eliminato.
+Un'assegnazione orfana eventualmente sopravvissuta è
 **ignorata in lettura** (nessuno studente corrispondente) e non blocca nulla,
 ma **non conta** come utilizzo ai fini della cancellazione di un'etichetta
 (§5.E), perché il conteggio si costruisce intersecando con gli studenti reali.
@@ -1893,3 +1898,95 @@ etichetta, builder delle varianti, qualunque modifica a VEX, alle verifiche, a
 studente. `assignedCount` e `draftUsageCount` esistono, nascono a zero, sono
 difesi dal service e dalle Rules, ma **nessun flusso li muove ancora**: lo
 faranno VDIF-02 (assegnazioni) e VDIF-03/04 (bozze e attivazione).
+
+---
+
+## 19. VDIF-02 — che cosa è stato implementato davvero
+
+**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout, Gate
+GVDIF **aperto**. VDIF-03 resta aperto.
+
+### 19.1 Superficie realizzata
+
+| Area | File |
+|---|---|
+| Contratto | `types/firestore.ts` — `StudentLabelAssignmentDoc` (cinque chiavi) |
+| Predicati condivisi | `features/repository/documentShape.ts` (estratti da VDIF-01: due parser fail-closed, una sola definizione) |
+| Service canonico | `features/repository/studentLabelAssignments/studentLabelAssignmentsService.ts` |
+| Rimozione studente | `features/repository/students/studentsService.ts` — `removeStudent` delega alla transazione |
+| UI | `features/teacher/StudentIdentityFields.tsx` (Classe + Etichetta nella card) + `StudentsView.tsx` |
+| Rules | `firestore.rules` — `studentLabelAssignments/{studentUid}` |
+
+### 19.2 Le tre garanzie, e da dove vengono
+
+1. **Una sola etichetta per studente** — dall'**id del documento**
+   (`studentLabelAssignments/{studentUid}`), non da una query di unicità. Non
+   esiste una scrittura che possa creare una seconda assegnazione per lo stesso
+   studente: dovrebbe scrivere sullo stesso path.
+2. **Contatori atomici** — `assignedCount` delle etichette coinvolte si muove
+   nella **stessa transazione** dell'assegnazione. Non esiste un istante in cui
+   l'assegnazione esiste e il contatore non la conosce. Un cambio `A→B` è un
+   solo commit: `A − 1` e `B + 1` insieme.
+3. **Valori espliciti, mai `increment` alla cieca** — il nuovo contatore è
+   calcolato *dopo* aver validato quello letto. Un `increment(-1)` su un
+   contatore corrotto lo renderebbe negativo senza che nessuno se ne accorga; e
+   non si applica mai un `max(0, n − 1)`, che riparerebbe in silenzio uno stato
+   che nessuno ha spiegato. Contatore a zero da decrementare ⇒ `corrupted_state`
+   e **zero scritture**.
+
+### 19.3 Perché l'assegnazione non sta su `students/{uid}`
+
+Lo studente legge il **proprio** documento `students/{uid}`, e le Rules
+autorizzano un documento **intero**, non un singolo campo. Un `labelId` scritto
+là dentro sarebbe leggibile dallo studente per costruzione, qualunque cosa
+faccia l'interfaccia: è ADR-12 applicato al contrario. La collezione separata è
+la sola forma in cui «il docente vede, lo studente no» è una proprietà del
+sistema e non una promessa dell'interfaccia. Un test strutturale
+(`labelPrivacy.structural.test.ts`) verifica che nessun documento
+student-readable porti un campo di etichetta, che il portale studente non
+nomini mai le collezioni, che le Functions non le conoscano, e che solo una
+lista chiusa di moduli le nomini.
+
+### 19.4 Confine Rules/service, misurato
+
+Le Rules verificano: ownership, forma chiusa a cinque chiavi, identità
+(`studentUid` == id del documento), timestamp del server, immutabilità di
+`studentUid`/`ownerUid`/`createdAt`, esistenza e appartenenza dell'**etichetta**
+puntata (`exists` + `get`), esistenza e appartenenza dello **studente alla fine
+del commit** (`existsAfter` + `getAfter` — con `exists` un commit che assegna e
+insieme rimuove lo studente passerebbe, lasciando un'assegnazione orfana).
+
+Le Rules **non** verificano: la coerenza fra l'assegnazione e `assignedCount`.
+CEL non può leggere il valore precedente di un documento che un'altra scrittura
+dello stesso commit sta modificando in modo transazionale, e una regola che
+imponesse `assignedCount` esatto renderebbe impossibile ogni scrittura legittima.
+L'atomicità del contatore resta responsabilità del service owner-only — stesso
+confine già in vigore per `teacherSnapshot`/`evaluations` (`sicurezza.md` §3) e
+per `nameKey` in VDIF-01 (§18.4).
+
+Difesa in profondità già presente da VDIF-01 e ora effettivamente esercitata:
+un'etichetta con `assignedCount > 0` **non è eliminabile** nemmeno da una
+scrittura diretta che aggiri il service.
+
+### 19.5 Cost model reale
+
+| Operazione | Letture | Scritture |
+|---|---|---|
+| Apertura della sezione Studenti | +1 query (`studentLabelAssignments` filtrata su `ownerUid`) | 0 |
+| Assegnare / togliere un'etichetta | 3 (studente, assegnazione, etichetta) | 3 (assegnazione, etichetta, audit) |
+| Cambio `A→B` | 4 (studente, assegnazione, `A`, `B`) | 4 (assegnazione, `A`, `B`, audit) |
+| No-op (`A→A`) | 3 | **0** |
+| Rimuovere uno studente | 3 | 4 (assegnazione, etichetta, studente, audit) |
+
+**Zero letture per card**: una sola query per caricamento, mai una per studente.
+**Zero refetch dopo una mutazione**: il service restituisce l'assegnazione
+risultante e i contatori **scritti**, che bastano ad aggiornare lo stato locale.
+Nessun listener, nessun polling, **zero indici nuovi** (un solo filtro di
+uguaglianza su `ownerUid`), zero chiamate AI, zero Functions toccate.
+
+### 19.6 Che cosa VDIF-02 **non** fa
+
+Gruppi equivalenti, varianti di domanda, composizione differenziata,
+attivazione delle verifiche, `assignedQuestionOrders`, qualunque modifica a VEX.
+`draftUsageCount` continua a esistere, difeso da service e Rules, e **nessun
+flusso lo muove ancora**: lo faranno VDIF-03/04.

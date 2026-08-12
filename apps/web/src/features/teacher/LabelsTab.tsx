@@ -189,11 +189,10 @@ export function LabelsTab({
         <div className={styles.labelList} role="list" aria-label="Etichette">
           {labels.map((item) => {
             /*
-             * `assignedCount` è il contatore transazionale. In VDIF-01 vale
-             * sempre 0 perché l'assegnazione studente→etichetta arriva con
-             * VDIF-02: mostrarlo da subito significa che quando quel pacchetto
-             * comincerà a muoverlo la card sarà già corretta, senza toccare
-             * questo componente.
+             * `assignedCount` è il contatore transazionale, mosso da VDIF-02
+             * nella stessa transazione dell'assegnazione. Questa card lo
+             * mostrava già da VDIF-01, quando valeva sempre 0: il pacchetto che
+             * ha iniziato a muoverlo non ha dovuto toccare questo componente.
              */
             const students = item.assignedCount;
             const inUse = item.assignedCount > 0 || item.draftUsageCount > 0;

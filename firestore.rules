@@ -696,6 +696,77 @@ service cloud.firestore {
       allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
     }
 
+    // --- studentLabelAssignments/{studentUid} (VDIF-02) ---
+    // Assegnazione privata studente -> etichetta. Collezione SEPARATA da
+    // students/{uid} per una ragione strutturale, non estetica: lo studente
+    // legge il proprio documento students/{uid}, e le Rules autorizzano un
+    // documento intero, non un singolo campo. Un labelId scritto la' dentro
+    // sarebbe leggibile dallo studente per costruzione (stesso ragionamento di
+    // ADR-12, applicato al contrario). Qui invece NESSUNO tranne l'owner legge:
+    // studente, altro utente autenticato e anonimo sono negati in lettura e in
+    // scrittura, e l'id del documento e' l'uid dello studente, quindi
+    // "una sola etichetta per studente" e' garantito dal path, non da una query.
+    //
+    // `get` non confronta resource.data.ownerUid perche' il documento puo' non
+    // esistere (la transazione legge un'assegnazione che sta per creare) e
+    // `resource` sarebbe null; `list` lo confronta, cosi' Firestore autorizza la
+    // query solo se il client filtra davvero su ownerUid.
+    match /studentLabelAssignments/{studentUid} {
+      function assignmentKeysOk(d) {
+        return d.keys().hasOnly(['studentUid', 'ownerUid', 'labelId',
+                                 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['studentUid', 'ownerUid', 'labelId',
+                              'createdAt', 'updatedAt']);
+      }
+      function assignmentShapeOk(d) {
+        return d.studentUid == studentUid
+          && d.ownerUid == request.auth.uid
+          && d.labelId is string
+          && d.labelId.size() > 0
+          && d.labelId.size() <= 1500
+          && d.updatedAt == request.time;
+      }
+      // L'etichetta puntata deve esistere davvero ed essere di questo docente:
+      // un'assegnazione verso un'etichetta cancellata o di un altro owner e' un
+      // puntatore rotto che nessuna schermata saprebbe piu' spiegare.
+      function labelIsOwned(labelId) {
+        return exists(/databases/$(database)/documents/differentiationLabels/$(labelId))
+          && get(/databases/$(database)/documents/differentiationLabels/$(labelId))
+               .data.ownerUid == request.auth.uid;
+      }
+      // `existsAfter`/`getAfter` e non `exists`/`get`: cio' che conta e' che lo
+      // studente esista ALLA FINE del commit. Un commit che assegna un'etichetta
+      // e nello stesso istante rimuove lo studente lascerebbe un'assegnazione
+      // orfana, e con `exists` passerebbe.
+      function studentSurvivesOwned() {
+        return existsAfter(/databases/$(database)/documents/students/$(studentUid))
+          && getAfter(/databases/$(database)/documents/students/$(studentUid))
+               .data.ownerUid == request.auth.uid;
+      }
+      allow get: if isOwner();
+      allow list: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isOwner()
+        && assignmentKeysOk(request.resource.data)
+        && assignmentShapeOk(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && labelIsOwned(request.resource.data.labelId)
+        && studentSurvivesOwned();
+      // Cambio A->B: si muove solo labelId (con updatedAt). Identita', ownership
+      // e data di nascita dell'assegnazione sono immutabili.
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && assignmentKeysOk(request.resource.data)
+        && assignmentShapeOk(request.resource.data)
+        && request.resource.data.studentUid == resource.data.studentUid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && labelIsOwned(request.resource.data.labelId)
+        && studentSurvivesOwned();
+      // La delete NON richiede che lo studente esista: e' esattamente
+      // l'operazione che accompagna la sua rimozione.
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
+    }
+
     // --- programs/{docId} (M3-lite student read, M3L-C) ---
     // Owner: full read/write, as always. An approved student may also read
     // the top-level program document — never its imports/** subcollection

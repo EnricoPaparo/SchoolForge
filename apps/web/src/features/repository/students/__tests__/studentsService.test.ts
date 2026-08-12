@@ -14,6 +14,18 @@ const mockQuery = vi.fn((...args: unknown[]) => ({ args }));
 const mockWhere = vi.fn((...args: unknown[]) => ({ where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 
+const mockRemoveStudentWithAssignment = vi.fn();
+
+/*
+ * VDIF-02 — `removeStudent` non è più `deleteDoc` + audit: delega alla
+ * transazione che elimina studente e assegnazione e rilascia il contatore
+ * dell'etichetta. Qui si verifica la **delega** e il valore restituito; la
+ * transazione ha i propri test in `studentLabelAssignments/__tests__`.
+ */
+vi.mock('../../studentLabelAssignments/studentLabelAssignmentsService.js', () => ({
+  removeStudentWithAssignment: (...args: unknown[]) => mockRemoveStudentWithAssignment(...args),
+}));
+
 vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
   deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
@@ -195,10 +207,29 @@ describe('resetStudentToPending', () => {
 });
 
 describe('removeStudent', () => {
-  it('deletes the doc and writes an audit event', async () => {
-    await removeStudent(STUDENT_UID, OWNER_UID, fakeDb);
-    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
-    expect(mockSetDoc.mock.calls[0][1].action).toBe('student.removed');
+  it('delega alla transazione, senza deleteDoc sciolto né audit separato', async () => {
+    const effect = { studentUid: STUDENT_UID, releasedLabel: null };
+    mockRemoveStudentWithAssignment.mockResolvedValue(effect);
+
+    const result = await removeStudent(STUDENT_UID, OWNER_UID, fakeDb);
+
+    expect(mockRemoveStudentWithAssignment).toHaveBeenCalledWith(STUDENT_UID, OWNER_UID, fakeDb);
+    expect(result).toBe(effect);
+    // Nessuna scrittura fuori dalla transazione: l'eliminazione e l'audit
+    // vivono nello stesso commit dell'assegnazione.
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('restituisce l’etichetta liberata con il contatore scritto', async () => {
+    mockRemoveStudentWithAssignment.mockResolvedValue({
+      studentUid: STUDENT_UID,
+      releasedLabel: { labelId: 'label-1', assignedCount: 0 },
+    });
+
+    const result = await removeStudent(STUDENT_UID, OWNER_UID, fakeDb);
+
+    expect(result.releasedLabel).toEqual({ labelId: 'label-1', assignedCount: 0 });
   });
 });
 

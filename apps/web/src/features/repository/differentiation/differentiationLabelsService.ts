@@ -8,6 +8,11 @@ import {
   where,
 } from 'firebase/firestore';
 import type { DocumentData, Firestore, Transaction } from 'firebase/firestore';
+import {
+  hasExactKeys,
+  isFiniteNonNegativeInteger,
+  isFirestoreTimestamp,
+} from '../documentShape.js';
 import { computeNameKey, normalizeLabelName } from './labelName.js';
 import { computeLabelReservationId } from './labelReservationId.js';
 
@@ -67,30 +72,6 @@ export class DifferentiationLabelError extends Error {
   }
 }
 
-function isFiniteNonNegativeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-/**
- * Un `Timestamp` Firestore, riconosciuto dalla forma invece che da
- * `instanceof`: la stessa struttura arriva dal client SDK, dall'emulatore e
- * dai test, e un controllo di identità di classe li distinguerebbe senza
- * motivo. Un sentinel `serverTimestamp()` non ancora risolto **non** passa —
- * ed è giusto: significa che stiamo leggendo qualcosa che non è mai stato
- * committato.
- */
-function isFirestoreTimestamp(value: unknown): value is { toMillis: () => number } {
-  if (typeof value !== 'object' || value === null) return false;
-  const candidate = value as { seconds?: unknown; nanoseconds?: unknown; toMillis?: unknown };
-  return (
-    typeof candidate.seconds === 'number' &&
-    Number.isFinite(candidate.seconds) &&
-    typeof candidate.nanoseconds === 'number' &&
-    Number.isFinite(candidate.nanoseconds) &&
-    typeof candidate.toMillis === 'function'
-  );
-}
-
 function corrupted(message: string): never {
   throw new DifferentiationLabelError('corrupted_state', message);
 }
@@ -107,11 +88,6 @@ const LABEL_KEYS = [
 ];
 
 const RESERVATION_KEYS = ['createdAt', 'labelId', 'nameKey', 'ownerUid'];
-
-function hasExactKeys(data: DocumentData, expected: readonly string[]): boolean {
-  const keys = Object.keys(data).sort();
-  return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
-}
 
 /**
  * Parser **fail-closed** del documento etichetta.

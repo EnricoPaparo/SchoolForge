@@ -507,6 +507,32 @@ export interface DifferentiationLabelNameReservationDoc {
   createdAt: Timestamp | FieldValue;
 }
 
+/**
+ * Stored at `studentLabelAssignments/{studentUid}` (VDIF-02).
+ *
+ * Relazione **privata del docente** «questo studente ha questa etichetta».
+ * Owner-only in lettura e scrittura: nessuno studente — nemmeno il proprietario
+ * dello `studentUid` — può leggerla, e nessun campo raggiunge una superficie
+ * student-readable.
+ *
+ * **L'assenza del documento significa «Nessuna etichetta».** Non esiste un
+ * `labelId: null`: sarebbe un secondo modo di dire la stessa cosa, e ogni
+ * lettore dovrebbe gestirne due. L'id deterministico garantisce da solo
+ * l'invariante «al massimo una etichetta per studente», senza query di unicità.
+ *
+ * Il **nome** dell'etichetta non è duplicato qui: si unisce in memoria via
+ * `labelId`, così una rinomina si riflette senza toccare una sola assegnazione.
+ */
+export interface StudentLabelAssignmentDoc {
+  /** `== {studentUid}` del path, **immutabile**. */
+  studentUid: string;
+  ownerUid: string;
+  /** Id di una `DifferentiationLabelDoc` esistente dello stesso owner. Mai vuoto, mai `null`. */
+  labelId: string;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+}
+
 export type VerificationStatus = 'draft' | 'active' | 'closed';
 export type PublishedVerificationStatus = Exclude<VerificationStatus, 'draft'>;
 
