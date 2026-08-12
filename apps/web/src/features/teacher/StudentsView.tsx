@@ -23,9 +23,17 @@ import {
   listDifferentiationLabels,
   type DifferentiationLabelItem,
 } from '../repository/differentiation/differentiationLabelsService.js';
+import {
+  listStudentLabelAssignments,
+  setStudentLabelAssignment,
+  type StudentLabelAssignmentItem,
+} from '../repository/studentLabelAssignments/studentLabelAssignmentsService.js';
 import type { StudentStatus } from '../../types/firestore.js';
 import { ClassesTab, type ClassesTabItem } from './ClassesTab.js';
 import { LabelsTab } from './LabelsTab.js';
+// `NO_LABEL_TEXT` è lo stesso testo mostrato nella select: la ricerca deve
+// trovare «Nessuna etichetta» esattamente come l'utente lo legge.
+import { NO_LABEL_TEXT, StudentIdentityFields } from './StudentIdentityFields.js';
 import { RecordCard } from '../../components/RecordCard.js';
 import { RecordActionsMenu } from './RecordActionsMenu.js';
 import {
@@ -225,6 +233,24 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
    * scheda Etichette mostra l'errore, le altre due restano operative.
    */
   const [labelsError, setLabelsError] = useState<string | null>(null);
+  /**
+   * VDIF-02 — assegnazioni caricate una volta con le etichette e unite in
+   * memoria via `labelId`. L'assegnazione **non** porta il nome: una rinomina si
+   * riflette da sola attraverso il join, senza toccare un solo documento.
+   */
+  const [assignments, setAssignments] = useState<StudentLabelAssignmentItem[] | null>(null);
+  /** Studenti con una mutazione in corso: operazioni su card diverse possono convivere. */
+  const [labelBusyUids, setLabelBusyUids] = useState<ReadonlySet<string>>(() => new Set());
+  /** Errori ancorati alle rispettive card, non un banner globale. */
+  const [labelErrors, setLabelErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
+  /**
+   * Scelte **tentate** e non ancora persistite, una per card. In caso di errore
+   * la select continua a mostrarle: un ripristino silenzioso al valore
+   * precedente farebbe credere che non sia successo nulla.
+   */
+  const [pendingLabels, setPendingLabels] = useState<ReadonlyMap<string, string | null>>(
+    () => new Map(),
+  );
   const [eligibleExamClassIds, setEligibleExamClassIds] = useState<string[] | null>(null);
   const [access, setAccess] = useState<StudentAccessSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -238,6 +264,12 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [examModeSaving, setExamModeSaving] = useState(false);
   const [examModeError, setExamModeError] = useState<string | null>(null);
   const [examModeDisableConfirm, setExamModeDisableConfirm] = useState(false);
+
+  /**
+   * Guardia **sincrona per studente**: due eventi dello stesso uid non avviano
+   * due transazioni, mentre due card diverse restano indipendenti.
+   */
+  const labelBusyRef = useRef(new Set<string>());
 
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -290,9 +322,18 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   async function loadLabels() {
     setLabelsError(null);
     try {
-      setLabels(await listDifferentiationLabels(ownerUid, db));
+      // VDIF-02 — due query in parallelo, una volta sola: etichette e
+      // assegnazioni si uniscono in memoria via `labelId`. Nessuna lettura per
+      // card, nessun listener, nessun polling.
+      const [labelList, assignmentList] = await Promise.all([
+        listDifferentiationLabels(ownerUid, db),
+        listStudentLabelAssignments(ownerUid, db),
+      ]);
+      setLabels(labelList);
+      setAssignments(assignmentList);
     } catch (error) {
       setLabels(null);
+      setAssignments(null);
       setLabelsError(
         error instanceof Error && error.message
           ? error.message
@@ -310,6 +351,39 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
     for (const c of classes ?? []) map.set(c.id, c.name);
     return map;
   }, [classes]);
+
+  /** VDIF-02 — join in memoria: `labelId` → nome, unica fonte del nome mostrato. */
+  const labelNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const label of labels ?? []) map.set(label.labelId, label.name);
+    return map;
+  }, [labels]);
+
+  const labelIdByStudentUid = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const assignment of assignments ?? []) {
+      map.set(assignment.studentUid, assignment.labelId);
+    }
+    return map;
+  }, [assignments]);
+
+  /**
+   * Etichette in ordine alfabetico per **nome**, come le legge il docente.
+   * L'ordinamento della lista (per `nameKey`) serve alla scheda Etichette; qui
+   * conta la stringa visibile.
+   */
+  const sortedLabels = useMemo(
+    () => [...(labels ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'it')),
+    [labels],
+  );
+
+  function labelTextFor(studentUid: string): string {
+    const labelId = labelIdByStudentUid.get(studentUid);
+    if (!labelId) return NO_LABEL_TEXT;
+    // Un'assegnazione che punta a un'etichetta non più in lista non viene
+    // mascherata come «Nessuna etichetta»: si mostra lo stato per quello che è.
+    return labelNameById.get(labelId) ?? 'Etichetta non disponibile';
+  }
 
   const pendingCount = useMemo(
     () => (students ?? []).filter((s) => s.status === 'pending').length,
@@ -332,12 +406,21 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
       if (statusFilter !== 'all' && s.status !== statusFilter) return false;
       if (!term) return true;
       const className = s.classId ? (classNameById.get(s.classId) ?? '') : 'nessuna classe';
-      const haystack = [s.displayName ?? '', s.email, STATUS_LABEL[s.status], className]
+      // VDIF-02 — l'etichetta entra nel testo cercabile: sia il suo nome sia la
+      // stringa «Nessuna etichetta», così si trovano anche gli studenti senza.
+      const haystack = [
+        s.displayName ?? '',
+        s.email,
+        STATUS_LABEL[s.status],
+        className,
+        labelTextFor(s.id),
+      ]
         .join(' ')
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [students, search, statusFilter, classNameById]);
+    // `labelTextFor` dipende dalle due mappe elencate: cambiano insieme a loro.
+  }, [students, search, statusFilter, classNameById, labelNameById, labelIdByStudentUid]);
 
   async function handleTogglePortal() {
     if (!access) return;
@@ -439,6 +522,83 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   function handleClassChange(uid: string, e: ChangeEvent<HTMLSelectElement>) {
     const classId = e.target.value === '' ? null : e.target.value;
     void runAction(uid, () => assignStudentClass(uid, classId, ownerUid, db));
+  }
+
+  /**
+   * Applica i contatori **autorevoli** restituiti dalla transazione. La UI non
+   * li ricalcola: sono i valori realmente scritti nel commit.
+   */
+  function applyLabelCounts(counts: { labelId: string; assignedCount: number }[]) {
+    if (counts.length === 0) return;
+    setLabels((prev) =>
+      prev
+        ? prev.map((label) => {
+            const update = counts.find((c) => c.labelId === label.labelId);
+            return update ? { ...label, assignedCount: update.assignedCount } : label;
+          })
+        : prev,
+    );
+  }
+
+  /**
+   * VDIF-02 — assegnazione, cambio o rimozione dell'etichetta di uno studente.
+   *
+   * Salvataggio immediato alla selezione, busy circoscritto alla card, guardia
+   * sincrona anti-doppio-click, e **nessun refetch**: il service restituisce
+   * l'assegnazione risultante e i contatori scritti, che bastano ad aggiornare
+   * lo stato locale.
+   */
+  async function persistLabelSelection(uid: string, nextLabelId: string | null) {
+    if (labelBusyRef.current.has(uid)) return;
+    labelBusyRef.current.add(uid);
+    setPendingLabels((prev) => new Map(prev).set(uid, nextLabelId));
+    setLabelBusyUids((prev) => new Set(prev).add(uid));
+    setLabelErrors((prev) => {
+      const next = new Map(prev);
+      next.delete(uid);
+      return next;
+    });
+    try {
+      const result = await setStudentLabelAssignment(uid, nextLabelId, ownerUid, db);
+      setAssignments((prev) => {
+        if (!prev) return prev;
+        const others = prev.filter((item) => item.studentUid !== uid);
+        return result.labelId === null
+          ? others
+          : [...others, { studentUid: uid, ownerUid, labelId: result.labelId }];
+      });
+      applyLabelCounts(result.labelCounts);
+      setPendingLabels((prev) => {
+        const next = new Map(prev);
+        next.delete(uid);
+        return next;
+      });
+    } catch (error) {
+      // La scelta tentata resta visibile e il pulsante consente di ritentare
+      // anche quando la select non emetterebbe un secondo evento `change`.
+      setLabelErrors((prev) => {
+        const next = new Map(prev);
+        next.set(
+          uid,
+          error instanceof Error && error.message
+            ? error.message
+            : 'Impossibile aggiornare l’etichetta. Riprova.',
+        );
+        return next;
+      });
+    } finally {
+      labelBusyRef.current.delete(uid);
+      setLabelBusyUids((prev) => {
+        const next = new Set(prev);
+        next.delete(uid);
+        return next;
+      });
+    }
+  }
+
+  function handleLabelChange(uid: string, event: ChangeEvent<HTMLSelectElement>) {
+    const nextLabelId = event.target.value === '' ? null : event.target.value;
+    void persistLabelSelection(uid, nextLabelId);
   }
 
   function selectTab(tab: StudentsTab) {
@@ -663,7 +823,7 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
             <input
               type="text"
               className={styles.searchInput}
-              placeholder="Cerca per nome, email, stato o classe…"
+              placeholder="Cerca per nome, email, stato, classe o etichetta…"
               aria-label="Cerca studenti"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -692,6 +852,22 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                 const busy = actionLoadingId === s.id;
                 const first = formatDateTime(s.firstPortalAccessAt);
                 const last = formatDateTime(s.lastPortalAccessAt);
+                /*
+                 * VDIF-02 — stato dell'etichetta **circoscritto a questa card**:
+                 * un'assegnazione in corso o fallita su un altro studente non
+                 * deve disabilitare né segnalare nulla qui.
+                 */
+                const labelBusy = busy || labelBusyUids.has(s.id);
+                const cardLabelError = labelErrors.get(s.id) ?? null;
+                /*
+                 * Dopo un errore la scelta **tentata** resta selezionata: il
+                 * docente vede che cosa stava facendo e può riprovare senza
+                 * ricostruirla. Riuscita, la voce di `pendingLabels` sparisce e
+                 * si torna al valore persistito.
+                 */
+                const labelSelectValue = pendingLabels.has(s.id)
+                  ? (pendingLabels.get(s.id) ?? '')
+                  : (labelIdByStudentUid.get(s.id) ?? '');
                 return (
                   <RecordCard
                     key={s.id}
@@ -700,34 +876,22 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                     metaLine={s.email}
                     actionLayout="student-admin"
                     identityControl={
-                      /*
-                       * UI-STUDENTI-CLASSI-01 — la classe resta modificabile
-                       * direttamente dalla card, non nel menu «…»: è una
-                       * proprietà dello studente, non un'azione discreta. Stessi
-                       * handler, stesso salvataggio immediato e stesso stato busy
-                       * di prima; il click sulla select non apre né la card (che
-                       * non ha superficie apribile) né il menu.
-                       */
-                      <div className={styles.classField}>
-                        <label className={styles.classLabel} htmlFor={`student-class-${s.id}`}>
-                          Classe
-                        </label>
-                        <select
-                          id={`student-class-${s.id}`}
-                          aria-label={`Classe di ${name}`}
-                          className={styles.classSelect}
-                          value={s.classId ?? ''}
-                          disabled={busy}
-                          onChange={(e) => handleClassChange(s.id, e)}
-                        >
-                          <option value="">Nessuna classe</option>
-                          {(classes ?? []).map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <StudentIdentityFields
+                        studentId={s.id}
+                        studentName={name}
+                        classes={classes ?? []}
+                        classId={s.classId}
+                        classDisabled={busy}
+                        onClassChange={(e) => handleClassChange(s.id, e)}
+                        labels={sortedLabels}
+                        labelValue={labelSelectValue}
+                        labelDisabled={labelBusy || labels === null || assignments === null}
+                        labelError={cardLabelError}
+                        onLabelChange={(e) => handleLabelChange(s.id, e)}
+                        onLabelRetry={() =>
+                          void persistLabelSelection(s.id, pendingLabels.get(s.id) ?? null)
+                        }
+                      />
                     }
                     metrics={[
                       {
@@ -834,7 +998,19 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                             className="btn-danger"
                             disabled={busy}
                             onClick={() =>
-                              void runAction(s.id, () => removeStudent(s.id, ownerUid, db))
+                              /*
+                               * VDIF-02 — la rimozione libera l'eventuale
+                               * etichetta nella stessa transazione. Il service
+                               * restituisce il contatore **scritto**: si applica
+                               * localmente, senza rileggere le etichette.
+                               */
+                              void runAction(s.id, async () => {
+                                const effect = await removeStudent(s.id, ownerUid, db);
+                                setAssignments((prev) =>
+                                  prev ? prev.filter((item) => item.studentUid !== s.id) : prev,
+                                );
+                                if (effect.releasedLabel) applyLabelCounts([effect.releasedLabel]);
+                              })
                             }
                           >
                             {busy ? 'Rimozione…' : 'Conferma'}

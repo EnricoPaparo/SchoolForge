@@ -529,6 +529,65 @@ nome, oltre a timestamp mancanti o incoerenti. Non è pedanteria: la prenotazion
 avrebbe la propria prenotazione altrove e l'unicità del nome smetterebbe di
 essere garantita. Il documento viene rifiutato, mai corretto in lettura.
 
+
+### 8e-bis. Assegnazione privata studente → etichetta (VDIF-02 — implementato)
+
+`studentLabelAssignments/{studentUid}` — contratto **chiuso a cinque chiavi**
+(`studentUid`, `ownerUid`, `labelId`, `createdAt`, `updatedAt`), **owner-only in
+ogni direzione**: lo studente non legge la propria assegnazione e non la scrive;
+l'anonimo e ogni altro utente autenticato sono negati su tutto.
+
+**Perché una collezione separata e non un campo su `students/{uid}`.** Lo
+studente legge il **proprio** documento `students/{uid}`, e Firestore autorizza
+un documento **intero**, non un singolo campo: un `labelId` scritto là dentro
+sarebbe leggibile dallo studente per costruzione, qualunque cosa faccia
+l'interfaccia. È ADR-12 applicato al contrario. La separazione è ciò che rende
+«il docente vede, lo studente no» una proprietà del sistema e non una promessa
+dell'interfaccia.
+
+**Cardinalità dal path.** L'id del documento **è** l'uid dello studente: «al
+massimo una etichetta per studente» è garantito dal percorso, non da una query
+di unicità che qualcuno potrebbe dimenticare.
+
+**Che cosa garantiscono le Rules:** ownership, forma chiusa a cinque chiavi,
+`studentUid == document id`, `ownerUid == auth.uid`, immutabilità di
+`studentUid`/`ownerUid`/`createdAt`, `labelId` stringa non vuota,
+`createdAt`/`updatedAt == request.time`, `list` autorizzato solo se la query
+filtra davvero su `ownerUid`, e **integrità referenziale finale**: etichetta e
+studente devono entrambi esistere ed essere dello stesso docente **alla fine
+del commit** (`existsAfter`/`getAfter`, non `exists`/`get`). In questo modo un
+batch non può creare l'assegnazione e cancellare contemporaneamente
+l'etichetta o lo studente lasciando un riferimento orfano.
+
+**Confine Rules/service, dichiarato.** Le Rules **non** verificano la coerenza
+fra l'assegnazione e `assignedCount`: CEL non può leggere il valore precedente
+di un documento che un'altra scrittura dello stesso commit sta modificando in
+modo transazionale, e una regola che imponesse il contatore esatto renderebbe
+impossibile ogni scrittura legittima. L'atomicità del contatore è del **service
+owner-only** — stesso confine già in vigore per `teacherSnapshot`/`evaluations`
+(§3) e per `nameKey` in §8e.
+
+**Contatori atomici e fail-closed.** Assegnare, cambiare o togliere l'etichetta
+è **una sola transazione**, comprensiva dell'audit: `assignedCount` delle
+etichette coinvolte si muove nello stesso commit dell'assegnazione, con valori
+**espliciti** calcolati dopo aver validato quelli letti — mai `increment` alla
+cieca, mai `max(0, n − 1)`. Studente inesistente o di altro docente, etichetta
+inesistente o malformata, assegnazione malformata, contatore già a zero da
+decrementare ⇒ errore leggibile e **zero scritture**. La rimozione di uno
+studente elimina studente e assegnazione e rilascia il contatore nello stesso
+commit: serve una transazione, non un `writeBatch`, perché prima di scrivere
+occorre leggere e validare.
+
+**Audit.** `student.labelAssigned` con `targetId == studentUid` e **`reason`
+sempre `null`**: non contiene il `labelId` né il nome dell'etichetta. Registra
+che l'assegnazione è cambiata, non quale sia.
+
+**Nessuna etichetta su alcuna superficie studente.** Un test strutturale
+verifica sulle **fonti** — non sull'interfaccia — che nessun documento
+student-readable porti un campo di etichetta, che il portale studente non nomini
+mai le due collezioni, che le Functions non le conoscano e che solo una lista
+chiusa di moduli le nomini.
+
 ---
 
 ## 8c. Chiusura e consegna forzata dal docente (FORCE-SUBMIT-01 — implementato)

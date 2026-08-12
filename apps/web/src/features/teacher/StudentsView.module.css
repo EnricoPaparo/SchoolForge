@@ -228,6 +228,53 @@
   font-size: 0.875rem;
 }
 
+/*
+ * VDIF-02 — Classe ed Etichetta sono due proprietà dello stesso record e stanno
+ * nella stessa fascia: affiancate quando c'è spazio, incolonnate quando non ce
+ * n'è. `flex-wrap` e non un media query, perché il punto in cui non stanno più
+ * dipende dalla lunghezza dei nomi, non dalla larghezza della finestra.
+ */
+.identityFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 1.25rem;
+  min-width: 0;
+}
+
+.identityFields > .classField {
+  flex: 1 1 min(16rem, 100%);
+}
+
+/* Il campo Etichetta può portare un errore sotto la select: serve una riga in
+   più, quindi questo campo va a capo mentre Classe resta com'era. */
+.labelField {
+  flex-wrap: wrap;
+}
+
+.labelFieldFeedback {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.labelFieldError {
+  flex: 1 1 14rem;
+  margin: 0;
+  color: var(--color-error);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.labelRetryButton {
+  min-height: 2.25rem;
+}
+
 /** Seconda riga di un valore data/ora: l'ora, più piccola e attenuata. */
 .cellTime {
   display: block;
@@ -279,7 +326,21 @@
 }
 
 @media (max-width: 44rem) {
-  /* Mobile: la select prende tutta la larghezza sotto nome ed email. */
+  /*
+   * Mobile: la select prende tutta la larghezza sotto nome ed email, ed
+   * Etichetta si incolonna **sotto** Classe invece di dividersi la riga —
+   * mezza riga per una select con nomi liberi dentro non è una scelta, è un
+   * troncamento (VDIF-02).
+   */
+  .identityFields {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .identityFields > .classField {
+    flex: 1 1 auto;
+  }
+
   .classField {
     flex-wrap: wrap;
     width: 100%;
@@ -288,6 +349,10 @@
   .classSelect {
     flex: 1 1 100%;
     width: 100%;
+    min-height: 2.75rem;
+  }
+
+  .labelRetryButton {
     min-height: 2.75rem;
   }
 

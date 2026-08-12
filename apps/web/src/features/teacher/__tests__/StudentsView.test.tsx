@@ -27,6 +27,8 @@ const mockListDifferentiationLabels = vi.fn();
 const mockCreateDifferentiationLabel = vi.fn();
 const mockRenameDifferentiationLabel = vi.fn();
 const mockDeleteDifferentiationLabel = vi.fn();
+const mockListStudentLabelAssignments = vi.fn();
+const mockSetStudentLabelAssignment = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -71,6 +73,11 @@ vi.mock('../../repository/differentiation/differentiationLabelsService.js', asyn
     deleteDifferentiationLabel: (...args: unknown[]) => mockDeleteDifferentiationLabel(...args),
   };
 });
+
+vi.mock('../../repository/studentLabelAssignments/studentLabelAssignmentsService.js', () => ({
+  listStudentLabelAssignments: (...args: unknown[]) => mockListStudentLabelAssignments(...args),
+  setStudentLabelAssignment: (...args: unknown[]) => mockSetStudentLabelAssignment(...args),
+}));
 
 const OWNER_UID = 'owner-uid';
 
@@ -149,7 +156,14 @@ beforeEach(() => {
   mockApproveStudent.mockResolvedValue(undefined);
   mockBlockStudent.mockResolvedValue(undefined);
   mockResetStudentToPending.mockResolvedValue(undefined);
-  mockRemoveStudent.mockResolvedValue(undefined);
+  mockListStudentLabelAssignments.mockResolvedValue([]);
+  mockSetStudentLabelAssignment.mockResolvedValue({
+    studentUid: 'u-approved',
+    labelId: null,
+    labelCounts: [],
+    changed: false,
+  });
+  mockRemoveStudent.mockResolvedValue({ studentUid: 'u-approved', releasedLabel: null });
   mockAssignStudentClass.mockResolvedValue(undefined);
   mockSetStudentPortalEnabled.mockResolvedValue(undefined);
   mockSetNewStudentRequestsEnabled.mockResolvedValue(undefined);
@@ -974,5 +988,417 @@ describe('StudentsView — contratto CSS responsive (UI-STUDENTI-CLASSI-01)', ()
     expect(classesCss).toMatch(/\.input\s*\{[^}]*min-height:\s*2\.75rem/s);
     expect(classesCss).toMatch(/\.input\s*\{[^}]*border-radius:\s*var\(--radius-lg\)/s);
     expect(classesCss).toMatch(/\.input\s*\{[^}]*background:\s*color-mix/s);
+  });
+});
+
+/**
+ * VDIF-02 — assegnazione privata dell'etichetta dalla card studente.
+ *
+ * Le due proprietà che questi test difendono e che guardando la schermata non si
+ * vedono: **nessuna lettura per card** (una sola query di assegnazioni per
+ * caricamento) e **nessun refetch dopo una mutazione** (i contatori arrivano
+ * dalla transazione). Sono le due cose che una regressione può introdurre senza
+ * cambiare nulla di visibile.
+ */
+describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
+  const TWO_LABELS = [
+    {
+      labelId: 'label-b',
+      ownerUid: OWNER_UID,
+      name: 'Percorso B',
+      nameKey: 'percorso b',
+      assignedCount: 0,
+      draftUsageCount: 0,
+    },
+    {
+      labelId: 'label-1',
+      ownerUid: OWNER_UID,
+      name: 'Percorso A',
+      nameKey: 'percorso a',
+      assignedCount: 1,
+      draftUsageCount: 0,
+    },
+  ];
+
+  function labelSelectOf(studentName: string): HTMLSelectElement {
+    return within(studentCard(studentName)).getByLabelText(
+      `Etichetta di ${studentName}`,
+    ) as HTMLSelectElement;
+  }
+
+  function labelCardOf(name: string): HTMLElement {
+    const panel = screen.getByRole('tabpanel', { name: 'Etichette' });
+    return within(panel).getByRole('listitem', { name: `Etichetta ${name}` });
+  }
+
+  it('carica le assegnazioni con UNA query nello stesso caricamento, zero letture per card', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    expect(mockListStudentLabelAssignments).toHaveBeenCalledOnce();
+    expect(mockListStudentLabelAssignments).toHaveBeenCalledWith(OWNER_UID, {});
+    // Tre card in lista, una sola query: il costo non cresce con gli studenti.
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+  });
+
+  it('mostra «Nessuna etichetta» come prima opzione e i nomi in ordine alfabetico italiano', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    const select = labelSelectOf('Ada Approved');
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      'Nessuna etichetta',
+      'Percorso A',
+      'Percorso B',
+    ]);
+    expect(select.value).toBe('');
+  });
+
+  it('riflette l’assegnazione persistita senza mai stampare il labelId a schermo', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockListStudentLabelAssignments.mockResolvedValue([
+      { studentUid: 'u-approved', ownerUid: OWNER_UID, labelId: 'label-1' },
+    ]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => expect(labelSelectOf('Ada Approved').value).toBe('label-1'));
+    const card = studentCard('Ada Approved');
+    expect(card.textContent).toContain('Percorso A');
+    expect(card.textContent).not.toContain('label-1');
+  });
+
+  it('assegna al cambio della select e aggiorna i contatori SENZA rileggere nulla', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockSetStudentLabelAssignment.mockResolvedValue({
+      studentUid: 'u-approved',
+      labelId: 'label-1',
+      labelCounts: [{ labelId: 'label-1', assignedCount: 2 }],
+      changed: true,
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+
+    await waitFor(() =>
+      expect(mockSetStudentLabelAssignment).toHaveBeenCalledWith(
+        'u-approved',
+        'label-1',
+        OWNER_UID,
+        {},
+      ),
+    );
+    await waitFor(() => expect(labelSelectOf('Ada Approved').value).toBe('label-1'));
+    // Nessun refetch: né studenti, né etichette, né assegnazioni.
+    expect(mockListStudents).toHaveBeenCalledOnce();
+    expect(mockListDifferentiationLabels).toHaveBeenCalledOnce();
+    expect(mockListStudentLabelAssignments).toHaveBeenCalledOnce();
+
+    // Il contatore **autorevole** della transazione compare senza query.
+    fireEvent.click(screen.getByRole('tab', { name: 'Etichette' }));
+    expect(labelCardOf('Percorso A').textContent).toContain('2 studenti');
+    expect(mockListDifferentiationLabels).toHaveBeenCalledOnce();
+  });
+
+  it('rimuove l’assegnazione scegliendo «Nessuna etichetta»', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockListStudentLabelAssignments.mockResolvedValue([
+      { studentUid: 'u-approved', ownerUid: OWNER_UID, labelId: 'label-1' },
+    ]);
+    mockSetStudentLabelAssignment.mockResolvedValue({
+      studentUid: 'u-approved',
+      labelId: null,
+      labelCounts: [{ labelId: 'label-1', assignedCount: 0 }],
+      changed: true,
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => expect(labelSelectOf('Ada Approved').value).toBe('label-1'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: '' } });
+
+    await waitFor(() =>
+      expect(mockSetStudentLabelAssignment).toHaveBeenCalledWith('u-approved', null, OWNER_UID, {}),
+    );
+    await waitFor(() => expect(labelSelectOf('Ada Approved').value).toBe(''));
+    fireEvent.click(screen.getByRole('tab', { name: 'Etichette' }));
+    expect(labelCardOf('Percorso A').textContent).toContain('Nessuno studente');
+  });
+
+  it('un errore resta nella card, conserva la scelta tentata e la annuncia', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockSetStudentLabelAssignment.mockRejectedValue(
+      new Error('Questa etichetta non esiste più. Ricarica la pagina e riprova.'),
+    );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+
+    const alert = await within(studentCard('Ada Approved')).findByRole('alert');
+    expect(alert.textContent).toContain('Questa etichetta non esiste più');
+    // La scelta tentata resta visibile: si riprova senza ricostruirla.
+    const select = labelSelectOf('Ada Approved');
+    expect(select.value).toBe('label-1');
+    expect(select.getAttribute('aria-describedby')).toBe(alert.id);
+    expect(select.getAttribute('aria-invalid')).toBe('true');
+    expect(
+      within(studentCard('Ada Approved')).getByRole('button', { name: 'Riprova' }),
+    ).toBeTruthy();
+    // Nessun altro studente è coinvolto: né errore, né blocco.
+    expect(within(studentCard('Pia Pending')).queryByRole('alert')).toBeNull();
+    expect(labelSelectOf('Pia Pending').disabled).toBe(false);
+  });
+
+  it('«Riprova» ripete lo stesso target e al successo applica il risultato autorevole', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockSetStudentLabelAssignment
+      .mockRejectedValueOnce(new Error('Errore temporaneo.'))
+      .mockResolvedValueOnce({
+        studentUid: 'u-approved',
+        labelId: 'label-1',
+        labelCounts: [{ labelId: 'label-1', assignedCount: 2 }],
+        changed: true,
+      });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+    const retry = await within(studentCard('Ada Approved')).findByRole('button', {
+      name: 'Riprova',
+    });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(2));
+    expect(mockSetStudentLabelAssignment).toHaveBeenNthCalledWith(
+      2,
+      'u-approved',
+      'label-1',
+      OWNER_UID,
+      {},
+    );
+    await waitFor(() =>
+      expect(within(studentCard('Ada Approved')).queryByRole('alert')).toBeNull(),
+    );
+    expect(labelSelectOf('Ada Approved').value).toBe('label-1');
+  });
+
+  it('il busy è circoscritto alla card e un doppio cambio non produce due scritture', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    let release!: (value: unknown) => void;
+    mockSetStudentLabelAssignment.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(true));
+    expect(labelSelectOf('Pia Pending').disabled).toBe(false);
+
+    // Secondo cambio mentre la prima scrittura è in volo: ignorato dalla
+    // guardia sincrona, non dallo stato (che arriverebbe troppo tardi).
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-b' } });
+    expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(1);
+
+    release({
+      studentUid: 'u-approved',
+      labelId: 'label-1',
+      labelCounts: [{ labelId: 'label-1', assignedCount: 2 }],
+      changed: true,
+    });
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(false));
+  });
+
+  it('due card possono salvare insieme e il termine di A non sblocca B', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    const releases = new Map<string, (value: unknown) => void>();
+    mockSetStudentLabelAssignment.mockImplementation((uid: string, labelId: string) =>
+      new Promise((resolve) => {
+        releases.set(uid, resolve);
+      }).then(() => ({ studentUid: uid, labelId, labelCounts: [], changed: true })),
+    );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+    fireEvent.change(labelSelectOf('Pia Pending'), { target: { value: 'label-b' } });
+
+    await waitFor(() => expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(2));
+    expect(labelSelectOf('Ada Approved').disabled).toBe(true);
+    expect(labelSelectOf('Pia Pending').disabled).toBe(true);
+
+    releases.get('u-approved')?.(undefined);
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(false));
+    expect(labelSelectOf('Pia Pending').disabled).toBe(true);
+
+    releases.get('u-pending')?.(undefined);
+    await waitFor(() => expect(labelSelectOf('Pia Pending').disabled).toBe(false));
+  });
+
+  it('il doppio click su «Riprova» avvia una sola nuova transazione', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    let release!: (value: unknown) => void;
+    mockSetStudentLabelAssignment
+      .mockRejectedValueOnce(new Error('Errore temporaneo.'))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+    const retry = await within(studentCard('Ada Approved')).findByRole('button', {
+      name: 'Riprova',
+    });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(2);
+
+    release({
+      studentUid: 'u-approved',
+      labelId: 'label-1',
+      labelCounts: [],
+      changed: true,
+    });
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(false));
+  });
+
+  it('le altre azioni sullo studente non rileggono etichette né assegnazioni', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Pia Pending'));
+    fireEvent.click(studentMenuItem('Pia Pending', /^Approva/));
+
+    await waitFor(() => expect(mockApproveStudent).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mockListStudents.mock.calls.length).toBe(2));
+    expect(mockListDifferentiationLabels).toHaveBeenCalledOnce();
+    expect(mockListStudentLabelAssignments).toHaveBeenCalledOnce();
+  });
+
+  it('la rimozione applica il contatore liberato dalla transazione, senza rileggere le etichette', async () => {
+    mockListStudents
+      .mockResolvedValueOnce(STUDENTS)
+      .mockResolvedValue(STUDENTS.filter((s) => s.id !== 'u-approved'));
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockListStudentLabelAssignments.mockResolvedValue([
+      { studentUid: 'u-approved', ownerUid: OWNER_UID, labelId: 'label-1' },
+    ]);
+    mockRemoveStudent.mockResolvedValue({
+      studentUid: 'u-approved',
+      releasedLabel: { labelId: 'label-1', assignedCount: 0 },
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.click(studentMenuItem('Ada Approved', /^Rimuovi/));
+    fireEvent.click(within(studentCard('Ada Approved')).getByRole('button', { name: 'Conferma' }));
+
+    await waitFor(() => expect(mockRemoveStudent).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByText('Ada Approved')).toBeNull());
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Etichette' }));
+    expect(labelCardOf('Percorso A').textContent).toContain('Nessuno studente');
+    expect(mockListDifferentiationLabels).toHaveBeenCalledOnce();
+    expect(mockListStudentLabelAssignments).toHaveBeenCalledOnce();
+  });
+
+  it('la ricerca trova gli studenti per nome dell’etichetta e per «Nessuna etichetta»', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockListStudentLabelAssignments.mockResolvedValue([
+      { studentUid: 'u-approved', ownerUid: OWNER_UID, labelId: 'label-1' },
+    ]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    const search = screen.getByLabelText('Cerca studenti');
+
+    fireEvent.change(search, { target: { value: 'Percorso A' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('Ada Approved')).toBeTruthy();
+
+    fireEvent.change(search, { target: { value: 'nessuna etichetta' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.queryByText('Ada Approved')).toBeNull();
+  });
+
+  it('il click sulla select Etichetta non apre il menu azioni della card', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.click(labelSelectOf('Ada Approved'));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(
+      within(studentCard('Ada Approved'))
+        .getByRole('button', { name: /^Azioni studente/ })
+        .getAttribute('aria-expanded'),
+    ).not.toBe('true');
+  });
+
+  it('senza etichette caricate la select non è azionabile: nessuna scrittura al buio', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockRejectedValue(new Error('Etichette non leggibili.'));
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(true));
+  });
+
+  it('se le assegnazioni non sono leggibili la select non mente: resta bloccata', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListStudentLabelAssignments.mockRejectedValue(new Error('Assegnazioni non leggibili.'));
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(true));
+  });
+});
+
+describe('StudentsView — contratto CSS del campo Etichetta (VDIF-02)', () => {
+  const labelFieldCss = readFileSync(
+    resolve(process.cwd(), 'src/features/teacher/StudentsView.module.css'),
+    'utf8',
+  );
+
+  it('desktop: Classe ed Etichetta condividono la fascia e vanno a capo se non stanno', () => {
+    expect(labelFieldCss).toMatch(/\.identityFields\s*\{[^}]*display:\s*flex/s);
+    expect(labelFieldCss).toMatch(/\.identityFields\s*\{[^}]*flex-wrap:\s*wrap/s);
+  });
+
+  it('mobile: Etichetta si incolonna sotto Classe, a larghezza piena e con target touch', () => {
+    expect(labelFieldCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.identityFields\s*\{[^}]*flex-direction:\s*column/s,
+    );
+    expect(labelFieldCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.classSelect\s*\{[^}]*width:\s*100%[^}]*min-height:\s*2\.75rem/s,
+    );
+  });
+
+  it('l’errore e il retry occupano la propria riga, senza restringere la select', () => {
+    expect(labelFieldCss).toMatch(/\.labelFieldFeedback\s*\{[^}]*flex:\s*1 1 100%/s);
+    expect(labelFieldCss).toMatch(/\.labelFieldError\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+    expect(labelFieldCss).toMatch(/\.labelRetryButton\s*\{[^}]*min-height:\s*2\.25rem/s);
+    expect(labelFieldCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.labelRetryButton\s*\{[^}]*min-height:\s*2\.75rem/s,
+    );
   });
 });

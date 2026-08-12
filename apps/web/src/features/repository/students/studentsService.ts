@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getCountFromServer,
   getDoc,
@@ -13,6 +12,10 @@ import {
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { StudentDoc } from '../../../types/firestore.js';
+import {
+  removeStudentWithAssignment,
+  type RemoveStudentResult,
+} from '../studentLabelAssignments/studentLabelAssignmentsService.js';
 import { normalizeStudentStatus } from './status.js';
 
 export type StudentItem = { id: string } & StudentDoc;
@@ -125,9 +128,26 @@ export async function resetStudentToPending(
   await writeAudit(db, ownerUid, 'student.reset', uid);
 }
 
-export async function removeStudent(uid: string, ownerUid: string, db: Firestore): Promise<void> {
-  await deleteDoc(doc(db, 'students', uid));
-  await writeAudit(db, ownerUid, 'student.removed', uid);
+/**
+ * VDIF-02 — la rimozione è **transazionale**, non più `deleteDoc` + audit.
+ *
+ * Da quando esiste `studentLabelAssignments`, eliminare lo studente senza
+ * toccare la sua assegnazione lascerebbe un puntatore a un utente inesistente e
+ * un `assignedCount` gonfiato che nessuno saprebbe più spiegare. Servono
+ * letture (assegnazione ed etichetta) e validazione prima di scrivere, quindi
+ * un `writeBatch` non basta: delega a `removeStudentWithAssignment`, che
+ * elimina studente e assegnazione, decrementa il contatore e scrive l'audit
+ * `student.removed` in un solo commit.
+ *
+ * Restituisce l'etichetta liberata con il suo nuovo contatore, così la UI si
+ * aggiorna senza rileggere nulla.
+ */
+export async function removeStudent(
+  uid: string,
+  ownerUid: string,
+  db: Firestore,
+): Promise<RemoveStudentResult> {
+  return removeStudentWithAssignment(uid, ownerUid, db);
 }
 
 export async function assignStudentClass(

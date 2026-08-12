@@ -1,9 +1,10 @@
 # SchoolForge — Verifiche differenziate per etichetta (VDIF) ed Esiti
 
 **Stato:** **VDIF-00 completato** (contratto tecnico congelato, cost model,
-matrice di test e prototipo UI) e **VDIF-01 implementato** — registro etichette
-owner-only, unicità transazionale del nome e terza scheda «Etichette» nella
-sezione Studenti. **VDIF-02→05 restano aperti; nessun rollout è stato
+matrice di test e prototipo UI), **VDIF-01 implementato** — registro etichette
+owner-only, unicità transazionale del nome e terza scheda «Etichette» — e
+**VDIF-02 implementato** — assegnazione privata studente → etichetta con
+contatori atomici. **VDIF-03→05 restano aperti; nessun rollout è stato
 dichiarato.**
 **Data:** 12 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
@@ -484,10 +485,15 @@ default più restrittivo, come `students/{uid}` assente = `pending`
 (`sicurezza.md` §3.1). Rimuovere l'etichetta ⇒ `deleteDoc`.
 
 **5.B.3 — Studente eliminato.** `removeStudent` elimina anche
-`studentLabelAssignments/{uid}` **nello stesso batch**. Non è una cascata
+`studentLabelAssignments/{uid}` **nella stessa transazione**. Non è una cascata
 silenziosa: è la stessa operazione, già confermata dal docente, e il documento
-residuo sarebbe un puntatore a un utente inesistente. Se il batch fallisce,
-nulla viene eliminato. Un'assegnazione orfana eventualmente sopravvissuta è
+residuo sarebbe un puntatore a un utente inesistente. Serve una **transazione**
+e non un `writeBatch` perché prima di scrivere occorre **leggere**
+l'assegnazione e l'etichetta, per sapere quale `assignedCount` decrementare e
+per validarlo: un batch scriverebbe alla cieca, e un contatore già a zero o
+un'etichetta di un altro owner devono **impedire** la rimozione, non
+accompagnarla. Se la transazione fallisce, nulla viene eliminato.
+Un'assegnazione orfana eventualmente sopravvissuta è
 **ignorata in lettura** (nessuno studente corrispondente) e non blocca nulla,
 ma **non conta** come utilizzo ai fini della cancellazione di un'etichetta
 (§5.E), perché il conteggio si costruisce intersecando con gli studenti reali.
@@ -1557,7 +1563,7 @@ completate escluse, copertura dichiarata, numero di domande per riga).
 |---|---|---|---|
 | **VDIF-00** ✅ | Contratto tecnico, privacy, cost model, matrice di test e **prototipo UI**. Solo documentazione e prototipo statico. | GVEX PASS | Questo documento + `prototipi/verifiche-differenziate.html` + fasi in `piano-implementazione.md`. Zero runtime. |
 | **VDIF-01** ✅ | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, fail-closed su record incoerente), helper puro `labelName.ts` + `labelReservationId.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit atomico, **scheda Etichette** (card, dialog crea/rinomina/elimina, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | **Implementato.** Vedi §18 per lo stato reale, i limiti dichiarati e ciò che resta a VDIF-02. |
-| **VDIF-02** | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, **transazione con `assignedCount`** (esistenza dell'etichetta verificata in-transaction, `increment` ±1, cambio `L1→L2` in un solo commit), selettore nella card studente, ricerca per etichetta, Rules, audit, eliminazione studente nello stesso batch. | VDIF-01 | Assegnazione/rimozione reali; test Rules (studente non legge né scrive, altro owner negato); T35/T35b verdi; ricerca; nessuna etichetta in alcun dato studente. |
+| **VDIF-02** ✅ | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, service interamente **transazionale** con valori espliciti di `assignedCount` (mai `increment` alla cieca), cambio `L1→L2` in un solo commit, selettore nella card studente, ricerca per etichetta, Rules, audit e rimozione studente nella stessa transazione. | VDIF-01 | **Implementato, non distribuito.** Integrità referenziale finale su etichetta e studente (`existsAfter`/`getAfter`); busy e retry per singola card; nessuna etichetta in alcun dato studente. Vedi §19. |
 | **VDIF-03** | **Builder delle varianti**: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori con dirty guard, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **`updateVerificationConfig` reso transazionale** con il diff di insiemi `added`/`removed` su `draftUsageCount` (§5.F.1), **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da tutte le UI; test dei cinque scenari di §6.10 e T41/T41b/T41f; **zero letture e zero scritture di etichette quando l'insieme non cambia**. |
 | **VDIF-04** | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | Attivazione reale con ≥ 2 etichette, ≥ 1 sostituzione e ≥ 1 omissione; ogni guardia coperta da test; T36/T39/T40 e T41c/T41d/T41e verdi; idempotenza e replay verdi. |
 | **VDIF-05** | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | Ogni consumer opera sulla sola assegnazione; audit di privacy che dimostra l'assenza di etichette in ogni superficie di §4. |
@@ -1893,3 +1899,102 @@ etichetta, builder delle varianti, qualunque modifica a VEX, alle verifiche, a
 studente. `assignedCount` e `draftUsageCount` esistono, nascono a zero, sono
 difesi dal service e dalle Rules, ma **nessun flusso li muove ancora**: lo
 faranno VDIF-02 (assegnazioni) e VDIF-03/04 (bozze e attivazione).
+
+---
+
+## 19. VDIF-02 — che cosa è stato implementato davvero
+
+**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout, Gate
+GVDIF **aperto**. VDIF-03 resta aperto.
+
+### 19.1 Superficie realizzata
+
+| Area | File |
+|---|---|
+| Contratto | `types/firestore.ts` — `StudentLabelAssignmentDoc` (cinque chiavi) |
+| Predicati condivisi | `features/repository/documentShape.ts` (estratti da VDIF-01: due parser fail-closed, una sola definizione) |
+| Service canonico | `features/repository/studentLabelAssignments/studentLabelAssignmentsService.ts` |
+| Rimozione studente | `features/repository/students/studentsService.ts` — `removeStudent` delega alla transazione |
+| UI | `features/teacher/StudentIdentityFields.tsx` (Classe + Etichetta nella card) + `StudentsView.tsx` |
+| Rules | `firestore.rules` — `studentLabelAssignments/{studentUid}` |
+
+### 19.2 Le tre garanzie, e da dove vengono
+
+1. **Una sola etichetta per studente** — dall'**id del documento**
+   (`studentLabelAssignments/{studentUid}`), non da una query di unicità. Non
+   esiste una scrittura che possa creare una seconda assegnazione per lo stesso
+   studente: dovrebbe scrivere sullo stesso path.
+2. **Contatori atomici** — `assignedCount` delle etichette coinvolte si muove
+   nella **stessa transazione** dell'assegnazione. Non esiste un istante in cui
+   l'assegnazione esiste e il contatore non la conosce. Un cambio `A→B` è un
+   solo commit: `A − 1` e `B + 1` insieme.
+3. **Valori espliciti, mai `increment` alla cieca** — il nuovo contatore è
+   calcolato *dopo* aver validato quello letto. Un `increment(-1)` su un
+   contatore corrotto lo renderebbe negativo senza che nessuno se ne accorga; e
+   non si applica mai un `max(0, n − 1)`, che riparerebbe in silenzio uno stato
+   che nessuno ha spiegato. Contatore a zero da decrementare ⇒ `corrupted_state`
+   e **zero scritture**.
+
+### 19.3 Perché l'assegnazione non sta su `students/{uid}`
+
+Lo studente legge il **proprio** documento `students/{uid}`, e le Rules
+autorizzano un documento **intero**, non un singolo campo. Un `labelId` scritto
+là dentro sarebbe leggibile dallo studente per costruzione, qualunque cosa
+faccia l'interfaccia: è ADR-12 applicato al contrario. La collezione separata è
+la sola forma in cui «il docente vede, lo studente no» è una proprietà del
+sistema e non una promessa dell'interfaccia. Un test strutturale
+(`labelPrivacy.structural.test.ts`) verifica che nessun documento
+student-readable porti un campo di etichetta, che il portale studente non
+nomini mai le collezioni, che le Functions non le conoscano, e che solo una
+lista chiusa di moduli le nomini.
+
+### 19.4 Confine Rules/service, misurato
+
+Le Rules verificano: ownership, forma chiusa a cinque chiavi, identità
+(`studentUid` == id del documento), timestamp del server, immutabilità di
+`studentUid`/`ownerUid`/`createdAt`, esistenza e appartenenza dell'**etichetta**
+e dello **studente alla fine del commit** (`existsAfter` + `getAfter`). Usare
+`exists`/`get` permetterebbe a un batch malevolo di creare l'assegnazione e
+cancellare nello stesso commit l'etichetta oppure lo studente, lasciando un
+riferimento orfano.
+
+Le Rules **non** verificano: la coerenza fra l'assegnazione e `assignedCount`.
+CEL non può leggere il valore precedente di un documento che un'altra scrittura
+dello stesso commit sta modificando in modo transazionale, e una regola che
+imponesse `assignedCount` esatto renderebbe impossibile ogni scrittura legittima.
+L'atomicità del contatore resta responsabilità del service owner-only — stesso
+confine già in vigore per `teacherSnapshot`/`evaluations` (`sicurezza.md` §3) e
+per `nameKey` in VDIF-01 (§18.4).
+
+Difesa in profondità già presente da VDIF-01 e ora effettivamente esercitata:
+un'etichetta con `assignedCount > 0` **non è eliminabile** nemmeno da una
+scrittura diretta che aggiri il service.
+
+### 19.5 Cost model reale
+
+| Operazione | Letture | Scritture |
+|---|---|---|
+| Apertura della sezione Studenti | +1 query (`studentLabelAssignments` filtrata su `ownerUid`) | 0 |
+| Assegnare / togliere un'etichetta | 3 (studente, assegnazione, etichetta) | 3 (assegnazione, etichetta, audit) |
+| Cambio `A→B` | 4 (studente, assegnazione, `A`, `B`) | 4 (assegnazione, `A`, `B`, audit) |
+| No-op (`A→A`) | 3 | **0** |
+| Rimuovere uno studente | 3 | 4 (assegnazione, etichetta, studente, audit) |
+
+**Zero letture per card**: una sola query per caricamento, mai una per studente.
+**Zero refetch dopo una mutazione**: il service restituisce l'assegnazione
+risultante e i contatori **scritti**, che bastano ad aggiornare lo stato locale.
+Nessun listener, nessun polling, **zero indici nuovi** (un solo filtro di
+uguaglianza su `ownerUid`), zero chiamate AI, zero Functions toccate.
+
+Il busy è **per singolo studente**: due card diverse possono salvare in
+concorrenza, mentre due invii sulla stessa card vengono deduplicati. Se il
+salvataggio fallisce, la scelta tentata resta visibile e il controllo espone un
+retry esplicito, anch'esso protetto dal doppio click; la conclusione
+dell'operazione su una card non sblocca prematuramente le altre.
+
+### 19.6 Che cosa VDIF-02 **non** fa
+
+Gruppi equivalenti, varianti di domanda, composizione differenziata,
+attivazione delle verifiche, `assignedQuestionOrders`, qualunque modifica a VEX.
+`draftUsageCount` continua a esistere, difeso da service e Rules, e **nessun
+flusso lo muove ancora**: lo faranno VDIF-03/04.
