@@ -394,6 +394,37 @@ describe('Rules — studentLabelAssignments: integrità referenziale (VDIF-02)',
     await assertFails(batch.commit());
   });
 
+  it('rifiuta create assegnazione + delete etichetta nello stesso commit', async () => {
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'studentLabelAssignments', STUDENT_UID), validAssignment());
+    batch.delete(doc(db, 'differentiationLabels', LABEL_ID));
+    await assertFails(batch.commit());
+  });
+
+  it('rifiuta cambio A→B + delete B nello stesso commit', async () => {
+    await seedAssignment();
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'studentLabelAssignments', STUDENT_UID), {
+      labelId: OTHER_LABEL_ID,
+      updatedAt: serverTimestamp(),
+    });
+    batch.delete(doc(db, 'differentiationLabels', OTHER_LABEL_ID));
+    await assertFails(batch.commit());
+  });
+
+  it('consente assegnazione e aggiornamento coerente del contatore nello stesso commit', async () => {
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'studentLabelAssignments', STUDENT_UID), validAssignment());
+    batch.update(doc(db, 'differentiationLabels', LABEL_ID), {
+      assignedCount: 1,
+      updatedAt: serverTimestamp(),
+    });
+    await assertSucceeds(batch.commit());
+  });
+
   /**
    * È l'operazione inversa, e deve **riuscire**: è esattamente la transazione
    * con cui il service rimuove uno studente insieme alla sua assegnazione.

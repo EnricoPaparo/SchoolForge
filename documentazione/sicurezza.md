@@ -553,11 +553,11 @@ di unicità che qualcuno potrebbe dimenticare.
 `studentUid == document id`, `ownerUid == auth.uid`, immutabilità di
 `studentUid`/`ownerUid`/`createdAt`, `labelId` stringa non vuota,
 `createdAt`/`updatedAt == request.time`, `list` autorizzato solo se la query
-filtra davvero su `ownerUid`, e **integrità referenziale**: l'etichetta puntata
-deve esistere ed essere dello stesso docente, lo studente deve esistere ed
-essere dello stesso docente **alla fine del commit** (`existsAfter`/`getAfter`,
-non `exists`/`get`: un commit che assegna un'etichetta e insieme rimuove lo
-studente lascerebbe un'assegnazione orfana, e con `exists` passerebbe).
+filtra davvero su `ownerUid`, e **integrità referenziale finale**: etichetta e
+studente devono entrambi esistere ed essere dello stesso docente **alla fine
+del commit** (`existsAfter`/`getAfter`, non `exists`/`get`). In questo modo un
+batch non può creare l'assegnazione e cancellare contemporaneamente
+l'etichetta o lo studente lasciando un riferimento orfano.
 
 **Confine Rules/service, dichiarato.** Le Rules **non** verificano la coerenza
 fra l'assegnazione e `assignedCount`: CEL non può leggere il valore precedente

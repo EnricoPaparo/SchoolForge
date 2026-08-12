@@ -1148,9 +1148,46 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
     expect(select.value).toBe('label-1');
     expect(select.getAttribute('aria-describedby')).toBe(alert.id);
     expect(select.getAttribute('aria-invalid')).toBe('true');
+    expect(
+      within(studentCard('Ada Approved')).getByRole('button', { name: 'Riprova' }),
+    ).toBeTruthy();
     // Nessun altro studente è coinvolto: né errore, né blocco.
     expect(within(studentCard('Pia Pending')).queryByRole('alert')).toBeNull();
     expect(labelSelectOf('Pia Pending').disabled).toBe(false);
+  });
+
+  it('«Riprova» ripete lo stesso target e al successo applica il risultato autorevole', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    mockSetStudentLabelAssignment
+      .mockRejectedValueOnce(new Error('Errore temporaneo.'))
+      .mockResolvedValueOnce({
+        studentUid: 'u-approved',
+        labelId: 'label-1',
+        labelCounts: [{ labelId: 'label-1', assignedCount: 2 }],
+        changed: true,
+      });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+    const retry = await within(studentCard('Ada Approved')).findByRole('button', {
+      name: 'Riprova',
+    });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(2));
+    expect(mockSetStudentLabelAssignment).toHaveBeenNthCalledWith(
+      2,
+      'u-approved',
+      'label-1',
+      OWNER_UID,
+      {},
+    );
+    await waitFor(() =>
+      expect(within(studentCard('Ada Approved')).queryByRole('alert')).toBeNull(),
+    );
+    expect(labelSelectOf('Ada Approved').value).toBe('label-1');
   });
 
   it('il busy è circoscritto alla card e un doppio cambio non produce due scritture', async () => {
@@ -1179,6 +1216,64 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       studentUid: 'u-approved',
       labelId: 'label-1',
       labelCounts: [{ labelId: 'label-1', assignedCount: 2 }],
+      changed: true,
+    });
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(false));
+  });
+
+  it('due card possono salvare insieme e il termine di A non sblocca B', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    const releases = new Map<string, (value: unknown) => void>();
+    mockSetStudentLabelAssignment.mockImplementation((uid: string, labelId: string) =>
+      new Promise((resolve) => {
+        releases.set(uid, resolve);
+      }).then(() => ({ studentUid: uid, labelId, labelCounts: [], changed: true })),
+    );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+    fireEvent.change(labelSelectOf('Pia Pending'), { target: { value: 'label-b' } });
+
+    await waitFor(() => expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(2));
+    expect(labelSelectOf('Ada Approved').disabled).toBe(true);
+    expect(labelSelectOf('Pia Pending').disabled).toBe(true);
+
+    releases.get('u-approved')?.(undefined);
+    await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(false));
+    expect(labelSelectOf('Pia Pending').disabled).toBe(true);
+
+    releases.get('u-pending')?.(undefined);
+    await waitFor(() => expect(labelSelectOf('Pia Pending').disabled).toBe(false));
+  });
+
+  it('il doppio click su «Riprova» avvia una sola nuova transazione', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
+    let release!: (value: unknown) => void;
+    mockSetStudentLabelAssignment
+      .mockRejectedValueOnce(new Error('Errore temporaneo.'))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => screen.getByText('Ada Approved'));
+    fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
+    const retry = await within(studentCard('Ada Approved')).findByRole('button', {
+      name: 'Riprova',
+    });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(mockSetStudentLabelAssignment).toHaveBeenCalledTimes(2);
+
+    release({
+      studentUid: 'u-approved',
+      labelId: 'label-1',
+      labelCounts: [],
       changed: true,
     });
     await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(false));
@@ -1298,8 +1393,12 @@ describe('StudentsView — contratto CSS del campo Etichetta (VDIF-02)', () => {
     );
   });
 
-  it('l’errore del campo occupa la propria riga, senza restringere la select', () => {
-    expect(labelFieldCss).toMatch(/\.labelFieldError\s*\{[^}]*flex:\s*1 1 100%/s);
+  it('l’errore e il retry occupano la propria riga, senza restringere la select', () => {
+    expect(labelFieldCss).toMatch(/\.labelFieldFeedback\s*\{[^}]*flex:\s*1 1 100%/s);
     expect(labelFieldCss).toMatch(/\.labelFieldError\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+    expect(labelFieldCss).toMatch(/\.labelRetryButton\s*\{[^}]*min-height:\s*2\.25rem/s);
+    expect(labelFieldCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.labelRetryButton\s*\{[^}]*min-height:\s*2\.75rem/s,
+    );
   });
 });

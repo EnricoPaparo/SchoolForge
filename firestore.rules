@@ -726,12 +726,12 @@ service cloud.firestore {
           && d.labelId.size() <= 1500
           && d.updatedAt == request.time;
       }
-      // L'etichetta puntata deve esistere davvero ed essere di questo docente:
-      // un'assegnazione verso un'etichetta cancellata o di un altro owner e' un
-      // puntatore rotto che nessuna schermata saprebbe piu' spiegare.
-      function labelIsOwned(labelId) {
-        return exists(/databases/$(database)/documents/differentiationLabels/$(labelId))
-          && get(/databases/$(database)/documents/differentiationLabels/$(labelId))
+      // L'etichetta puntata deve sopravvivere al commit ed essere di questo
+      // docente. `existsAfter`/`getAfter` impediscono a un batch malevolo di
+      // creare/cambiare l'assegnazione e cancellare contestualmente l'etichetta.
+      function labelSurvivesOwned(labelId) {
+        return existsAfter(/databases/$(database)/documents/differentiationLabels/$(labelId))
+          && getAfter(/databases/$(database)/documents/differentiationLabels/$(labelId))
                .data.ownerUid == request.auth.uid;
       }
       // `existsAfter`/`getAfter` e non `exists`/`get`: cio' che conta e' che lo
@@ -749,7 +749,7 @@ service cloud.firestore {
         && assignmentKeysOk(request.resource.data)
         && assignmentShapeOk(request.resource.data)
         && request.resource.data.createdAt == request.time
-        && labelIsOwned(request.resource.data.labelId)
+        && labelSurvivesOwned(request.resource.data.labelId)
         && studentSurvivesOwned();
       // Cambio A->B: si muove solo labelId (con updatedAt). Identita', ownership
       // e data di nascita dell'assegnazione sono immutabili.
@@ -760,7 +760,7 @@ service cloud.firestore {
         && request.resource.data.studentUid == resource.data.studentUid
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.createdAt == resource.data.createdAt
-        && labelIsOwned(request.resource.data.labelId)
+        && labelSurvivesOwned(request.resource.data.labelId)
         && studentSurvivesOwned();
       // La delete NON richiede che lo studente esista: e' esattamente
       // l'operazione che accompagna la sua rimozione.

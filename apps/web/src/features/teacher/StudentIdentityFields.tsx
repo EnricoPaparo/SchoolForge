@@ -32,6 +32,7 @@ export type StudentIdentityFieldsProps = {
   labelDisabled: boolean;
   labelError: string | null;
   onLabelChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onLabelRetry: () => void;
 };
 
 export function StudentIdentityFields({
@@ -46,6 +47,7 @@ export function StudentIdentityFields({
   labelDisabled,
   labelError,
   onLabelChange,
+  onLabelRetry,
 }: StudentIdentityFieldsProps) {
   const errorId = `student-label-error-${studentId}`;
   return (
@@ -103,9 +105,19 @@ export function StudentIdentityFields({
           ))}
         </select>
         {labelError ? (
-          <p className={styles.labelFieldError} id={errorId} role="alert">
-            {labelError}
-          </p>
+          <div className={styles.labelFieldFeedback}>
+            <p className={styles.labelFieldError} id={errorId} role="alert">
+              {labelError}
+            </p>
+            <button
+              type="button"
+              className={`btn-secondary ${styles.labelRetryButton}`}
+              disabled={labelDisabled}
+              onClick={onLabelRetry}
+            >
+              Riprova
+            </button>
+          </div>
         ) : null}
       </div>
     </div>

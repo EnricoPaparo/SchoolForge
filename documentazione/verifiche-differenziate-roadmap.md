@@ -1,9 +1,10 @@
 # SchoolForge — Verifiche differenziate per etichetta (VDIF) ed Esiti
 
 **Stato:** **VDIF-00 completato** (contratto tecnico congelato, cost model,
-matrice di test e prototipo UI) e **VDIF-01 implementato** — registro etichette
-owner-only, unicità transazionale del nome e terza scheda «Etichette» nella
-sezione Studenti. **VDIF-02→05 restano aperti; nessun rollout è stato
+matrice di test e prototipo UI), **VDIF-01 implementato** — registro etichette
+owner-only, unicità transazionale del nome e terza scheda «Etichette» — e
+**VDIF-02 implementato** — assegnazione privata studente → etichetta con
+contatori atomici. **VDIF-03→05 restano aperti; nessun rollout è stato
 dichiarato.**
 **Data:** 12 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
@@ -1562,7 +1563,7 @@ completate escluse, copertura dichiarata, numero di domande per riga).
 |---|---|---|---|
 | **VDIF-00** ✅ | Contratto tecnico, privacy, cost model, matrice di test e **prototipo UI**. Solo documentazione e prototipo statico. | GVEX PASS | Questo documento + `prototipi/verifiche-differenziate.html` + fasi in `piano-implementazione.md`. Zero runtime. |
 | **VDIF-01** ✅ | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, fail-closed su record incoerente), helper puro `labelName.ts` + `labelReservationId.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit atomico, **scheda Etichette** (card, dialog crea/rinomina/elimina, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | **Implementato.** Vedi §18 per lo stato reale, i limiti dichiarati e ciò che resta a VDIF-02. |
-| **VDIF-02** | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, **transazione con `assignedCount`** (esistenza dell'etichetta verificata in-transaction, `increment` ±1, cambio `L1→L2` in un solo commit), selettore nella card studente, ricerca per etichetta, Rules, audit, eliminazione studente nello stesso batch. | VDIF-01 | Assegnazione/rimozione reali; test Rules (studente non legge né scrive, altro owner negato); T35/T35b verdi; ricerca; nessuna etichetta in alcun dato studente. |
+| **VDIF-02** ✅ | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, service interamente **transazionale** con valori espliciti di `assignedCount` (mai `increment` alla cieca), cambio `L1→L2` in un solo commit, selettore nella card studente, ricerca per etichetta, Rules, audit e rimozione studente nella stessa transazione. | VDIF-01 | **Implementato, non distribuito.** Integrità referenziale finale su etichetta e studente (`existsAfter`/`getAfter`); busy e retry per singola card; nessuna etichetta in alcun dato studente. Vedi §19. |
 | **VDIF-03** | **Builder delle varianti**: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori con dirty guard, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **`updateVerificationConfig` reso transazionale** con il diff di insiemi `added`/`removed` su `draftUsageCount` (§5.F.1), **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da tutte le UI; test dei cinque scenari di §6.10 e T41/T41b/T41f; **zero letture e zero scritture di etichette quando l'insieme non cambia**. |
 | **VDIF-04** | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | Attivazione reale con ≥ 2 etichette, ≥ 1 sostituzione e ≥ 1 omissione; ogni guardia coperta da test; T36/T39/T40 e T41c/T41d/T41e verdi; idempotenza e replay verdi. |
 | **VDIF-05** | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | Ogni consumer opera sulla sola assegnazione; audit di privacy che dimostra l'assenza di etichette in ogni superficie di §4. |
@@ -1952,9 +1953,10 @@ lista chiusa di moduli le nomini.
 Le Rules verificano: ownership, forma chiusa a cinque chiavi, identità
 (`studentUid` == id del documento), timestamp del server, immutabilità di
 `studentUid`/`ownerUid`/`createdAt`, esistenza e appartenenza dell'**etichetta**
-puntata (`exists` + `get`), esistenza e appartenenza dello **studente alla fine
-del commit** (`existsAfter` + `getAfter` — con `exists` un commit che assegna e
-insieme rimuove lo studente passerebbe, lasciando un'assegnazione orfana).
+e dello **studente alla fine del commit** (`existsAfter` + `getAfter`). Usare
+`exists`/`get` permetterebbe a un batch malevolo di creare l'assegnazione e
+cancellare nello stesso commit l'etichetta oppure lo studente, lasciando un
+riferimento orfano.
 
 Le Rules **non** verificano: la coerenza fra l'assegnazione e `assignedCount`.
 CEL non può leggere il valore precedente di un documento che un'altra scrittura
@@ -1983,6 +1985,12 @@ scrittura diretta che aggiri il service.
 risultante e i contatori **scritti**, che bastano ad aggiornare lo stato locale.
 Nessun listener, nessun polling, **zero indici nuovi** (un solo filtro di
 uguaglianza su `ownerUid`), zero chiamate AI, zero Functions toccate.
+
+Il busy è **per singolo studente**: due card diverse possono salvare in
+concorrenza, mentre due invii sulla stessa card vengono deduplicati. Se il
+salvataggio fallisce, la scelta tentata resta visibile e il controllo espone un
+retry esplicito, anch'esso protetto dal doppio click; la conclusione
+dell'operazione su una card non sblocca prematuramente le altre.
 
 ### 19.6 Che cosa VDIF-02 **non** fa
 

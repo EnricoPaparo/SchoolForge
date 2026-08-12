@@ -239,18 +239,17 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
    * riflette da sola attraverso il join, senza toccare un solo documento.
    */
   const [assignments, setAssignments] = useState<StudentLabelAssignmentItem[] | null>(null);
-  /** Studente su cui è in corso una mutazione dell'etichetta (busy della sola card). */
-  const [labelBusyUid, setLabelBusyUid] = useState<string | null>(null);
-  /** Errore ancorato alla card che lo riguarda, non un banner globale. */
-  const [labelError, setLabelError] = useState<{ uid: string; message: string } | null>(null);
+  /** Studenti con una mutazione in corso: operazioni su card diverse possono convivere. */
+  const [labelBusyUids, setLabelBusyUids] = useState<ReadonlySet<string>>(() => new Set());
+  /** Errori ancorati alle rispettive card, non un banner globale. */
+  const [labelErrors, setLabelErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
   /**
-   * Scelta **tentata** e non ancora persistita. In caso di errore la select
-   * continua a mostrarla: un ripristino silenzioso al valore precedente farebbe
-   * credere che non sia successo nulla, e il docente non saprebbe che cosa
-   * riprovare.
+   * Scelte **tentate** e non ancora persistite, una per card. In caso di errore
+   * la select continua a mostrarle: un ripristino silenzioso al valore
+   * precedente farebbe credere che non sia successo nulla.
    */
-  const [pendingLabel, setPendingLabel] = useState<{ uid: string; labelId: string | null } | null>(
-    null,
+  const [pendingLabels, setPendingLabels] = useState<ReadonlyMap<string, string | null>>(
+    () => new Map(),
   );
   const [eligibleExamClassIds, setEligibleExamClassIds] = useState<string[] | null>(null);
   const [access, setAccess] = useState<StudentAccessSnapshot | null>(null);
@@ -267,11 +266,10 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [examModeDisableConfirm, setExamModeDisableConfirm] = useState(false);
 
   /**
-   * Guardia **sincrona** anti-doppio-click: due `change` nello stesso tick non
-   * possono avviare due transazioni. Uno stato React non basterebbe, perché il
-   * secondo evento parte prima del re-render.
+   * Guardia **sincrona per studente**: due eventi dello stesso uid non avviano
+   * due transazioni, mentre due card diverse restano indipendenti.
    */
-  const labelBusyRef = useRef(false);
+  const labelBusyRef = useRef(new Set<string>());
 
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -550,13 +548,16 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
    * l'assegnazione risultante e i contatori scritti, che bastano ad aggiornare
    * lo stato locale.
    */
-  async function handleLabelChange(uid: string, event: ChangeEvent<HTMLSelectElement>) {
-    const nextLabelId = event.target.value === '' ? null : event.target.value;
-    if (labelBusyRef.current) return;
-    labelBusyRef.current = true;
-    setPendingLabel({ uid, labelId: nextLabelId });
-    setLabelBusyUid(uid);
-    setLabelError(null);
+  async function persistLabelSelection(uid: string, nextLabelId: string | null) {
+    if (labelBusyRef.current.has(uid)) return;
+    labelBusyRef.current.add(uid);
+    setPendingLabels((prev) => new Map(prev).set(uid, nextLabelId));
+    setLabelBusyUids((prev) => new Set(prev).add(uid));
+    setLabelErrors((prev) => {
+      const next = new Map(prev);
+      next.delete(uid);
+      return next;
+    });
     try {
       const result = await setStudentLabelAssignment(uid, nextLabelId, ownerUid, db);
       setAssignments((prev) => {
@@ -567,20 +568,37 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           : [...others, { studentUid: uid, ownerUid, labelId: result.labelId }];
       });
       applyLabelCounts(result.labelCounts);
-      setPendingLabel(null);
+      setPendingLabels((prev) => {
+        const next = new Map(prev);
+        next.delete(uid);
+        return next;
+      });
     } catch (error) {
-      // La scelta tentata resta visibile: `pendingLabel` non viene azzerato.
-      setLabelError({
-        uid,
-        message:
+      // La scelta tentata resta visibile e il pulsante consente di ritentare
+      // anche quando la select non emetterebbe un secondo evento `change`.
+      setLabelErrors((prev) => {
+        const next = new Map(prev);
+        next.set(
+          uid,
           error instanceof Error && error.message
             ? error.message
             : 'Impossibile aggiornare l’etichetta. Riprova.',
+        );
+        return next;
       });
     } finally {
-      labelBusyRef.current = false;
-      setLabelBusyUid(null);
+      labelBusyRef.current.delete(uid);
+      setLabelBusyUids((prev) => {
+        const next = new Set(prev);
+        next.delete(uid);
+        return next;
+      });
     }
+  }
+
+  function handleLabelChange(uid: string, event: ChangeEvent<HTMLSelectElement>) {
+    const nextLabelId = event.target.value === '' ? null : event.target.value;
+    void persistLabelSelection(uid, nextLabelId);
   }
 
   function selectTab(tab: StudentsTab) {
@@ -839,18 +857,17 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                  * un'assegnazione in corso o fallita su un altro studente non
                  * deve disabilitare né segnalare nulla qui.
                  */
-                const labelBusy = busy || labelBusyUid === s.id;
-                const cardLabelError = labelError?.uid === s.id ? labelError.message : null;
+                const labelBusy = busy || labelBusyUids.has(s.id);
+                const cardLabelError = labelErrors.get(s.id) ?? null;
                 /*
                  * Dopo un errore la scelta **tentata** resta selezionata: il
                  * docente vede che cosa stava facendo e può riprovare senza
-                 * ricostruirla. Riuscita o annullata, `pendingLabel` sparisce e
+                 * ricostruirla. Riuscita, la voce di `pendingLabels` sparisce e
                  * si torna al valore persistito.
                  */
-                const labelSelectValue =
-                  pendingLabel?.uid === s.id
-                    ? (pendingLabel.labelId ?? '')
-                    : (labelIdByStudentUid.get(s.id) ?? '');
+                const labelSelectValue = pendingLabels.has(s.id)
+                  ? (pendingLabels.get(s.id) ?? '')
+                  : (labelIdByStudentUid.get(s.id) ?? '');
                 return (
                   <RecordCard
                     key={s.id}
@@ -870,7 +887,10 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                         labelValue={labelSelectValue}
                         labelDisabled={labelBusy || labels === null || assignments === null}
                         labelError={cardLabelError}
-                        onLabelChange={(e) => void handleLabelChange(s.id, e)}
+                        onLabelChange={(e) => handleLabelChange(s.id, e)}
+                        onLabelRetry={() =>
+                          void persistLabelSelection(s.id, pendingLabels.get(s.id) ?? null)
+                        }
                       />
                     }
                     metrics={[
