@@ -595,6 +595,96 @@ service cloud.firestore {
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
     }
 
+    // --- differentiationLabels/{labelId} (VDIF-01) ---
+    // Registro delle etichette operative del docente. OWNER-ONLY in ogni
+    // direzione: nessuno studente, nessun altro utente autenticato e nessun
+    // anonimo legge o scrive qui, e nessun campo di questi documenti raggiunge
+    // mai una superficie leggibile dallo studente.
+    //
+    // `get` non richiede il confronto su resource.data.ownerUid perché il
+    // documento può non esistere (la transazione di creazione legge un id che
+    // sta per creare) e `resource` sarebbe null: isOwner() confronta gia' l'uid
+    // con settings/owner, quindi in questo sistema single-owner e' sufficiente.
+    // `list` invece lo richiede, cosi' Firestore puo' dimostrare la query solo
+    // se il client filtra davvero su ownerUid.
+    //
+    // Confine dichiarato: CEL non calcola SHA-256 e non normalizza Unicode,
+    // quindi le Rules NON verificano che nameKey derivi da name ne' che
+    // l'id della prenotazione sia l'hash della coppia. Verificano forma,
+    // identita', ownership, immutabilita' e contatori; il resto e'
+    // responsabilita' del service owner-only (stesso confine gia' in vigore per
+    // teacherSnapshot/evaluations — vedi sicurezza.md).
+    match /differentiationLabels/{labelId} {
+      function labelKeysOk(d) {
+        return d.keys().hasOnly(['labelId', 'ownerUid', 'name', 'nameKey',
+                                 'assignedCount', 'draftUsageCount',
+                                 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['labelId', 'ownerUid', 'name', 'nameKey',
+                              'assignedCount', 'draftUsageCount',
+                              'createdAt', 'updatedAt']);
+      }
+      function labelShapeOk(d) {
+        return d.labelId == labelId
+          && d.ownerUid == request.auth.uid
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 120
+          && d.nameKey is string && d.nameKey.size() > 0 && d.nameKey.size() <= 120
+          && d.assignedCount is int && d.assignedCount >= 0
+          && d.draftUsageCount is int && d.draftUsageCount >= 0
+          && d.updatedAt == request.time;
+      }
+      allow get: if isOwner();
+      allow list: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isOwner()
+        && labelKeysOk(request.resource.data)
+        && labelShapeOk(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        // Nascono a zero: nessun percorso puo' creare un'etichetta gia' "in uso".
+        && request.resource.data.assignedCount == 0
+        && request.resource.data.draftUsageCount == 0;
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && labelKeysOk(request.resource.data)
+        && labelShapeOk(request.resource.data)
+        // Identita' e data di nascita immutabili.
+        && request.resource.data.labelId == resource.data.labelId
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        // Un contatore si muove di UNA unita' per volta, come i servizi
+        // canonici: una scrittura che salta da 0 a 7 non e' legittima.
+        && request.resource.data.assignedCount >= resource.data.assignedCount - 1
+        && request.resource.data.assignedCount <= resource.data.assignedCount + 1
+        && request.resource.data.draftUsageCount >= resource.data.draftUsageCount - 1
+        && request.resource.data.draftUsageCount <= resource.data.draftUsageCount + 1;
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // --- differentiationLabelNames/{reservationId} (VDIF-01) ---
+    // Prenotazione del nome: id deterministico
+    // hex(SHA-256(ownerUid + U+0000 + nameKey)), quindi due tentativi
+    // concorrenti sullo stesso nome puntano allo stesso documento e la loro
+    // create e' mutuamente esclusiva dentro una transazione. Il nome non
+    // compare mai in chiaro nel path.
+    //
+    // `update` e' SEMPRE negato: una prenotazione si crea e si rilascia, non si
+    // muta. Consentirlo permetterebbe di spostare una prenotazione su un'altra
+    // etichetta senza passare dalla transazione di rinomina.
+    match /differentiationLabelNames/{reservationId} {
+      allow get: if isOwner();
+      allow list: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isOwner()
+        && request.resource.data.keys().hasOnly(['ownerUid', 'labelId', 'nameKey', 'createdAt'])
+        && request.resource.data.keys().hasAll(['ownerUid', 'labelId', 'nameKey', 'createdAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.labelId is string
+        && request.resource.data.labelId.size() > 0
+        && request.resource.data.nameKey is string
+        && request.resource.data.nameKey.size() > 0
+        && request.resource.data.nameKey.size() <= 120
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
+    }
+
     // --- programs/{docId} (M3-lite student read, M3L-C) ---
     // Owner: full read/write, as always. An approved student may also read
     // the top-level program document — never its imports/** subcollection

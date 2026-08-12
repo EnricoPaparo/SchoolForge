@@ -19,8 +19,13 @@ import {
   resetStudentToPending,
   type StudentItem,
 } from '../repository/students/studentsService.js';
+import {
+  listDifferentiationLabels,
+  type DifferentiationLabelItem,
+} from '../repository/differentiation/differentiationLabelsService.js';
 import type { StudentStatus } from '../../types/firestore.js';
 import { ClassesTab, type ClassesTabItem } from './ClassesTab.js';
+import { LabelsTab } from './LabelsTab.js';
 import { RecordCard } from '../../components/RecordCard.js';
 import { RecordActionsMenu } from './RecordActionsMenu.js';
 import {
@@ -34,7 +39,9 @@ import {
 import menuStyles from './CourseWorkspace.module.css';
 import styles from './StudentsView.module.css';
 
-type StudentsTab = 'students' | 'classes';
+/** VDIF-01 — la sezione Studenti ha ora tre schede. L'ordine è vincolante. */
+const STUDENTS_TABS = ['students', 'classes', 'labels'] as const;
+type StudentsTab = (typeof STUDENTS_TABS)[number];
 
 const STATUS_LABEL: Record<StudentStatus, string> = {
   pending: 'In attesa',
@@ -120,6 +127,16 @@ function ToggleCard({
   );
 }
 
+/**
+ * Ordine stabile e leggibile delle etichette: `nameKey` è già la forma
+ * normalizzata, quindi ordinare su di essa evita sia un `orderBy` Firestore
+ * (che richiederebbe un indice composito con il filtro `ownerUid`) sia le
+ * sorprese di un confronto sensibile a maiuscole e accenti.
+ */
+function sortLabels(items: DifferentiationLabelItem[]): DifferentiationLabelItem[] {
+  return [...items].sort((a, b) => a.nameKey.localeCompare(b.nameKey, 'it'));
+}
+
 /** "Disattivata" / "Tutte le classi" / comma-separated class names. */
 function examModeStatusLabel(
   examMode: StudentAccessSnapshot['examMode'],
@@ -189,10 +206,25 @@ function ExamModeCard({
 
 export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [activeTab, setActiveTab] = useState<StudentsTab>('students');
-  const studentsTabRef = useRef<HTMLButtonElement>(null);
-  const classesTabRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Un ref per scheda, indicizzato dal nome: con tre schede una coppia di ref
+   * separati diventerebbe una catena di ternari, e una quarta scheda la
+   * romperebbe di nuovo.
+   */
+  const tabRefs = useRef<Record<StudentsTab, HTMLButtonElement | null>>({
+    students: null,
+    classes: null,
+    labels: null,
+  });
   const [students, setStudents] = useState<StudentItem[] | null>(null);
   const [classes, setClasses] = useState<ClassesTabItem[] | null>(null);
+  const [labels, setLabels] = useState<DifferentiationLabelItem[] | null>(null);
+  /**
+   * VDIF-01 — un guasto sulle sole etichette non deve far sparire studenti e
+   * classi, ma nemmeno mostrare una lista vuota come se fosse completa: la
+   * scheda Etichette mostra l'errore, le altre due restano operative.
+   */
+  const [labelsError, setLabelsError] = useState<string | null>(null);
   const [eligibleExamClassIds, setEligibleExamClassIds] = useState<string[] | null>(null);
   const [access, setAccess] = useState<StudentAccessSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -217,17 +249,40 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
 
   async function loadAll() {
     setLoadError(null);
+    setLabelsError(null);
     try {
-      const [studentsList, classesList, accessSettings, activeOnlineClassIds] = await Promise.all([
-        listStudents(ownerUid, db),
-        listClasses(ownerUid, db),
-        getStudentAccessSettings(db),
-        listActiveOnlineVerificationClassIds(ownerUid, db),
-      ]);
+      /*
+       * VDIF-01 — le etichette entrano nel caricamento aggregato già esistente:
+       * **una sola query** in più, nello stesso `Promise.all`, senza listener,
+       * senza polling e senza alcuna lettura per card. `allSettled` sul solo
+       * ramo etichette perché un loro errore non deve impedire di lavorare su
+       * studenti e classi.
+       */
+      const [studentsList, classesList, accessSettings, activeOnlineClassIds, labelsResult] =
+        await Promise.all([
+          listStudents(ownerUid, db),
+          listClasses(ownerUid, db),
+          getStudentAccessSettings(db),
+          listActiveOnlineVerificationClassIds(ownerUid, db),
+          listDifferentiationLabels(ownerUid, db).then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error }),
+          ),
+        ]);
       setStudents(studentsList);
       setClasses(classesList);
       setAccess(accessSettings);
       setEligibleExamClassIds(activeOnlineClassIds);
+      if (labelsResult.ok) {
+        setLabels(labelsResult.value);
+      } else {
+        setLabels(null);
+        setLabelsError(
+          labelsResult.error instanceof Error && labelsResult.error.message
+            ? labelsResult.error.message
+            : 'Impossibile caricare le etichette.',
+        );
+      }
     } catch {
       setLoadError('Impossibile caricare gli studenti.');
     }
@@ -370,19 +425,28 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
 
   function selectTab(tab: StudentsTab) {
     setActiveTab(tab);
-    (tab === 'students' ? studentsTabRef : classesTabRef).current?.focus();
+    tabRefs.current[tab]?.focus();
   }
 
+  /**
+   * Frecce cicliche su tutta la lista, Home/End agli estremi: generalizzato
+   * sull'array delle schede invece che sulla coppia, così aggiungerne una non
+   * richiede di riscrivere la navigazione.
+   */
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    const index = STUDENTS_TABS.indexOf(activeTab);
+    if (event.key === 'ArrowRight') {
       event.preventDefault();
-      selectTab(activeTab === 'students' ? 'classes' : 'students');
+      selectTab(STUDENTS_TABS[(index + 1) % STUDENTS_TABS.length]!);
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      selectTab(STUDENTS_TABS[(index - 1 + STUDENTS_TABS.length) % STUDENTS_TABS.length]!);
     } else if (event.key === 'Home') {
       event.preventDefault();
-      selectTab('students');
+      selectTab(STUDENTS_TABS[0]);
     } else if (event.key === 'End') {
       event.preventDefault();
-      selectTab('classes');
+      selectTab(STUDENTS_TABS[STUDENTS_TABS.length - 1]!);
     }
   }
 
@@ -396,6 +460,26 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
 
   function handleClassDeleted(id: string) {
     setClasses((prev) => prev?.filter((item) => item.id !== id) ?? null);
+  }
+
+  /*
+   * VDIF-01 — le mutazioni delle etichette aggiornano la lista **in memoria**:
+   * il service ha già scritto in transazione e restituisce il documento
+   * risultante, quindi una rilettura completa sarebbe una query in più per
+   * ottenere ciò che si conosce già.
+   */
+  function handleLabelCreated(label: DifferentiationLabelItem) {
+    setLabels((prev) => sortLabels([...(prev ?? []), label]));
+  }
+
+  function handleLabelRenamed(label: DifferentiationLabelItem) {
+    setLabels((prev) =>
+      prev ? sortLabels(prev.map((item) => (item.labelId === label.labelId ? label : item))) : prev,
+    );
+  }
+
+  function handleLabelDeleted(labelId: string) {
+    setLabels((prev) => prev?.filter((item) => item.labelId !== labelId) ?? null);
   }
 
   if (loadError)
@@ -488,9 +572,15 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
         </div>
       )}
 
-      <div className={styles.tabs} role="tablist" aria-label="Gestione studenti e classi">
+      <div
+        className={styles.tabs}
+        role="tablist"
+        aria-label="Gestione studenti, classi ed etichette"
+      >
         <button
-          ref={studentsTabRef}
+          ref={(node) => {
+            tabRefs.current.students = node;
+          }}
           type="button"
           role="tab"
           id="students-tab"
@@ -505,7 +595,9 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           {pendingCount > 0 && <span className={styles.tabCount}>{pendingCount}</span>}
         </button>
         <button
-          ref={classesTabRef}
+          ref={(node) => {
+            tabRefs.current.classes = node;
+          }}
           type="button"
           role="tab"
           id="classes-tab"
@@ -517,6 +609,22 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           onKeyDown={handleTabKeyDown}
         >
           Classi
+        </button>
+        <button
+          ref={(node) => {
+            tabRefs.current.labels = node;
+          }}
+          type="button"
+          role="tab"
+          id="labels-tab"
+          aria-controls="labels-panel"
+          aria-selected={activeTab === 'labels'}
+          tabIndex={activeTab === 'labels' ? 0 : -1}
+          className={`${styles.tab}${activeTab === 'labels' ? ` ${styles.tabActive}` : ''}`}
+          onClick={() => setActiveTab('labels')}
+          onKeyDown={handleTabKeyDown}
+        >
+          Etichette
         </button>
       </div>
 
@@ -734,7 +842,7 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
             </p>
           )}
         </div>
-      ) : (
+      ) : activeTab === 'classes' ? (
         <div
           role="tabpanel"
           id="classes-panel"
@@ -749,6 +857,32 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
             onClassRenamed={handleClassRenamed}
             onClassDeleted={handleClassDeleted}
           />
+        </div>
+      ) : (
+        <div
+          role="tabpanel"
+          id="labels-panel"
+          aria-labelledby="labels-tab"
+          className={styles.tabPanel}
+        >
+          {labelsError ? (
+            /* Errore esplicito: mai una lista vuota spacciata per completa. */
+            <p role="alert" className="text-error">
+              {labelsError}
+            </p>
+          ) : labels === null ? (
+            <p aria-busy="true" className="state-loading">
+              Caricamento etichette…
+            </p>
+          ) : (
+            <LabelsTab
+              ownerUid={ownerUid}
+              labels={labels}
+              onLabelCreated={handleLabelCreated}
+              onLabelRenamed={handleLabelRenamed}
+              onLabelDeleted={handleLabelDeleted}
+            />
+          )}
         </div>
       )}
     </section>

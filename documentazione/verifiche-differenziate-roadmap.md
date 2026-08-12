@@ -1,10 +1,11 @@
 # SchoolForge — Verifiche differenziate per etichetta (VDIF) ed Esiti
 
-**Stato:** **VDIF-00 completato** — contratto tecnico congelato, cost model,
-matrice di test e prototipo UI approvabile. **Nessuna riga di codice runtime
-implementata.** Nessuna modifica a Firebase, Security Rules, Cloud Functions,
-indici, schema reale o dipendenze è introdotta da questo pacchetto.
-**Data:** 11 agosto 2026.
+**Stato:** **VDIF-00 completato** (contratto tecnico congelato, cost model,
+matrice di test e prototipo UI) e **VDIF-01 implementato** — registro etichette
+owner-only, unicità transazionale del nome e terza scheda «Etichette» nella
+sezione Studenti. **VDIF-02→05 restano aperti; nessun rollout è stato
+dichiarato.**
+**Data:** 12 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
 equivalenti) implementati e distribuiti su DEV con **Gate GVEX PASS**;
 `assignedQuestionOrders` e `resolveAssignedQuestions` già usati da tutti i
@@ -1555,7 +1556,7 @@ completate escluse, copertura dichiarata, numero di domande per riga).
 | Fase | Scope | Dipende da | DoD |
 |---|---|---|---|
 | **VDIF-00** ✅ | Contratto tecnico, privacy, cost model, matrice di test e **prototipo UI**. Solo documentazione e prototipo statico. | GVEX PASS | Questo documento + `prototipi/verifiche-differenziate.html` + fasi in `piano-implementazione.md`. Zero runtime. |
-| **VDIF-01** | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, replay idempotente, fail-closed su record incoerente), `labelNameKey.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit, **scheda Etichette** (card, dialog crea/rinomina con dirty guard §9.2, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | CRUD reale su DEV; T34→T34e e T41g/T41h verdi; test Rules Emulator (owner ok, **studente sempre negato**, contratto chiuso a otto chiavi, contatori a zero alla creazione, salto di contatore negato, `update` sulla prenotazione sempre negato); nessun indice nuovo. |
+| **VDIF-01** ✅ | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, fail-closed su record incoerente), helper puro `labelName.ts` + `labelReservationId.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit atomico, **scheda Etichette** (card, dialog crea/rinomina/elimina, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | **Implementato.** Vedi §18 per lo stato reale, i limiti dichiarati e ciò che resta a VDIF-02. |
 | **VDIF-02** | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, **transazione con `assignedCount`** (esistenza dell'etichetta verificata in-transaction, `increment` ±1, cambio `L1→L2` in un solo commit), selettore nella card studente, ricerca per etichetta, Rules, audit, eliminazione studente nello stesso batch. | VDIF-01 | Assegnazione/rimozione reali; test Rules (studente non legge né scrive, altro owner negato); T35/T35b verdi; ricerca; nessuna etichetta in alcun dato studente. |
 | **VDIF-03** | **Builder delle varianti**: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori con dirty guard, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **`updateVerificationConfig` reso transazionale** con il diff di insiemi `added`/`removed` su `draftUsageCount` (§5.F.1), **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da tutte le UI; test dei cinque scenari di §6.10 e T41/T41b/T41f; **zero letture e zero scritture di etichette quando l'insieme non cambia**. |
 | **VDIF-04** | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | Attivazione reale con ≥ 2 etichette, ≥ 1 sostituzione e ≥ 1 omissione; ogni guardia coperta da test; T36/T39/T40 e T41c/T41d/T41e verdi; idempotenza e replay verdi. |
@@ -1744,5 +1745,105 @@ test statico che vieta a `textarea` di essere ridimensionabile e a
 ## 17. Decisioni aperte
 
 **Nessuna.** Ogni scelta di modello dati, UI, sicurezza, costo e sequenza è
-presa e motivata sopra. Le fasi VDIF-01→05 sono implementabili senza tornare a
+presa e motivata sopra. Le fasi VDIF-02→05 sono implementabili senza tornare a
 chiedere.
+
+---
+
+## 18. VDIF-01 — che cosa è stato implementato davvero
+
+**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout, Gate
+GVDIF **aperto**.
+
+### 18.1 Superficie realizzata
+
+| Area | File |
+|---|---|
+| Contratti | `types/firestore.ts` — `DifferentiationLabelDoc` (otto chiavi), `DifferentiationLabelNameReservationDoc` (quattro chiavi), azioni audit `label.created`/`label.updated`/`label.deleted` |
+| Helper puro nome | `features/repository/differentiation/labelName.ts` |
+| Identità prenotazione | `features/repository/differentiation/labelReservationId.ts` (Web Crypto, fail-closed) |
+| Service canonico | `features/repository/differentiation/differentiationLabelsService.ts` |
+| UI | `features/teacher/LabelsTab.tsx` + `LabelsTab.module.css`; terza scheda in `StudentsView.tsx`; icona `IconTag` |
+| Rules | `firestore.rules` — `differentiationLabels/{labelId}` e `differentiationLabelNames/{reservationId}` |
+
+### 18.2 Differenze rispetto al contratto congelato, e perché
+
+1. **`normalizeLabelName` collassa anche gli spazi Unicode non ASCII**
+   (`U+00A0`, `U+2000`–`U+200A`, `U+3000`). §5.A.5 diceva genericamente
+   «collasso degli spazi interni»: senza questa precisazione «Percorso A» con
+   uno spazio unificatore e «Percorso A» con uno spazio normale sarebbero due
+   etichette visivamente identiche e formalmente distinte.
+2. **`nameKey` applica NFKC *prima* del lowercase, con locale italiano
+   esplicito.** §5.A.5 elencava le operazioni senza fissarne l'ordine né il
+   locale. Il locale è fissato perché in turco «I» diventerebbe «ı» e l'unicità
+   dipenderebbe dalla lingua del browser.
+3. **La rinomina che cambia solo la grafia** (stesso `nameKey`, forma canonica
+   diversa: «percorso a» → «Percorso A») **aggiorna il documento** senza
+   toccare la prenotazione. Il contratto trattava il caso come no-op puro;
+   così com'era, il docente non avrebbe potuto correggere le maiuscole.
+
+### 18.3 Idempotenza: il limite, dichiarato
+
+Il contratto VDIF-00 non prevede un `requestId` persistito, e VDIF-01 **non ne
+inventa uno**. L'idempotenza realmente ottenuta è quella della transazione:
+
+- **retry interni all'SDK** (contesa) riusano lo stesso `labelId`, quindi una
+  prenotazione già presente con quel `labelId` è riconosciuta come il proprio
+  commit riuscito e **non scrive nulla**;
+- **una risposta persa seguita da una nuova azione del docente** genera un
+  `labelId` nuovo e produce `duplicate_name`. È l'esito **corretto e sicuro** —
+  non nasce una seconda etichetta omonima — ma **non è un replay silenzioso**, e
+  la UI lo mostra come conflitto di nome. Chi leggerà «replay idempotente» in
+  §5.A.6 deve intendere questo.
+
+Il doppio click è protetto in modo **sincrono** (un `ref`, non uno stato React:
+il secondo click parte prima del re-render).
+
+### 18.4 Confine Rules/service, misurato
+
+Le Rules garantiscono ownership, contratto chiuso a otto chiavi, tipi,
+non-negatività, `labelId == document id`, immutabilità di
+`labelId`/`ownerUid`/`createdAt`, creazione con contatori a zero, movimento di
+**una sola unità** per scrittura, `update` sulla prenotazione **sempre negato**,
+e negazione totale per studente, altro utente autenticato e anonimo.
+
+CEL **non** può: calcolare SHA-256 (quindi non verifica che `reservationId` sia
+l'hash della coppia), normalizzare Unicode (quindi non verifica che `nameKey`
+derivi da `name`), né contare code point o byte UTF-8 — `size()` su stringa non
+è nessuno dei due. Il limite reale di 40 code point / 120 byte è applicato
+dall'helper puro; le Rules impongono solo un tetto grossolano di sicurezza.
+
+**Audit atomico: verificato, non assunto.** `auditEvents` è owner-only in
+scrittura e non ha un contratto chiuso, quindi la transazione può crearlo con
+`transaction.set(doc(collection(db,'auditEvents')), …)` insieme a etichetta e
+prenotazione. Nessuna scrittura non atomica è nascosta dietro il flusso.
+
+### 18.5 Cost model reale
+
+| Operazione | Letture query | Letture transazionali | Scritture |
+|---|---|---|---|
+| apertura sezione Studenti | +1 query etichette nel `Promise.all` esistente | 0 | 0 |
+| apertura scheda Etichette | **0** (già in memoria) | 0 | 0 |
+| creazione | 0 | 1 (prenotazione) | 3 (etichetta + prenotazione + audit) |
+| rinomina verso un nuovo nome | 0 | 3 (etichetta + prenotazione vecchia + nuova) | 4 (prenotazione nuova + update + delete vecchia + audit) |
+| rinomina della sola grafia | 0 | 2 | 2 (update + audit) |
+| rinomina no-op (nome identico) | 0 | 2 | **0** |
+| eliminazione | 0 | 2 (etichetta + prenotazione) | 3 (delete + delete + audit) |
+| errore duplicato | 0 | 1–3 | **0** |
+| errore contatore positivo | 0 | 1 | **0** |
+| retry transazionale | — | ripete le letture del tentativo | solo il commit riuscito |
+
+**Zero** listener, **zero** polling, **zero** letture per card, **zero**
+Functions, **zero** callable, **zero** indici nuovi (un solo filtro di
+uguaglianza su `ownerUid`, servito dall'indice a campo singolo automatico;
+l'ordinamento per `nameKey` è fatto in memoria proprio per non richiederne uno
+composito).
+
+### 18.6 Che cosa VDIF-01 **non** fa
+
+Assegnazione studente→etichetta, modifiche alla card studente, ricerca per
+etichetta, builder delle varianti, qualunque modifica a VEX, alle verifiche, a
+`assignedQuestionOrders` o all'attivazione, e qualunque documento o vista
+studente. `assignedCount` e `draftUsageCount` esistono, nascono a zero, sono
+difesi dal service e dalle Rules, ma **nessun flusso li muove ancora**: lo
+faranno VDIF-02 (assegnazioni) e VDIF-03/04 (bozze e attivazione).

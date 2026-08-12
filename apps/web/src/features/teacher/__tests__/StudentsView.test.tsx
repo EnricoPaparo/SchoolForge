@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 afterEach(cleanup);
 
 import { StudentsView } from '../StudentsView.js';
+import type * as LabelsServiceModule from '../../repository/differentiation/differentiationLabelsService.js';
 
 const mockListStudents = vi.fn();
 const mockApproveStudent = vi.fn();
@@ -22,6 +23,10 @@ const mockSetStudentPortalEnabled = vi.fn();
 const mockSetNewStudentRequestsEnabled = vi.fn();
 const mockSetExamMode = vi.fn();
 const mockListActiveOnlineVerificationClassIds = vi.fn();
+const mockListDifferentiationLabels = vi.fn();
+const mockCreateDifferentiationLabel = vi.fn();
+const mockRenameDifferentiationLabel = vi.fn();
+const mockDeleteDifferentiationLabel = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -52,6 +57,20 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   listActiveOnlineVerificationClassIds: (...args: unknown[]) =>
     mockListActiveOnlineVerificationClassIds(...args),
 }));
+
+vi.mock('../../repository/differentiation/differentiationLabelsService.js', async () => {
+  const actual = await vi.importActual<typeof LabelsServiceModule>(
+    '../../repository/differentiation/differentiationLabelsService.js',
+  );
+  return {
+    describeUsage: actual.describeUsage,
+    DifferentiationLabelError: actual.DifferentiationLabelError,
+    listDifferentiationLabels: (...args: unknown[]) => mockListDifferentiationLabels(...args),
+    createDifferentiationLabel: (...args: unknown[]) => mockCreateDifferentiationLabel(...args),
+    renameDifferentiationLabel: (...args: unknown[]) => mockRenameDifferentiationLabel(...args),
+    deleteDifferentiationLabel: (...args: unknown[]) => mockDeleteDifferentiationLabel(...args),
+  };
+});
 
 const OWNER_UID = 'owner-uid';
 
@@ -101,8 +120,23 @@ const CLASSES = [
 
 const EXAM_MODE_OFF = { enabled: false, scope: 'all' as const, classIds: [], enabledAt: null };
 
+const LABELS = [
+  {
+    labelId: 'label-1',
+    ownerUid: OWNER_UID,
+    name: 'Percorso A',
+    nameKey: 'percorso a',
+    assignedCount: 0,
+    draftUsageCount: 0,
+  },
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockListDifferentiationLabels.mockResolvedValue(LABELS);
+  mockCreateDifferentiationLabel.mockResolvedValue(LABELS[0]);
+  mockRenameDifferentiationLabel.mockResolvedValue(LABELS[0]);
+  mockDeleteDifferentiationLabel.mockResolvedValue(undefined);
   mockListClasses.mockResolvedValue(CLASSES);
   mockCreateClass.mockResolvedValue('new-class');
   mockUpdateClass.mockResolvedValue(undefined);
@@ -128,7 +162,9 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
 
-    const tabs = await screen.findByRole('tablist', { name: 'Gestione studenti e classi' });
+    const tabs = await screen.findByRole('tablist', {
+      name: 'Gestione studenti, classi ed etichette',
+    });
     expect(
       within(tabs)
         .getByRole('tab', { name: /Studenti/ })
@@ -192,6 +228,85 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
     const classesTab = screen.getByRole('tab', { name: 'Classi' });
     expect(classesTab.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(classesTab);
+  });
+});
+
+/**
+ * VDIF-01 — terza scheda «Etichette». La navigazione è ciclica su tre elementi:
+ * con due schede una freccia "avanti" e una "indietro" erano indistinguibili, e
+ * un test che passa in entrambi i casi non dimostra nulla.
+ */
+describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
+  it('carica le etichette nello stesso caricamento aggregato, con una sola query', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await screen.findByRole('tab', { name: 'Etichette' });
+    expect(mockListDifferentiationLabels).toHaveBeenCalledOnce();
+    expect(mockListDifferentiationLabels).toHaveBeenCalledWith(OWNER_UID, {});
+  });
+
+  it('mostra le etichette caricate nella propria scheda', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Etichette' }));
+    const panel = screen.getByRole('tabpanel', { name: 'Etichette' });
+    expect(within(panel).getByRole('listitem', { name: 'Etichetta Percorso A' })).toBeTruthy();
+  });
+
+  it('le frecce sono cicliche sulle tre schede e Home/End vanno agli estremi', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    const studentsTab = await screen.findByRole('tab', { name: /Studenti/ });
+    studentsTab.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Classi' }));
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    const labelsTab = screen.getByRole('tab', { name: 'Etichette' });
+    expect(document.activeElement).toBe(labelsTab);
+    expect(labelsTab.getAttribute('aria-selected')).toBe('true');
+
+    // Ciclo: dall'ultima si torna alla prima.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Studenti/ }));
+
+    // E all'indietro dalla prima si arriva all'ultima.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Etichette' }));
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Studenti/ }));
+
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Etichette' }));
+  });
+
+  it('roving tabindex: solo la scheda selezionata è raggiungibile con Tab', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Etichette' }));
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
+  });
+
+  it('un errore sulle sole etichette non nasconde studenti e classi', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockListDifferentiationLabels.mockRejectedValue(new Error('Etichette non leggibili.'));
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    // Le altre schede restano operative.
+    await waitFor(() => screen.getByText('Ada Approved'));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Etichette' }));
+    const panel = screen.getByRole('tabpanel', { name: 'Etichette' });
+    expect(within(panel).getByRole('alert').textContent).toContain('Etichette non leggibili');
+    // Nessuna lista vuota spacciata per completa.
+    expect(within(panel).queryByRole('button', { name: /Nuova etichetta/ })).toBeNull();
   });
 });
 
