@@ -254,6 +254,7 @@ di generazione; non introduce chiamate aggiuntive.
 | **STRUCTURE-IMPORT-02A** ✅ | `Azioni corso → Importa struttura UDA`, dialog, preview e append atomico delle UDA. | **Implementato.** Un solo commit transazionale rende visibili insieme tutte le UDA; identità del tentativo `requestId` + `SHA-256(manifestCanonical)`; cleanup limitato al manifest; albero locale aggiornato dal manifest, senza refetch. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **STRUCTURE-IMPORT-02B** ✅ | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | **Implementato.** Stessa macchina di 02A (`structureAppendProtocol`), lease **per singola UDA**, commit unico con `LessonDoc` + `publicLessons` + incremento unico di `lessonCount`; identità del tentativo estesa a `kind` e UDA di destinazione; filtro studente sulle proiezioni con `content` vuoto. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **STRUCTURE-IMPORT-03** ✅ | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | **Implementato.** I tre campi vivono nello stesso `udaContext` (nessun secondo oggetto parallelo), passano da un unico confine di mapping, partecipano a payload canonico, `inputHash`, replay, stima, prenotazione e prompt effettivo. Zero nuove letture, query, listener o polling. Prompt del pool byte-identico; prompt lezione byte-identico su UDA legacy. Nessuna Rule, Function, indice o dipendenza aggiunta. |
+| **LESSON-METADATA-UI-01** ✅ | Resa semantica di `concettiChiave` e `obiettivi` nella scheda docente `Lezione → Informazioni`. | **Implementato, solo UI.** La porta byte-first, il planner, `LessonDoc`, `PublicLessonDoc` e il front matter conservavano già gli array distinti; rimossa soltanto la ricomposizione visiva con `join(', ')`, sostituita da `<ul><li>` con wrapping responsive. Parser, runtime d'importazione e persistenza invariati. |
 | **Gate GSTRUCT** | Smoke DEV docente/studente e chiusura evidenze. | Import UDA + lezioni, collisione, retry, mobile/Brave, generazione IA da uno scheletro, nessuna esposizione di card vuote. |
 
 ## 13. Fuori scope
@@ -833,3 +834,19 @@ pulsante e altezza della pagina restano identiche fra i tre stati.
 
 **Costi.** Invariati: parsing e riconoscimento sono interamente client-side, e
 nulla cambia in letture, scritture, upload o callable.
+
+### 14.16 LESSON-METADATA-UI-01 — elenchi leggibili nella scheda Informazioni
+
+La diagnosi sull'esempio «Aprire il prompt dei comandi» attraversa la porta
+byte-first autorevole e il planner puro: `concettiChiave` resta un array di un
+elemento e `obiettivi` un array di due elementi, senza trattini residui o virgole
+inventate. Gli stessi due elementi arrivano distinti in `LessonDoc`,
+`PublicLessonDoc` e nelle due voci YAML del front matter canonico.
+
+Il difetto era esclusivamente nel rendering di `CourseWorkspace`: la scheda
+`Informazioni` applicava `join(', ')` ad array già corretti. La vista usa ora un
+elenco semantico condiviso con i metadati UDA, con un `<li>` per elemento,
+chiavi composte da indice e valore e wrapping anche su viewport strette. Array
+vuoti, editor newline-separated e resa UDA restano invariati. Nessuna modifica a
+parser, normalizzatori, validatori, planner, runtime d'importazione, dati,
+Firebase, schema o costi.

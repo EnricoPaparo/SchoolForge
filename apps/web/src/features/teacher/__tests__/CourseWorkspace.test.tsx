@@ -278,8 +278,8 @@ describe('CourseWorkspace — selection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
 
     expect(screen.getByText('Fondamenti di reti')).toBeTruthy();
-    expect(screen.getByText('Progettare una LAN')).toBeTruthy();
-    expect(screen.getByText('Comprendere TCP/IP')).toBeTruthy();
+    expect(screen.getByText('Progettare una LAN').closest('li')?.parentElement?.tagName).toBe('UL');
+    expect(screen.getByText('Comprendere TCP/IP').closest('li')?.parentElement?.tagName).toBe('UL');
     const table = screen.getByRole('table');
     expect(within(table).getByText('Il modello ISO/OSI')).toBeTruthy();
     expect(within(table).getByText('5')).toBeTruthy(); // domande per lezione
@@ -607,10 +607,10 @@ describe('CourseWorkspace — sidebar and semantics', () => {
 });
 
 describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
-  async function openLesson(title = 'Il modello ISO/OSI') {
+  async function openLesson(title = 'Il modello ISO/OSI', body = 'Corpo lezione.') {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: title })]);
-    mockFetchLessonContent.mockResolvedValue('Corpo lezione.');
+    mockFetchLessonContent.mockResolvedValue(body);
     renderWorkspace();
     await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: title })).toBeTruthy());
@@ -651,6 +651,138 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     expect(screen.getByText(/nessun metadato/i)).toBeTruthy();
     expect(screen.queryByText(/dettagli tecnici/i)).toBeNull();
     expect(screen.queryByText('uda-01-reti/l1.md')).toBeNull();
+  });
+
+  it('Informazioni renders lesson key concepts and objectives as semantic lists', async () => {
+    const firstObjective =
+      'Descrivere le differenze tra interfaccia a riga di comando e interfaccia grafica.';
+    const secondObjective =
+      'Eseguire da riga di comando i comandi per verificare la cartella corrente ed elencarne il contenuto.';
+    await openLesson(
+      'Aprire il prompt dei comandi ed eseguire i primi comandi',
+      `---
+titolo: Aprire il prompt dei comandi ed eseguire i primi comandi
+sottotitolo: Riga di comando
+difficolta: base
+concetti_chiave:
+  - riga di comando
+obiettivi:
+  - ${firstObjective}
+  - ${secondObjective}
+---
+`,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
+
+    const keyConceptTerm = screen.getByText('Concetti chiave', { selector: 'dt' });
+    const keyConceptList = keyConceptTerm.nextElementSibling?.querySelector('ul');
+    expect(keyConceptList).not.toBeNull();
+    expect(within(keyConceptList!).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(keyConceptList!).getByRole('listitem').textContent).toBe('riga di comando');
+
+    const objectivesTerm = screen.getByText('Obiettivi', { selector: 'dt' });
+    const objectivesList = objectivesTerm.nextElementSibling?.querySelector('ul');
+    expect(objectivesList).not.toBeNull();
+    expect(
+      within(objectivesList!)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([firstObjective, secondObjective]);
+    expect(objectivesTerm.nextElementSibling?.textContent).not.toContain(
+      `${firstObjective}, ${secondObjective}`,
+    );
+  });
+
+  it('keeps an internal comma inside one objective list item', async () => {
+    const objective = 'Descrivere file, cartelle e percorsi dalla riga di comando.';
+    await openLesson(
+      'Riga di comando',
+      `---
+titolo: Riga di comando
+difficolta: base
+concetti_chiave:
+  - shell
+obiettivi:
+  - ${objective}
+---
+`,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
+
+    const objectivesTerm = screen.getByText('Obiettivi', { selector: 'dt' });
+    const items = within(objectivesTerm.nextElementSibling as HTMLElement).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]!.textContent).toBe(objective);
+  });
+
+  it('renders duplicate values without React key warnings', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await openLesson(
+        'Valori duplicati',
+        `---
+titolo: Valori duplicati
+difficolta: base
+concetti_chiave:
+  - shell
+  - shell
+obiettivi:
+  - Eseguire un comando
+  - Eseguire un comando
+---
+`,
+      );
+      fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
+
+      const infoList = screen.getByText('Obiettivi', { selector: 'dt' }).closest('dl');
+      expect(within(infoList!).getAllByRole('listitem')).toHaveLength(4);
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('hides empty lesson list sections while preserving other metadata', async () => {
+    await openLesson(
+      'Solo titolo',
+      `---
+titolo: Solo titolo
+difficolta: base
+concetti_chiave: []
+obiettivi: []
+---
+`,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
+
+    expect(screen.getByText('Titolo', { selector: 'dt' })).toBeTruthy();
+    expect(screen.queryByText('Concetti chiave', { selector: 'dt' })).toBeNull();
+    expect(screen.queryByText('Obiettivi', { selector: 'dt' })).toBeNull();
+  });
+
+  it('keeps lesson metadata arrays newline-separated in the editor', async () => {
+    await openLesson(
+      'Riga di comando',
+      `---
+titolo: Riga di comando
+difficolta: base
+concetti_chiave:
+  - shell
+  - terminale
+obiettivi:
+  - Primo obiettivo
+  - Secondo obiettivo
+---
+`,
+    );
+    clickMenuAction('Azioni lezione', 'Modifica informazioni');
+
+    expect((screen.getByLabelText('Concetti chiave lezione') as HTMLTextAreaElement).value).toBe(
+      'shell\nterminale',
+    );
+    expect((screen.getByLabelText('Obiettivi lezione') as HTMLTextAreaElement).value).toBe(
+      'Primo obiettivo\nSecondo obiettivo',
+    );
   });
 
   it('confirms before changing lesson when the pool has unsaved edits', async () => {
