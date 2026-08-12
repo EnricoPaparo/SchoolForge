@@ -1,0 +1,2917 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SchoolForge — Prototipo verifiche differenziate per etichetta (VDIF-00)</title>
+    <style>
+      /* ================================================================
+         Design tokens — riuso esatto della palette di apps/web/src/index.css.
+         Nessun font, asset, CDN o rete: prototipo interamente autonomo.
+         ================================================================ */
+      :root {
+        --color-primary: #3b82f6;
+        --color-primary-hover: #60a5fa;
+        --color-primary-light: rgba(59, 130, 246, 0.16);
+        --color-accent-violet: #a78bfa;
+        --color-brand-blue: #38bdf8;
+        --color-brand-orange: #fb923c;
+        --color-brand-interactive: var(--color-brand-orange);
+        --transition-brand-interactive: 160ms ease;
+
+        --color-surface: #141a24;
+        --color-surface-subtle: #090d14;
+        --color-surface-raised: #1d2532;
+        --color-border: #334052;
+
+        --color-text: #e7ebf2;
+        --color-text-muted: #93a0b4;
+
+        --color-error: #f87171;
+        --color-error-bg: rgba(248, 113, 113, 0.12);
+        --color-error-border: #7f2b2b;
+        --color-error-btn: #dc2626;
+        --color-success: #4ade80;
+        --color-success-bg: rgba(74, 222, 128, 0.12);
+        --color-success-border: #1f5c37;
+        --color-success-btn: #15803d;
+        --color-success-btn-hover: #166534;
+        --color-warning: #fbbf24;
+        --color-warning-bg: rgba(251, 191, 36, 0.12);
+        --color-warning-border: #6b4a12;
+        --color-focus-ring: rgba(59, 130, 246, 0.35);
+
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --radius: 6px;
+        --radius-lg: 10px;
+        --shadow-sm:
+          0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md:
+          0 6px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      * {
+        margin: 0;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.6;
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        -webkit-font-smoothing: antialiased;
+        /*
+         * Deliberatamente NESSUN `overflow-x: hidden` qui: nasconderebbe un
+         * eventuale overflow orizzontale invece di eliminarlo, e renderebbe
+         * inutile qualunque controllo su `scrollWidth`. Se una riga sborda si
+         * deve vedere e correggere, non mascherare.
+         */
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        line-height: 1.25;
+        font-weight: 600;
+        color: var(--color-text);
+      }
+      h3 {
+        font-size: 1.1rem;
+      }
+      h4 {
+        font-size: 1rem;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      /* ── Controlli base (identici al foglio globale) ────────────────── */
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.375rem;
+        padding: 0.4375rem 0.875rem;
+        font-family: inherit;
+        font-size: 0.875rem;
+        font-weight: 500;
+        line-height: 1.4;
+        color: var(--color-text);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s,
+          box-shadow 0.15s;
+        white-space: nowrap;
+        user-select: none;
+      }
+      button:hover:not(:disabled) {
+        background-color: var(--color-surface-raised);
+        border-color: var(--color-brand-interactive);
+      }
+      button:active:not(:disabled) {
+        background-color: var(--color-surface-subtle);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button:focus-visible,
+      [tabindex]:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--color-brand-interactive);
+        outline-offset: 2px;
+        box-shadow: 0 0 0 4px rgba(251, 146, 60, 0.28);
+      }
+      button.btn-primary {
+        color: #fff;
+        background-color: var(--color-primary);
+        border-color: var(--color-primary);
+      }
+      button.btn-primary:hover:not(:disabled) {
+        background-color: var(--color-primary-hover);
+        border-color: var(--color-primary-hover);
+      }
+      button.btn-danger {
+        color: var(--color-error);
+        border-color: var(--color-error-border);
+        background-color: var(--color-error-bg);
+      }
+      button.btn-danger:hover:not(:disabled) {
+        color: #fff;
+        background-color: var(--color-error-btn);
+        border-color: var(--color-error-btn);
+      }
+      button.btn-success {
+        color: #fff;
+        background-color: var(--color-success-btn);
+        border-color: var(--color-success-btn);
+      }
+      button.btn-success:hover:not(:disabled) {
+        background-color: var(--color-success-btn-hover);
+        border-color: var(--color-success-btn-hover);
+      }
+
+      input[type='text'],
+      select {
+        display: block;
+        width: 100%;
+        padding: 0.4375rem 0.75rem;
+        font-family: inherit;
+        font-size: 0.9375rem;
+        line-height: 1.5;
+        color: var(--color-text);
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+        appearance: none;
+      }
+      input[type='text']:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-focus-ring);
+      }
+      label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--color-text);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+      .badge-ok {
+        background-color: var(--color-success-bg);
+        color: var(--color-success);
+      }
+      .badge-warning {
+        background-color: var(--color-warning-bg);
+        color: var(--color-warning);
+      }
+      .badge-error {
+        background-color: var(--color-error-bg);
+        color: var(--color-error);
+      }
+      .text-error {
+        color: var(--color-error);
+        font-size: 0.875rem;
+      }
+      .state-empty {
+        color: var(--color-text-muted);
+        font-size: 0.9rem;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* ── Barra strumenti del prototipo (NON fa parte della UI) ──────── */
+      .demo-bar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 14px;
+        background: #05070c;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 12.5px;
+        color: var(--color-text-muted);
+      }
+      .demo-bar strong {
+        color: var(--color-text);
+      }
+      .demo-bar .spacer {
+        flex: 1 1 auto;
+      }
+      .demo-bar button {
+        padding: 4px 10px;
+        font-size: 12.5px;
+      }
+      .demo-bar button[aria-pressed='true'] {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+      }
+
+      /* ── Header applicativo ─────────────────────────────────────────── */
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 18px;
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .app-header .logo {
+        width: 26px;
+        height: 26px;
+        flex: none;
+        border-radius: 7px;
+        background: linear-gradient(135deg, var(--color-brand-blue), var(--color-accent-violet));
+      }
+      .app-header .brand {
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      .app-header .section {
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+      }
+
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 18px 18px 64px;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        min-width: 0;
+      }
+
+      /* ── Tablist (stessa anatomia di StudentsView) ──────────────────── */
+      .tabs {
+        display: flex;
+        width: 100%;
+        gap: 0.25rem;
+        padding: 0.25rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface-subtle);
+        box-shadow: var(--shadow-sm);
+      }
+      .tab {
+        flex: 1;
+        min-width: 0;
+        gap: 0.45rem;
+        border-color: transparent;
+        background: transparent;
+        color: var(--color-text-muted);
+        font-weight: 700;
+      }
+      .tab[aria-selected='true'],
+      .tab[aria-selected='true']:hover:not(:disabled) {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+      }
+      .tabCount {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.25rem;
+        height: 1.25rem;
+        padding-inline: 0.3rem;
+        border-radius: 999px;
+        background: var(--color-warning-bg);
+        color: var(--color-warning);
+        font-size: 0.72rem;
+      }
+      .tabPanel {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        min-width: 0;
+      }
+
+      /*
+       * `display: flex` su una classe batte la regola UA `[hidden]{display:none}`
+       * per specificità: senza questa riga i tre pannelli restano tutti visibili
+       * anche quando `hidden` è impostato. Vale per ogni elemento nascosto del
+       * prototipo, non solo per i pannelli.
+       */
+      [hidden] {
+        display: none !important;
+      }
+
+      .fullWidthBtn {
+        width: 100%;
+        min-height: 2.5rem;
+      }
+
+      .filterRow {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      /*
+       * `flex-basis` è la dimensione sull'asse principale: con
+       * `flex-direction: column` (mobile) un basis di 220px diventerebbe
+       * un'ALTEZZA di 220px. Qui il basis resta `auto` e la larghezza minima
+       * è espressa da `min-width`, che significa la stessa cosa su entrambi
+       * gli assi.
+       */
+      .filterRow input[type='text'] {
+        flex: 1 1 auto;
+        min-width: min(220px, 100%);
+      }
+      .filterRow select {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: min(160px, 100%);
+      }
+
+      /* ── RecordCard ─────────────────────────────────────────────────── */
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        min-width: 0;
+      }
+      .card {
+        position: relative;
+        isolation: isolate;
+        display: grid;
+        width: 100%;
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-brand-blue));
+        border-radius: calc(var(--radius-lg) + 2px);
+        background: color-mix(in srgb, var(--color-surface-raised) 92%, #071321);
+        box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+        transition:
+          transform var(--transition-brand-interactive),
+          border-color var(--transition-brand-interactive),
+          box-shadow var(--transition-brand-interactive);
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-areas:
+          'identity metrics actions'
+          'control  metrics actions'
+          'errors   errors  errors';
+        align-content: center;
+        gap: 0.5rem 1rem;
+        padding: 0.85rem 1rem 0.9rem 1.1rem;
+      }
+      .card .accent {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background: var(--color-brand-blue);
+        box-shadow: 0 0 14px rgba(56, 189, 248, 0.34);
+        transition:
+          width var(--transition-brand-interactive),
+          background-color var(--transition-brand-interactive);
+      }
+      .card .identity {
+        grid-area: identity;
+        min-width: 0;
+        align-self: end;
+      }
+      .card .cardTitle {
+        display: block;
+        color: var(--color-brand-blue);
+        font-size: clamp(1rem, 1.5vw, 1.12rem);
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+        transition: color var(--transition-brand-interactive);
+      }
+      .card .titleSep {
+        color: var(--color-text-muted);
+        font-weight: 500;
+      }
+      .card .titleMeta {
+        color: var(--color-text-muted);
+        font-size: 0.8rem;
+        font-weight: 550;
+      }
+      .card .metaLine {
+        margin: 0.3rem 0 0;
+        color: var(--color-text-muted);
+        font-size: 0.78rem;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+      }
+      .card .control {
+        grid-area: control;
+        align-self: start;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        margin-top: 0.45rem;
+      }
+      .card .metrics {
+        grid-area: metrics;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 9.25rem;
+        align-self: center;
+        gap: 0.5rem;
+        min-width: 0;
+        margin: 0;
+      }
+      .card .metric {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+          'icon label'
+          'icon value';
+        align-items: center;
+        gap: 0.05rem 0.5rem;
+        min-width: 0;
+        min-height: 3.25rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+        border-radius: var(--radius-lg);
+        background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+      }
+      .card .metricIcon {
+        grid-area: icon;
+        display: inline-flex;
+        color: var(--color-brand-blue);
+        transition: color var(--transition-brand-interactive);
+      }
+      .card .metric dt {
+        grid-area: label;
+        color: var(--color-text-muted);
+        font-size: 0.67rem;
+        font-weight: 700;
+        letter-spacing: 0.045em;
+        text-transform: uppercase;
+      }
+      .card .metric dd {
+        grid-area: value;
+        min-width: 0;
+        margin: 0;
+        color: var(--color-text);
+        font-size: 0.94rem;
+        font-weight: 750;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card .actions {
+        grid-area: actions;
+        align-self: start;
+        justify-self: end;
+        display: flex;
+        gap: 0.4rem;
+        padding: 0;
+      }
+      .card .errors {
+        grid-area: errors;
+        display: grid;
+        gap: 0.35rem;
+      }
+      .card--compact {
+        grid-template-areas:
+          'identity identity actions'
+          'control  control  control'
+          'errors   errors   errors';
+        gap: 0.35rem 1rem;
+        padding: 0.75rem 1rem 0.8rem 1.1rem;
+      }
+      .card--compact .identity {
+        align-self: center;
+      }
+      .card--compact .metrics {
+        display: none;
+      }
+      .card--compact .control {
+        margin-top: 0;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .card:hover {
+          transform: translateY(-2px);
+          border-color: color-mix(in srgb, var(--color-brand-interactive) 72%, var(--color-border));
+          box-shadow:
+            0 8px 20px rgba(0, 0, 0, 0.34),
+            0 0 0 1px rgba(251, 146, 60, 0.07);
+        }
+        .card:hover .accent {
+          width: 4px;
+          background: var(--color-brand-interactive);
+        }
+        .card:hover .cardTitle,
+        .card:hover .metricIcon {
+          color: var(--color-brand-interactive);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .card,
+        .card .accent,
+        .card .cardTitle,
+        .card .metricIcon {
+          transition: none;
+        }
+        .card:hover {
+          transform: none;
+        }
+      }
+
+      .menuTrigger {
+        width: 2.25rem;
+        min-width: 2.25rem;
+        height: 2.25rem;
+        padding: 0;
+      }
+      .menuTrigger[aria-expanded='true'] {
+        border-color: var(--color-brand-interactive);
+        background: var(--color-surface-raised);
+      }
+      .menuWrap {
+        position: relative;
+      }
+      .menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 40;
+        min-width: 15rem;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 6px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface-raised);
+        box-shadow: var(--shadow-md);
+      }
+      .menu button {
+        justify-content: flex-start;
+        width: 100%;
+        background: transparent;
+        border-color: transparent;
+        min-height: 2.25rem;
+      }
+      .menu button:hover:not(:disabled) {
+        background: var(--color-surface);
+        border-color: var(--color-brand-interactive);
+      }
+      .menu .menuDanger {
+        color: var(--color-error);
+      }
+      .menuHint {
+        padding: 4px 10px 6px;
+        color: var(--color-text-muted);
+        font-size: 0.74rem;
+        line-height: 1.35;
+      }
+
+      .fieldRow {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .fieldRow > label {
+        flex: none;
+        color: var(--color-text-muted);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.045em;
+        text-transform: uppercase;
+      }
+      .fieldRow > select {
+        flex: 0 1 14rem;
+        min-width: 0;
+        max-width: 100%;
+        padding: 0.3rem 0.5rem;
+        font-size: 0.875rem;
+      }
+
+      /* ── Pannelli generici ──────────────────────────────────────────── */
+      .panel {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: 1rem 1.1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        min-width: 0;
+      }
+      .panelHead {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .panelHead p {
+        color: var(--color-text-muted);
+        font-size: 0.82rem;
+      }
+      .note {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-start;
+        padding: 0.55rem 0.7rem;
+        border-radius: var(--radius);
+        font-size: 0.83rem;
+        line-height: 1.45;
+      }
+      .note svg {
+        flex: none;
+        margin-top: 2px;
+      }
+      .note--info {
+        color: var(--color-text-muted);
+        background: color-mix(in srgb, var(--color-surface-subtle) 70%, transparent);
+        border: 1px solid var(--color-border);
+      }
+      .note--warn {
+        color: var(--color-warning);
+        background: var(--color-warning-bg);
+        border: 1px solid var(--color-warning-border);
+      }
+      .note--err {
+        color: var(--color-error);
+        background: var(--color-error-bg);
+        border: 1px solid var(--color-error-border);
+      }
+      .note--ok {
+        color: var(--color-success);
+        background: var(--color-success-bg);
+        border: 1px solid var(--color-success-border);
+      }
+
+      /* ── Elenco domande della bozza ─────────────────────────────────── */
+      .qRow {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.5rem 0.85rem;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
+        min-width: 0;
+      }
+      .qRow + .qRow {
+        margin-top: 0.5rem;
+      }
+      .qMain {
+        min-width: 0;
+      }
+      .qTitle {
+        font-weight: 650;
+        overflow-wrap: anywhere;
+      }
+      .qText {
+        color: var(--color-text-muted);
+        font-size: 0.83rem;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-top: 0.35rem;
+      }
+      .tag {
+        display: inline-flex;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-muted);
+        font-size: 0.71rem;
+        font-weight: 600;
+      }
+      .tag--vex {
+        border-color: rgba(167, 139, 250, 0.5);
+        color: var(--color-accent-violet);
+      }
+      .tag--diff {
+        border-color: rgba(56, 189, 248, 0.5);
+        color: var(--color-brand-blue);
+      }
+      .qActions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        justify-self: end;
+      }
+
+      /* ── Riepilogo attivazione ──────────────────────────────────────── */
+      .summaryGrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+        gap: 0.5rem;
+      }
+      .stat {
+        padding: 0.6rem 0.7rem;
+        border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+        border-radius: var(--radius-lg);
+        background: color-mix(in srgb, var(--color-surface-subtle) 60%, transparent);
+      }
+      .statN {
+        font-size: 1.3rem;
+        font-weight: 750;
+        color: var(--color-brand-blue);
+        line-height: 1.1;
+      }
+      .statL {
+        color: var(--color-text-muted);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .breakdown {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .breakRow {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.4rem;
+        padding: 0.5rem 0.7rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: color-mix(in srgb, var(--color-surface-raised) 80%, transparent);
+        font-size: 0.87rem;
+      }
+      .breakRow strong {
+        color: var(--color-brand-blue);
+        font-weight: 700;
+      }
+
+      /* ── Dialog (DialogShell) ───────────────────────────────────────── */
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgb(2 8 18 / 72%);
+        backdrop-filter: blur(4px);
+      }
+      .dialog {
+        width: min(100%, 27rem);
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        padding: 1.25rem;
+        color: var(--color-text);
+        background:
+          linear-gradient(145deg, rgb(255 255 255 / 3%), transparent 42%),
+          var(--color-surface-raised);
+        border: 0;
+        border-radius: 0.9rem;
+        box-shadow:
+          0 1.5rem 4rem rgb(0 0 0 / 55%),
+          0 0 0 1px rgb(255 255 255 / 5%);
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .dialog::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+      }
+      .dialog--wide {
+        width: min(100%, 39rem);
+      }
+      .dialogTitle {
+        margin: 0;
+        font-size: 1.08rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .dialogActions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+      }
+      .dialogActions button {
+        min-width: 7.5rem;
+      }
+      .fieldHead {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .counter {
+        color: var(--color-text-muted);
+        font-size: 0.76rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .baseBlock {
+        padding: 0.7rem 0.8rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: color-mix(in srgb, var(--color-surface-subtle) 65%, transparent);
+      }
+      .baseLabel {
+        color: var(--color-text-muted);
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.045em;
+        text-transform: uppercase;
+      }
+      .labelCard {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+        padding: 0.7rem 0.8rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        min-width: 0;
+      }
+      .labelCard + .labelCard {
+        margin-top: 0.5rem;
+      }
+      .labelName {
+        color: var(--color-brand-blue);
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        border: 0;
+        padding: 0;
+        margin: 0;
+      }
+      .choice {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.6rem;
+        min-height: 2.25rem;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-surface-subtle);
+        font-size: 0.83rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .choice:hover {
+        border-color: var(--color-brand-interactive);
+      }
+      .choice input {
+        accent-color: var(--color-primary);
+        width: 1rem;
+        height: 1rem;
+        margin: 0;
+        cursor: pointer;
+      }
+      .choice:has(input:checked) {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+      }
+      .choice:has(input:focus-visible) {
+        outline: 2px solid var(--color-brand-interactive);
+        outline-offset: 2px;
+      }
+      .altPreview {
+        padding: 0.55rem 0.65rem;
+        border: 1px dashed var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .altPreview strong {
+        color: var(--color-text);
+      }
+
+      /* ── Mobile ─────────────────────────────────────────────────────── */
+      @media (max-width: 44rem) {
+        .page {
+          padding: 14px 12px 56px;
+        }
+        .card {
+          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-areas:
+            'identity actions'
+            'control  control'
+            'metrics  metrics'
+            'errors   errors';
+          gap: 0.7rem;
+          padding: 0.8rem 0.8rem 0.75rem 1rem;
+        }
+        .card .identity {
+          align-self: start;
+        }
+        .card .control {
+          margin-top: 0;
+        }
+        .card .metrics {
+          grid-auto-flow: row;
+          grid-auto-columns: auto;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .card .metrics > :nth-child(1) {
+          grid-column: 1 / -1;
+        }
+        .card--compact {
+          grid-template-areas:
+            'identity actions'
+            'control  control'
+            'errors   errors';
+        }
+        .card .actions button,
+        .menuTrigger {
+          width: 2.75rem;
+          min-width: 2.75rem;
+          height: 2.75rem;
+          min-height: 2.75rem;
+        }
+        /* Classe ed Etichetta: ciascuna su una riga propria, a larghezza piena. */
+        .fieldRow {
+          flex-wrap: wrap;
+          width: 100%;
+        }
+        .fieldRow > select {
+          flex: 1 1 100%;
+          width: 100%;
+          min-height: 2.75rem;
+        }
+        .filterRow {
+          flex-direction: column;
+        }
+        .filterRow select {
+          width: 100%;
+        }
+        .qRow {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .qActions {
+          justify-self: stretch;
+        }
+        .qActions button {
+          flex: 1 1 auto;
+          min-height: 2.75rem;
+        }
+        .dialogActions button {
+          flex: 1 1 100%;
+          min-width: 0;
+          min-height: 2.75rem;
+        }
+        .choice {
+          min-height: 2.75rem;
+          flex: 1 1 auto;
+          justify-content: center;
+        }
+        .fullWidthBtn {
+          min-height: 2.75rem;
+        }
+      }
+      @media (max-width: 30rem) {
+        .backdrop {
+          align-items: start;
+          padding: 0.75rem;
+        }
+        .dialog {
+          width: 100%;
+          max-height: calc(100dvh - 1.5rem);
+          padding: 1rem;
+          border-radius: 0.8rem;
+        }
+      }
+      @media (max-width: 23rem) {
+        .page {
+          padding-inline: 8px;
+        }
+        .card {
+          gap: 0.55rem 0.5rem;
+          padding-inline: 0.7rem;
+          padding-left: 0.9rem;
+        }
+        .tab {
+          padding-inline: 0.4rem;
+          font-size: 0.82rem;
+        }
+        .card .metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.3rem;
+        }
+        .card .metric {
+          min-height: 2.8rem;
+          padding: 0.38rem 0.3rem;
+        }
+        .card .metric dd {
+          font-size: 0.86rem;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ── Barra strumenti del prototipo: NON fa parte della UI ─────────── -->
+    <div class="demo-bar">
+      <strong>Prototipo VDIF-00</strong>
+      <span>— statico, nessun dato reale, nessuna rete</span>
+      <span class="spacer"></span>
+      <button type="button" id="demoScreenStudents" aria-pressed="true">Sezione Studenti</button>
+      <button type="button" id="demoScreenDraft" aria-pressed="false">Bozza verifica</button>
+      <button type="button" id="demoBlocker" aria-pressed="false">Simula blocker</button>
+      <button type="button" id="demoReset">Ripristina dati</button>
+    </div>
+
+    <header class="app-header">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="brand">SchoolForge</span>
+      <span class="section" id="appSection">Studenti</span>
+    </header>
+
+    <main class="page">
+      <!-- ══════════════════ SCHERMATA 1 — SEZIONE STUDENTI ══════════════ -->
+      <section id="screenStudents">
+        <div class="tabs" role="tablist" aria-label="Gestione studenti, classi ed etichette">
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-students"
+            aria-controls="panel-students"
+            aria-selected="true"
+            tabindex="0"
+          >
+            Studenti<span class="tabCount" id="pendingCount">0</span>
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-classes"
+            aria-controls="panel-classes"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Classi
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-labels"
+            aria-controls="panel-labels"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Etichette
+          </button>
+        </div>
+
+        <!-- ── Scheda Studenti ── -->
+        <div class="tabPanel" role="tabpanel" id="panel-students" aria-labelledby="tab-students">
+          <div class="filterRow">
+            <input
+              type="text"
+              id="studentSearch"
+              aria-label="Cerca studenti"
+              placeholder="Cerca per nome, email, stato, classe o etichetta…"
+            />
+            <select id="studentStatusFilter" aria-label="Filtra per stato">
+              <option value="all">Tutti gli stati</option>
+              <option value="approved">Approvati</option>
+              <option value="pending">In attesa</option>
+              <option value="blocked">Bloccati</option>
+            </select>
+          </div>
+          <p class="state-empty" id="studentSearchHint" hidden></p>
+          <div class="list" id="studentList" role="list" aria-label="Elenco studenti"></div>
+        </div>
+
+        <!-- ── Scheda Classi ── -->
+        <div
+          class="tabPanel"
+          role="tabpanel"
+          id="panel-classes"
+          aria-labelledby="tab-classes"
+          hidden
+        >
+          <button type="button" class="btn-primary fullWidthBtn" id="newClassBtn">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>Nuova classe</span>
+          </button>
+          <div class="list" id="classList" role="list" aria-label="Classi"></div>
+        </div>
+
+        <!-- ── Scheda Etichette ── -->
+        <div class="tabPanel" role="tabpanel" id="panel-labels" aria-labelledby="tab-labels" hidden>
+          <button type="button" class="btn-primary fullWidthBtn" id="newLabelBtn">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20.59 13.41 12 22l-9-9V3h10l7.59 7.59a2 2 0 0 1 0 2.82Z" />
+              <circle cx="7.5" cy="7.5" r="1.2" />
+            </svg>
+            <span>Nuova etichetta</span>
+          </button>
+          <div class="list" id="labelList" role="list" aria-label="Etichette"></div>
+          <div id="labelEmpty" hidden>
+            <div class="panel">
+              <h3>Nessuna etichetta</h3>
+              <p class="state-empty">
+                Le etichette servono a te, per servire domande diverse a studenti diversi nella
+                stessa verifica. Usa nomi operativi — «Percorso A», «Obiettivi essenziali» — e
+                assegnane al massimo una per studente.
+              </p>
+              <p class="state-empty"><strong>Gli studenti non le vedono mai.</strong></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════ SCHERMATA 2 — BOZZA VERIFICA ═══════════════ -->
+      <section id="screenDraft" hidden>
+        <div class="panel">
+          <div class="panelHead">
+            <h3>Reti di calcolatori — bozza</h3>
+            <p>3 domande selezionate · 4A Informatica · 12/03/2026</p>
+          </div>
+          <p class="note note--info">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+            <span>
+              Le varianti per etichetta si configurano solo sulle domande comuni. Le modifiche
+              restano locali finché non premi «Salva bozza»: nessuna scrittura avviene aprendo o
+              chiudendo il dialog.
+            </span>
+          </p>
+          <div id="questionList"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <h3>Attivazione</h3>
+            <p>Riepilogo owner-only, non salvato in alcuna proiezione studente.</p>
+          </div>
+          <div class="summaryGrid" id="activationStats"></div>
+          <div class="breakdown" id="activationBreakdown"></div>
+          <div id="activationBlockers"></div>
+          <div class="dialogActions">
+            <button type="button" id="draftSaveBtn">Salva bozza</button>
+            <button type="button" class="btn-success" id="activateBtn">Attiva verifica</button>
+          </div>
+          <p class="state-empty" id="draftSaveFeedback" aria-live="polite">
+            Nessuna modifica da salvare
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Contenitore dei dialog -->
+    <div id="dialogRoot"></div>
+
+    <script>
+      'use strict';
+
+      /* ================================================================
+         Prototipo statico VDIF-00. Nessuna rete, nessuna dipendenza,
+         nessun dato reale: tutto lo stato vive in memoria e si ripristina
+         con «Ripristina dati».
+         ================================================================ */
+
+      var ICON_MORE =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>';
+      var ICON_PENCIL =
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+      var ICON_TRASH =
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+      var ICON_USERS =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>';
+      var ICON_CHECK =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>';
+      var ICON_TAG =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 12 22l-9-9V3h10l7.59 7.59a2 2 0 0 1 0 2.82Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>';
+      var ICON_CLOCK =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 7 12 12 15 14"/></svg>';
+      var ICON_INFO =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+      var ICON_ALERT =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+
+      var LABEL_NAME_MAX = 40;
+
+      /** Normalizzazione usata SOLO per il confronto di unicità (contratto §5.A.5). */
+      function nameKey(name) {
+        return name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+      }
+
+      function esc(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function initialState() {
+        return {
+          /*
+           * Forma del documento etichetta: otto chiavi (labelId, ownerUid,
+           * name, nameKey, assignedCount, draftUsageCount, createdAt,
+           * updatedAt). Il prototipo rappresenta le quattro che hanno un
+           * effetto osservabile in UI — labelId, name e i due contatori —
+           * perché ownerUid e i due timestamp non cambiano nulla di ciò che si
+           * deve approvare qui.
+           *
+           * I due contatori sono transazionali: sono l'unica fonte che
+           * autorizza l'eliminazione. I numeri mostrati sulla card sono invece
+           * derivati e non autorizzano nulla (§5.E.2).
+           *
+           * `draftUsageCount` conta le VERIFICHE in bozza, non le varianti:
+           * una bozza che usa la stessa etichetta su otto domande conta uno.
+           */
+          labels: [
+            { id: 'lab-a', name: 'Percorso A', assignedCount: 2, draftUsageCount: 1 },
+            { id: 'lab-b', name: 'Obiettivi essenziali', assignedCount: 1, draftUsageCount: 1 },
+            { id: 'lab-c', name: 'Gruppo 2', assignedCount: 0, draftUsageCount: 0 },
+          ],
+          classes: [
+            { id: 'cls-1', name: '4A Informatica' },
+            { id: 'cls-2', name: '4B Informatica' },
+          ],
+          students: [
+            {
+              uid: 's1',
+              name: 'Anna Bianchi',
+              email: 'anna.bianchi@example.edu',
+              status: 'approved',
+              classId: 'cls-1',
+              labelId: 'lab-a',
+              first: '12/09/2025',
+              last: '10/03/2026',
+            },
+            {
+              uid: 's2',
+              name: 'Marco Rossi',
+              email: 'marco.rossi@example.edu',
+              status: 'approved',
+              classId: 'cls-1',
+              labelId: 'lab-b',
+              first: '12/09/2025',
+              last: '11/03/2026',
+            },
+            {
+              uid: 's3',
+              name: 'Giulia Conti',
+              email: 'giulia.conti@example.edu',
+              status: 'approved',
+              classId: 'cls-1',
+              labelId: null,
+              first: '15/09/2025',
+              last: '09/03/2026',
+            },
+            {
+              uid: 's4',
+              name: 'Luca Ferri',
+              email: 'luca.ferri@example.edu',
+              status: 'pending',
+              classId: null,
+              labelId: null,
+              first: null,
+              last: null,
+            },
+            {
+              uid: 's5',
+              name: 'Sara Neri',
+              email: 'sara.neri@example.edu',
+              status: 'approved',
+              classId: 'cls-1',
+              labelId: 'lab-a',
+              first: '20/09/2025',
+              last: '11/03/2026',
+            },
+          ],
+          /* Domande selezionate nella bozza. `role`: common | vex.
+             `lesson` è il vincolo di provenienza delle alternative. */
+          questions: [
+            {
+              id: 'q1',
+              n: 1,
+              localId: 'r1-04',
+              role: 'common',
+              tipo: 'Aperta',
+              diff: 3,
+              lesson: 'lezione-002-instradamento',
+              text: 'Spiega la differenza fra instradamento statico e dinamico, indicando un caso d’uso per ciascuno.',
+              solution:
+                'Statico: rotte configurate a mano, prevedibili, adatte a reti piccole e stabili. Dinamico: rotte apprese da un protocollo, adatte a reti che cambiano.',
+            },
+            {
+              id: 'q2',
+              n: 2,
+              localId: 'r1-11',
+              role: 'vex',
+              vexGroup: 1,
+              tipo: 'Scelta singola',
+              diff: 2,
+              lesson: 'lezione-003-indirizzamento',
+              text: 'Quale maschera corrisponde a una sottorete con 14 host utilizzabili?',
+              solution: '255.255.255.240',
+            },
+            {
+              id: 'q3',
+              n: 3,
+              localId: 'r1-19',
+              role: 'common',
+              tipo: 'Aperta',
+              diff: 4,
+              lesson: 'lezione-005-sicurezza',
+              text: 'Descrivi due contromisure applicabili a un attacco di tipo ARP spoofing in una rete locale.',
+              solution:
+                'Port security con binding statico MAC/porta; Dynamic ARP Inspection appoggiata a DHCP snooping.',
+            },
+          ],
+          /* Alternative disponibili, per lezione. Nessuna di esse è selezionata
+             nella verifica: è il filtro D4 già applicato alla sorgente. */
+          alternatives: [
+            {
+              id: 'a1',
+              localId: 'r1-07',
+              lesson: 'lezione-002-instradamento',
+              tipo: 'Aperta',
+              diff: 2,
+              text: 'Indica quando conviene usare l’instradamento statico e porta un esempio concreto.',
+            },
+            {
+              id: 'a2',
+              localId: 'r1-09',
+              lesson: 'lezione-002-instradamento',
+              tipo: 'Aperta',
+              diff: 2,
+              text: 'Elenca due vantaggi dell’instradamento dinamico rispetto a quello statico.',
+            },
+          ],
+          /* differentiation.questions[]: { baseId, choices: { labelId: choice } }
+             choice = { kind: 'base' } | { kind:'alternative', altId } | { kind:'none' } */
+          differentiation: {
+            q1: {
+              'lab-a': { kind: 'alternative', altId: 'a1' },
+              'lab-b': { kind: 'none' },
+            },
+          },
+          activeTab: 'students',
+          screen: 'students',
+          search: '',
+          statusFilter: 'all',
+          openMenu: null,
+          draftDirty: false,
+          /* Blocker dimostrativo: se true, «Gruppo 2» resta senza domande. */
+          demoBlocker: false,
+        };
+      }
+
+      var state = initialState();
+
+      /* ── Derivazioni pure ─────────────────────────────────────────────── */
+
+      function labelById(id) {
+        for (var i = 0; i < state.labels.length; i++) {
+          if (state.labels[i].id === id) return state.labels[i];
+        }
+        return null;
+      }
+      function className(id) {
+        for (var i = 0; i < state.classes.length; i++) {
+          if (state.classes[i].id === id) return state.classes[i].name;
+        }
+        return null;
+      }
+      function altById(id) {
+        for (var i = 0; i < state.alternatives.length; i++) {
+          if (state.alternatives[i].id === id) return state.alternatives[i];
+        }
+        return null;
+      }
+      function questionById(id) {
+        for (var i = 0; i < state.questions.length; i++) {
+          if (state.questions[i].id === id) return state.questions[i];
+        }
+        return null;
+      }
+
+      function studentsWithLabel(labelId) {
+        return state.students.filter(function (s) {
+          return s.labelId === labelId;
+        }).length;
+      }
+
+      /** Numero di etichette con scelta non-base su una domanda. */
+      function variantCount(questionId) {
+        var choices = state.differentiation[questionId];
+        if (!choices) return 0;
+        var n = 0;
+        for (var key in choices) {
+          if (Object.prototype.hasOwnProperty.call(choices, key) && choices[key].kind !== 'base') {
+            n++;
+          }
+        }
+        return n;
+      }
+
+      /** Un'etichetta è usata in bozza se ha almeno una scelta non-base. */
+      function labelUsedInDraft(labelId) {
+        for (var qid in state.differentiation) {
+          if (!Object.prototype.hasOwnProperty.call(state.differentiation, qid)) continue;
+          var choice = state.differentiation[qid][labelId];
+          if (choice && choice.kind !== 'base') return true;
+        }
+        return false;
+      }
+
+      /**
+       * Insieme dei labelId riferiti dalla configurazione differenziata della
+       * VERIFICA — insieme, non lista: un'etichetta usata su otto domande
+       * compare una volta sola. È esattamente il calcolo del passo 2 di §5.F.1.
+       */
+      function labelIdsInDraft(differentiation) {
+        var set = {};
+        for (var qid in differentiation) {
+          if (!Object.prototype.hasOwnProperty.call(differentiation, qid)) continue;
+          var choices = differentiation[qid];
+          for (var lid in choices) {
+            if (!Object.prototype.hasOwnProperty.call(choices, lid)) continue;
+            if (choices[lid].kind !== 'base') set[lid] = true;
+          }
+        }
+        return set;
+      }
+
+      /**
+       * Diff di insiemi -> `draftUsageCount`. Simula il commit unico di §5.F.1:
+       * +1 per ogni etichetta ENTRATA, -1 per ogni etichetta USCITA, nessuna
+       * variazione per quelle presenti in entrambi gli insiemi. Un decremento
+       * che porterebbe sotto zero è un errore, non un `max(0, …)`.
+       */
+      function applyDraftUsageDiff(prev, next) {
+        for (var lid in next) {
+          if (!Object.prototype.hasOwnProperty.call(next, lid) || prev[lid]) continue;
+          var entered = labelById(lid);
+          if (entered) entered.draftUsageCount = entered.draftUsageCount + 1;
+        }
+        for (var lid2 in prev) {
+          if (!Object.prototype.hasOwnProperty.call(prev, lid2) || next[lid2]) continue;
+          var left = labelById(lid2);
+          if (!left) continue;
+          if (left.draftUsageCount <= 0) {
+            throw new Error('draftUsageCount sotto zero per ' + lid2);
+          }
+          left.draftUsageCount = left.draftUsageCount - 1;
+        }
+      }
+
+      /**
+       * Motivo di blocco dell'eliminazione, o null se libera.
+       *
+       * Nel prototipo il conteggio mostrato sulla card è **derivato** dagli
+       * studenti in memoria (`studentsWithLabel`): serve solo a disabilitare la
+       * voce di menu come affordance. Ciò che autorizza davvero è
+       * `assignedCount`, che nel sistema reale viene riletto dentro la
+       * transazione di eliminazione (§5.E.1). Le verifiche attive e chiuse non
+       * contano mai come uso: il loro snapshot è autosufficiente (§5.D.10).
+       */
+      function deleteBlockReason(labelId) {
+        var label = labelById(labelId);
+        if (!label) return null;
+        var assigned = label.assignedCount;
+        var drafts = label.draftUsageCount;
+        if (!assigned && !drafts) return null;
+        var parts = [];
+        if (assigned) {
+          parts.push('assegnata a ' + assigned + (assigned === 1 ? ' studente' : ' studenti'));
+        }
+        if (drafts) {
+          // Il dettaglio leggibile («in quale bozza») arriva dalla query
+          // diagnostica di §5.E.1, che NON autorizza: qui è testo, non permesso.
+          parts.push(
+            drafts === 1 ? 'usata nella bozza «Reti di calcolatori»' : 'usata in ' + drafts + ' bozze',
+          );
+        }
+        return 'Non eliminabile: ' + parts.join(' e ') + '.';
+      }
+
+      /**
+       * Risoluzione delle domande per un'etichetta (contratto §5.D.4, passo 3).
+       * Restituisce l'elenco leggibile delle domande servite.
+       */
+      function resolveForLabel(labelId) {
+        var out = [];
+        for (var i = 0; i < state.questions.length; i++) {
+          var q = state.questions[i];
+          if (q.role === 'vex') {
+            out.push({ from: q, kind: 'vex', text: 'Gruppo VEX ' + q.vexGroup + ' — 1 estratta' });
+            continue;
+          }
+          var choice = labelId ? (state.differentiation[q.id] || {})[labelId] : null;
+          if (!choice || choice.kind === 'base') {
+            out.push({ from: q, kind: 'base', text: q.text });
+          } else if (choice.kind === 'alternative') {
+            var alt = altById(choice.altId);
+            out.push({ from: q, kind: 'alternative', text: alt ? alt.text : '—' });
+          }
+          /* kind === 'none' ⇒ omessa, non entra nell'elenco. */
+        }
+        return out;
+      }
+
+      function activationSummary() {
+        var labelsInvolved = {};
+        var substitutions = 0;
+        var omissions = 0;
+        for (var qid in state.differentiation) {
+          if (!Object.prototype.hasOwnProperty.call(state.differentiation, qid)) continue;
+          var choices = state.differentiation[qid];
+          for (var lid in choices) {
+            if (!Object.prototype.hasOwnProperty.call(choices, lid)) continue;
+            if (choices[lid].kind === 'alternative') {
+              substitutions++;
+              labelsInvolved[lid] = true;
+            } else if (choices[lid].kind === 'none') {
+              omissions++;
+              labelsInvolved[lid] = true;
+            }
+          }
+        }
+        var approved = state.students.filter(function (s) {
+          return s.status === 'approved';
+        });
+        var differentiated = approved.filter(function (s) {
+          return s.labelId && labelsInvolved[s.labelId];
+        });
+        var withoutLabel = approved.filter(function (s) {
+          return !s.labelId;
+        });
+
+        var perLabel = [];
+        perLabel.push({
+          id: null,
+          name: 'Nessuna etichetta',
+          count: resolveForLabel(null).length,
+          students: withoutLabel.length,
+        });
+        for (var i = 0; i < state.labels.length; i++) {
+          var lab = state.labels[i];
+          perLabel.push({
+            id: lab.id,
+            name: lab.name,
+            count: resolveForLabel(lab.id).length,
+            students: studentsWithLabel(lab.id),
+          });
+        }
+
+        var blockers = perLabel.filter(function (row) {
+          return row.id !== null && row.count === 0;
+        });
+
+        return {
+          baseStudents: approved.length - differentiated.length,
+          differentiatedStudents: differentiated.length,
+          labelsInvolved: Object.keys(labelsInvolved).length,
+          substitutions: substitutions,
+          omissions: omissions,
+          withoutLabel: withoutLabel.length,
+          perLabel: perLabel,
+          blockers: blockers,
+        };
+      }
+
+      /* ── Rendering ────────────────────────────────────────────────────── */
+
+      function metric(icon, label, value) {
+        return (
+          '<div class="metric"><span class="metricIcon">' +
+          icon +
+          '</span><dt>' +
+          esc(label) +
+          '</dt><dd>' +
+          value +
+          '</dd></div>'
+        );
+      }
+
+      function menuMarkup(id, items, hint) {
+        var open = state.openMenu === id;
+        var html =
+          '<div class="menuWrap"><button type="button" class="menuTrigger" data-menu="' +
+          esc(id) +
+          '" aria-haspopup="menu" aria-expanded="' +
+          (open ? 'true' : 'false') +
+          '" aria-label="Azioni">' +
+          ICON_MORE +
+          '</button>';
+        if (open) {
+          html += '<div class="menu" role="menu">' + items;
+          if (hint) html += '<p class="menuHint" id="' + esc(id) + '-hint">' + esc(hint) + '</p>';
+          html += '</div>';
+        }
+        return html + '</div>';
+      }
+
+      function renderStudents() {
+        var term = state.search.trim().toLowerCase();
+        var rows = state.students.filter(function (s) {
+          if (state.statusFilter !== 'all' && s.status !== state.statusFilter) return false;
+          if (!term) return true;
+          var lab = s.labelId ? labelById(s.labelId) : null;
+          var hay = [
+            s.name,
+            s.email,
+            s.status === 'approved' ? 'Approvato' : s.status === 'pending' ? 'In attesa' : 'Bloccato',
+            s.classId ? className(s.classId) : 'nessuna classe',
+            lab ? lab.name : 'nessuna etichetta',
+          ]
+            .join(' ')
+            .toLowerCase();
+          return hay.indexOf(term) !== -1;
+        });
+
+        var hint = document.getElementById('studentSearchHint');
+        if (term) {
+          hint.hidden = false;
+          hint.textContent =
+            rows.length + (rows.length === 1 ? ' studente trovato' : ' studenti trovati') +
+            ' — la ricerca comprende anche il nome dell’etichetta.';
+        } else {
+          hint.hidden = true;
+        }
+
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+          var s = rows[i];
+          var statusLabel =
+            s.status === 'approved' ? 'Approvato' : s.status === 'pending' ? 'In attesa' : 'Bloccato';
+          var statusColor =
+            s.status === 'approved'
+              ? 'var(--color-success)'
+              : s.status === 'pending'
+                ? 'var(--color-warning)'
+                : 'var(--color-error)';
+
+          var classOptions = '<option value="">Nessuna classe</option>';
+          for (var c = 0; c < state.classes.length; c++) {
+            classOptions +=
+              '<option value="' +
+              esc(state.classes[c].id) +
+              '"' +
+              (s.classId === state.classes[c].id ? ' selected' : '') +
+              '>' +
+              esc(state.classes[c].name) +
+              '</option>';
+          }
+          var labelOptions = '<option value="">Nessuna etichetta</option>';
+          var sorted = state.labels.slice().sort(function (a, b) {
+            return a.name.localeCompare(b.name, 'it');
+          });
+          for (var l = 0; l < sorted.length; l++) {
+            labelOptions +=
+              '<option value="' +
+              esc(sorted[l].id) +
+              '"' +
+              (s.labelId === sorted[l].id ? ' selected' : '') +
+              '>' +
+              esc(sorted[l].name) +
+              '</option>';
+          }
+
+          html +=
+            '<article class="card" role="listitem" aria-label="Studente ' +
+            esc(s.name) +
+            '">' +
+            '<span class="accent" aria-hidden="true"></span>' +
+            '<header class="identity"><span class="cardTitle">' +
+            esc(s.name) +
+            '</span><p class="metaLine">' +
+            esc(s.email) +
+            '</p></header>' +
+            '<div class="control">' +
+            '<div class="fieldRow"><label for="cls-' +
+            esc(s.uid) +
+            '">Classe</label>' +
+            '<select id="cls-' +
+            esc(s.uid) +
+            '" data-student-class="' +
+            esc(s.uid) +
+            '" aria-label="Classe di ' +
+            esc(s.name) +
+            '">' +
+            classOptions +
+            '</select></div>' +
+            '<div class="fieldRow"><label for="lab-' +
+            esc(s.uid) +
+            '">Etichetta</label>' +
+            '<select id="lab-' +
+            esc(s.uid) +
+            '" data-student-label="' +
+            esc(s.uid) +
+            '" aria-label="Etichetta di ' +
+            esc(s.name) +
+            '">' +
+            labelOptions +
+            '</select></div>' +
+            '</div>' +
+            '<dl class="metrics">' +
+            metric(
+              ICON_CHECK,
+              'Stato',
+              '<span style="color:' + statusColor + '">' + esc(statusLabel) + '</span>',
+            ) +
+            metric(ICON_CLOCK, 'Primo accesso', esc(s.first || '—')) +
+            metric(ICON_CLOCK, 'Ultimo accesso', esc(s.last || '—')) +
+            '</dl>' +
+            '<div class="actions">' +
+            menuMarkup(
+              'student-' + s.uid,
+              '<button type="button" role="menuitem">' +
+                ICON_PENCIL +
+                '<span>Approva</span></button>' +
+                '<button type="button" role="menuitem" class="menuDanger">' +
+                ICON_TRASH +
+                '<span>Rimuovi studente</span></button>',
+            ) +
+            '</div>' +
+            '</article>';
+        }
+        if (rows.length === 0) html = '<p class="state-empty">Nessuno studente trovato.</p>';
+        document.getElementById('studentList').innerHTML = html;
+      }
+
+      function renderClasses() {
+        var html = '';
+        for (var i = 0; i < state.classes.length; i++) {
+          var c = state.classes[i];
+          var count = state.students.filter(function (s) {
+            return s.classId === c.id;
+          }).length;
+          html +=
+            '<article class="card card--compact" role="listitem" aria-label="Classe ' +
+            esc(c.name) +
+            '">' +
+            '<span class="accent" aria-hidden="true"></span>' +
+            '<header class="identity"><span class="cardTitle">' +
+            esc(c.name) +
+            '<span class="titleSep"> · </span><span class="titleMeta">' +
+            count +
+            (count === 1 ? ' studente' : ' studenti') +
+            '</span></span></header>' +
+            '<div class="actions">' +
+            menuMarkup(
+              'class-' + c.id,
+              '<button type="button" role="menuitem">' +
+                ICON_PENCIL +
+                '<span>Modifica classe</span></button>' +
+                '<button type="button" role="menuitem" class="menuDanger">' +
+                ICON_TRASH +
+                '<span>Elimina classe</span></button>',
+            ) +
+            '</div></article>';
+        }
+        document.getElementById('classList').innerHTML = html;
+      }
+
+      function renderLabels() {
+        var list = document.getElementById('labelList');
+        var empty = document.getElementById('labelEmpty');
+        if (state.labels.length === 0) {
+          list.innerHTML = '';
+          empty.hidden = false;
+          return;
+        }
+        empty.hidden = true;
+
+        var html = '';
+        var sorted = state.labels.slice().sort(function (a, b) {
+          return a.name.localeCompare(b.name, 'it');
+        });
+        for (var i = 0; i < sorted.length; i++) {
+          var lab = sorted[i];
+          var count = studentsWithLabel(lab.id);
+          var block = deleteBlockReason(lab.id);
+          /*
+           * Il conteggio delle bozze compare SOLO quando è diverso da zero:
+           * una riga «0 bozze» su ogni card sarebbe rumore costante per
+           * un'informazione che serve di rado. Quando c'è, sta sulla stessa
+           * riga semantica del titolo, quindi non aggiunge altezza alla card.
+           */
+          var draftMeta =
+            lab.draftUsageCount > 0
+              ? '<span class="titleSep"> · </span><span class="titleMeta">' +
+                lab.draftUsageCount +
+                (lab.draftUsageCount === 1 ? ' bozza' : ' bozze') +
+                '</span>'
+              : '';
+          var hintId = 'label-' + lab.id + '-hint';
+          var deleteBtn =
+            '<button type="button" role="menuitem" class="menuDanger" data-label-delete="' +
+            esc(lab.id) +
+            '"' +
+            (block ? ' disabled aria-describedby="' + esc(hintId) + '"' : '') +
+            '>' +
+            ICON_TRASH +
+            '<span>Elimina etichetta</span></button>';
+          html +=
+            '<article class="card card--compact" role="listitem" aria-label="Etichetta ' +
+            esc(lab.name) +
+            '">' +
+            '<span class="accent" aria-hidden="true"></span>' +
+            '<header class="identity"><span class="cardTitle">' +
+            esc(lab.name) +
+            '<span class="titleSep"> · </span><span class="titleMeta">' +
+            (count === 0 ? 'Nessuno studente' : count + (count === 1 ? ' studente' : ' studenti')) +
+            '</span>' +
+            draftMeta +
+            '</span>' +
+            (block
+              ? '<p class="metaLine">' + esc(block) + '</p>'
+              : '<p class="metaLine">Eliminabile: entrambi i contatori sono a zero.</p>') +
+            '</header>' +
+            '<div class="actions">' +
+            menuMarkup(
+              'label-' + lab.id,
+              '<button type="button" role="menuitem" data-label-edit="' +
+                esc(lab.id) +
+                '">' +
+                ICON_PENCIL +
+                '<span>Modifica etichetta</span></button>' +
+                deleteBtn,
+              block || null,
+            ) +
+            '</div></article>';
+        }
+        list.innerHTML = html;
+      }
+
+      function renderQuestions() {
+        var html = '';
+        for (var i = 0; i < state.questions.length; i++) {
+          var q = state.questions[i];
+          var isVex = q.role === 'vex';
+          var n = variantCount(q.id);
+          var hintId = 'variants-hint-' + q.id;
+          html +=
+            '<div class="qRow">' +
+            '<div class="qMain">' +
+            '<div class="qTitle">Domanda ' +
+            q.n +
+            ' · ' +
+            esc(q.tipo) +
+            ' · Difficoltà ' +
+            q.diff +
+            '</div>' +
+            '<p class="qText">' +
+            esc(q.text) +
+            '</p>' +
+            '<div class="tags"><span class="tag">#' +
+            esc(q.localId) +
+            '</span><span class="tag">' +
+            esc(q.lesson) +
+            '</span>' +
+            (isVex
+              ? '<span class="tag tag--vex">Gruppo VEX ' + q.vexGroup + '</span>'
+              : n > 0
+                ? '<span class="tag tag--diff">Differenziata</span>'
+                : '<span class="tag">Comune</span>') +
+            '</div>' +
+            (isVex
+              ? '<p class="menuHint" id="' +
+                esc(hintId) +
+                '" style="padding-left:0">Questa domanda è in un gruppo di varianti equivalenti: non può avere varianti per etichetta.</p>'
+              : '') +
+            '</div>' +
+            '<div class="qActions">' +
+            '<button type="button" data-variants="' +
+            esc(q.id) +
+            '"' +
+            (isVex ? ' disabled aria-describedby="' + esc(hintId) + '"' : '') +
+            '>Varianti' +
+            (!isVex && n > 0 ? ' (' + n + ')' : '') +
+            '</button>' +
+            '</div></div>';
+        }
+        document.getElementById('questionList').innerHTML = html;
+      }
+
+      function renderActivation() {
+        var s = activationSummary();
+        document.getElementById('activationStats').innerHTML =
+          '<div class="stat"><div class="statN">' +
+          s.baseStudents +
+          '</div><div class="statL">Verifica base</div></div>' +
+          '<div class="stat"><div class="statN">' +
+          s.differentiatedStudents +
+          '</div><div class="statL">Verifica differenziata</div></div>' +
+          '<div class="stat"><div class="statN">' +
+          s.labelsInvolved +
+          '</div><div class="statL">Etichette coinvolte</div></div>' +
+          '<div class="stat"><div class="statN">' +
+          s.substitutions +
+          '</div><div class="statL">Sostituzioni</div></div>' +
+          '<div class="stat"><div class="statN">' +
+          s.omissions +
+          '</div><div class="statL">Omissioni</div></div>' +
+          '<div class="stat"><div class="statN">' +
+          s.withoutLabel +
+          '</div><div class="statL">Senza etichetta</div></div>';
+
+        var rows = '';
+        for (var i = 0; i < s.perLabel.length; i++) {
+          var row = s.perLabel[i];
+          rows +=
+            '<div class="breakRow"><span>' +
+            esc(row.name) +
+            ' <span class="titleMeta">· ' +
+            row.students +
+            (row.students === 1 ? ' studente' : ' studenti') +
+            '</span></span><span>' +
+            (row.count === 0
+              ? '<span class="badge badge-error">0 domande</span>'
+              : '<strong>' + row.count + '</strong> domande') +
+            '</span></div>';
+        }
+        document.getElementById('activationBreakdown').innerHTML = rows;
+
+        var blockersHtml = '';
+        if (s.blockers.length > 0) {
+          for (var b = 0; b < s.blockers.length; b++) {
+            blockersHtml +=
+              '<p class="note note--err" role="alert">' +
+              ICON_ALERT +
+              '<span>L’etichetta «' +
+              esc(s.blockers[b].name) +
+              '» resterebbe con 0 domande: l’attivazione è bloccata finché la configurazione non cambia.</span></p>';
+          }
+        } else {
+          blockersHtml =
+            '<p class="note note--ok">' +
+            ICON_CHECK +
+            '<span>Nessun blocker: ogni etichetta riceve almeno una domanda.</span></p>';
+        }
+        /*
+         * Discriminante tecnico pubblico (§5.D.5b): l'unico campo che la
+         * proiezione studente riceve in più. È neutro per costruzione — dice
+         * quale percorso usare, non che la verifica sia differenziata — ed è
+         * identico per ogni studente della classe.
+         */
+        var serverResolved =
+          s.substitutions + s.omissions > 0 ||
+          state.questions.some(function (q) {
+            return q.role === 'vex';
+          });
+        blockersHtml +=
+          '<p class="note note--info">' +
+          ICON_INFO +
+          '<span>Proiezione pubblica: <code>assignmentMode: ' +
+          (serverResolved ? 'server_resolved' : 'same_questions') +
+          '</code>' +
+          (serverResolved
+            ? ' — le domande assegnate arrivano dal server. Nessun campo dice che questa verifica è differenziata.'
+            : ' — le domande sono già tutte nella proiezione.') +
+          '</span></p>';
+        document.getElementById('activationBlockers').innerHTML = blockersHtml;
+
+        document.getElementById('activateBtn').disabled = s.blockers.length > 0;
+      }
+
+      function render() {
+        document.getElementById('appSection').textContent =
+          state.screen === 'students' ? 'Studenti' : 'Verifiche — bozza';
+        document.getElementById('screenStudents').hidden = state.screen !== 'students';
+        document.getElementById('screenDraft').hidden = state.screen !== 'draft';
+        document.getElementById('demoScreenStudents').setAttribute(
+          'aria-pressed',
+          state.screen === 'students' ? 'true' : 'false',
+        );
+        document
+          .getElementById('demoScreenDraft')
+          .setAttribute('aria-pressed', state.screen === 'draft' ? 'true' : 'false');
+
+        var tabs = ['students', 'classes', 'labels'];
+        for (var i = 0; i < tabs.length; i++) {
+          var selected = state.activeTab === tabs[i];
+          var tab = document.getElementById('tab-' + tabs[i]);
+          tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+          tab.tabIndex = selected ? 0 : -1;
+          document.getElementById('panel-' + tabs[i]).hidden = !selected;
+        }
+
+        var pending = state.students.filter(function (s) {
+          return s.status === 'pending';
+        }).length;
+        var badge = document.getElementById('pendingCount');
+        badge.textContent = String(pending);
+        badge.hidden = pending === 0;
+
+        renderStudents();
+        renderClasses();
+        renderLabels();
+        renderQuestions();
+        renderActivation();
+
+        var feedback = document.getElementById('draftSaveFeedback');
+        feedback.textContent = state.draftDirty
+          ? '● Modifiche non salvate'
+          : 'Nessuna modifica da salvare';
+        document.getElementById('draftSaveBtn').disabled = !state.draftDirty;
+      }
+
+      /* ── Dialog ───────────────────────────────────────────────────────── */
+
+      var dialogRoot = document.getElementById('dialogRoot');
+      var lastTrigger = null;
+      /** Dialog attualmente aperto: title/render/mount/isDirty/onSave. */
+      var current = null;
+      /** Guardia sincrona: due Escape ravvicinati non aprono due conferme. */
+      var transitionGuard = false;
+
+      function closeDialog() {
+        dialogRoot.innerHTML = '';
+        current = null;
+        transitionGuard = false;
+        if (lastTrigger && document.body.contains(lastTrigger)) lastTrigger.focus();
+        lastTrigger = null;
+      }
+
+      function focusableIn(dialog) {
+        return dialog.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+      }
+
+      /**
+       * Dirty guard (§9.2). La conferma NON è una seconda finestra: è una fase
+       * della stessa, quindi resta un unico focus trap. La `min-height` fissata
+       * prima dello scambio impedisce il salto di layout, e il pulsante
+       * distruttivo non è mai quello a fuoco all'apertura.
+       */
+      function showDiscardConfirm() {
+        if (transitionGuard || !current) return;
+        transitionGuard = true;
+        var dialog = dialogRoot.querySelector('.dialog');
+        if (!dialog) return;
+        dialog.style.minHeight = Math.round(dialog.getBoundingClientRect().height) + 'px';
+        dialog.innerHTML =
+          '<h3 class="dialogTitle" id="dlg-title">Abbandonare le modifiche?</h3>' +
+          '<p>Le modifiche non salvate di questa finestra andranno perse.</p>' +
+          '<div class="dialogActions">' +
+          '<button type="button" id="dlgKeep">Continua modifica</button>' +
+          (current.onSave
+            ? '<button type="button" class="btn-primary" id="dlgSaveClose">Salva e chiudi</button>'
+            : '') +
+          '<button type="button" class="btn-danger" id="dlgDiscard">Abbandona modifiche</button>' +
+          '</div>';
+        dialog.querySelector('#dlgKeep').addEventListener('click', function () {
+          transitionGuard = false;
+          renderDialogBody(true);
+        });
+        var saveClose = dialog.querySelector('#dlgSaveClose');
+        if (saveClose) {
+          saveClose.addEventListener('click', function () {
+            if (!current) return;
+            var save = current.onSave;
+            transitionGuard = false;
+            save();
+          });
+        }
+        var discard = dialog.querySelector('#dlgDiscard');
+        discard.addEventListener('click', function () {
+          if (!current) return; // doppio click protetto: il primo azzera `current`
+          closeDialog();
+          render();
+        });
+        dialog.querySelector('#dlgKeep').focus();
+      }
+
+      /** Escape, backdrop e «Chiudi» passano tutti da qui. */
+      function requestClose() {
+        if (!current) return;
+        if (current.isDirty && current.isDirty()) {
+          showDiscardConfirm();
+          return;
+        }
+        closeDialog();
+      }
+
+      function renderDialogBody(restoreFocus) {
+        var dialog = dialogRoot.querySelector('.dialog');
+        if (!dialog || !current) return;
+        var active = document.activeElement;
+        var activeId = active && active.id ? active.id : null;
+        dialog.innerHTML =
+          '<h3 class="dialogTitle" id="dlg-title">' +
+          esc(current.title) +
+          '</h3>' +
+          current.render();
+        if (current.mount) current.mount(dialog);
+        if (restoreFocus) {
+          var target = activeId ? dialog.querySelector('#' + activeId) : null;
+          (target || focusableIn(dialog)[0] || dialog).focus();
+        }
+      }
+
+      function openDialog(options) {
+        lastTrigger = document.activeElement;
+        transitionGuard = false;
+        current = {
+          title: options.title,
+          render: options.render || function () {
+            return options.body;
+          },
+          mount: options.onMount,
+          isDirty: options.isDirty,
+          onSave: options.onSave,
+        };
+        var wide = options.wide ? ' dialog--wide' : '';
+        dialogRoot.innerHTML =
+          '<div class="backdrop" data-backdrop><div class="dialog' +
+          wide +
+          '" role="dialog" aria-modal="true" aria-labelledby="dlg-title" tabindex="-1"></div></div>';
+
+        var dialog = dialogRoot.querySelector('.dialog');
+        renderDialogBody(false);
+        (focusableIn(dialog)[0] || dialog).focus();
+
+        dialogRoot.querySelector('[data-backdrop]').addEventListener('click', requestClose);
+        dialog.addEventListener('click', function (event) {
+          event.stopPropagation();
+        });
+        dialog.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            requestClose();
+            return;
+          }
+          if (event.key !== 'Tab') return;
+          var items = focusableIn(dialog);
+          if (items.length === 0) return;
+          var first = items[0];
+          var last = items[items.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        });
+      }
+
+      /** Dialog «Nuova etichetta» / «Modifica etichetta». */
+      function openLabelDialog(labelId) {
+        var existing = labelId ? labelById(labelId) : null;
+        var initial = existing ? existing.name : '';
+        /* Il draft vive fuori dal DOM: sopravvive al passaggio alla conferma
+           e al ritorno, e sopravvive a un errore di validazione. */
+        var draft = { value: initial, error: null };
+        var saving = false;
+
+        function body() {
+          return (
+            '<div>' +
+            '<div class="fieldHead"><label for="labelNameInput">Nome etichetta</label>' +
+            '<span class="counter" id="labelCounter" aria-live="polite">' +
+            draft.value.length +
+            '/' +
+            LABEL_NAME_MAX +
+            '</span></div>' +
+            '<input type="text" id="labelNameInput" maxlength="' +
+            LABEL_NAME_MAX +
+            '" value="' +
+            esc(draft.value) +
+            '" placeholder="es. Percorso A" />' +
+            '</div>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Usa una denominazione operativa neutrale. L’etichetta resta privata: non compare mai in ciò che lo studente vede.</span></p>' +
+            '<p class="text-error" id="labelError" role="alert"' +
+            (draft.error ? '' : ' hidden') +
+            '>' +
+            esc(draft.error || '') +
+            '</p>' +
+            '<div class="dialogActions">' +
+            '<button type="button" id="labelCancelBtn">Annulla</button>' +
+            '<button type="button" class="btn-primary" id="labelSaveBtn">' +
+            (existing ? 'Salva' : 'Aggiungi') +
+            '</button></div>'
+          );
+        }
+
+        function save() {
+          if (saving) return; // guardia anti-doppio-click
+          var name = draft.value.trim();
+          if (!name) {
+            draft.error = 'Indica un nome per l’etichetta.';
+            renderDialogBody(false);
+            dialogRoot.querySelector('#labelNameInput').focus();
+            return;
+          }
+          /*
+           * Simula la prenotazione transazionale di §5.A.6: nel sistema reale
+           * il conflitto emerge dal `create` su
+           * `differentiationLabelNames/{SHA-256(ownerUid + U+0000 + nameKey)}`
+           * dentro la stessa transazione che crea l'etichetta, non da questo
+           * confronto su una lista in memoria.
+           */
+          var key = nameKey(name);
+          for (var i = 0; i < state.labels.length; i++) {
+            if (state.labels[i].id !== labelId && nameKey(state.labels[i].name) === key) {
+              // Il testo digitato resta: l'errore non svuota il campo.
+              draft.error =
+                'Esiste già un’etichetta con questo nome: «' + state.labels[i].name + '».';
+              renderDialogBody(false);
+              dialogRoot.querySelector('#labelNameInput').focus();
+              return;
+            }
+          }
+          saving = true;
+          if (existing) existing.name = name;
+          // Nasce con entrambi i contatori a zero (invariante 2 di §5.A.7).
+          else
+            state.labels.push({
+              id: 'lab-' + Date.now(),
+              name: name,
+              assignedCount: 0,
+              draftUsageCount: 0,
+            });
+          closeDialog();
+          render();
+        }
+
+        openDialog({
+          title: existing ? 'Modifica etichetta' : 'Nuova etichetta',
+          render: body,
+          isDirty: function () {
+            return !saving && draft.value !== initial;
+          },
+          onSave: save,
+          onMount: function (dialog) {
+            var input = dialog.querySelector('#labelNameInput');
+            var counter = dialog.querySelector('#labelCounter');
+            input.addEventListener('input', function () {
+              draft.value = input.value;
+              counter.textContent = input.value.length + '/' + LABEL_NAME_MAX;
+            });
+            dialog.querySelector('#labelSaveBtn').addEventListener('click', save);
+            dialog.querySelector('#labelCancelBtn').addEventListener('click', requestClose);
+            input.addEventListener('keydown', function (event) {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                save();
+              }
+            });
+          },
+        });
+      }
+
+      /** Conferma di eliminazione libera. */
+      function openLabelDeleteDialog(labelId) {
+        var lab = labelById(labelId);
+        if (!lab) return;
+        openDialog({
+          title: 'Elimina etichetta',
+          body:
+            '<p>Eliminare «' +
+            esc(lab.name) +
+            '»? Nessuno studente e nessuna bozza la usano, quindi l’eliminazione non modifica nulla.</p>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Al momento dell’eliminazione i due contatori vengono riletti dentro la transazione: se nel frattempo qualcosa fosse cambiato, l’operazione fallisce invece di lasciare uno stato incoerente.</span></p>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Le verifiche già attivate non sono toccate: la loro configurazione è congelata al momento dell’attivazione, nome dell’etichetta compreso, e resta leggibile anche dopo l’eliminazione.</span></p>' +
+            '<div class="dialogActions"><button type="button" data-dlg-cancel>Annulla</button>' +
+            '<button type="button" class="btn-danger" id="confirmDelete">Elimina</button></div>',
+          onMount: function (dialog) {
+            dialog.querySelector('[data-dlg-cancel]').addEventListener('click', closeDialog);
+            dialog.querySelector('#confirmDelete').addEventListener('click', function () {
+              state.labels = state.labels.filter(function (item) {
+                return item.id !== labelId;
+              });
+              closeDialog();
+              render();
+            });
+          },
+        });
+      }
+
+      /** Dialog delle varianti di una domanda comune. */
+      function openVariantsDialog(questionId) {
+        var q = questionById(questionId);
+        if (!q || q.role === 'vex') return;
+        var draft = {};
+        var saved = state.differentiation[questionId] || {};
+        var saving = false;
+        var sorted = state.labels.slice().sort(function (a, b) {
+          return a.name.localeCompare(b.name, 'it');
+        });
+        for (var i = 0; i < sorted.length; i++) {
+          var existing = saved[sorted[i].id];
+          draft[sorted[i].id] = existing
+            ? { kind: existing.kind, altId: existing.altId }
+            : { kind: 'base' };
+        }
+        /* Istantanea del draft all'apertura: la dirty guard confronta con
+           questa, non con la configurazione salvata, così tornare a mano al
+           valore iniziale rende di nuovo il dialog pulito. */
+        var opened = JSON.stringify(draft);
+
+        /* Filtro delle alternative: stessa lezione, non selezionate nella
+           verifica, non VEX, non capaci di creare duplicazioni per la
+           stessa etichetta (contratto §9.1.7). */
+        function availableFor(labelId) {
+          return state.alternatives.filter(function (alt) {
+            if (alt.lesson !== q.lesson) return false;
+            for (var k = 0; k < state.questions.length; k++) {
+              if (state.questions[k].localId === alt.localId) return false;
+            }
+            for (var qid in state.differentiation) {
+              if (!Object.prototype.hasOwnProperty.call(state.differentiation, qid)) continue;
+              if (qid === questionId) continue;
+              var other = state.differentiation[qid][labelId];
+              if (other && other.kind === 'alternative' && other.altId === alt.id) return false;
+            }
+            return true;
+          });
+        }
+
+        function labelBlock(lab) {
+          var choice = draft[lab.id];
+          var options = availableFor(lab.id);
+          var name = 'choice-' + lab.id;
+          var html =
+            '<div class="labelCard"><span class="labelName">' +
+            esc(lab.name) +
+            '</span>' +
+            '<fieldset class="choices"><legend class="visually-hidden">Scelta per ' +
+            esc(lab.name) +
+            '</legend>';
+          var kinds = [
+            { key: 'base', text: 'Domanda base' },
+            { key: 'alternative', text: 'Domanda alternativa' },
+            { key: 'none', text: 'Nessuna domanda' },
+          ];
+          for (var k = 0; k < kinds.length; k++) {
+            var disabled = kinds[k].key === 'alternative' && options.length === 0;
+            html +=
+              '<label class="choice"><input type="radio" name="' +
+              esc(name) +
+              '" value="' +
+              kinds[k].key +
+              '" data-choice="' +
+              esc(lab.id) +
+              '"' +
+              (choice.kind === kinds[k].key ? ' checked' : '') +
+              (disabled ? ' disabled' : '') +
+              ' /><span>' +
+              kinds[k].text +
+              '</span></label>';
+          }
+          html += '</fieldset>';
+
+          if (options.length === 0) {
+            html +=
+              '<p class="note note--warn">' +
+              ICON_ALERT +
+              '<span>Questa lezione non ha altre domande disponibili per una variante. Restano possibili «Domanda base» e «Nessuna domanda».</span></p>';
+          } else if (choice.kind === 'alternative') {
+            var select =
+              '<label class="visually-hidden" for="alt-' +
+              esc(lab.id) +
+              '">Domanda alternativa per ' +
+              esc(lab.name) +
+              '</label><select id="alt-' +
+              esc(lab.id) +
+              '" data-alt="' +
+              esc(lab.id) +
+              '">';
+            for (var o = 0; o < options.length; o++) {
+              select +=
+                '<option value="' +
+                esc(options[o].id) +
+                '"' +
+                (choice.altId === options[o].id ? ' selected' : '') +
+                '>#' +
+                esc(options[o].localId) +
+                ' · ' +
+                esc(options[o].tipo) +
+                ' · Diff. ' +
+                options[o].diff +
+                '</option>';
+            }
+            select += '</select>';
+            var chosen = altById(choice.altId) || options[0];
+            html +=
+              select +
+              '<div class="altPreview"><strong>Anteprima:</strong> ' +
+              esc(chosen.text) +
+              '</div>';
+          } else if (choice.kind === 'none') {
+            html +=
+              '<p class="note note--info">' +
+              ICON_INFO +
+              '<span>Questa domanda non verrà servita agli studenti con questa etichetta. Il punteggio massimo si riduce di conseguenza.</span></p>';
+          }
+          return html + '</div>';
+        }
+
+        function bodyMarkup() {
+          var html =
+            '<div class="baseBlock"><span class="baseLabel">Domanda ' +
+            q.n +
+            ' · ' +
+            esc(q.tipo) +
+            ' · Difficoltà ' +
+            q.diff +
+            '</span><p style="margin-top:.35rem">' +
+            esc(q.text) +
+            '</p>' +
+            '<p class="qText" style="margin-top:.5rem"><strong>Soluzione base:</strong> ' +
+            esc(q.solution) +
+            '</p></div>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Le alternative provengono dalla stessa lezione (' +
+            esc(q.lesson) +
+            '), non sono già selezionate nella verifica e non appartengono a un gruppo VEX.</span></p>';
+          for (var i = 0; i < sorted.length; i++) html += labelBlock(sorted[i]);
+          if (sorted.length === 0) {
+            html += '<p class="state-empty">Nessuna etichetta definita.</p>';
+          }
+          html +=
+            '<div class="dialogActions"><button type="button" id="variantsCancel">Annulla</button>' +
+            '<button type="button" class="btn-primary" id="saveVariants">Salva varianti</button></div>';
+          return html;
+        }
+
+        function saveVariants() {
+          if (saving) return; // guardia anti-doppio-click
+          var next = {};
+          var any = false;
+          for (var lid in draft) {
+            if (!Object.prototype.hasOwnProperty.call(draft, lid)) continue;
+            if (draft[lid].kind === 'base') continue; // potatura esplicita
+            next[lid] = { kind: draft[lid].kind, altId: draft[lid].altId };
+            any = true;
+          }
+          saving = true;
+          /*
+           * Nel portale reale questa e' la transazione di §5.F.1: gli insiemi
+           * prima/dopo si confrontano e i contatori si muovono nello stesso
+           * commit del salvataggio bozza. Qui la configurazione resta locale
+           * (nessuna scrittura finche' non si preme «Salva bozza»), ma il diff
+           * di insiemi e' lo stesso, cosi' si vede che il conteggio e' per
+           * verifica e non per variante.
+           */
+          var before = labelIdsInDraft(state.differentiation);
+          if (any) state.differentiation[questionId] = next;
+          else delete state.differentiation[questionId];
+          applyDraftUsageDiff(before, labelIdsInDraft(state.differentiation));
+          state.draftDirty = true;
+          closeDialog();
+          render();
+        }
+
+        function mount(dialog) {
+          dialog.querySelector('#variantsCancel').addEventListener('click', requestClose);
+          dialog.querySelector('#saveVariants').addEventListener('click', saveVariants);
+
+          var radios = dialog.querySelectorAll('[data-choice]');
+          for (var r = 0; r < radios.length; r++) {
+            radios[r].addEventListener('change', function (event) {
+              var lid = event.target.getAttribute('data-choice');
+              draft[lid] = { kind: event.target.value };
+              if (draft[lid].kind === 'alternative') {
+                var opts = availableFor(lid);
+                draft[lid].altId = opts.length > 0 ? opts[0].id : undefined;
+              }
+              renderDialogBody(true);
+            });
+          }
+          var selects = dialog.querySelectorAll('[data-alt]');
+          for (var s = 0; s < selects.length; s++) {
+            selects[s].addEventListener('change', function (event) {
+              var lid = event.target.getAttribute('data-alt');
+              draft[lid] = { kind: 'alternative', altId: event.target.value };
+              renderDialogBody(true);
+            });
+          }
+        }
+
+        openDialog({
+          title: 'Varianti — Domanda ' + q.n,
+          render: bodyMarkup,
+          wide: true,
+          onMount: mount,
+          isDirty: function () {
+            return !saving && JSON.stringify(draft) !== opened;
+          },
+          onSave: saveVariants,
+        });
+      }
+
+      /** Conferma finale di attivazione. */
+      function openActivateDialog() {
+        var s = activationSummary();
+        var rows = '';
+        for (var i = 0; i < s.perLabel.length; i++) {
+          rows +=
+            '<div class="breakRow"><span>' +
+            esc(s.perLabel[i].name) +
+            '</span><span><strong>' +
+            s.perLabel[i].count +
+            '</strong> domande</span></div>';
+        }
+        openDialog({
+          title: 'Conferma attivazione',
+          wide: true,
+          body:
+            '<p>Dopo l’attivazione la configurazione non sarà più modificabile. Continuare?</p>' +
+            '<div class="breakdown">' +
+            rows +
+            '</div>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Le etichette restano private: non compaiono nella verifica servita allo studente, nella correzione restituita, nei PDF o negli export. La proiezione pubblica riceve un solo dato tecnico, <code>assignmentMode: server_resolved</code>, che dice da dove arrivano le domande e nulla sul perché.</span></p>' +
+            '<div class="dialogActions"><button type="button" data-dlg-cancel>Annulla</button>' +
+            '<button type="button" class="btn-success" id="confirmActivate">Conferma attivazione</button></div>',
+          onMount: function (dialog) {
+            dialog.querySelector('[data-dlg-cancel]').addEventListener('click', closeDialog);
+            dialog.querySelector('#confirmActivate').addEventListener('click', function () {
+              closeDialog();
+              openDialog({
+                title: 'Verifica attivata',
+                body:
+                  '<p class="note note--ok">' +
+                  ICON_CHECK +
+                  '<span>Configurazione congelata. Ogni studente riceverà le domande risolte per la propria etichetta al primo avvio.</span></p>' +
+                  '<div class="dialogActions"><button type="button" class="btn-primary" data-dlg-cancel>Chiudi</button></div>',
+                onMount: function (inner) {
+                  inner.querySelector('[data-dlg-cancel]').addEventListener('click', closeDialog);
+                },
+              });
+            });
+          },
+        });
+      }
+
+      /* ── Eventi ───────────────────────────────────────────────────────── */
+
+      var TABS = ['students', 'classes', 'labels'];
+
+      function selectTab(name) {
+        state.activeTab = name;
+        render();
+        document.getElementById('tab-' + name).focus();
+      }
+
+      for (var t = 0; t < TABS.length; t++) {
+        (function (name) {
+          var tab = document.getElementById('tab-' + name);
+          tab.addEventListener('click', function () {
+            selectTab(name);
+          });
+          tab.addEventListener('keydown', function (event) {
+            var index = TABS.indexOf(state.activeTab);
+            if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              selectTab(TABS[(index + 1) % TABS.length]);
+            } else if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              selectTab(TABS[(index - 1 + TABS.length) % TABS.length]);
+            } else if (event.key === 'Home') {
+              event.preventDefault();
+              selectTab(TABS[0]);
+            } else if (event.key === 'End') {
+              event.preventDefault();
+              selectTab(TABS[TABS.length - 1]);
+            }
+          });
+        })(TABS[t]);
+      }
+
+      document.getElementById('studentSearch').addEventListener('input', function (event) {
+        state.search = event.target.value;
+        renderStudents();
+      });
+      document.getElementById('studentStatusFilter').addEventListener('change', function (event) {
+        state.statusFilter = event.target.value;
+        renderStudents();
+      });
+
+      document.getElementById('newLabelBtn').addEventListener('click', function () {
+        openLabelDialog(null);
+      });
+      document.getElementById('newClassBtn').addEventListener('click', function () {
+        openDialog({
+          title: 'Nuova classe',
+          body:
+            '<div><label for="newClassName">Nome classe</label>' +
+            '<input type="text" id="newClassName" placeholder="es. 3A Informatica" /></div>' +
+            '<div class="dialogActions"><button type="button" data-dlg-cancel>Annulla</button>' +
+            '<button type="button" class="btn-primary" data-dlg-cancel>Aggiungi</button></div>',
+          onMount: function (dialog) {
+            var buttons = dialog.querySelectorAll('[data-dlg-cancel]');
+            for (var i = 0; i < buttons.length; i++) {
+              buttons[i].addEventListener('click', closeDialog);
+            }
+          },
+        });
+      });
+
+      document.body.addEventListener('click', function (event) {
+        var trigger = event.target.closest ? event.target.closest('[data-menu]') : null;
+        if (trigger) {
+          var id = trigger.getAttribute('data-menu');
+          state.openMenu = state.openMenu === id ? null : id;
+          render();
+          var reopened = document.querySelector('[data-menu="' + id + '"]');
+          if (reopened) reopened.focus();
+          return;
+        }
+        if (!event.target.closest || !event.target.closest('.menu')) {
+          if (state.openMenu) {
+            state.openMenu = null;
+            render();
+          }
+        }
+
+        var edit = event.target.closest ? event.target.closest('[data-label-edit]') : null;
+        if (edit) {
+          var editId = edit.getAttribute('data-label-edit');
+          state.openMenu = null;
+          render();
+          openLabelDialog(editId);
+          return;
+        }
+        var del = event.target.closest ? event.target.closest('[data-label-delete]') : null;
+        if (del && !del.disabled) {
+          var delId = del.getAttribute('data-label-delete');
+          state.openMenu = null;
+          render();
+          openLabelDeleteDialog(delId);
+          return;
+        }
+        var variants = event.target.closest ? event.target.closest('[data-variants]') : null;
+        if (variants && !variants.disabled) {
+          openVariantsDialog(variants.getAttribute('data-variants'));
+        }
+      });
+
+      document.body.addEventListener('change', function (event) {
+        var labelSelect = event.target.getAttribute
+          ? event.target.getAttribute('data-student-label')
+          : null;
+        if (labelSelect) {
+          /*
+           * Simula la transazione di §5.A.7: l'assegnazione e i due
+           * `increment` sul contatore vivono nello stesso commit, così
+           * `assignedCount` non può divergere dalle assegnazioni reali.
+           */
+          for (var i = 0; i < state.students.length; i++) {
+            if (state.students[i].uid !== labelSelect) continue;
+            var previous = state.students[i].labelId;
+            var next = event.target.value || null;
+            if (previous === next) break;
+            if (previous) {
+              var prevLabel = labelById(previous);
+              if (prevLabel) prevLabel.assignedCount = Math.max(0, prevLabel.assignedCount - 1);
+            }
+            if (next) {
+              var nextLabel = labelById(next);
+              if (nextLabel) nextLabel.assignedCount = nextLabel.assignedCount + 1;
+            }
+            state.students[i].labelId = next;
+          }
+          render();
+          return;
+        }
+        var classSelect = event.target.getAttribute
+          ? event.target.getAttribute('data-student-class')
+          : null;
+        if (classSelect) {
+          for (var c = 0; c < state.students.length; c++) {
+            if (state.students[c].uid === classSelect) {
+              state.students[c].classId = event.target.value || null;
+            }
+          }
+          render();
+        }
+      });
+
+      document.getElementById('draftSaveBtn').addEventListener('click', function () {
+        state.draftDirty = false;
+        render();
+      });
+      document.getElementById('activateBtn').addEventListener('click', openActivateDialog);
+
+      document.getElementById('demoScreenStudents').addEventListener('click', function () {
+        state.screen = 'students';
+        render();
+      });
+      document.getElementById('demoScreenDraft').addEventListener('click', function () {
+        state.screen = 'draft';
+        render();
+      });
+      document.getElementById('demoBlocker').addEventListener('click', function (event) {
+        /*
+         * Simula una configurazione coerente in cui «Gruppo 2» resta con zero
+         * domande: è la guardia G15 del contratto e blocca l'attivazione.
+         * Perché una domanda esce dal gruppo VEX: un membro di un gruppo
+         * equivalente contribuisce SEMPRE una domanda (§5.D.4 passo 4), quindi
+         * lo zero è raggiungibile solo su una verifica di sole domande comuni
+         * tutte omesse per quell'etichetta. Sciogliere prima il gruppo e poi
+         * configurare le varianti è esattamente il gesto esplicito richiesto
+         * da §6.6 — nessuna conversione automatica.
+         */
+        state.demoBlocker = !state.demoBlocker;
+        var q2 = questionById('q2');
+        var usageBefore = labelIdsInDraft(state.differentiation);
+        if (state.demoBlocker) {
+          q2.role = 'common';
+          for (var i = 0; i < state.questions.length; i++) {
+            var qid = state.questions[i].id;
+            var choices = state.differentiation[qid] || {};
+            choices['lab-c'] = { kind: 'none' };
+            state.differentiation[qid] = choices;
+          }
+        } else {
+          q2.role = 'vex';
+          for (var j = 0; j < state.questions.length; j++) {
+            var id = state.questions[j].id;
+            var set = state.differentiation[id];
+            if (!set) continue;
+            delete set['lab-c'];
+            if (Object.keys(set).length === 0) delete state.differentiation[id];
+          }
+        }
+        // Anche la simulazione passa dal diff di insiemi: i contatori non si
+        // toccano mai a mano, nemmeno in un prototipo.
+        applyDraftUsageDiff(usageBefore, labelIdsInDraft(state.differentiation));
+        event.currentTarget.setAttribute('aria-pressed', state.demoBlocker ? 'true' : 'false');
+        state.screen = 'draft';
+        render();
+      });
+      document.getElementById('demoReset').addEventListener('click', function () {
+        state = initialState();
+        document.getElementById('studentSearch').value = '';
+        document.getElementById('studentStatusFilter').value = 'all';
+        document.getElementById('demoBlocker').setAttribute('aria-pressed', 'false');
+        closeDialog();
+        render();
+      });
+
+      /*
+       * Deep link di stato (`#etichette`, `#varianti`, …). Serve a chi rivede il
+       * prototipo — e alla cattura degli screenshot di evidenza — per aprire
+       * direttamente lo stato da guardare, senza ripetere la stessa sequenza di
+       * click. Non fa parte della UI proposta: nel portale reale la navigazione
+       * resta quella normale del portale.
+       */
+      function applyDeepLink() {
+        var hash = (location.hash || '').replace('#', '').toLowerCase();
+        if (!hash) return;
+        if (hash === 'studenti') {
+          state.screen = 'students';
+          state.activeTab = 'students';
+        } else if (hash === 'classi') {
+          state.screen = 'students';
+          state.activeTab = 'classes';
+        } else if (hash === 'etichette') {
+          state.screen = 'students';
+          state.activeTab = 'labels';
+        } else if (hash === 'bozza' || hash === 'riepilogo' || hash === 'varianti') {
+          state.screen = 'draft';
+        } else if (hash === 'blocker') {
+          state.screen = 'draft';
+          document.getElementById('demoBlocker').click();
+          return;
+        }
+        render();
+        if (hash === 'varianti') openVariantsDialog('q1');
+        if (hash === 'riepilogo') {
+          var stats = document.getElementById('activationStats');
+          if (stats) stats.scrollIntoView({ block: 'center' });
+        }
+      }
+
+      render();
+      applyDeepLink();
+      window.addEventListener('hashchange', applyDeepLink);
+    </script>
+  </body>
+</html>

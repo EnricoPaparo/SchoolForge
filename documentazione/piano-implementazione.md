@@ -1133,4 +1133,42 @@ contratti in [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-ro
 | POOL-TUNE-02 ✅ | Correzione mirata e tuning reale del prompt pool sui difetti misurati nel profile probe. | POOL-TUNE-01 | **PASS sul tuning.** `pool-tune-02-candidate-a-v1`: 8/8 output validi, 62 domande, 25/25 soluzioni aperte e 37/37 chiavi chiuse corrette, zero blocker, 318/320 (3,975/4). Risolti indici 1-based, duplicazione sostanziale ed escape letterali. Costo reale 136.214 µUSD. Prompt congelato fino all'holdout. Evidenze: `evidenze/pool-tune-02-candidate-a-review.md` e `evidenze/pool-tune-02-candidate-a-real-review.md`. Schema, payload, cap, profilo runtime, cost model e backend invariati. `POOL-TUNE-03` e Gate GPOOL-QUALITY restano aperti. |
 | POOL-TUNE-03 ✅ | Holdout reale separato sui quattro scenari mai usati per scegliere o modificare il candidato. | POOL-TUNE-02 | **PASS.** Quality: 4/4 pool validi, 15/15 soluzioni aperte e 21/21 chiavi chiuse corrette, zero blocker, 159/160 (3,975/4), costo reale 79.859 µUSD. Il prompt congelato non è stato ritoccato. Tuning + holdout: 12/12 validi, 477/480 e 216.073 µUSD. Evidenza: `evidenze/pool-tune-03-holdout-review.md`. |
 | Gate GPOOL-QUALITY ✅ | Chiusura evidence-based della qualità dei pool generati. | POOL-TUNE-01→03 | **PASS esclusivamente per `pool-tune-02-candidate-a-v1` + profilo `quality`.** Economy resta non qualificato dopo il fallimento 4/4 nel probe e non è stato rieseguito sul candidato. Il Gate non cambia automaticamente profilo runtime e non autorizza da solo il deploy. |
-| POOL-ROLLOUT-01 ✅ | Quality obbligatorio e reversibile per la sola generazione IA dei pool; rollout DEV del candidato validato. | Gate GPOOL-QUALITY | **Implementato nel codice, rollout DEV ancora da eseguire.** Il builder client rende Economy irrappresentabile e il dialog mostra Quality come dato non interattivo; il server rifiuta `kind:'pool' + economy` con `invalid_input` prima di config/secret/provider/stima/budget/lease/run/write, senza fallback. Lezioni, mappe concettuali e correzione IA restano invariate. Dopo merge/deploy DEV: smoke nuovo pool + append, review locale e singolo salvataggio canonico. |
+| POOL-ROLLOUT-01 ✅ | Quality obbligatorio e reversibile per la sola generazione IA dei pool; rollout DEV del candidato validato. | Gate GPOOL-QUALITY | **Implementato, distribuito su DEV e confermato dal docente.** Il builder client rende Economy irrappresentabile e il dialog mostra Quality come dato non interattivo; il server rifiuta `kind:'pool' + economy` con `invalid_input` prima di config/secret/provider/stima/budget/lease/run/write, senza fallback. Lezioni, mappe concettuali e correzione IA restano invariate. Smoke reale PASS su nuovo pool, append, review locale e singolo salvataggio canonico — [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md). `economy` resta non qualificato; nessun deploy PROD autorizzato. |
+
+---
+
+## Appendice E — VDIF — Verifiche differenziate per etichetta, ed ESITI
+
+Differenziazione della verifica su **etichette operative private del docente**:
+al massimo una etichetta per studente, varianti configurabili sulle sole
+domande comuni, con scelta esplicita fra domanda base, domanda alternativa e
+«Nessuna domanda». Contratto tecnico, privacy, cost model, matrice di test e
+prototipo in
+[verifiche-differenziate-roadmap.md](verifiche-differenziate-roadmap.md);
+prototipo statico in
+[prototipi/verifiche-differenziate.html](prototipi/verifiche-differenziate.html).
+**Gate GVDIF aperto.**
+
+**Stato del percorso.** Con la conferma del docente su pool IA Quality e mappe
+concettuali ([evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md)),
+**l'unico blocco applicativo principale ancora aperto in questa linea di lavoro è
+VDIF** (VDIF-01→05 + Gate GVDIF), più il pacchetto **indipendente e successivo**
+ESITI-01. Restano tracciati altrove e fuori da questa affermazione i Gate GAIGEN,
+GLESSON e GSTRUCT, e ogni attività di provisioning o deploy PROD.
+
+**Fuori scope da VDIF, in ogni fase e in ogni forma** (asse distinto, roadmap
+autonoma, mai introdotto «già che ci siamo»): tempo aggiuntivo; limiti
+temporali personalizzati; materiali consultabili; formulari; limiti di
+caratteri personalizzati; ulteriori misure compensative o dispensative. Sono
+proprietà della **consegna**, non della **selezione delle domande**.
+
+| Pacchetto | Sintesi | Dipendenze | Stato |
+|---|---|---|---|
+| VDIF-00 ✅ | Contratto tecnico definitivo (modello dati congelato, perimetro privacy a elenco chiuso, mutua esclusione VEX bidirezionale, guardie di attivazione G01→G21 con ordine di letture/scritture e confine transazionale, snapshot e `assignedQuestionOrders`), cost model, matrice minima dei test, roadmap eseguibile VDIF-01→05 + GVDIF + ESITI-01, e **prototipo UI statico** responsive. | GVEX PASS, M4, `resolveAssignedQuestions` | **Solo documentazione e prototipo.** Zero codice runtime; nessuna modifica a Firebase, Rules, Functions, indici, schema o dipendenze; nessuna chiamata OpenAI; nessun deploy. Diff limitato a `documentazione/**`. **Gate GVDIF aperto.** |
+| VDIF-01 📐 | **Registro etichette owner-only**: tipi, collezione `differentiationLabels/{labelId}` a contratto chiuso (`ownerUid`, `name`, `nameKey`, `createdAt`, `updatedAt`), helper puro `labelNameKey.ts`, unicità per docente, CRUD, Rules owner-only, audit `label.created`/`updated`/`deleted`, **scheda Etichette** (tablist a tre schede, pulsante full-width, card full-width, dialog crea/rinomina con contatore e guardia anti-doppio-click, elimina protetta con motivo via `aria-describedby`, stato vuoto senza esempi diagnostici). | VDIF-00 | **Da implementare.** Nessun indice composito nuovo; nessuna lettura per card; nessun contatore denormalizzato. |
+| VDIF-02 📐 | **Assegnazione privata studente → etichetta**: `studentLabelAssignments/{studentUid}` owner-only con id deterministico, selettore «Etichetta» nella card studente accanto a «Classe» con salvataggio immediato e busy circoscritto, ricerca studenti estesa al nome dell'etichetta, Rules, audit `student.labelAssigned`, eliminazione dell'assegnazione nello stesso batch di `removeStudent`. | VDIF-01 | **Da implementare.** `labelId` non può stare su `students/{uid}`: quel documento è leggibile dallo studente e Firestore autorizza per documento, non per campo. |
+| VDIF-03 📐 | **Builder delle varianti**: helper puro condiviso `classifyQuestionParticipation` (`common_free`/`vex_member`/`differentiated_base`/`differentiated_alternative`), pulsante «Varianti (n)» su ogni domanda comune e **disabilitato con motivo** sulle domande VEX, dialog a tre valori per etichetta con alternative filtrate (stessa lezione, non selezionate, non VEX, senza duplicazioni) e anteprima reale, riuso di `VexQuestionSelect`, `config.differentiation` versionata nello **stesso** «Salva bozza», **mutua esclusione VEX bidirezionale** senza conversioni automatiche. | VDIF-02 | **Da implementare.** Zero scritture aggiuntive; nessuna UI ricostruisce la classificazione per conto proprio. |
+| VDIF-04 📐 | **Attivazione**: guardie fail-closed G01→G21 nell'ordine congelato, snapshot privato (`teacherSnapshot.differentiation` + `labelAssignments`), risolutore puro `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` tramite la callable **esistente** `assignVerificationVariant`, flag `differentiated` sulla proiezione pubblica, riepilogo owner-only pre-attivazione. | VDIF-03 | **Da implementare.** Confine transazionale invariato (transazione client su verifica + proiezione); nessuna nuova Function. |
+| VDIF-05 📐 | **Consumer downstream**: svolgimento studente, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end sull'elenco chiuso delle superfici. | VDIF-04 | **Da implementare.** Ogni consumer resta su `resolveAssignedQuestions`: nessuna etichetta raggiunge alcun dato o schermata studente. |
+| Gate GVDIF 📐 | Rollout DEV e **gate umano multi-studente**: studenti etichettati e non, isolamento delle alternative, correzione, restituzione ed export confermati dal docente. | VDIF-05 | **Aperto.** Evidenza attesa in `evidenze/gvdif-human-gate.md`. |
+| ESITI-01 📐 | Vista di **sola lettura** degli esiti aggregati per UDA/lezione: derivazione pura da `CorrectionDoc.evaluations` e `config.questionRefs`, copertura dichiarata, numero di domande per riga. Nessuna scrittura, nessuna collezione, nessun prompt. | GVDIF | **Indipendente e successiva a GVDIF.** Nessuna etichetta compare negli esiti: aggregano per lezione, non per studente. |

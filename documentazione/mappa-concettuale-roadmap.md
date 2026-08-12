@@ -1,11 +1,13 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** **CONCEPT-MAP-01→06 implementati** (core e backend IA;
+**Stato:** **CONCEPT-MAP-01→07 implementati** (core e backend IA;
 persistenza, proiezione condizionale e Rules; interfaccia docente e studente;
 mappa come scheda strutturale della lezione; artefatto v2 Sintesi + Diagramma;
-generazione modale con scelta esplicita Economy/Quality e default Quality).
-Il **rollout DEV è autorizzato con CONCEPT-MAP-06**; il **gate umano** resta
-aperto fino allo smoke reale dei due profili e della nuova review.
+generazione modale con scelta esplicita Economy/Quality e default Quality;
+tuning della sintesi con `concept-map-07-v1`).
+**Distribuite su DEV e validate con generazioni reali su più lezioni; la qualità
+dell'artefatto v2 è stata accettata dal docente** — vedi
+[`evidenze/pool-e-mappe-conferma-docente.md`](evidenze/pool-e-mappe-conferma-docente.md).
 **Data:** 10 agosto 2026.
 **Dipendenze:** AIGEN-01→03 e LESSON-DEPTH-01 in produzione; editor Markdown
 della lezione (`lessonEditors`) esistente; proiezione studente `publicLessons`
