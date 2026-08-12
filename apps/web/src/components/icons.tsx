@@ -380,6 +380,23 @@ export function IconRotateCcw(props: IconProps = {}) {
   );
 }
 
+/**
+ * Tag — etichetta operativa del docente (VDIF-01).
+ *
+ * Deliberatamente un cartellino neutro: nessun simbolo che alluda a una
+ * categoria, a una condizione o a una diagnosi. Un'etichetta SchoolForge è un
+ * nome scelto dal docente, e l'icona non deve suggerire altro.
+ */
+export function IconTag(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M20.59 13.41 12 22l-9-9V3h10l7.59 7.59a2 2 0 0 1 0 2.82Z" />
+      <circle cx="7.5" cy="7.5" r="1.2" />
+    </>,
+    props,
+  );
+}
+
 /** Paper plane — return to student (Restituisci) */
 export function IconSend(props: IconProps = {}) {
   return icon(

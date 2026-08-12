@@ -49,6 +49,16 @@ export type AuditAction =
   | 'student.reset'
   | 'student.removed'
   | 'student.classAssigned'
+  /**
+   * VDIF-01 — registro delle etichette operative del docente. Grafia
+   * `oggetto.azionePassata` come tutte le azioni esistenti (`class.created`,
+   * `verification.activated`). `targetId` è il `labelId`; `reason` resta
+   * **sempre `null`**: `auditEvents` è owner-only, ma il nome dell'etichetta è
+   * testo libero scelto dal docente e non ha motivo di transitare nei log.
+   */
+  | 'label.created'
+  | 'label.updated'
+  | 'label.deleted'
   | 'program.classesUpdated';
 
 export interface AuditEvent {
@@ -443,6 +453,59 @@ export type ClassDoc = {
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue;
 };
+
+// ─── VDIF-01 — Registro etichette operative (owner-only) ─────────────────────
+
+/**
+ * Stored at `differentiationLabels/{labelId}`.
+ *
+ * Etichetta operativa **privata del docente**: serve al sistema solo per sapere
+ * *quale versione servire*, mai *perché*. Owner-only in lettura e scrittura;
+ * nessun campo di questo documento raggiunge mai una superficie leggibile dallo
+ * studente (contratto §4 e §5.D.5c di `verifiche-differenziate-roadmap.md`).
+ *
+ * **Contratto chiuso a otto chiavi.** Non esistono `color`, `note`,
+ * `description`, `category`, `priority` o `order`: ognuno sarebbe l'appiglio per
+ * scriverci una motivazione, ed è esattamente ciò che il principio «nessun dato
+ * sanitario o certificativo nel database» vieta.
+ */
+export interface DifferentiationLabelDoc {
+  /** `== {labelId}` del path. Opaco (`crypto.randomUUID()`), mai derivato dal nome. */
+  labelId: string;
+  ownerUid: string;
+  /** Forma canonica mostrata al docente (vedi `normalizeLabelName`). */
+  name: string;
+  /** Forma normalizzata usata **solo** per unicità e confronto (`computeNameKey`). */
+  nameKey: string;
+  /** Assegnazioni studente correnti. VDIF-02 lo muove; VDIF-01 lo crea a 0 e lo rispetta. */
+  assignedCount: number;
+  /** Verifiche in bozza che riferiscono l'etichetta. VDIF-03/04 lo muovono. */
+  draftUsageCount: number;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+}
+
+/**
+ * Stored at `differentiationLabelNames/{reservationId}`, where
+ * `reservationId = hex(SHA-256(UTF8(ownerUid + U+0000 + nameKey)))`.
+ *
+ * È il documento che rende l'unicità del nome **autorevole**: la creazione
+ * avviene nella stessa transazione dell'etichetta, quindi due tentativi
+ * concorrenti sullo stesso `nameKey` non possono riuscire entrambi. Il nome non
+ * compare mai in chiaro nel path — un path finisce in log, errori e tracce di
+ * rete, e l'hash lo impedisce per costruzione.
+ *
+ * Contratto chiuso a quattro chiavi. `update` è **sempre negato**: una
+ * prenotazione si crea e si rilascia, non si muta.
+ */
+export interface DifferentiationLabelNameReservationDoc {
+  ownerUid: string;
+  /** Etichetta che detiene la prenotazione. */
+  labelId: string;
+  /** `nameKey` prenotato, per dimostrare la coerenza con l'etichetta. */
+  nameKey: string;
+  createdAt: Timestamp | FieldValue;
+}
 
 export type VerificationStatus = 'draft' | 'active' | 'closed';
 export type PublishedVerificationStatus = Exclude<VerificationStatus, 'draft'>;

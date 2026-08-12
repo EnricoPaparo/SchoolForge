@@ -1,0 +1,179 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+/*
+ * VDIF-01 — azione primaria della scheda, stessa anatomia di «Nuova classe»:
+ * larghezza piena ma altezza sobria, così resta evidente senza diventare un
+ * banner.
+ */
+.newLabelBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 1rem;
+  font-weight: 700;
+}
+
+/* Lista verticale: una card per riga, sempre full-width, mai una griglia. */
+.labelList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/*
+ * Stato vuoto: compatto e operativo. Nessun esempio diagnostico, in nessuna
+ * forma — è un vincolo del contratto, non una scelta di tono.
+ */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.1rem 1.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.emptyText {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.emptyStrong {
+  color: color-mix(in srgb, var(--color-text) 88%, var(--color-text-muted));
+  font-weight: 650;
+}
+
+/* Motivo del blocco eliminazione: sobrio, non allarmistico. */
+.usageNote {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Riga di errore ancorata alla card che la riguarda. */
+.cardError {
+  margin: 0;
+  color: var(--color-error);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* ── Dialog ───────────────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.fieldHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.form label {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.counter {
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Oltre il limite in code point il contatore si colora, ma il campo **non**
+ * tronca: il valore resta intero e l'errore autorevole arriva al salvataggio da
+ * `normalizeLabelName`. Il colore anticipa, non decide.
+ */
+.counterOver {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.8rem;
+  box-sizing: border-box;
+  border-color: color-mix(in srgb, var(--color-border) 78%, var(--color-brand-blue));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface) 88%, #071321);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.input::placeholder {
+  color: color-mix(in srgb, var(--color-text-muted) 78%, transparent);
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* Nessuna linea separatrice sopra i pulsanti del dialog: solo spazio. */
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.dialogActions button {
+  min-height: 2.5rem;
+}
+
+.deleteName {
+  color: var(--color-brand-blue);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 44rem) {
+  .dialogActions button {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
+  }
+
+  .newLabelBtn {
+    min-height: 2.75rem;
+  }
+}

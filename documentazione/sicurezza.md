@@ -463,6 +463,74 @@ Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 
 ---
 
+## 8e. Etichette operative del docente (VDIF-01 — implementato)
+
+Le **etichette differenziate** sono strumenti operativi **privati del docente**:
+servono al sistema per sapere *quale versione servire*, mai *perché*. Il
+contratto completo è in
+[`verifiche-differenziate-roadmap.md`](verifiche-differenziate-roadmap.md);
+qui il perimetro di sicurezza effettivamente in vigore.
+
+**Due collezioni, entrambe owner-only in ogni direzione:**
+
+- `differentiationLabels/{labelId}` — contratto **chiuso a otto chiavi**
+  (`labelId`, `ownerUid`, `name`, `nameKey`, `assignedCount`,
+  `draftUsageCount`, `createdAt`, `updatedAt`). Nessun campo `color`, `note`,
+  `description` o `category`: ognuno sarebbe l'appiglio per scrivere una
+  motivazione, ed è ciò che il principio «nessun dato sanitario o certificativo
+  nel database» vieta. SchoolForge **non** classifica il significato del nome;
+  `nameKey` esiste solo per l'unicità;
+- `differentiationLabelNames/{reservationId}` — prenotazione del nome, contratto
+  chiuso a quattro chiavi, `update` **sempre negato**: una prenotazione si crea
+  e si rilascia, non si muta. `reservationId = hex(SHA-256(UTF8(ownerUid +
+  U+0000 + nameKey)))`: il nome **non compare in chiaro nel path**, perché un
+  path finisce in log, messaggi di errore e tracce di rete.
+
+**Lo studente è sempre negato**, in lettura, `list` e scrittura, su entrambe le
+collezioni; l'anonimo pure. Nessun campo di questi documenti — nomi e contatori
+inclusi — raggiunge una superficie leggibile dallo studente: non esiste alcuna
+proiezione, alcun mirror e alcun percorso student-readable che li tocchi.
+
+**Che cosa garantiscono le Rules:** ownership, forma chiusa, tipi,
+`labelId == document id`, `ownerUid == auth.uid`, immutabilità di
+`labelId`/`ownerUid`/`createdAt`, contatori interi `>= 0`, creazione ammessa
+**solo** con entrambi a `0`, movimento di **una sola unità** per scrittura,
+`createdAt`/`updatedAt == request.time`. Il `list` è autorizzato solo se la
+query filtra davvero su `ownerUid`.
+
+**Confine Rules/service, dichiarato.** CEL non calcola SHA-256, non normalizza
+Unicode e non conta code point o byte UTF-8: le Rules **non** verificano che
+`reservationId` sia l'hash della coppia, che `nameKey` derivi da `name`, né i
+limiti esatti di 40 code point / 120 byte. Quelle garanzie sono del **service
+owner-only**, che le applica prima di ogni scrittura ed è fail-closed su ogni
+documento incoerente — stesso confine già in vigore per
+`teacherSnapshot`/`evaluations` (§3): l'unico principal che può scrivere è
+l'owner, lo stesso già fidato per ogni altro percorso owner-only.
+
+**Unicità e atomicità.** Creazione, rinomina ed eliminazione sono **una sola
+transazione ciascuna**, comprensiva dell'evento di audit: due tentativi
+concorrenti sullo stesso nome puntano allo stesso documento di prenotazione e
+uno solo committa. L'audit (`label.created`/`updated`/`deleted`) porta
+`targetId == labelId` e **`reason` sempre `null`**: il registro è owner-only, ma
+il nome dell'etichetta è testo libero e non ha motivo di transitare nei log.
+
+**Eliminazione fail-closed, su due livelli.** Il service richiede
+`assignedCount === 0` **e** `draftUsageCount === 0`, riletti **dentro** la
+transazione che elimina, più una prenotazione coerente. Le **Rules** applicano
+la stessa condizione sui contatori come difesa in profondità: un'etichetta in
+uso non è eliminabile nemmeno da una scrittura diretta che aggirasse il service.
+VDIF-01 non muove ancora i contatori (lo faranno VDIF-02 e VDIF-03/04) ma li
+difende già: nessuna cascata, nessuna riparazione silenziosa.
+
+**Lettura fail-closed sulla canonicità.** Il parser rifiuta un documento il cui
+`name` non sia già la forma canonica o il cui `nameKey` non sia derivato dal
+nome, oltre a timestamp mancanti o incoerenti. Non è pedanteria: la prenotazione
+è indirizzata dall'hash di `(ownerUid, nameKey)`, quindi un `nameKey` estraneo
+avrebbe la propria prenotazione altrove e l'unicità del nome smetterebbe di
+essere garantita. Il documento viene rifiutato, mai corretto in lettura.
+
+---
+
 ## 8c. Chiusura e consegna forzata dal docente (FORCE-SUBMIT-01 — implementato)
 
 Il docente può acquisire e chiudere una verifica online che lo studente ha **iniziato ma non
