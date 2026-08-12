@@ -23,6 +23,7 @@ const mockCloseVerification = vi.fn();
 const mockReopenVerification = vi.fn();
 const mockDeleteVerification = vi.fn();
 const mockListQuestionIndex = vi.fn();
+const mockListDifferentiationLabels = vi.fn();
 const mockListPrograms = vi.fn();
 const mockGetImportMeta = vi.fn();
 const mockListClasses = vi.fn();
@@ -72,6 +73,9 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
 }));
 vi.mock('../../repository/verifications/questionIndexService.js', () => ({
   listQuestionIndex: (...args: unknown[]) => mockListQuestionIndex(...args),
+}));
+vi.mock('../../repository/differentiation/differentiationLabelsService.js', () => ({
+  listDifferentiationLabels: (...args: unknown[]) => mockListDifferentiationLabels(...args),
 }));
 vi.mock('../../repository/verifications/submissionsMonitorService.js', () => ({
   watchSubmissions: (...args: unknown[]) => mockWatchSubmissions(...args),
@@ -385,6 +389,7 @@ function setupDefaults() {
   mockGetImportMeta.mockResolvedValue(null);
   mockListClasses.mockResolvedValue([sampleClass]);
   mockListQuestionIndex.mockResolvedValue(sampleQuestionIndexEntries);
+  mockListDifferentiationLabels.mockResolvedValue([]);
   mockListUdas.mockResolvedValue([{ dir: 'UDA1', titolo: 'Il Web' }]);
   mockListLessons.mockResolvedValue([
     { udaDir: 'UDA1', filename: 'lezione1.md', titolo: 'Come funziona Internet' },
@@ -990,6 +995,106 @@ describe('VerificationsView', () => {
     expect(configArg.questionRefs[0].questionIndexEntryId).toBe('qi-1');
     // "Salva bozza" never activates the verification — no immutable snapshot.
     expect(mockActivateVerification).not.toHaveBeenCalled();
+  });
+
+  it('VDIF-03 — salva le varianti soltanto insieme alla bozza esplicita', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    mockListDifferentiationLabels.mockResolvedValue([
+      {
+        labelId: 'label-a',
+        ownerUid: 'owner-uid',
+        name: 'Percorso A',
+        nameKey: 'percorso a',
+        assignedCount: 1,
+        draftUsageCount: 0,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ]);
+    mockListQuestionIndex.mockResolvedValue([
+      sampleQuestionIndexEntries[0],
+      {
+        ...sampleQuestionIndexEntries[1],
+        id: 'qi-alt',
+        questionLocalId: 'q-alt',
+        lessonFilename: 'lezione1.md',
+        questionPreview: 'Alternativa della stessa lezione.',
+      },
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /^Varianti$/i }));
+
+    await waitFor(() => screen.getByRole('dialog', { name: /varianti della domanda/i }));
+    fireEvent.click(screen.getByLabelText('Alternativa'));
+    fireEvent.click(screen.getByRole('button', { name: /scegli alternativa per percorso a/i }));
+    fireEvent.click(screen.getByRole('option', { name: /alternativa della stessa lezione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /salva varianti/i }));
+
+    expect(mockUpdateVerificationConfig).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalledOnce());
+    expect(mockUpdateVerificationConfig.mock.calls[0]![1]).toEqual(
+      expect.objectContaining({
+        differentiation: {
+          version: 1,
+          questions: [
+            {
+              baseQuestionIndexEntryId: 'qi-1',
+              choices: {
+                'label-a': { kind: 'alternative', questionIndexEntryId: 'qi-alt' },
+              },
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('VDIF-03 — una bozza differenziata resta salvabile ma non attivabile', async () => {
+    setupDefaults();
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        {
+          baseQuestionIndexEntryId: 'qi-1',
+          choices: { 'label-a': { kind: 'none' as const } },
+        },
+      ],
+    };
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        config: {
+          ...makeDraftVer().config,
+          questionRefs: [sampleQuestionRef],
+          differentiation,
+        },
+      }),
+    ]);
+    mockListDifferentiationLabels.mockResolvedValue([
+      {
+        labelId: 'label-a',
+        ownerUid: 'owner-uid',
+        name: 'Percorso A',
+        nameKey: 'percorso a',
+        assignedCount: 1,
+        draftUsageCount: 1,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    const activate = await waitFor(() => screen.getByRole('button', { name: /attiva verifica/i }));
+    expect(activate).toHaveProperty('disabled', true);
+    expect(screen.getByText(/attivazione sarà disponibile dopo la configurazione/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /salva bozza/i })).toBeTruthy();
   });
 
   it('shows persistent dirty and saved feedback for the draft', async () => {

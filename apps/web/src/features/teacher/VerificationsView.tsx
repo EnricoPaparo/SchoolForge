@@ -122,6 +122,7 @@ import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
   EquivalentGroupConfig,
+  VerificationDifferentiationConfig,
   VerificationDistributionMode,
   VerificationTeacherQuestionSnapshot,
 } from '../../types/firestore.js';
@@ -134,6 +135,20 @@ import {
   type AutogroupRef,
 } from '../repository/verifications/vexAutogroup.js';
 import { VexBuilder, type VexBuilderQuestion } from './VexBuilder.js';
+import { DifferentiationVariantsDialog } from './DifferentiationVariantsDialog.js';
+import {
+  listDifferentiationLabels,
+  type DifferentiationLabelItem,
+} from '../repository/differentiation/differentiationLabelsService.js';
+import {
+  parseDifferentiationConfig,
+  reconcileDifferentiationWithSelection,
+  variantCountForBase,
+} from '../repository/verifications/differentiationConfig.js';
+import {
+  classifyQuestionParticipation,
+  QuestionParticipationError,
+} from '../repository/verifications/questionParticipation.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import {
   buildCorrectionRegisterCsvFilename,
@@ -367,6 +382,26 @@ export function VerificationsView() {
   const [distributionMode, setDistributionMode] =
     useState<VerificationDistributionMode>('same_questions');
   const [equivalentGroups, setEquivalentGroups] = useState<EquivalentGroupConfig[]>([]);
+  const [differentiation, setDifferentiation] = useState<
+    VerificationDifferentiationConfig | undefined
+  >(undefined);
+  const [differentiationLabels, setDifferentiationLabels] = useState<
+    DifferentiationLabelItem[] | null
+  >(null);
+  const [variantDialogEntryId, setVariantDialogEntryId] = useState<string | null>(null);
+  const [differentiationNotice, setDifferentiationNotice] = useState<string | null>(null);
+  const questionParticipation = useMemo(() => {
+    try {
+      return classifyQuestionParticipation({
+        selectedEntryIds: [...selectedQuestionIds],
+        equivalentGroups,
+        differentiation,
+      });
+    } catch (error) {
+      if (error instanceof QuestionParticipationError) return null;
+      throw error;
+    }
+  }, [selectedQuestionIds, equivalentGroups, differentiation]);
   // VEX-02C: entryId selezionati in questa sessione, ancora comuni e candidati a
   // formare un nuovo gruppo con una domanda compatibile (abbinamento progressivo).
   // Vive in un ref: non è stato di rendering e non deve triggerare re-render.
@@ -1075,6 +1110,9 @@ export function VerificationsView() {
     setActivateError(null);
     setQuestionIndex(null);
     setQuestionIndexError(null);
+    setDifferentiationLabels(null);
+    setVariantDialogEntryId(null);
+    setDifferentiationNotice(null);
     setMonitorStudents(null);
     setMonitorItems(null);
     setMonitorError(null);
@@ -1085,6 +1123,13 @@ export function VerificationsView() {
     setEditDraftClassId(v.config.classId ?? '');
     setEditDraftDate(v.config.verificationDate ?? '');
     setCourseTree(null);
+    try {
+      setDifferentiation(parseDifferentiationConfig(v.config.differentiation));
+    } catch {
+      setDifferentiation(undefined);
+      setQuestionIndexError('La configurazione delle varianti salvata non è leggibile.');
+      return;
+    }
     // VEX-01A: modalità normalizzata fail-closed; gruppi riconciliati con la
     // selezione corrente (scarta entryId non più presenti e gruppi vuoti).
     setDistributionMode(normalizeDistributionMode(v.config.distributionMode));
@@ -1109,13 +1154,15 @@ export function VerificationsView() {
         // del pool già necessaria per il picker: serve a comporre il perimetro
         // didattico durante la selezione. Non c'è alcuna lettura all'apertura
         // della popup «Argomenti», né sulle liste, né a verifica attivata.
-        const [entries, udas, lessons] = await Promise.all([
+        const [entries, udas, lessons, labels] = await Promise.all([
           listQuestionIndex(v.config.programId, v.config.importId, db),
           listUdas(v.config.programId, v.config.importId, db),
           listLessons(v.config.programId, v.config.importId, db),
+          listDifferentiationLabels(ownerUid, db),
         ]);
         setQuestionIndex(entries);
         setCourseTree({ udas, lessons });
+        setDifferentiationLabels(labels);
       } catch {
         setQuestionIndexError('Impossibile caricare il pool di domande.');
       }
@@ -1163,7 +1210,10 @@ export function VerificationsView() {
     const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
     return Array.from(ids)
       .map((id) => entryMap.get(id))
-      .filter((e): e is NonNullable<typeof e> => e !== undefined)
+      .filter(
+        (e): e is NonNullable<typeof e> =>
+          e !== undefined && questionParticipation?.get(e.id) === 'common_free',
+      )
       .map((e) => ({
         questionIndexEntryId: e.id,
         udaDir: e.udaDir,
@@ -1174,6 +1224,17 @@ export function VerificationsView() {
 
   function handleQuestionSelectionChange(next: Set<string>) {
     const prev = selectedQuestionIds;
+    // Un'alternativa differenziata non può diventare contemporaneamente una
+    // domanda comune. Il picker la disabilita; questa guardia copre anche
+    // chiamate programmatiche o stato UI obsoleto.
+    for (const id of [...next]) {
+      if (!prev.has(id) && questionParticipation?.get(id) === 'differentiated_alternative') {
+        next.delete(id);
+        setDifferentiationNotice(
+          'La domanda non è stata selezionata perché è già usata come alternativa differenziata.',
+        );
+      }
+    }
     const added = [...next].filter((id) => !prev.has(id));
 
     // VEX-02C: tutto il calcolo (riconciliazione, abbinamento progressivo, UUID,
@@ -1183,6 +1244,12 @@ export function VerificationsView() {
     // UUID/gruppi doppi né perdere candidati.
     // VEX-01A: deselezione ⇒ rimozione dal gruppo + eliminazione dei gruppi vuoti.
     let groups = reconcileEquivalentGroups(equivalentGroups, next);
+    const reconciledDifferentiation = reconcileDifferentiationWithSelection(differentiation, next);
+    if (reconciledDifferentiation.removedQuestions > 0) {
+      setDifferentiationNotice(
+        `${reconciledDifferentiation.removedQuestions} configurazione di varianti rimossa perché la domanda base non è più selezionata.`,
+      );
+    }
     // Ripulisci i candidati non più selezionati o ora raggruppati.
     let sessionUnassigned = vexSessionUnassignedRef.current.filter(
       (id) => next.has(id) && !groups.some((g) => g.questionIndexEntryIds.includes(id)),
@@ -1206,6 +1273,7 @@ export function VerificationsView() {
 
     setSelectedQuestionIds(next);
     setEquivalentGroups(groups);
+    setDifferentiation(reconciledDifferentiation.config);
     vexSessionUnassignedRef.current = sessionUnassigned;
     markDraftDirty();
   }
@@ -1228,6 +1296,22 @@ export function VerificationsView() {
   }
 
   function handleEquivalentGroupsChange(groups: EquivalentGroupConfig[]) {
+    const differentiatedIds = new Set(
+      differentiation?.questions.flatMap((item) => [
+        item.baseQuestionIndexEntryId,
+        ...Object.values(item.choices)
+          .filter((choice) => choice.kind === 'alternative')
+          .map((choice) => choice.questionIndexEntryId),
+      ]) ?? [],
+    );
+    if (
+      groups.some((group) => group.questionIndexEntryIds.some((id) => differentiatedIds.has(id)))
+    ) {
+      setDifferentiationNotice(
+        'Le domande già coinvolte nelle varianti per etichetta non possono entrare in un gruppo equivalente.',
+      );
+      return;
+    }
     setEquivalentGroups(groups);
     markDraftDirty();
   }
@@ -1263,6 +1347,11 @@ export function VerificationsView() {
    */
   async function handleSaveDraft() {
     if (!selectedVer || selectedVer.status !== 'draft') return;
+    if (questionParticipation === null) {
+      setDraftSaveStatus('error');
+      setDraftSaveError('La configurazione VEX e le varianti per etichetta sono in conflitto.');
+      return;
+    }
     const title = editDraftTitle.trim();
     if (!title) return;
     if (title.length > VERIFICATION_TITLE_MAX_LENGTH) {
@@ -1283,7 +1372,7 @@ export function VerificationsView() {
       // update di titolo/classe/questionRefs (nessuna scrittura aggiuntiva). I
       // gruppi vengono riconciliati con la selezione corrente prima di salvare.
       const reconciledGroups = reconcileEquivalentGroups(equivalentGroups, selectedQuestionIds);
-      const vexPatch = { distributionMode, equivalentGroups: reconciledGroups };
+      const vexPatch = { distributionMode, equivalentGroups: reconciledGroups, differentiation };
       // UI-VERIFICHE-06B — data e perimetro viaggiano nello **stesso** update di
       // titolo/classe/domande: nessuna scrittura dedicata, nessun listener. Il
       // perimetro è ricalcolato dall'albero già in memoria; se non è costruibile
@@ -1386,6 +1475,10 @@ export function VerificationsView() {
 
   async function handleConfirmActivate() {
     if (!selectedVer) return;
+    if (questionParticipation === null) {
+      setActivateError('La configurazione VEX e le varianti per etichetta sono in conflitto.');
+      return;
+    }
     setActivating(true);
     setActivateError(null);
     try {
@@ -1406,7 +1499,7 @@ export function VerificationsView() {
       // exactly what is visible. The fail-closed guard in activateVerification
       // rejects equivalent_variants before any pool read/transaction/write.
       const reconciledGroups = reconcileEquivalentGroups(equivalentGroups, selectedQuestionIds);
-      const vexPatch = { distributionMode, equivalentGroups: reconciledGroups };
+      const vexPatch = { distributionMode, equivalentGroups: reconciledGroups, differentiation };
       // UI-VERIFICHE-06B — data e perimetro viaggiano nello **stesso** update di
       // titolo/classe/domande: nessuna scrittura dedicata, nessun listener. Il
       // perimetro è ricalcolato dall'albero già in memoria; se non è costruibile
@@ -2001,7 +2094,11 @@ export function VerificationsView() {
       </p>
     );
 
-  const canActivate = selectedQuestionIds.size >= 1;
+  // VDIF-03 costruisce e salva le varianti, mentre l'assegnazione atomica agli
+  // studenti arriva in VDIF-04. Fino ad allora una bozza differenziata non può
+  // essere attivata come verifica normale perdendo silenziosamente le varianti.
+  const differentiationNeedsDistribution = differentiation !== undefined;
+  const canActivate = selectedQuestionIds.size >= 1 && !differentiationNeedsDistribution;
   const closeConfirmVerification = verifications.find((item) => item.id === closeConfirmId);
   const reopenConfirmVerification = verifications.find((item) => item.id === reopenConfirmId);
   const deleteConfirmVerification = verifications.find((item) => item.id === deleteConfirmId);
@@ -2858,6 +2955,11 @@ export function VerificationsView() {
                     {questionIndexError}
                   </p>
                 )}
+                {questionParticipation === null && (
+                  <p role="alert" className="text-error">
+                    La configurazione VEX e le varianti per etichetta sono in conflitto.
+                  </p>
+                )}
                 {questionIndex === null && !questionIndexError && (
                   <p aria-busy="true" className="state-loading">
                     Caricamento domande…
@@ -2867,11 +2969,28 @@ export function VerificationsView() {
                   <p className="state-empty">Nessuna domanda disponibile per questo programma.</p>
                 )}
                 {questionIndex !== null && questionIndex.length > 0 && (
-                  <QuestionPicker
-                    entries={questionIndex}
-                    selectedIds={selectedQuestionIds}
-                    onChange={handleQuestionSelectionChange}
-                  />
+                  <>
+                    {differentiationNotice && (
+                      <p role="status" className="state-info">
+                        {differentiationNotice}
+                      </p>
+                    )}
+                    <QuestionPicker
+                      entries={questionIndex}
+                      selectedIds={selectedQuestionIds}
+                      onChange={handleQuestionSelectionChange}
+                      participation={questionParticipation ?? undefined}
+                      variantCounts={
+                        new Map(
+                          [...selectedQuestionIds].map((id) => [
+                            id,
+                            variantCountForBase(differentiation, id),
+                          ]),
+                        )
+                      }
+                      onOpenVariants={setVariantDialogEntryId}
+                    />
+                  </>
                 )}
               </div>
 
@@ -2883,7 +3002,35 @@ export function VerificationsView() {
                 selectedRefs={selectedRefsForBuilder()}
                 groups={equivalentGroups}
                 onGroupsChange={handleEquivalentGroupsChange}
+                participation={questionParticipation ?? undefined}
               />
+
+              {variantDialogEntryId &&
+                questionIndex &&
+                differentiationLabels &&
+                (() => {
+                  const baseEntry = questionIndex.find(
+                    (entry) => entry.id === variantDialogEntryId,
+                  );
+                  if (!baseEntry) return null;
+                  return (
+                    <DifferentiationVariantsDialog
+                      baseEntry={baseEntry}
+                      labels={differentiationLabels}
+                      questionIndex={questionIndex}
+                      selectedIds={selectedQuestionIds}
+                      equivalentGroups={equivalentGroups}
+                      differentiation={differentiation}
+                      onCancel={() => setVariantDialogEntryId(null)}
+                      onSave={(next) => {
+                        setDifferentiation(next);
+                        setVariantDialogEntryId(null);
+                        setDifferentiationNotice(null);
+                        markDraftDirty();
+                      }}
+                    />
+                  );
+                })()}
 
               {/* Salva bozza + Attiva verifica — kept side by side, in this order */}
               {!showActivateConfirm ? (
@@ -2915,6 +3062,12 @@ export function VerificationsView() {
                       Attiva verifica
                     </button>
                   </div>
+                  {differentiationNeedsDistribution && (
+                    <p className={styles.draftSaveFeedback} role="status">
+                      Le varianti sono salvabili in bozza. L’attivazione sarà disponibile dopo la
+                      configurazione della distribuzione agli studenti.
+                    </p>
+                  )}
                   <p
                     className={`${styles.draftSaveFeedback} ${
                       draftSaveStatus === 'error'

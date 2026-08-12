@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionPicker } from '../QuestionPicker.js';
 import type { QuestionIndexEntry } from '../../repository/verifications/questionIndexService.js';
+import type { QuestionParticipation } from '../../repository/verifications/questionParticipation.js';
 
 afterEach(cleanup);
 
@@ -41,10 +42,18 @@ const ENTRIES: QuestionIndexEntry[] = [
   },
 ];
 
-function renderPicker(selectedIds: Set<string> = new Set()) {
+function renderPicker(
+  selectedIds: Set<string> = new Set(),
+  participation?: ReadonlyMap<string, QuestionParticipation>,
+) {
   const onChange = vi.fn();
   const utils = render(
-    <QuestionPicker entries={ENTRIES} selectedIds={selectedIds} onChange={onChange} />,
+    <QuestionPicker
+      entries={ENTRIES}
+      selectedIds={selectedIds}
+      participation={participation}
+      onChange={onChange}
+    />,
   );
   return { onChange, ...utils };
 }
@@ -209,6 +218,20 @@ describe('QuestionPicker — selection', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Seleziona tutte le domande filtrate' }));
     expect(onChange).toHaveBeenCalledWith(new Set(['qi-1', 'qi-2']));
+  });
+
+  it('VDIF-03 — non seleziona una domanda già usata come alternativa differenziata', () => {
+    const participation = new Map<string, QuestionParticipation>([
+      ['qi-1', 'common_free'],
+      ['qi-2', 'differentiated_alternative'],
+      ['qi-3', 'common_free'],
+    ]);
+    const { onChange } = renderPicker(new Set(), participation);
+    expect(screen.getByLabelText('Seleziona domanda q2')).toHaveProperty('disabled', true);
+    expect(screen.getByText(/già usata come alternativa differenziata/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Seleziona tutte le domande filtrate' }));
+    expect(onChange).toHaveBeenCalledWith(new Set(['qi-1', 'qi-3']));
   });
 
   it('deselects all filtered questions, keeping selections outside the filter', () => {

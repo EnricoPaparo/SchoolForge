@@ -40,6 +40,15 @@ import {
 import { normalizeVisibility } from './visibility.js';
 import { normalizeDistributionMode } from './vexDistribution.js';
 import { buildEquivalentSnapshotParts, VexSnapshotError } from './vexSnapshot.js';
+import {
+  parseDifferentiationConfig,
+  referencedDifferentiationLabelIds,
+} from './differentiationConfig.js';
+import {
+  LABELS_COLLECTION,
+  parseDifferentiationLabel,
+} from '../differentiation/differentiationLabelsService.js';
+import { classifyQuestionParticipation } from './questionParticipation.js';
 
 export type VerificationItem = { id: string } & Omit<
   VerificationDoc,
@@ -196,7 +205,7 @@ export async function updateVerificationConfig(
   ownerUid: string,
   db: Firestore,
 ): Promise<void> {
-  const normalizedConfig =
+  const normalizedConfig: Partial<VerificationConfig> =
     config.title === undefined
       ? config
       : { ...config, title: normalizeVerificationTitle(config.title) };
@@ -205,24 +214,86 @@ export async function updateVerificationConfig(
   if (normalizedConfig.verificationDate !== undefined) {
     assertValidVerificationDate(normalizedConfig.verificationDate);
   }
-  const snap = await getDoc(doc(db, 'verifications', verificationId));
-  const data = snap.data() as VerificationDoc;
-  if (data.status !== 'draft') {
-    throw new Error('Verifica non modificabile: non è in bozza');
+  if (Object.prototype.hasOwnProperty.call(normalizedConfig, 'differentiation')) {
+    parseDifferentiationConfig(normalizedConfig.differentiation);
   }
-  await setDoc(
-    doc(db, 'verifications', verificationId),
-    { config: { ...data.config, ...normalizedConfig }, updatedAt: serverTimestamp() },
-    { merge: true },
-  );
-  await setDoc(doc(collection(db, 'auditEvents')), {
-    actorUid: ownerUid,
-    action: 'verification.updated',
-    targetId: verificationId,
-    outcome: 'success',
-    reason: null,
-    timestamp: serverTimestamp(),
+
+  const verificationRef = doc(db, 'verifications', verificationId);
+  const auditRef = doc(collection(db, 'auditEvents'));
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(verificationRef);
+    if (!snap.exists()) throw new Error('Verifica non trovata.');
+    const data = snap.data() as VerificationDoc;
+    if (data.ownerUid !== ownerUid) throw new Error('Verifica non accessibile.');
+    if (data.status !== 'draft') {
+      throw new Error('Verifica non modificabile: non è in bozza');
+    }
+
+    const previousDifferentiation = parseDifferentiationConfig(data.config.differentiation);
+    const nextConfig: VerificationConfig = { ...data.config, ...normalizedConfig };
+    if (
+      Object.prototype.hasOwnProperty.call(normalizedConfig, 'differentiation') &&
+      normalizedConfig.differentiation === undefined
+    ) {
+      delete nextConfig.differentiation;
+    }
+    const nextDifferentiation = parseDifferentiationConfig(nextConfig.differentiation);
+    classifyQuestionParticipation({
+      selectedEntryIds: nextConfig.questionRefs.map((ref) => ref.questionIndexEntryId),
+      equivalentGroups: nextConfig.equivalentGroups ?? [],
+      differentiation: nextDifferentiation,
+    });
+
+    // Replay/no-op: nessun secondo audit e nessuna lettura etichetta.
+    if (canonicalJson(data.config) === canonicalJson(nextConfig)) return;
+
+    const previousLabels = referencedDifferentiationLabelIds(previousDifferentiation);
+    const nextLabels = referencedDifferentiationLabelIds(nextDifferentiation);
+    const added = [...nextLabels].filter((labelId) => !previousLabels.has(labelId));
+    const removed = [...previousLabels].filter((labelId) => !nextLabels.has(labelId));
+    const changed = [...added, ...removed];
+
+    const labels = await Promise.all(
+      changed.map(async (labelId) => {
+        const ref = doc(db, LABELS_COLLECTION, labelId);
+        const labelSnap = await transaction.get(ref);
+        const item = parseDifferentiationLabel(labelId, labelSnap.data(), ownerUid);
+        return { ref, item };
+      }),
+    );
+    const addedSet = new Set(added);
+    for (const { ref, item } of labels) {
+      const delta = addedSet.has(item.labelId) ? 1 : -1;
+      if (delta < 0 && item.draftUsageCount === 0) {
+        throw new Error(`Etichetta «${item.name}»: contatore delle bozze incoerente.`);
+      }
+      transaction.update(ref, {
+        draftUsageCount: item.draftUsageCount + delta,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    transaction.update(verificationRef, { config: nextConfig, updatedAt: serverTimestamp() });
+    transaction.set(auditRef, {
+      actorUid: ownerUid,
+      action: 'verification.updated',
+      targetId: verificationId,
+      outcome: 'success',
+      reason: null,
+      timestamp: serverTimestamp(),
+    });
   });
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function validateForActivation(config: VerificationConfig): {
@@ -240,6 +311,11 @@ export function validateForActivation(config: VerificationConfig): {
   }
   if (!config.importId) {
     errors.push("L'importazione è obbligatoria");
+  }
+  if (config.differentiation !== undefined) {
+    errors.push(
+      'La verifica differenziata è ancora in bozza: completa la distribuzione delle varianti prima di attivarla',
+    );
   }
   if (!config.questionRefs || config.questionRefs.length < 1) {
     errors.push('Selezionare almeno una domanda');
@@ -798,9 +874,13 @@ export async function deleteVerification(
   ownerUid: string,
   db: Firestore,
 ): Promise<void> {
-  const snap = await getDoc(doc(db, 'verifications', verificationId));
-  const data = snap.data() as VerificationDoc | undefined;
-  if (!data || (data.status !== 'draft' && data.status !== 'closed')) {
+  // Preflight leggibile e a costo invariato rispetto al flusso storico. La
+  // transazione ripete comunque tutte le precondizioni prima delle scritture,
+  // quindi una modifica concorrente non può aggirarle.
+  const preSnap = await getDoc(doc(db, 'verifications', verificationId));
+  const preData = preSnap.data() as VerificationDoc | undefined;
+  if (!preData || preData.ownerUid !== ownerUid) throw new Error('Verifica non trovata.');
+  if (preData.status !== 'draft' && preData.status !== 'closed') {
     throw new Error('Verifica non eliminabile: deve essere in bozza o chiusa');
   }
   // M4-LIFE-02 — application-level guard (single-owner model): a verification
@@ -822,20 +902,57 @@ export async function deleteVerification(
   if (!linkedSubmissions.empty) {
     throw new Error('Elimina prima tutte le consegne associate a questa verifica.');
   }
-  // Firestore does not cascade-delete subcollections. Remove the student
-  // projection in the same atomic batch as the parent; otherwise a
-  // collectionGroup('publishedProjection') query can keep discovering a
-  // verification that no longer exists in the teacher archive.
-  const batch = writeBatch(db);
-  batch.delete(doc(db, 'verifications', verificationId, 'publishedProjection', 'data'));
-  batch.delete(doc(db, 'verifications', verificationId));
-  batch.set(doc(collection(db, 'auditEvents')), {
-    actorUid: ownerUid,
-    action: 'verification.deleted',
-    targetId: verificationId,
-    outcome: 'success',
-    reason: null,
-    timestamp: serverTimestamp(),
+
+  const verificationRef = doc(db, 'verifications', verificationId);
+  const projectionRef = doc(db, 'verifications', verificationId, 'publishedProjection', 'data');
+  const auditRef = doc(collection(db, 'auditEvents'));
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(verificationRef);
+    if (!snap.exists()) throw new Error('Verifica non trovata.');
+    const data = snap.data() as VerificationDoc;
+    if (data.ownerUid !== ownerUid) throw new Error('Verifica non accessibile.');
+    if (data.status !== 'draft' && data.status !== 'closed') {
+      throw new Error('Verifica non eliminabile: deve essere in bozza o chiusa');
+    }
+
+    // VDIF-03 — una bozza trattiene ogni etichetta riferita una sola volta.
+    // L'eliminazione rilascia gli stessi contatori nel medesimo commit; una
+    // verifica active/closed li ha già rilasciati all'attivazione (VDIF-04).
+    const labels =
+      data.status === 'draft'
+        ? await Promise.all(
+            [
+              ...referencedDifferentiationLabelIds(
+                parseDifferentiationConfig(data.config.differentiation),
+              ),
+            ].map(async (labelId) => {
+              const ref = doc(db, LABELS_COLLECTION, labelId);
+              const labelSnap = await transaction.get(ref);
+              return { ref, item: parseDifferentiationLabel(labelId, labelSnap.data(), ownerUid) };
+            }),
+          )
+        : [];
+    for (const { ref, item } of labels) {
+      if (item.draftUsageCount === 0) {
+        throw new Error(`Etichetta «${item.name}»: contatore delle bozze incoerente.`);
+      }
+      transaction.update(ref, {
+        draftUsageCount: item.draftUsageCount - 1,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Firestore does not cascade-delete subcollections. Remove the student
+    // projection in the same transaction as the parent and the audit.
+    transaction.delete(projectionRef);
+    transaction.delete(verificationRef);
+    transaction.set(auditRef, {
+      actorUid: ownerUid,
+      action: 'verification.deleted',
+      targetId: verificationId,
+      outcome: 'success',
+      reason: null,
+      timestamp: serverTimestamp(),
+    });
   });
-  await batch.commit();
 }

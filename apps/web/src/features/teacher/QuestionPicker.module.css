@@ -246,3 +246,35 @@
   font-size: 0.75rem;
   line-height: 1;
 }
+
+.variantBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-brand-blue);
+}
+
+.blockedReason {
+  color: var(--color-warning);
+  font-size: 0.75rem;
+}
+.srReason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .variantBtn,
+  .removeBtn {
+    min-height: 44px;
+  }
+  .summaryRow {
+    flex-wrap: wrap;
+  }
+}
