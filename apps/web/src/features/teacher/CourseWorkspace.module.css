@@ -280,8 +280,13 @@
 .metaList {
   margin: 0;
   padding-left: 1.1rem;
+  min-width: 0;
   color: var(--color-text);
   font-size: 0.875rem;
+}
+.metaList li {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ── Contextual toolbar (course / UDA actions, DUX-04A) ─────────────────── */
@@ -435,7 +440,7 @@
 /* ── Informazioni tab ───────────────────────────────────────────────────── */
 .infoList {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 0.35rem 1rem;
   margin: 0;
   font-size: 0.875rem;
@@ -446,6 +451,7 @@
 }
 .infoList dd {
   margin: 0;
+  min-width: 0;
   color: var(--color-text);
   overflow-wrap: anywhere;
 }

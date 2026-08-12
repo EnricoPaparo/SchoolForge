@@ -2581,6 +2581,16 @@ function CourseOverview({
 
 // ── UDA overview (UDA selected) ─────────────────────────────────────────────
 
+function MetadataList({ items }: { items: readonly string[] }) {
+  return (
+    <ul className={styles.metaList}>
+      {items.map((item, index) => (
+        <li key={`${index}-${item}`}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
 function UdaOverview({
   uda,
   lessons,
@@ -2605,21 +2615,13 @@ function UdaOverview({
       {uda.competenze.length > 0 && (
         <div className={styles.metaGroup}>
           <span className={styles.metaLabel}>Competenze</span>
-          <ul className={styles.metaList}>
-            {uda.competenze.map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ul>
+          <MetadataList items={uda.competenze} />
         </div>
       )}
       {uda.obiettivi.length > 0 && (
         <div className={styles.metaGroup}>
           <span className={styles.metaLabel}>Obiettivi</span>
-          <ul className={styles.metaList}>
-            {uda.obiettivi.map((o) => (
-              <li key={o}>{o}</li>
-            ))}
-          </ul>
+          <MetadataList items={uda.obiettivi} />
         </div>
       )}
 
@@ -3008,13 +3010,17 @@ function LessonInfo({ metadata }: { metadata: LessonMetadata }) {
           {metadata.concettiChiave.length > 0 && (
             <>
               <dt>Concetti chiave</dt>
-              <dd>{metadata.concettiChiave.join(', ')}</dd>
+              <dd>
+                <MetadataList items={metadata.concettiChiave} />
+              </dd>
             </>
           )}
           {metadata.obiettivi.length > 0 && (
             <>
               <dt>Obiettivi</dt>
-              <dd>{metadata.obiettivi.join(', ')}</dd>
+              <dd>
+                <MetadataList items={metadata.obiettivi} />
+              </dd>
             </>
           )}
         </dl>
