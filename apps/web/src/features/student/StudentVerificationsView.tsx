@@ -20,9 +20,13 @@ import {
 } from './vexExamService.js';
 import { describeAssignVariantError } from './verificationVariantClient.js';
 
-/** `true` se la verifica usa le varianti equivalenti (routing VEX). */
-function isVexItem(item: StudentVerificationItem): boolean {
-  return item.distributionMode === 'equivalent_variants';
+/**
+ * VDIF-04 — `true` quando l'insieme delle domande è deciso dal **server**, e
+ * l'avvio deve quindi passare dalla callable. Il campo è già normalizzato in
+ * `studentVerificationsService`: qui non si deduce nulla, si legge.
+ */
+function isServerResolvedItem(item: StudentVerificationItem): boolean {
+  return item.assignmentMode === 'server_resolved';
 }
 
 /**
@@ -248,11 +252,13 @@ export function StudentVerificationsView({
       );
       const activeDraft = await findActiveDraftSession(uid, onlineItems, db);
       if (activeDraft) {
-        // VEX-02A: alla ripresa di una bozza `equivalent_variants` le domande
-        // NON sono nella proiezione (solo comuni): vanno richieste alla callable
-        // (idempotente → stessa variante). `same_questions` usa la proiezione.
+        // VEX-02A / VDIF-04: alla ripresa di una bozza `server_resolved` le
+        // domande NON sono nella proiezione (che porta solo le comuni non
+        // differenziate): vanno richieste alla callable, idempotente, che
+        // restituisce lo stesso insieme già assegnato. `same_questions` usa la
+        // proiezione, come sempre.
         try {
-          const resolved = isVexItem(activeDraft.item)
+          const resolved = isServerResolvedItem(activeDraft.item)
             ? await resolveVexExam(activeDraft.item, uid, vexDepsRef.current!)
             : {
                 submission: activeDraft.submission,
@@ -378,11 +384,11 @@ export function StudentVerificationsView({
    * "Svolgi online" / "Riprendi bozza" — fullscreen must be requested
    * synchronously from this click.
    *
-   * VEX-02A routing: `equivalent_variants` passa dalla callable
-   * (`resolveVexExam`, che assegna/recupera la variante e restituisce SOLO le
-   * domande assegnate); `same_questions` mantiene il flusso client-side
-   * esistente (`resolveSameQuestionsExam`, nessuna callable VEX). Guardia
-   * doppio-click via `startingRef` (una sola invocazione concorrente).
+   * VDIF-04 routing: `server_resolved` passa dalla callable (`resolveVexExam`,
+   * che assegna o recupera l'insieme e restituisce SOLO le domande assegnate);
+   * `same_questions` mantiene il flusso client-side esistente
+   * (`resolveSameQuestionsExam`, nessuna callable). Guardia doppio-click via
+   * `startingRef` (una sola invocazione concorrente).
    */
   async function handleStartOrResume(item: StudentVerificationItem) {
     if (!uid) return;
@@ -392,7 +398,7 @@ export function StudentVerificationsView({
     setStartErrors((prev) => ({ ...prev, [item.id]: '' }));
     setStartingId(item.id);
     try {
-      const resolved = isVexItem(item)
+      const resolved = isServerResolvedItem(item)
         ? await resolveVexExam(item, uid, vexDepsRef.current!)
         : await resolveSameQuestionsExam(item, uid, db);
       writeActiveSessionHint(item.id);
@@ -614,7 +620,10 @@ export function StudentVerificationsView({
     const pdfError = pdfErrors[item.id];
     const startError = startErrors[item.id];
     const status = onlineStatus[item.id];
-    const canDownloadPdf = item.studentPdfEnabled && !isVexItem(item);
+    // Il PDF studente si costruisce dalla sola proiezione: con un insieme
+    // deciso dal server la proiezione non contiene le domande assegnate, quindi
+    // il download resta indisponibile (come già per VEX).
+    const canDownloadPdf = item.studentPdfEnabled && !isServerResolvedItem(item);
     const canResume = isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft';
     const canStart =
       isActiveVerification(item) &&

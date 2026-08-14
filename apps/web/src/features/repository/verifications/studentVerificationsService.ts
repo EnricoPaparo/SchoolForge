@@ -11,8 +11,8 @@ import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
 import { normalizePublishedVerificationStatus } from './publishedVerificationStatus.js';
-import { normalizeDistributionMode } from './vexDistribution.js';
-import type { VerificationDistributionMode } from '../../../types/firestore.js';
+import { normalizeAssignmentMode } from './assignmentMode.js';
+import type { VerificationAssignmentMode } from '../../../types/firestore.js';
 
 export type StudentVerificationItem = {
   id: string;
@@ -46,11 +46,12 @@ export type StudentVerificationItem = {
    */
   topicOutline: VerificationTopicUda[] | null;
   /**
-   * VEX-02A: instrada il flusso di avvio. `same_questions` (o legacy) resta
-   * interamente client-side; `equivalent_variants` passa dalla callable.
-   * Normalizzata fail-closed alla lettura (valore sconosciuto ⇒ errore).
+   * VDIF-04 — **unico** campo su cui il portale studente instrada l'avvio.
+   * `same_questions` resta interamente client-side; `server_resolved` passa
+   * dalla callable. Normalizzato fail-closed, con la compatibilità legacy
+   * concentrata in `normalizeAssignmentMode` e in nessun altro punto.
    */
-  distributionMode: VerificationDistributionMode;
+  assignmentMode: VerificationAssignmentMode;
 };
 
 export type StudentVerificationsResult =
@@ -113,7 +114,7 @@ export async function loadStudentVerifications(
         questions: data.questions,
         onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
         studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
-        distributionMode: normalizeDistributionMode(data.distributionMode),
+        assignmentMode: normalizeAssignmentMode(data.assignmentMode, data.distributionMode),
         ownerUid: data.ownerUid,
         status: normalizePublishedVerificationStatus(data.status),
         verificationDate: isValidVerificationDate(data.verificationDate)

@@ -32,8 +32,14 @@ export interface AssignedQuestion {
 }
 
 export interface AssignVariantResponse {
-  distributionMode: 'equivalent_variants';
-  /** order (0-based) assegnati: comuni + una alternativa per gruppo, ascendenti. */
+  /**
+   * VDIF-04 — la risposta dichiara il **canale**, non la natura della verifica:
+   * `server_resolved` è lo stesso valore che VEX produrrebbe da solo. Non
+   * esiste alcun campo da cui il client possa dedurre se questa verifica sia
+   * differenziata, e non ha motivo di saperlo.
+   */
+  assignmentMode: 'server_resolved';
+  /** order (0-based) realmente assegnati, ascendenti. */
   assignedQuestionOrders: number[];
   /** Domande assegnate sanitizzate, ordinate per `order`. Nessuna soluzione. */
   questions: AssignedQuestion[];

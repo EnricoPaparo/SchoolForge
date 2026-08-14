@@ -95,7 +95,7 @@ describe('loadStudentVerifications — class filtering', () => {
         questions: [{ order: 0, tipo: 'aperta', maxPoints: 3, testo: 'Domanda?' }],
         onlineEnabled: false,
         studentPdfEnabled: false,
-        distributionMode: 'same_questions',
+        assignmentMode: 'same_questions',
         ownerUid: 'owner',
         status: 'active',
         // UI-VERIFICHE-06B — assenti sulla proiezione legacy di questa fixture:
