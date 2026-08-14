@@ -39,8 +39,11 @@ export interface ResolvedExam {
 }
 
 export class VexExamError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor() {
+    // VDIF-05 — il client non spiega mai allo studente quale meccanismo abbia
+    // scelto le domande né perché un payload sia incoerente. Il dettaglio resta
+    // nei test del contratto, non in una superficie osservabile.
+    super('Impossibile caricare le domande della verifica. Riprova.');
     this.name = 'VexExamError';
   }
 }
@@ -55,31 +58,31 @@ const FORBIDDEN_QUESTION_KEYS = ['soluzione', 'correctanswer', 'solution'];
  */
 export function validateAssignResponse(resp: AssignVariantResponse): PublicVerificationQuestion[] {
   if (!resp || resp.assignmentMode !== 'server_resolved') {
-    throw new VexExamError('Risposta di assegnazione non valida.');
+    throw new VexExamError();
   }
   if (!Array.isArray(resp.assignedQuestionOrders) || resp.assignedQuestionOrders.length === 0) {
-    throw new VexExamError('Assegnazione mancante o vuota.');
+    throw new VexExamError();
   }
   if (!resp.assignedQuestionOrders.every((o) => Number.isInteger(o) && o >= 0)) {
-    throw new VexExamError('Order assegnati non validi.');
+    throw new VexExamError();
   }
   if (!Array.isArray(resp.questions)) {
-    throw new VexExamError('Domande assegnate mancanti.');
+    throw new VexExamError();
   }
   const assignedSet = new Set(resp.assignedQuestionOrders);
   const questionOrders = new Set<number>();
   const questions: PublicVerificationQuestion[] = [];
   for (const q of resp.questions) {
-    if (!q || typeof q !== 'object') throw new VexExamError('Domanda assegnata non valida.');
+    if (!q || typeof q !== 'object') throw new VexExamError();
     for (const key of Object.keys(q)) {
       if (FORBIDDEN_QUESTION_KEYS.includes(key.toLowerCase())) {
-        throw new VexExamError('La risposta contiene dati non ammessi.');
+        throw new VexExamError();
       }
     }
     if (!Number.isInteger(q.order) || !assignedSet.has(q.order)) {
-      throw new VexExamError('Domanda non appartenente alla variante assegnata.');
+      throw new VexExamError();
     }
-    if (questionOrders.has(q.order)) throw new VexExamError('Domanda assegnata duplicata.');
+    if (questionOrders.has(q.order)) throw new VexExamError();
     questionOrders.add(q.order);
     questions.push({
       order: q.order,
@@ -92,7 +95,7 @@ export function validateAssignResponse(resp: AssignVariantResponse): PublicVerif
   }
   // Copertura esatta: ogni order assegnato ha la sua domanda, senza estranei.
   if (questionOrders.size !== assignedSet.size) {
-    throw new VexExamError('Le domande assegnate non coincidono con la variante.');
+    throw new VexExamError();
   }
   // Ordine canonico ascendente (lo shuffle visivo è responsabilità di OnlineExamView).
   return questions.sort((a, b) => a.order - b.order);
@@ -132,7 +135,7 @@ export async function resolveVexExam(
   const questions = validateAssignResponse(resp);
   const submission = await deps.load(item.id, uid);
   if (!submission || submission.status !== 'draft') {
-    throw new VexExamError('Submission non disponibile dopo l’assegnazione.');
+    throw new VexExamError();
   }
   return { submission, questions, assignedQuestionOrders: [...resp.assignedQuestionOrders] };
 }
@@ -158,7 +161,7 @@ export async function resolveSameQuestionsExam(
   );
   const submission = await loadSubmission(item.id, uid, db);
   if (!submission) {
-    throw new VexExamError('Impossibile avviare la verifica online.');
+    throw new VexExamError();
   }
   return { submission, questions: item.questions };
 }

@@ -4,8 +4,8 @@
 matrice di test e prototipo UI), **VDIF-01 implementato** — registro etichette
 owner-only, unicità transazionale del nome e terza scheda «Etichette» — e
 **VDIF-02 implementato** — assegnazione privata studente → etichetta con
-contatori atomici. **VDIF-04→05 restano aperti; nessun rollout è stato
-dichiarato.**
+contatori atomici. **VDIF-03, VDIF-04 e VDIF-05 implementati; il rollout e il
+Gate GVDIF restano aperti.**
 **Data:** 12 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
 equivalenti) implementati e distribuiti su DEV con **Gate GVEX PASS**;
@@ -1565,8 +1565,8 @@ completate escluse, copertura dichiarata, numero di domande per riga).
 | **VDIF-01** ✅ | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, fail-closed su record incoerente), helper puro `labelName.ts` + `labelReservationId.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit atomico, **scheda Etichette** (card, dialog crea/rinomina/elimina, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | **Implementato.** Vedi §18 per lo stato reale, i limiti dichiarati e ciò che resta a VDIF-02. |
 | **VDIF-02** ✅ | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, service interamente **transazionale** con valori espliciti di `assignedCount` (mai `increment` alla cieca), cambio `L1→L2` in un solo commit, selettore nella card studente, ricerca per etichetta, Rules, audit e rimozione studente nella stessa transazione. | VDIF-01 | **Implementato, non distribuito.** Integrità referenziale finale su etichetta e studente (`existsAfter`/`getAfter`); busy e retry per singola card; nessuna etichetta in alcun dato studente. Vedi §19. |
 | **VDIF-03** | ✅ **Implementato** — builder delle varianti: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori con dirty guard, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **`updateVerificationConfig` transazionale** con diff di insiemi `added`/`removed` su `draftUsageCount` (§5.F.1), **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da picker, VEX e servizio; replay no-op; **zero letture e zero scritture di etichette quando l'insieme non cambia**. |
-| **VDIF-04** | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | Attivazione reale con ≥ 2 etichette, ≥ 1 sostituzione e ≥ 1 omissione; ogni guardia coperta da test; T36/T39/T40 e T41c/T41d/T41e verdi; idempotenza e replay verdi. |
-| **VDIF-05** | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | Ogni consumer opera sulla sola assegnazione; audit di privacy che dimostra l'assenza di etichette in ogni superficie di §4. |
+| **VDIF-04** ✅ | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | **Implementato, non distribuito.** Attivazione con sostituzioni/omissioni e combinazione VEX coperta dai test; idempotenza e replay verdi. Vedi §20. |
+| **VDIF-05** ✅ | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | **Implementato, non distribuito.** Ogni consumer opera sulla sola assegnazione; numerazione studente locale e densa; audit strutturale e fixture sentinella dimostrano l'assenza di etichette e alternative non assegnate. Vedi §21 e [`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md). |
 | **GVDIF** | **Rollout DEV e gate umano multi-studente**: smoke reale con più studenti etichettati e non, isolamento, correzione, restituzione, export. | VDIF-05 | Checklist firmata in `evidenze/gvdif-human-gate.md`. **Aperto.** |
 | **ESITI-01** | Vista di **sola lettura** degli esiti aggregati per UDA/lezione (§12). **Indipendente e successiva a GVDIF.** | GVDIF | §12, DoD. |
 
@@ -2176,3 +2176,52 @@ Tre difetti del dialog di conferma, corretti sulla stessa PR.
 Correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e l'audit di
 privacy end-to-end su tutte le superfici di §4: sono VDIF-05. Questo pacchetto
 rende una verifica differenziata **attivabile e avviabile**, e si ferma lì.
+
+## 21. VDIF-05 — consumer downstream e privacy audit
+
+**Stato:** implementato, non distribuito. Gate GVDIF **aperto**.
+
+### 21.1 Un solo confine post-attivazione
+
+`resolveAssignedQuestions` è il confine canonico di correzione manuale,
+restituzione e archivio. Una verifica `same_questions` che contiene
+`differentiation` è `server_resolved` esattamente come una VEX: richiede
+`assignedQuestionOrders` e `assignedAnswerKeys` coerenti e non può ricadere né
+sulla proiezione comune né sull'intero `teacherSnapshot`.
+
+La correzione IA applica lo stesso contratto nelle Functions con
+`parseResolvableSnapshot` e `isValidResolvedAssignment` **prima** di costruire
+il payload del grader. Snapshot, assegnazione o mirror delle chiavi malformati
+producono `invalid_variant` prima del provider; le altre consegne del batch
+possono proseguire.
+
+### 21.2 Presentazione e artefatti
+
+- svolgimento, correzione docente e review studente mostrano una numerazione
+  locale densa `1…N`; gli order canonici restano soltanto chiavi tecniche;
+- `CorrectionReturnDoc` e PDF di correzione contengono soltanto il percorso
+  assegnato; il CSV registro conserva i soli riepiloghi;
+- il PDF della verifica per lo studente resta disabilitato per ogni
+  `assignmentMode: 'server_resolved'`; il PDF completo del docente è invariato;
+- ricevute e chiusura forzata conservano l'assegnazione senza aggiungere
+  metadati; `topicOutline` resta il perimetro comune congelato.
+
+### 21.3 Privacy dimostrata
+
+I test funzionali usano una sentinella nei nomi delle etichette, nella base
+omessa e nella sua soluzione: la sentinella deve restare assente dal payload
+del grader, dalla restituzione e dagli artefatti studente. Un test strutturale
+controlla inoltre i contratti `PublishedProjectionDoc`, `SubmissionDoc`,
+`SubmissionReceiptDoc` e `CorrectionReturnDoc`, i moduli studente, gli export e
+la chiusura forzata. Sono vietati `labelId`, `labelName`, `nameKey`, i contatori,
+`byStudentUid` e `differentiation`.
+
+Matrice completa: [`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md).
+Checklist del rollout: [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md).
+
+### 21.4 Costi e confini
+
+Zero nuove letture, scritture, callable, listener, polling, documenti o indici.
+Tutti i filtri operano su snapshot e submission già caricati. VDIF-05 non
+distribuisce nulla e non chiude GVDIF: il gate richiede ancora lo smoke reale
+multi-studente su DEV.

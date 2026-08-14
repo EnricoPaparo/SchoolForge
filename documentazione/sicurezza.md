@@ -659,6 +659,32 @@ esclusivamente da `teacherSnapshot` e non legge né `differentiationLabels` né
 alternative non assegnate, mai un `labelId`, un nome di etichetta o un motivo
 della selezione.
 
+### 8e-quater. Consumer e privacy post-attivazione (VDIF-05 — implementato)
+
+L'isolamento prosegue dopo la consegna. Una verifica `same_questions` con
+`differentiation` è trattata come `server_resolved` da correzione manuale,
+restituzione, archivio e correzione IA: nessun percorso può ripiegare
+sull'intero snapshot. Il motore IA rivalida l'assegnazione contro lo snapshot
+congelato **prima** del provider; una incoerenza produce `invalid_variant` e
+zero contenuto inviato al modello per quella consegna.
+
+I contratti leggibili dallo studente (`PublishedProjectionDoc`,
+`SubmissionDoc`, `SubmissionReceiptDoc`, `CorrectionReturnDoc`) non contengono
+`labelId`, nome o chiave normalizzata dell'etichetta, contatori,
+`byStudentUid` o la configurazione `differentiation`. Lo stesso vincolo è
+verificato sulle fonti di svolgimento, review, PDF, CSV e chiusura forzata. Gli
+errori dello svolgimento sono volutamente generici: non distinguono etichetta
+mancante, assegnazione incoerente o snapshot corrotto.
+
+Gli order canonici restano chiavi tecniche necessarie alle Rules, ma le tre
+superfici interattive mostrano soltanto una numerazione locale densa `1…N`.
+Il PDF verifica studente è disabilitato per ogni `server_resolved`; il PDF
+docente resta completo. Nessuna nuova lettura live delle etichette, nessun
+indice o costo passivo è stato introdotto. Audit automatico in
+[`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md);
+rollout umano ancora aperto in
+[`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md).
+
 ---
 
 ## 8c. Chiusura e consegna forzata dal docente (FORCE-SUBMIT-01 — implementato)

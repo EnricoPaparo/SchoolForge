@@ -855,6 +855,8 @@ describe('OnlineExamView — local question shuffle (EXAM-UX-03)', () => {
     // Visual order [q1 singola, q2 multipla, q0 aperta]: the aperta is now #3.
     expect(screen.getByLabelText('Risposta alla domanda 3')).toBeTruthy();
     expect(screen.queryByLabelText('Risposta alla domanda 1')).toBeNull();
+    expect(screen.getByLabelText('Opzioni della domanda 1')).toBeTruthy();
+    expect(screen.queryByLabelText('Opzioni della domanda 2')).toBeNull();
     // Navigator shows 1..3 in the visual order.
     const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
     expect(within(nav).getByText('1')).toBeTruthy();

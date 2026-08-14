@@ -80,7 +80,9 @@ describe('validateAssignResponse (fail-closed)', () => {
   it('rejects a question carrying a solution field', () => {
     const resp = goodResponse();
     (resp.questions[0] as unknown as Record<string, unknown>).soluzione = 'x';
-    expect(() => validateAssignResponse(resp)).toThrow(/non ammessi/);
+    expect(() => validateAssignResponse(resp)).toThrow(
+      'Impossibile caricare le domande della verifica. Riprova.',
+    );
   });
 
   it('rejects a question whose order is not in assignedQuestionOrders', () => {
@@ -92,13 +94,35 @@ describe('validateAssignResponse (fail-closed)', () => {
   it('rejects when questions do not cover the assignment exactly', () => {
     const resp = goodResponse();
     resp.questions.pop();
-    expect(() => validateAssignResponse(resp)).toThrow(/non coincidono/);
+    expect(() => validateAssignResponse(resp)).toThrow(
+      'Impossibile caricare le domande della verifica. Riprova.',
+    );
   });
 
   it('rejects an empty assignment', () => {
     expect(() =>
       validateAssignResponse({ ...goodResponse(), assignedQuestionOrders: [], questions: [] }),
     ).toThrow(VexExamError);
+  });
+
+  it('espone lo stesso errore generico per ogni forma malformata, senza dettagli sul percorso', () => {
+    const malformed: AssignVariantResponse[] = [
+      { ...goodResponse(), assignmentMode: 'same_questions' as never },
+      { ...goodResponse(), assignedQuestionOrders: [], questions: [] },
+      { ...goodResponse(), questions: goodResponse().questions.slice(1) },
+    ];
+    for (const response of malformed) {
+      let error: unknown;
+      try {
+        validateAssignResponse(response);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(VexExamError);
+      const message = (error as Error).message;
+      expect(message).toBe('Impossibile caricare le domande della verifica. Riprova.');
+      expect(message).not.toMatch(/etichett|differenzi|variante|assegn|percorso|PDP|BES/i);
+    }
   });
 });
 

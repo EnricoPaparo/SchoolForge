@@ -137,6 +137,33 @@ describe('StudentCorrectionView — question navigation and content', () => {
     expect(screen.getByText('Rete')).toBeTruthy();
   });
 
+  it('usa una numerazione locale densa quando gli order assegnati hanno buchi', () => {
+    const item: StudentCorrectionReturnItem = {
+      ...BASE_ITEM,
+      questions: [
+        { ...BASE_ITEM.questions[0]!, order: 3, testo: 'Prima domanda assegnata.' },
+        { ...BASE_ITEM.questions[1]!, order: 8, testo: 'Seconda domanda assegnata.' },
+      ],
+    };
+    render(
+      <StudentCorrectionView
+        submissionId="v1_student-uid"
+        initialData={item}
+        db={fakeDb}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Domanda 1')).toBeTruthy();
+    expect(screen.getByLabelText('Vai alla domanda 1')).toBeTruthy();
+    expect(screen.getByLabelText('Vai alla domanda 2')).toBeTruthy();
+    expect(screen.queryByLabelText('Vai alla domanda 4')).toBeNull();
+    expect(screen.queryByLabelText('Vai alla domanda 9')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Vai alla domanda 2'));
+    expect(screen.getByText('Domanda 2')).toBeTruthy();
+    expect(screen.getByText('Seconda domanda assegnata.')).toBeTruthy();
+  });
+
   it('shows "Nessuna risposta" for an unanswered question', () => {
     const item: StudentCorrectionReturnItem = {
       ...BASE_ITEM,
