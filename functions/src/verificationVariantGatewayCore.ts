@@ -6,14 +6,14 @@
  */
 
 import {
-  assignVariant,
-  isValidAssignment,
-  parseVexSnapshot,
-  sanitizeAssignedQuestions,
+  isValidResolvedAssignment,
+  parseResolvableSnapshot,
+  resolveDifferentiatedOrders,
+  sanitizeResolvedQuestions,
   VexAssignmentError,
   type RandomIntBelow,
+  type ResolvableSnapshot,
   type VexAssignedQuestion,
-  type VexSnapshot,
 } from './verificationVariantCore.js';
 
 export type AssignErrorCode =
@@ -104,7 +104,7 @@ export interface PersistAssignmentInput {
   ownerUid: string;
   verificationTitle: string;
   className: string | null;
-  snapshot: VexSnapshot;
+  snapshot: ResolvableSnapshot;
   randomIntBelow: RandomIntBelow;
 }
 
@@ -126,7 +126,13 @@ export interface AssignVariantDeps {
 }
 
 export interface AssignResponse {
-  distributionMode: 'equivalent_variants';
+  /**
+   * VDIF-04 — la risposta dichiara il **canale**, non la natura della verifica.
+   * `server_resolved` è lo stesso valore che VEX produrrebbe da solo: il client
+   * non può dedurre da qui se la verifica sia differenziata, e non ha motivo di
+   * saperlo.
+   */
+  assignmentMode: 'server_resolved';
   assignedQuestionOrders: number[];
   questions: VexAssignedQuestion[];
 }
@@ -157,14 +163,20 @@ export type AssignmentDecision =
  *   rigenerazione silenziosa);
  * - submission esistente senza assegnazione ⇒ genera e `update`;
  * - submission assente ⇒ genera e `create`.
+ *
+ * VDIF-04: la validità di un'assegnazione già persistita dipende ora anche
+ * dall'etichetta congelata dello studente, quindi `studentUid` entra nella
+ * firma. Idempotenza, replay e retry restano quelli di VEX — è la stessa
+ * transazione read-or-assign, con un criterio di calcolo diverso.
  */
 export function decideAssignment(
   existing: ExistingSubmissionState,
-  snapshot: VexSnapshot,
+  snapshot: ResolvableSnapshot,
+  studentUid: string,
   randomIntBelow: RandomIntBelow,
 ): AssignmentDecision {
   if (existing.exists && existing.assignedQuestionOrders !== undefined) {
-    if (!isValidAssignment(snapshot, existing.assignedQuestionOrders)) {
+    if (!isValidResolvedAssignment(snapshot, studentUid, existing.assignedQuestionOrders)) {
       throw new VexAssignmentError(
         'invalid_assignment',
         'Assegnazione persistita non coerente con lo snapshot.',
@@ -172,7 +184,7 @@ export function decideAssignment(
     }
     return { kind: 'reuse', assignedQuestionOrders: existing.assignedQuestionOrders };
   }
-  const assignedQuestionOrders = assignVariant(snapshot, randomIntBelow);
+  const assignedQuestionOrders = resolveDifferentiatedOrders(snapshot, studentUid, randomIntBelow);
   return existing.exists
     ? { kind: 'update', assignedQuestionOrders }
     : { kind: 'create', assignedQuestionOrders };
@@ -225,10 +237,13 @@ export async function runAssignVariant(
     );
   }
 
-  // Snapshot VEX: `parseVexSnapshot` valida modalità e struttura (fail-closed).
-  let snapshot: VexSnapshot;
+  // Snapshot risolvibile dal server: `parseResolvableSnapshot` copre i tre casi
+  // reali — solo VEX, solo differenziazione, entrambe — e valida modalità e
+  // struttura fail-closed. Una verifica che non richiede assegnazione dal
+  // server viene rifiutata qui: il client non deve arrivarci.
+  let snapshot: ResolvableSnapshot;
   try {
-    snapshot = parseVexSnapshot(verification.teacherSnapshotRaw);
+    snapshot = parseResolvableSnapshot(verification.teacherSnapshotRaw);
   } catch (err) {
     if (err instanceof VexAssignmentError) throw fromCoreError(err);
     throw err;
@@ -253,8 +268,10 @@ export async function runAssignVariant(
   }
 
   return {
-    distributionMode: 'equivalent_variants',
+    assignmentMode: 'server_resolved',
     assignedQuestionOrders: persisted.assignedQuestionOrders,
-    questions: sanitizeAssignedQuestions(snapshot, persisted.assignedQuestionOrders),
+    // Solo le domande realmente assegnate: mai un'alternativa non assegnata,
+    // mai una soluzione, mai un'etichetta o un motivo della selezione.
+    questions: sanitizeResolvedQuestions(snapshot, persisted.assignedQuestionOrders),
   };
 }

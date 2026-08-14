@@ -16,9 +16,13 @@ import type { FirebaseStorage } from 'firebase/storage';
 import type { ClassItem } from '../classes/classesService.js';
 import { listLessons, listUdas } from '../programs/programsService.js';
 import type {
+  EquivalentGroupSnapshot,
   ImportDoc,
   ProgramDoc,
+  PublicVerificationQuestion,
+  VerificationAssignmentMode,
   VerificationConfig,
+  VerificationDistributionMode,
   VerificationDoc,
   VerificationQuestionRef,
   VerificationTeacherQuestionSnapshot,
@@ -32,7 +36,10 @@ import { loadSelectedQuestionsWithSolutions } from './loadSelectedQuestionsWithS
 import { poolQuestionInvariantError } from './poolQuestionInvariant.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
-import { assertTeacherSnapshotQuestionsWithinLimit } from './verificationSnapshotLimits.js';
+import {
+  assertActivationPayloadWithinLimit,
+  assertTeacherSnapshotQuestionsWithinLimit,
+} from './verificationSnapshotLimits.js';
 import {
   toPublicVerificationQuestion,
   toTeacherQuestionSnapshot,
@@ -49,6 +56,19 @@ import {
   parseDifferentiationLabel,
 } from '../differentiation/differentiationLabelsService.js';
 import { classifyQuestionParticipation } from './questionParticipation.js';
+import {
+  activationBlockers,
+  assertNoBlockers,
+  buildDifferentiationSnapshotParts,
+  type DifferentiationSnapshotParts,
+} from './differentiationSnapshot.js';
+import { buildActivationSummary, type ActivationSummary } from './activationSummary.js';
+import { computeAssignmentsFingerprint } from './assignmentsFingerprint.js';
+import { deriveAssignmentMode } from './assignmentMode.js';
+import { listDifferentiationLabels } from '../differentiation/differentiationLabelsService.js';
+import { listStudentLabelAssignments } from '../studentLabelAssignments/studentLabelAssignmentsService.js';
+import { listStudents } from '../students/studentsService.js';
+import { listQuestionIndex } from './questionIndexService.js';
 
 export type VerificationItem = { id: string } & Omit<
   VerificationDoc,
@@ -312,11 +332,6 @@ export function validateForActivation(config: VerificationConfig): {
   if (!config.importId) {
     errors.push("L'importazione è obbligatoria");
   }
-  if (config.differentiation !== undefined) {
-    errors.push(
-      'La verifica differenziata è ancora in bozza: completa la distribuzione delle varianti prima di attivarla',
-    );
-  }
   if (!config.questionRefs || config.questionRefs.length < 1) {
     errors.push('Selezionare almeno una domanda');
   } else {
@@ -371,50 +386,62 @@ function sameQuestionRefs(
 }
 
 /**
- * Activates a draft verification. Alongside the existing owner-only
- * `teacherSnapshot`, this also builds and writes `publishedProjection/data`
- * — the safe, solution-free projection a student (M3-lite) reads to list the
- * verification and render the student PDF (M3L-D). It never includes
- * poolStorageRef, questionLocalId, questionIndexEntryId or soluzione.
- * `classId` is copied from `config.classId` as-is (including `null`) — a
- * verification never assigned to a class stays invisible to every student.
+ * VDIF-04 — FASE 0 del contratto di attivazione (roadmap §7.1): tutte le
+ * letture autorevoli e tutte le guardie **pure** G01→G16b, senza scrivere nulla
+ * e senza aprire alcuna transazione.
  *
- * Fix for the immutable-snapshot gap: `teacherSnapshot.questions` now
- * embeds each question's full text, options AND solution at activation
- * time (`VerificationTeacherQuestionSnapshot`) — so an `active`/`closed`
- * verification's own PDF downloads (normal + solutions, see
- * `VerificationsView.tsx`) never again need to re-read the current pool
- * file from Storage. Before this fix, `teacherSnapshot` only kept
- * `questionRefs` (stable pointers into the *current* pool), so editing or
- * deleting a pool after activation could silently change — or break — an
- * already-activated verification's PDFs. `questionRefs` is still kept
- * alongside `questions` for tracking/compatibility, but is no longer the
- * PDF data source once `questions` is present.
- *
- * All questions are read from Storage exactly ONCE, via
- * `loadSelectedQuestionsWithSolutions` (solutions included) — BEFORE
- * opening the transaction, same as before (Storage reads don't belong
- * inside a Firestore transaction, and this keeps retries cheap). Both
- * `teacherSnapshot.questions` and `publishedProjection.questions` are then
- * derived from that single load: the projection strips `soluzione` via
- * `toPublicVerificationQuestion`, so there is no second Storage read and no
- * risk of the two ever disagreeing about what a question's text/options
- * were at activation time. A missing/invalid pool, a missing question, an
- * invalid solution, or a snapshot that would serialize too large all fail
- * BEFORE the transaction opens — activation is all-or-nothing.
- *
- * `visibility` is always reset to `hidden` on activation: publishing is a
- * separate, explicit teacher action (see `setVerificationVisibility`).
+ * È separata dal commit per una ragione che non è estetica: il riepilogo di
+ * conferma mostrato al docente deve essere **derivato dagli stessi dati** che
+ * verranno congelati, senza una sola lettura in più. Preparare e poi confermare
+ * è l'unico modo per garantirlo; ricalcolare al momento della conferma
+ * significherebbe mostrare un riepilogo e attivarne un altro.
  */
-export async function activateVerification(
+export type ActivationPlan = {
+  verificationId: string;
+  ownerUid: string;
+  className: string | null;
+  /** Config letta nel preflight: base del confronto G18/G19 in transazione. */
+  preConfig: VerificationConfig;
+  teacherQuestions: VerificationTeacherQuestionSnapshot[];
+  publicQuestions: PublicVerificationQuestion[];
+  topicOutline: VerificationTopicUda[];
+  verificationDate: string | null;
+  distributionMode: VerificationDistributionMode;
+  assignmentMode: VerificationAssignmentMode;
+  commonQuestionOrders: number[];
+  equivalentGroups: EquivalentGroupSnapshot[];
+  /** `null` su una verifica senza varianti: il percorso resta quello di oggi. */
+  differentiation: DifferentiationSnapshotParts | null;
+  /** Impronta G20 calcolata sul preflight; `null` senza differenziazione. */
+  assignmentsFingerprint: string | null;
+  /** Blocker per percorso, già leggibili: vuoto ⇒ attivabile. */
+  blockers: string[];
+  /** Riepilogo owner-only, mai persistito. `null` senza differenziazione. */
+  summary: ActivationSummary | null;
+};
+
+/**
+ * Costruisce il piano di attivazione: legge autorevolmente, valida, e
+ * restituisce snapshot e proiezione già pronti da committare.
+ *
+ * Ordine delle letture (roadmap §7.1 FASE 0):
+ * `R1` verifica → `R2` etichette → `R3` assegnazioni → `R4` studenti →
+ * `R4b` indice domande → `R5` Storage (domande selezionate **∪** alternative,
+ * in una sola lettura aggregata) → `R6` udas + lessons.
+ *
+ * `R2`→`R4b` avvengono **solo** in presenza di `config.differentiation`: una
+ * verifica senza varianti costa esattamente quanto costava prima di VDIF-04.
+ */
+export async function prepareVerificationActivation(
   verificationId: string,
   classItem: ClassItem | null,
   ownerUid: string,
   db: Firestore,
-  storage: FirebaseStorage,
-): Promise<void> {
+  storage?: FirebaseStorage,
+): Promise<ActivationPlan> {
   const verRef = doc(db, 'verifications', verificationId);
 
+  // R1 — G01/G02.
   const preSnap = await getDoc(verRef);
   if (!preSnap.exists()) {
     throw new Error('Verifica non trovata');
@@ -429,19 +456,48 @@ export async function activateVerification(
   }
 
   // VEX-01B — modalità di distribuzione, normalizzata fail-closed (valore
-  // sconosciuto ⇒ errore leggibile, mai fallback silenzioso). Determina se
-  // costruire lo snapshot VEX (gruppi equivalenti) o mantenere il flusso
-  // classico `same_questions` invariato.
+  // sconosciuto ⇒ errore leggibile, mai fallback silenzioso).
   const distributionMode = normalizeDistributionMode(preData.config.distributionMode);
   const isVex = distributionMode === 'equivalent_variants';
+  // In `same_questions` i gruppi possono restare salvati nella bozza ma sono
+  // inattivi: non entrano né nello snapshot né in alcuna guardia.
+  const activeGroups = isVex ? (preData.config.equivalentGroups ?? []) : [];
 
-  // Single Storage read for both the owner-only teacher snapshot (with
-  // solutions) and the student-safe published projection (without) — see
-  // doc comment above.
-  const questionsResult = await loadSelectedQuestionsWithSolutions(
-    preData.config.questionRefs,
-    storage,
-  );
+  // G03 — il parser di bozza è fail-closed su versione, forma e chiavi extra.
+  const differentiationConfig = parseDifferentiationConfig(preData.config.differentiation);
+
+  // R2/R3/R4/R4b — solo con differenziazione presente.
+  let differentiation: DifferentiationSnapshotParts | null = null;
+  let assignmentsFingerprint: string | null = null;
+  let students: { uid: string; ownerUid: string }[] = [];
+  if (differentiationConfig) {
+    const [labels, assignments, studentList, questionIndex] = await Promise.all([
+      listDifferentiationLabels(ownerUid, db),
+      listStudentLabelAssignments(ownerUid, db),
+      listStudents(ownerUid, db),
+      listQuestionIndex(preData.config.programId, preData.config.importId, db),
+    ]);
+    students = studentList.map((student) => ({ uid: student.id, ownerUid: student.ownerUid }));
+    differentiation = buildDifferentiationSnapshotParts({
+      config: differentiationConfig,
+      questionRefs: preData.config.questionRefs,
+      equivalentGroups: activeGroups,
+      questionIndex,
+      labels,
+      assignments,
+      students,
+      ownerUid,
+    });
+    assignmentsFingerprint = await computeAssignmentsFingerprint(
+      differentiation.labelAssignments.byStudentUid,
+    );
+  }
+
+  const alternativeRefs = differentiation?.alternativeRefs ?? [];
+  // R5 — UNA lettura aggregata: le alternative viaggiano nella stessa chiamata
+  // delle domande selezionate. Nessuna lettura per alternativa, mai.
+  const allRefs = [...preData.config.questionRefs, ...alternativeRefs];
+  const questionsResult = await loadSelectedQuestionsWithSolutions(allRefs, storage);
   if (!questionsResult.ok) {
     throw new Error(`Impossibile attivare: ${questionsResult.error}`);
   }
@@ -458,77 +514,139 @@ export async function activateVerification(
   );
   assertTeacherSnapshotQuestionsWithinLimit(teacherQuestions);
 
-  // UI-VERIFICHE-06B — perimetro didattico **ricostruito autorevolmente** dai
-  // dati canonici del corso, non copiato dal draft: il valore mantenuto dal
-  // client durante la selezione serve solo alla preview: qui viene ricalcolato e
-  // rivalidato. Le due letture (`udas`/`lessons`) avvengono una sola volta, nel
-  // percorso di attivazione, prima della transazione — mai a regime, mai
-  // all'apertura della popup, mai nelle liste.
+  // R6 — perimetro didattico ricostruito autorevolmente. Con la differenziazione
+  // comprende **anche** le lezioni delle alternative: è l'unione didattica
+  // complessiva, identica per tutta la classe, e proprio per questo muta
+  // sull'etichetta di chiunque (roadmap §4).
   const [udas, lessons] = await Promise.all([
     listUdas(preData.config.programId, preData.config.importId, db),
     listLessons(preData.config.programId, preData.config.importId, db),
   ]);
   let topicOutline: VerificationTopicUda[];
   try {
-    topicOutline = buildTopicOutline({
-      questionRefs: preData.config.questionRefs,
-      udas,
-      lessons,
-    });
+    topicOutline = buildTopicOutline({ questionRefs: allRefs, udas, lessons });
   } catch (error) {
     if (error instanceof TopicOutlineError) {
       throw new Error(`Impossibile attivare: ${error.message}`);
     }
     throw error;
   }
-  // La data è un dato didattico congelato come gli altri. Una bozza legacy senza
-  // data resta attivabile: il campo viene semplicemente omesso ovunque.
   const verificationDate = isValidVerificationDate(preData.config.verificationDate)
     ? preData.config.verificationDate
     : null;
 
-  // VEX-01B — snapshot dei gruppi equivalenti costruito **prima** della
-  // transazione (puro, nessuna IO): converte gli `questionIndexEntryId` del
-  // draft negli `order` (indice in questions[]), calcola `commonQuestionOrders`
-  // e `equivalentGroups` (order-based), e ri-valida **autorevolmente** lato
-  // service (riferimenti, id gruppo unici, gruppo non vuoto, domanda in un solo
-  // gruppo, alternative compatibili per UDA/tipo/difficoltà, nessun order
-  // duplicato, copertura completa e disgiunta). Fail-closed: qualsiasi
-  // incoerenza aborta l'attivazione PRIMA di scrivere qualsiasi documento.
-  let vexSnapshotFields:
-    | { distributionMode: 'same_questions' }
-    | {
-        distributionMode: 'equivalent_variants';
-        commonQuestionOrders: number[];
-        equivalentGroups: { id: string; alternativeOrders: number[] }[];
-      } = { distributionMode: 'same_questions' };
-  // In `same_questions` la proiezione pubblica contiene tutte le domande (come
-  // oggi). In `equivalent_variants` la proiezione pubblica espone **solo** le
-  // domande comuni: le alternative non assegnate non devono mai essere
-  // leggibili dallo studente (arrivano solo dalla callable). Vedi vex-contract §4.1.
-  let publicQuestions = teacherQuestions.map(toPublicVerificationQuestion);
+  // ── Snapshot VEX ────────────────────────────────────────────────────────────
+  let commonQuestionOrders: number[];
+  let equivalentGroups: EquivalentGroupSnapshot[] = [];
   if (isVex) {
     let parts;
     try {
-      parts = buildEquivalentSnapshotParts(
-        preData.config.questionRefs,
-        preData.config.equivalentGroups ?? [],
-      );
+      parts = buildEquivalentSnapshotParts(preData.config.questionRefs, activeGroups);
     } catch (error) {
       if (error instanceof VexSnapshotError) {
         throw new Error(`Impossibile attivare le varianti equivalenti: ${error.message}`);
       }
       throw error;
     }
-    vexSnapshotFields = {
-      distributionMode: 'equivalent_variants',
-      commonQuestionOrders: parts.commonQuestionOrders,
-      equivalentGroups: parts.equivalentGroups,
-    };
-    const commonSet = new Set(parts.commonQuestionOrders);
-    publicQuestions = teacherQuestions
-      .filter((q) => commonSet.has(q.order))
-      .map(toPublicVerificationQuestion);
+    commonQuestionOrders = parts.commonQuestionOrders;
+    equivalentGroups = parts.equivalentGroups;
+  } else {
+    // Senza VEX ogni domanda selezionata è comune. Le alternative differenziate
+    // restano fuori: sono in `questions[]`, mai fra le comuni.
+    commonQuestionOrders = preData.config.questionRefs.map((_, order) => order);
+  }
+
+  // ── Proiezione pubblica ────────────────────────────────────────────────────
+  // Una domanda base con almeno una scelta non-base **non** vi compare: uno
+  // studente potrebbe altrimenti leggerla anche quando gli è stata omessa o
+  // sostituita. Le alternative non vi compaiono mai (non sono comuni).
+  const differentiatedBaseOrders = new Set(
+    differentiation?.snapshot.questions.map((question) => question.baseOrder) ?? [],
+  );
+  const publishedOrders = new Set(
+    isVex || differentiation
+      ? commonQuestionOrders.filter((order) => !differentiatedBaseOrders.has(order))
+      : teacherQuestions.map((question) => question.order),
+  );
+  const publicQuestions = teacherQuestions
+    .filter((question) => publishedOrders.has(question.order))
+    .map(toPublicVerificationQuestion);
+
+  const assignmentMode = deriveAssignmentMode({
+    distributionMode,
+    hasDifferentiation: differentiation !== null,
+  });
+
+  return {
+    verificationId,
+    ownerUid,
+    className: classItem?.name ?? null,
+    preConfig: preData.config,
+    teacherQuestions,
+    publicQuestions,
+    topicOutline,
+    verificationDate,
+    distributionMode,
+    assignmentMode,
+    commonQuestionOrders,
+    equivalentGroups,
+    differentiation,
+    assignmentsFingerprint,
+    blockers: differentiation ? activationBlockers(differentiation) : [],
+    summary: differentiation ? buildActivationSummary(differentiation, students) : null,
+  };
+}
+
+/**
+ * VDIF-04 — FASE 1 e FASE 2 del contratto di attivazione.
+ *
+ * Dentro **una sola** transazione client Firestore, nell'ordine congelato:
+ * rilettura verifica → G17 stato ancora `draft` → G18 `questionRefs` invariati →
+ * G19 `config.differentiation` strutturalmente invariata → rilettura di **ogni**
+ * etichetta congelata (esistenza, owner, `draftUsageCount` intero ≥ 1) → update
+ * verifica → set proiezione → decremento di ogni `draftUsageCount`.
+ *
+ * G20 sta **immediatamente prima** della transazione e non dentro: una `getDocs`
+ * non è ammessa dentro una transazione Firestore client, quindi le assegnazioni
+ * si confrontano per impronta (limite dichiarato in `assignmentsFingerprint.ts`).
+ *
+ * **Perché il decremento sta nello stesso commit.** Se l'attivazione committasse
+ * e il decremento fallisse subito dopo, l'etichetta resterebbe bloccata per
+ * sempre da una bozza che non esiste più: un contatore che non torna mai a zero
+ * e nessuno che sappia spiegare perché. Insieme, o nessuno dei due.
+ *
+ * G21 (retry dopo risposta persa) non è un ramo a sé: la transazione rilegge lo
+ * stato e, se la verifica è già `active`, G17 blocca **senza scrivere nulla**.
+ */
+export async function commitVerificationActivation(
+  plan: ActivationPlan,
+  db: Firestore,
+): Promise<void> {
+  // Fail-closed prima di ogni scrittura: un blocker rimasto ferma l'attivazione
+  // anche se la UI avesse lasciato premere il pulsante.
+  if (plan.differentiation) assertNoBlockers(plan.differentiation);
+
+  const verRef = doc(db, 'verifications', plan.verificationId);
+  const { verificationId, ownerUid, className } = plan;
+
+  // G20 — secondo calcolo dell'impronta **immediatamente prima** della
+  // transazione, sulle assegnazioni rilette e potate esattamente come nel
+  // preflight (G06: uno studente inesistente non entra nella mappa congelata e
+  // non deve far fallire il confronto).
+  if (plan.differentiation) {
+    const ignored = new Set(plan.differentiation.ignoredAssignments);
+    const assignments = await listStudentLabelAssignments(ownerUid, db);
+    const byStudentUid: Record<string, string> = {};
+    for (const assignment of assignments) {
+      if (ignored.has(assignment.studentUid)) continue;
+      byStudentUid[assignment.studentUid] = assignment.labelId;
+    }
+    const freshFingerprint = await computeAssignmentsFingerprint(byStudentUid);
+    if (freshFingerprint !== plan.assignmentsFingerprint) {
+      throw new Error(
+        'Le etichette degli studenti sono cambiate durante l’attivazione. Riprova per congelare la versione aggiornata.',
+      );
+    }
   }
 
   await runTransaction(db, async (transaction) => {
@@ -537,6 +655,7 @@ export async function activateVerification(
       throw new Error('Verifica non trovata');
     }
     const data = snap.data() as VerificationDoc;
+    // G17 / G21.
     if (data.status !== 'draft') {
       throw new Error('Verifica non attivabile: non è in bozza');
     }
@@ -544,12 +663,42 @@ export async function activateVerification(
     if (!validation.valid) {
       throw new Error(`Verifica non valida: ${validation.errors.join(', ')}`);
     }
-    if (!sameQuestionRefs(preData.config.questionRefs, data.config.questionRefs)) {
+    // G18.
+    if (!sameQuestionRefs(plan.preConfig.questionRefs, data.config.questionRefs)) {
       throw new Error(
         'La selezione delle domande è cambiata durante l’attivazione. Riprova per congelare la versione aggiornata.',
       );
     }
-    const className = classItem?.name ?? null;
+    // G19 — confronto **strutturale profondo** della configurazione varianti.
+    if (
+      canonicalJson(data.config.differentiation) !== canonicalJson(plan.preConfig.differentiation)
+    ) {
+      throw new Error(
+        'La configurazione delle varianti è cambiata durante l’attivazione. Riprova per congelare la versione aggiornata.',
+      );
+    }
+
+    // T1b — ogni etichetta congelata, riletta **dentro** la transazione che
+    // scrive: esistenza, owner e contatore. Un'etichetta eliminata nel
+    // frattempo fa fallire qui, senza congelare nulla.
+    const frozenLabels = plan.differentiation?.snapshot.labels ?? [];
+    const labelUpdates = await Promise.all(
+      frozenLabels.map(async ({ labelId, labelName }) => {
+        const ref = doc(db, LABELS_COLLECTION, labelId);
+        const labelSnap = await transaction.get(ref);
+        if (!labelSnap.exists()) {
+          throw new Error(
+            `Impossibile attivare: l’etichetta «${labelName}» non esiste più. Ricarica la pagina.`,
+          );
+        }
+        const item = parseDifferentiationLabel(labelId, labelSnap.data(), ownerUid);
+        if (!Number.isInteger(item.draftUsageCount) || item.draftUsageCount < 1) {
+          throw new Error(`Etichetta «${item.name}»: contatore delle bozze incoerente.`);
+        }
+        return { ref, next: item.draftUsageCount - 1 };
+      }),
+    );
+
     const teacherSnapshot: Omit<VerificationTeacherSnapshot, 'activatedAt'> & {
       activatedAt: ReturnType<typeof serverTimestamp>;
     } = {
@@ -558,17 +707,51 @@ export async function activateVerification(
       className,
       programId: data.config.programId,
       importId: data.config.importId,
-      ...(verificationDate === null ? {} : { verificationDate }),
-      topicOutline,
+      ...(plan.verificationDate === null ? {} : { verificationDate: plan.verificationDate }),
+      topicOutline: plan.topicOutline,
       questionRefs: data.config.questionRefs,
-      questions: teacherQuestions,
-      // VEX-01B: modalità + (solo in equivalent_variants) order comuni e gruppi
-      // equivalenti congelati. Lo snapshot resta owner-only e immutabile
-      // (Rules vietano l'update di teacherSnapshot). In `same_questions` solo
-      // `distributionMode` è presente e nulla cambia rispetto a prima.
-      ...vexSnapshotFields,
+      questions: plan.teacherQuestions,
+      distributionMode: plan.distributionMode,
+      // `commonQuestionOrders` è congelato anche in `same_questions` quando c'è
+      // differenziazione: è l'insieme da cui il risolutore parte.
+      ...(plan.distributionMode === 'equivalent_variants' || plan.differentiation
+        ? {
+            commonQuestionOrders: plan.commonQuestionOrders,
+            equivalentGroups: plan.equivalentGroups,
+          }
+        : {}),
+      ...(plan.differentiation
+        ? {
+            differentiation: plan.differentiation.snapshot,
+            labelAssignments: plan.differentiation.labelAssignments,
+          }
+        : {}),
       activatedAt: serverTimestamp(),
     };
+
+    const projection = {
+      ownerUid,
+      title: data.config.title,
+      className,
+      classId: data.config.classId,
+      visibility: 'hidden' as const,
+      status: 'active' as const,
+      onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
+      studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
+      distributionMode: plan.distributionMode,
+      // VDIF-04 — unico campo nuovo leggibile dallo studente. Dice COME arrivano
+      // le domande, mai PERCHÉ, ed è identico per tutta la classe.
+      assignmentMode: plan.assignmentMode,
+      ...(plan.verificationDate === null ? {} : { verificationDate: plan.verificationDate }),
+      topicOutline: plan.topicOutline,
+      questions: plan.publicQuestions,
+      activatedAt: serverTimestamp(),
+    };
+
+    // G16b — snapshot e proiezione **interi** entro il limite conservativo.
+    assertActivationPayloadWithinLimit({ teacherSnapshot, publishedProjection: projection });
+
+    // T2 / T3 / T4 — stesso commit.
     transaction.update(verRef, {
       status: 'active',
       visibility: 'hidden',
@@ -576,38 +759,20 @@ export async function activateVerification(
       activatedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-
-    const projectionRef = doc(db, 'verifications', verificationId, 'publishedProjection', 'data');
-    transaction.set(projectionRef, {
-      ownerUid,
-      title: data.config.title,
-      className,
-      classId: data.config.classId,
-      visibility: 'hidden',
-      status: 'active',
-      // Mirrored from the parent verification, same as classId/visibility —
-      // see PublishedProjectionDoc. No teacher toggle exists yet (M3F-05), so
-      // this is always false today; activation just keeps the mirror honest.
-      onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
-      // M3F-09: mirrored the same way — a teacher may have already toggled
-      // studentPdfEnabled while this verification was still a draft (no
-      // projection existed yet to mirror onto), so activation is what
-      // carries that choice into the projection for the first time.
-      studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
-      // VEX-02A: la modalità è rispecchiata nella proiezione così che il portale
-      // studente instradi il flusso senza leggere il documento verifica
-      // owner-only. In `equivalent_variants` `questions` sopra contiene SOLO le
-      // domande comuni (le alternative non sono mai leggibili dalla proiezione).
-      distributionMode,
-      // UI-VERIFICHE-06B: data e perimetro rispecchiati nella proiezione così che
-      // la card studente li mostri senza mai leggere il documento owner-only. Il
-      // perimetro è lo stesso identico dato dello snapshot: contiene solo titoli.
-      ...(verificationDate === null ? {} : { verificationDate }),
-      topicOutline,
-      questions: publicQuestions,
-      activatedAt: serverTimestamp(),
-    });
+    transaction.set(
+      doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
+      projection,
+    );
+    for (const { ref, next } of labelUpdates) {
+      // Valore esplicito, mai `increment` alla cieca e mai `max(0, n - 1)`: il
+      // contatore è stato validato sopra, e ripararlo in silenzio renderebbe
+      // definitivamente invisibile uno stato che nessuno ha spiegato.
+      transaction.update(ref, { draftUsageCount: next, updatedAt: serverTimestamp() });
+    }
   });
+
+  // FASE 2 — audit invariato: un solo evento, fuori dalla transazione, come per
+  // ogni altra attivazione. VDIF-04 non introduce un secondo audit.
   await setDoc(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'verification.activated',
@@ -616,6 +781,44 @@ export async function activateVerification(
     reason: null,
     timestamp: serverTimestamp(),
   });
+}
+
+/**
+ * Activates a draft verification. Alongside the existing owner-only
+ * `teacherSnapshot`, this also builds and writes `publishedProjection/data`
+ * — the safe, solution-free projection a student (M3-lite) reads to list the
+ * verification and render the student PDF (M3L-D). It never includes
+ * poolStorageRef, questionLocalId, questionIndexEntryId or soluzione.
+ *
+ * `teacherSnapshot.questions` embeds each question's full text, options AND
+ * solution at activation time, so an `active`/`closed` verification's own PDF
+ * downloads never re-read the current pool file from Storage (ADR-07). All
+ * questions — selected **and** differentiated alternatives — are read from
+ * Storage exactly ONCE, before the transaction opens.
+ *
+ * `visibility` is always reset to `hidden` on activation: publishing is a
+ * separate, explicit teacher action (see `setVerificationVisibility`).
+ *
+ * VDIF-04: preparazione e commit sono due funzioni separate
+ * (`prepareVerificationActivation` / `commitVerificationActivation`) perché il
+ * riepilogo di conferma deve essere derivato dagli stessi dati che verranno
+ * congelati. Questa resta la porta unica per chi non ha bisogno del riepilogo.
+ */
+export async function activateVerification(
+  verificationId: string,
+  classItem: ClassItem | null,
+  ownerUid: string,
+  db: Firestore,
+  storage?: FirebaseStorage,
+): Promise<void> {
+  const plan = await prepareVerificationActivation(
+    verificationId,
+    classItem,
+    ownerUid,
+    db,
+    storage,
+  );
+  await commitVerificationActivation(plan, db);
 }
 
 /**

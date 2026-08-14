@@ -93,7 +93,12 @@ function persistAssignment(db: Firestore) {
           }
         : { exists: false as const };
 
-      const decision = decideAssignment(existing, input.snapshot, input.randomIntBelow);
+      const decision = decideAssignment(
+        existing,
+        input.snapshot,
+        input.studentUid,
+        input.randomIntBelow,
+      );
       const now = FieldValue.serverTimestamp();
 
       if (decision.kind === 'reuse') {

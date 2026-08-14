@@ -10,16 +10,21 @@ import {
 } from './verificationVariantClient.js';
 
 /**
- * VEX-02A — risoluzione dell'avvio/ripresa dello svolgimento studente in base a
- * `distributionMode`, con **una sola fonte di verità** per gli order: la variante
- * assegnata dal server.
+ * VEX-02A / VDIF-04 — risoluzione dell'avvio e della ripresa dello svolgimento
+ * studente in base ad `assignmentMode`, con **una sola fonte di verità** per gli
+ * order: l'insieme assegnato dal server.
  *
- * - `same_questions`: flusso esistente, **nessuna** callable VEX (crea/riprende
- *   la submission client-side; le domande sono quelle della proiezione).
- * - `equivalent_variants`: invoca la callable `assignVerificationVariant` (che
- *   crea/recupera atomicamente l'assegnazione), usa **esclusivamente** le domande
- *   sanitizzate e `assignedQuestionOrders` restituiti, poi legge la submission per
- *   ripristinare le risposte salvate. Mai `teacherSnapshot`, mai alternative.
+ * - `same_questions`: flusso esistente, **nessuna** callable (crea/riprende la
+ *   submission client-side; le domande sono quelle della proiezione).
+ * - `server_resolved`: invoca la callable `assignVerificationVariant` (che crea o
+ *   recupera atomicamente l'assegnazione), usa **esclusivamente** le domande
+ *   sanitizzate e gli `assignedQuestionOrders` restituiti, poi legge la
+ *   submission per ripristinare le risposte salvate. Mai `teacherSnapshot`, mai
+ *   alternative non assegnate.
+ *
+ * Il secondo caso copre varianti equivalenti, differenziazione o entrambe senza
+ * distinguerle: il client non sa — e non deve sapere — quale dei due meccanismi
+ * abbia deciso il suo insieme di domande.
  *
  * La risposta della callable è validata **fail-closed**: modalità sconosciuta o
  * payload malformato ⇒ errore leggibile, **nessun** fallback a `same_questions`.
@@ -29,7 +34,7 @@ import {
 export interface ResolvedExam {
   submission: SubmissionDoc;
   questions: PublicVerificationQuestion[];
-  /** Presente solo in `equivalent_variants`: la variante assegnata (order canonici). */
+  /** Presente solo in `server_resolved`: l'insieme assegnato (order canonici). */
   assignedQuestionOrders?: number[];
 }
 
@@ -49,7 +54,7 @@ const FORBIDDEN_QUESTION_KEYS = ['soluzione', 'correctanswer', 'solution'];
  * qualsiasi campo soluzione. Qualsiasi anomalia ⇒ `VexExamError`.
  */
 export function validateAssignResponse(resp: AssignVariantResponse): PublicVerificationQuestion[] {
-  if (!resp || resp.distributionMode !== 'equivalent_variants') {
+  if (!resp || resp.assignmentMode !== 'server_resolved') {
     throw new VexExamError('Risposta di assegnazione non valida.');
   }
   if (!Array.isArray(resp.assignedQuestionOrders) || resp.assignedQuestionOrders.length === 0) {
@@ -114,7 +119,7 @@ export function productionVexExamDeps(functions: Functions, db: Firestore): VexE
 }
 
 /**
- * Risolve l'avvio/ripresa di una verifica `equivalent_variants`: callable →
+ * Risolve l'avvio o la ripresa di una verifica `server_resolved`: callable →
  * validazione fail-closed → lettura submission (per le risposte già salvate).
  * Usa **esclusivamente** le domande e gli order restituiti dal server.
  */
@@ -134,7 +139,7 @@ export async function resolveVexExam(
 
 /**
  * Avvio/ripresa `same_questions`: comportamento esistente invariato (crea la
- * submission se assente, poi la carica). **Nessuna** callable VEX.
+ * submission se assente, poi la carica). **Nessuna** callable.
  */
 export async function resolveSameQuestionsExam(
   item: StudentVerificationItem,

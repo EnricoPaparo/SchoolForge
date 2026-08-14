@@ -21,7 +21,7 @@ function item(over: Partial<StudentVerificationItem> = {}): StudentVerificationI
     studentPdfEnabled: false,
     ownerUid: 'owner',
     status: 'active',
-    distributionMode: 'equivalent_variants',
+    assignmentMode: 'server_resolved',
     verificationDate: null,
     topicOutline: null,
     ...over,
@@ -30,7 +30,7 @@ function item(over: Partial<StudentVerificationItem> = {}): StudentVerificationI
 
 function goodResponse(): AssignVariantResponse {
   return {
-    distributionMode: 'equivalent_variants',
+    assignmentMode: 'server_resolved',
     assignedQuestionOrders: [0, 1, 3],
     questions: [
       { order: 0, tipo: 'aperta', maxPoints: 3, testo: 'Q0' },
@@ -73,7 +73,7 @@ describe('validateAssignResponse (fail-closed)', () => {
 
   it('rejects the wrong distributionMode', () => {
     expect(() =>
-      validateAssignResponse({ ...goodResponse(), distributionMode: 'same_questions' as never }),
+      validateAssignResponse({ ...goodResponse(), assignmentMode: 'same_questions' as never }),
     ).toThrow(VexExamError);
   });
 
@@ -118,7 +118,7 @@ describe('resolveVexExam', () => {
 
   it('propagates a fail-closed error on a malformed response (no fallback)', async () => {
     const deps: VexExamDeps = {
-      assign: async () => ({ distributionMode: 'same_questions' }) as never,
+      assign: async () => ({ assignmentMode: 'same_questions' }) as never,
       load: async () => draftSubmission,
     };
     await expect(resolveVexExam(item(), 's1', deps)).rejects.toBeInstanceOf(VexExamError);

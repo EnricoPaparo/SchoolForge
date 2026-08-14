@@ -1,0 +1,189 @@
+{
+  "_readme": [
+    "VDIF-04 — vettori di conformità dell'algoritmo di risoluzione congelato",
+    "(roadmap §5.D.4, passi 1-3). Questo file è letto da DUE suite:",
+    "  apps/web/.../differentiationResolution.test.ts",
+    "  functions/src/verificationVariantCore.vdif.test.ts",
+    "I passi 1-3 esistono in due runtime perché il repository non ha un package",
+    "condiviso fra apps/web e functions (vedi il commento di modulo in",
+    "differentiationResolution.ts). Una divergenza fra le due implementazioni fa",
+    "fallire una delle due suite su questi stessi casi.",
+    "`expectedCommonOrders` è il risultato dei soli passi 1-3: i gruppi VEX (passo",
+    "4) non entrano qui, perché usano l'RNG e non sono deterministici."
+  ],
+  "cases": [
+    {
+      "name": "studente senza etichetta riceve la base",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [3],
+        "questions": [
+          { "baseOrder": 1, "choices": { "L1": { "kind": "alternative", "order": 3 } } }
+        ]
+      },
+      "labelId": null,
+      "expectedCommonOrders": [0, 1, 2]
+    },
+    {
+      "name": "etichetta senza scelta per quella domanda riceve la base",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [
+          { "labelId": "L1", "labelName": "Percorso A" },
+          { "labelId": "L2", "labelName": "Percorso B" }
+        ],
+        "differentiatedAlternativeOrders": [3],
+        "questions": [
+          { "baseOrder": 1, "choices": { "L1": { "kind": "alternative", "order": 3 } } }
+        ]
+      },
+      "labelId": "L2",
+      "expectedCommonOrders": [0, 1, 2]
+    },
+    {
+      "name": "scelta esplicita base non modifica nulla",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [],
+        "questions": [{ "baseOrder": 1, "choices": { "L1": { "kind": "base" } } }]
+      },
+      "labelId": "L1",
+      "expectedCommonOrders": [0, 1, 2]
+    },
+    {
+      "name": "sostituzione: la base esce e l'alternativa entra",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [3],
+        "questions": [
+          { "baseOrder": 1, "choices": { "L1": { "kind": "alternative", "order": 3 } } }
+        ]
+      },
+      "labelId": "L1",
+      "expectedCommonOrders": [0, 2, 3]
+    },
+    {
+      "name": "omissione: la base esce e nulla entra",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [],
+        "questions": [{ "baseOrder": 1, "choices": { "L1": { "kind": "none" } } }]
+      },
+      "labelId": "L1",
+      "expectedCommonOrders": [0, 2]
+    },
+    {
+      "name": "due etichette sulla stessa domanda: percorsi indipendenti",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [
+          { "labelId": "L1", "labelName": "Percorso A" },
+          { "labelId": "L2", "labelName": "Percorso B" }
+        ],
+        "differentiatedAlternativeOrders": [3, 4],
+        "questions": [
+          {
+            "baseOrder": 1,
+            "choices": {
+              "L1": { "kind": "alternative", "order": 3 },
+              "L2": { "kind": "alternative", "order": 4 }
+            }
+          }
+        ]
+      },
+      "labelId": "L2",
+      "expectedCommonOrders": [0, 2, 4]
+    },
+    {
+      "name": "sostituzione e omissione insieme per la stessa etichetta",
+      "commonQuestionOrders": [0, 1, 2, 3],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [4],
+        "questions": [
+          { "baseOrder": 1, "choices": { "L1": { "kind": "alternative", "order": 4 } } },
+          { "baseOrder": 3, "choices": { "L1": { "kind": "none" } } }
+        ]
+      },
+      "labelId": "L1",
+      "expectedCommonOrders": [0, 2, 4]
+    },
+    {
+      "name": "risultato sempre ordinato in modo crescente",
+      "commonQuestionOrders": [5, 1, 3],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [0],
+        "questions": [
+          { "baseOrder": 5, "choices": { "L1": { "kind": "alternative", "order": 0 } } }
+        ]
+      },
+      "labelId": "L1",
+      "expectedCommonOrders": [0, 1, 3]
+    },
+    {
+      "name": "tutte le comuni omesse: insieme vuoto, non un errore del passo 3",
+      "commonQuestionOrders": [0],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [],
+        "questions": [{ "baseOrder": 0, "choices": { "L1": { "kind": "none" } } }]
+      },
+      "labelId": "L1",
+      "expectedCommonOrders": []
+    }
+  ],
+  "errorCases": [
+    {
+      "name": "base non fra le comuni",
+      "commonQuestionOrders": [0, 1],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [],
+        "questions": [{ "baseOrder": 7, "choices": { "L1": { "kind": "none" } } }]
+      },
+      "labelId": "L1"
+    },
+    {
+      "name": "duplicazione: l'alternativa coincide con una comune già presente",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [2],
+        "questions": [
+          { "baseOrder": 1, "choices": { "L1": { "kind": "alternative", "order": 2 } } }
+        ]
+      },
+      "labelId": "L1"
+    },
+    {
+      "name": "duplicazione: due sostituzioni verso la stessa alternativa",
+      "commonQuestionOrders": [0, 1, 2],
+      "differentiation": {
+        "version": 1,
+        "labels": [{ "labelId": "L1", "labelName": "Percorso A" }],
+        "differentiatedAlternativeOrders": [3],
+        "questions": [
+          { "baseOrder": 1, "choices": { "L1": { "kind": "alternative", "order": 3 } } },
+          { "baseOrder": 2, "choices": { "L1": { "kind": "alternative", "order": 3 } } }
+        ]
+      },
+      "labelId": "L1"
+    }
+  ]
+}

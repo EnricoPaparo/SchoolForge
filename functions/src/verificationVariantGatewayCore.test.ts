@@ -84,7 +84,12 @@ function harness(over: Partial<AssignVariantDeps> = {}, seed?: { invalid?: boole
       const existing = cur
         ? { exists: true as const, assignedQuestionOrders: cur.assignedQuestionOrders }
         : { exists: false as const };
-      const decision = decideAssignment(existing, input.snapshot, input.randomIntBelow);
+      const decision = decideAssignment(
+        existing,
+        input.snapshot,
+        input.studentUid,
+        input.randomIntBelow,
+      );
       if (decision.kind === 'reuse') {
         return { assignedQuestionOrders: decision.assignedQuestionOrders, writes: 0 };
       }
@@ -182,7 +187,7 @@ describe('runAssignVariant — authorization (fail-closed)', () => {
       'failed_precondition',
     );
   });
-  it('rejects same_questions (wrong mode) with no writes', async () => {
+  it('rejects a verification that needs no server assignment, with no writes', async () => {
     const h = harness({
       loadVerification: async () =>
         verification({ teacherSnapshotRaw: { distributionMode: 'same_questions' } }),
@@ -207,7 +212,7 @@ describe('runAssignVariant — assignment result', () => {
   it('returns all common + one per group, sanitized, no solutions', async () => {
     const h = harness();
     const res = await runAssignVariant({ verificationId: VID }, h.deps);
-    expect(res.distributionMode).toBe('equivalent_variants');
+    expect(res.assignmentMode).toBe('server_resolved');
     expect(res.assignedQuestionOrders).toEqual([0, 1, 3]);
     expect(res.questions.map((q) => q.order)).toEqual([0, 1, 3]);
     for (const q of res.questions) expect('soluzione' in q).toBe(false);

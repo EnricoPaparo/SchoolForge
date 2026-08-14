@@ -159,6 +159,10 @@ describe('VDIF-02 — nessuna etichetta nei payload AI né nelle Functions', () 
       // persistere la configurazione differenziata. Il portale studente resta
       // escluso e le Functions continuano a non conoscere le etichette.
       'apps/web/src/features/repository/verifications/verificationsService.ts',
+      // VDIF-04 — l'impronta G20 nomina la collezione delle assegnazioni solo
+      // per spiegare che cosa serializza: non la legge, non la scrive, e non
+      // conosce alcun nome di etichetta.
+      'apps/web/src/features/repository/verifications/assignmentsFingerprint.ts',
       'apps/web/src/features/teacher/StudentsView.tsx',
       'apps/web/src/features/teacher/LabelsTab.tsx',
       'apps/web/src/features/teacher/DifferentiationVariantsDialog.tsx',

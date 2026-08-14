@@ -32,7 +32,7 @@ export class AssignedVariantError extends Error {
 
 type SnapshotLike = Pick<
   VerificationTeacherSnapshot,
-  'distributionMode' | 'questions' | 'commonQuestionOrders' | 'equivalentGroups'
+  'distributionMode' | 'questions' | 'commonQuestionOrders' | 'equivalentGroups' | 'differentiation'
 >;
 type SubmissionLike = Pick<SubmissionDoc, 'assignedQuestionOrders' | 'assignedAnswerKeys'>;
 
@@ -62,12 +62,18 @@ export function resolveAssignedQuestions(
     byOrder.set(question.order, question);
   }
 
-  if (mode === 'same_questions') {
+  // VDIF-04 — la presenza di `differentiation` rende la verifica **risolta dal
+  // server** anche in `same_questions`: lo snapshot contiene le alternative
+  // differenziate, e restituire tutte le domande significherebbe consegnare a
+  // chi corregge un insieme che a quello studente non è mai stato servito. È
+  // esattamente il caso in cui un ripiego «tutte le domande» sarebbe fail-open.
+  const isDifferentiated = snapshot.differentiation != null;
+  if (mode === 'same_questions' && !isDifferentiated) {
     // `assignedQuestionOrders` non è richiesto e viene ignorato.
     return sortByOrder(questions);
   }
 
-  // equivalent_variants — validazione fail-closed.
+  // Insieme assegnato dal server — validazione fail-closed.
   const assigned = submission.assignedQuestionOrders;
   if (!Array.isArray(assigned)) {
     throw new AssignedVariantError('Variante assegnata mancante per una verifica a varianti.');
@@ -92,8 +98,13 @@ export function resolveAssignedQuestions(
   }
 
   const common = snapshot.commonQuestionOrders;
-  const groups = snapshot.equivalentGroups;
-  if (!Array.isArray(common) || !Array.isArray(groups) || groups.length === 0) {
+  const groups = snapshot.equivalentGroups ?? [];
+  if (!Array.isArray(common) || !Array.isArray(groups)) {
+    throw new AssignedVariantError('Struttura dei gruppi equivalenti mancante o non valida.');
+  }
+  // Senza differenziazione una verifica `equivalent_variants` senza gruppi non
+  // ha senso: era già un errore prima di VDIF-04 e resta tale.
+  if (!isDifferentiated && groups.length === 0) {
     throw new AssignedVariantError('Struttura dei gruppi equivalenti mancante o non valida.');
   }
 
@@ -127,19 +138,28 @@ export function resolveAssignedQuestions(
       configuredOrders.add(order);
     }
   }
+  // VDIF-04 — le alternative differenziate vivono in `questions[]` ma non fra le
+  // comuni né dentro un gruppo: sono la quarta categoria ammessa, e solo se lo
+  // snapshot le dichiara.
+  const differentiatedAlternatives = new Set(
+    snapshot.differentiation?.differentiatedAlternativeOrders ?? [],
+  );
+  for (const order of differentiatedAlternatives) {
+    if (!Number.isInteger(order) || !byOrder.has(order) || configuredOrders.has(order)) {
+      throw new AssignedVariantError(
+        `Order alternativa differenziata non valido o già configurato altrove: ${order}.`,
+      );
+    }
+    configuredOrders.add(order);
+  }
   if (configuredOrders.size !== byOrder.size) {
     throw new AssignedVariantError(
-      'Lo snapshot contiene domande estranee a comuni e gruppi equivalenti.',
+      'Lo snapshot contiene domande estranee a comuni, gruppi equivalenti e alternative differenziate.',
     );
   }
 
-  // Tutte le comuni presenti.
-  for (const order of common) {
-    if (!assignedSet.has(order)) {
-      throw new AssignedVariantError(`Domanda comune ${order} assente dalla variante assegnata.`);
-    }
-  }
-  // Esattamente una alternativa per gruppo.
+  // Esattamente una alternativa per gruppo: vale sempre, differenziazione o no —
+  // la differenziazione non tocca i gruppi VEX (insiemi disgiunti).
   for (const group of groups) {
     const picked = group.alternativeOrders.filter((o) => assignedSet.has(o));
     if (picked.length !== 1) {
@@ -148,12 +168,41 @@ export function resolveAssignedQuestions(
       );
     }
   }
-  // Nessun order estraneo: dimensione attesa = comuni + gruppi.
-  const expectedSize = common.length + groups.length;
-  if (assignedSet.size !== expectedSize) {
-    throw new AssignedVariantError(
-      'La variante assegnata contiene order estranei o non coincide con comuni + gruppi.',
-    );
+
+  if (!isDifferentiated) {
+    // Senza differenziazione ogni comune è servita a tutti, e la dimensione
+    // attesa è esatta: comportamento VEX invariato.
+    for (const order of common) {
+      if (!assignedSet.has(order)) {
+        throw new AssignedVariantError(`Domanda comune ${order} assente dalla variante assegnata.`);
+      }
+    }
+    if (assignedSet.size !== common.length + groups.length) {
+      throw new AssignedVariantError(
+        'La variante assegnata contiene order estranei o non coincide con comuni + gruppi.',
+      );
+    }
+  } else {
+    // Con la differenziazione una comune può essere **omessa** o **sostituita**:
+    // la cardinalità non è più fissa. Ciò che resta vero, e che qui si verifica,
+    // è che ogni order assegnato appartenga a una delle tre categorie dichiarate
+    // dallo snapshot, e che l'insieme non sia vuoto.
+    if (assignedSet.size === 0) {
+      throw new AssignedVariantError('Variante assegnata vuota.');
+    }
+    const groupOrders = new Set(groups.flatMap((group) => group.alternativeOrders));
+    const commonSet = new Set(common);
+    for (const order of assignedSet) {
+      if (
+        !commonSet.has(order) &&
+        !groupOrders.has(order) &&
+        !differentiatedAlternatives.has(order)
+      ) {
+        throw new AssignedVariantError(
+          `Order assegnato estraneo a comuni, gruppi e alternative differenziate: ${order}.`,
+        );
+      }
+    }
   }
 
   // Mirror string server-only obbligatorio e identico all'insieme numerico.
@@ -181,4 +230,18 @@ export function isEquivalentVariantsSnapshot(
   snapshot: Pick<SnapshotLike, 'distributionMode'>,
 ): boolean {
   return normalizeDistributionMode(snapshot.distributionMode) === 'equivalent_variants';
+}
+
+/**
+ * VDIF-04 — `true` quando l'insieme assegnato è deciso dal **server** e
+ * `assignedQuestionOrders` è quindi obbligatorio: varianti equivalenti, oppure
+ * differenziazione, oppure entrambe.
+ */
+export function isServerResolvedSnapshot(
+  snapshot: Pick<SnapshotLike, 'distributionMode' | 'differentiation'>,
+): boolean {
+  return (
+    normalizeDistributionMode(snapshot.distributionMode) === 'equivalent_variants' ||
+    snapshot.differentiation != null
+  );
 }

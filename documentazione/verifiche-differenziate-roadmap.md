@@ -1998,3 +1998,181 @@ Gruppi equivalenti, varianti di domanda, composizione differenziata,
 attivazione delle verifiche, `assignedQuestionOrders`, qualunque modifica a VEX.
 `draftUsageCount` continua a esistere, difeso da service e Rules, e **nessun
 flusso lo muove ancora**: lo faranno VDIF-03/04.
+
+---
+
+## 20. VDIF-04 — che cosa è stato implementato davvero
+
+**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout.
+VDIF-05 e il Gate GVDIF restano **aperti**.
+
+### 20.1 Superficie realizzata
+
+| Area | File |
+|---|---|
+| Contratti congelati | `types/firestore.ts` — `DifferentiatedChoiceSnapshot`, `DifferentiatedQuestionSnapshot`, `VerificationDifferentiationSnapshot`, `VerificationLabelAssignmentSnapshot`, `VerificationAssignmentMode`; `teacherSnapshot.differentiation`/`labelAssignments`; `publishedProjection.assignmentMode` |
+| Guardie pure G03→G16 | `features/repository/verifications/differentiationSnapshot.ts` |
+| Passi 1–3 del risolutore (client) | `features/repository/verifications/differentiationResolution.ts` |
+| Impronta G20 | `features/repository/verifications/assignmentsFingerprint.ts` |
+| Routing e compatibilità legacy | `features/repository/verifications/assignmentMode.ts` |
+| Riepilogo derivato | `features/repository/verifications/activationSummary.ts` |
+| Limiti dimensionali G16b | `features/repository/verifications/verificationSnapshotLimits.ts` |
+| Attivazione | `features/repository/verifications/verificationsService.ts` — `prepareVerificationActivation` + `commitVerificationActivation` |
+| Risolutore autorevole (server) | `functions/src/verificationVariantCore.ts` — `parseResolvableSnapshot`, `resolveDifferentiatedOrders`, `isValidResolvedAssignment` |
+| Callable | `functions/src/verificationVariantGatewayCore.ts` (estesa, **nessuna nuova Function**) |
+| UI | `features/teacher/ActivationSummaryDialog.tsx` + CSS module; conferma di attivazione in `VerificationsView.tsx` |
+
+### 20.2 Ordine reale di letture e scritture
+
+```
+FASE 0 — preflight (prepareVerificationActivation, nessuna scrittura)
+  R1  getDoc  verifications/{id}                     -> G01, G02
+  R2  getDocs differentiationLabels                  ┐ solo se esiste
+  R3  getDocs studentLabelAssignments                │ config.differentiation:
+  R4  getDocs students                               │ una verifica senza
+  R4b getDocs questionIndex                          ┘ varianti non le esegue
+  ── G03..G16 pure su questi dati, snapshot e assegnazioni costruiti ──
+  R5  Storage: domande selezionate ∪ alternative     -> UNA lettura aggregata
+  R6  getDocs udas + lessons                         -> topicOutline autorevole
+  ── G16b su snapshot e proiezione interi ──
+
+FASE 0b — immediatamente prima della transazione
+  R3' getDocs studentLabelAssignments                -> G20 (impronta SHA-256)
+
+FASE 1 — transazione client Firestore
+  T1  transaction.get verifications/{id}             -> G17 (e quindi G21)
+  G18 questionRefs invariati       (sameQuestionRefs, già esistente)
+  G19 config.differentiation invariata (confronto canonico profondo)
+  T1b transaction.get differentiationLabels/{L} per ogni L congelata
+      -> esistenza, ownerUid, draftUsageCount intero >= 1
+  T2  transaction.update verifications/{id}  (status, visibility, teacherSnapshot)
+  T3  transaction.set    publishedProjection/data
+  T4  transaction.update differentiationLabels/{L}: draftUsageCount - 1
+
+FASE 2 — dopo la transazione
+  W1  setDoc auditEvents (verification.activated)    — invariato, uno solo
+```
+
+**Differenza dichiarata rispetto a §7.1.** G20 sta **fuori** dalla transazione e
+non dentro: una `getDocs` non è ammessa in una transazione Firestore client. La
+roadmap lo prevedeva già (§7.3), ma l'ordine di §7.1 lo elencava fra T1 e T2;
+qui è collocato dove può realmente stare, immediatamente prima di aprire la
+transazione. Il limite di questa guardia è dichiarato in
+`assignmentsFingerprint.ts` e resta quello di §7.3.
+
+### 20.3 Forma di snapshot e proiezione
+
+`teacherSnapshot` guadagna `differentiation` e `labelAssignments`, e porta
+`commonQuestionOrders` **anche in `same_questions`** quando c'è
+differenziazione: è l'insieme da cui il risolutore parte, e dedurlo sottraendo
+le alternative sarebbe una deduzione in più nel punto in cui un errore serve
+allo studente sbagliato la domanda sbagliata.
+
+`teacherSnapshot.questions[]` è l'**unione**: domande selezionate agli `order`
+`0..n-1` (identici a una verifica senza varianti) e alternative differenziate
+appese in coda, `n..n+m-1`. Ognuna con testo, opzioni, soluzione, difficoltà,
+`maxPoints` e `maxCharacters`: dopo l'attivazione il pool non viene mai più
+letto.
+
+`publishedProjection` guadagna **un solo** campo, `assignmentMode`, e **perde**
+le domande base differenziate: una base con almeno una scelta non-base non vi
+compare, altrimenti uno studente potrebbe leggerla anche quando gli è stata
+omessa o sostituita. Le alternative non vi compaiono mai.
+
+### 20.4 Confine dichiarato: una funzione, due runtime
+
+§5.D.4 chiede «una sola versione autorevole e pura» di
+`resolveDifferentiatedOrders`. Il repository **non ha un package condiviso** fra
+`apps/web` e `functions` (`@schoolforge/lesson-contract` è dipendenza della sola
+web app), e aggiungerne uno a `functions` significherebbe introdurre una
+dipendenza nuova nel bundle deployato — vietato dal perimetro di questo
+pacchetto. È la stessa frattura che VEX ha già oggi fra `assignVariant`
+(functions) e `resolveAssignedQuestions` (web).
+
+Che cosa è stato fatto invece di aggirarlo: l'algoritmo **completo** (passi 1–5,
+con l'RNG) esiste **solo** in `functions`, dove l'assegnazione viene realmente
+prodotta. I passi **1–3**, deterministici, esistono anche nella web app perché
+servono alle guardie G13/G15/G16 e al riepilogo, che girano nel client docente.
+Le due implementazioni sono legate da un **vettore di conformità condiviso**
+(`__tests__/fixtures/differentiationConformance.json`) eseguito da **entrambe**
+le suite: una divergenza fa fallire una delle due sullo stesso file di casi.
+
+### 20.5 Cost model reale
+
+| Evento | Letture | Scritture |
+|---|---|---|
+| Attivazione **senza** varianti | identiche a prima di VDIF-04: verifica + Storage + udas/lessons + 1 in transazione | 3: verifica + proiezione + audit |
+| Attivazione con `L` etichette | preflight: verifica + `differentiationLabels` + `studentLabelAssignments` + `students` + `questionIndex` + **1** lettura Storage (domande **∪** alternative) + udas/lessons; poi **1** rilettura di `studentLabelAssignments` per G20; in transazione **1 + L** | **3 + L**: verifica + proiezione + `L` decrementi (stesso commit) + audit |
+| Primo avvio studente | 1 callable + letture server-side già necessarie | **1**: `assignedQuestionOrders` + `assignedAnswerKeys` |
+| Replay / refresh | 1 callable + lettura submission | **0** |
+
+**Zero letture per alternativa**: le alternative entrano nella stessa chiamata
+Storage delle domande selezionate. **Zero letture per studente o per etichetta**
+durante il rendering: il riepilogo è derivato dai dati già caricati dal
+preflight. Nessun listener, nessun polling, **nessun indice nuovo**, nessuna
+nuova collezione, nessuna nuova callable, zero chiamate AI.
+
+**I retry transazionali rifatturano le letture.** Firestore ritenta la
+transazione quando un documento letto cambia prima del commit, e **ogni
+tentativo paga le proprie letture** (`1 + L`): il costo reale è
+`tentativi × (1 + L)`, con le scritture fatturate una sola volta. Le letture di
+preflight e quella di G20 **non** vengono rifatturate dal retry, perché stanno
+fuori dalla transazione. In pratica la contesa richiede due schede aperte dello
+stesso docente, quindi il numero di tentativi è ~1.
+
+### 20.6 Compatibilità
+
+**Verifiche legacy già attive.** Le proiezioni scritte prima di VDIF-04 non hanno
+`assignmentMode`: la loro modalità è derivata da `distributionMode` in **un solo
+punto**, `normalizeAssignmentMode`, e in nessun altro. Nessuna migrazione,
+nessuna riscrittura di documenti congelati, nessun ramo su `distributionMode`
+nella UI.
+
+**`resolveAssignedQuestions` non è più fail-open.** Prima di VDIF-04, in
+`same_questions` restituiva **tutte** le domande dello snapshot ignorando
+`assignedQuestionOrders`. Con la differenziazione lo snapshot contiene anche le
+alternative, quindi quel ramo avrebbe consegnato a chi corregge un insieme mai
+servito a quello studente. Ora la presenza di `differentiation` rende
+obbligatoria l'assegnazione, e la validazione ammette omissioni e sostituzioni
+senza smettere di essere chiusa. Il comportamento VEX e quello `same_questions`
+puro sono **invariati**.
+
+### 20.6b Correzioni di revisione (VDIF-04-REVIEW-FIX)
+
+Tre difetti del dialog di conferma, corretti sulla stessa PR.
+
+1. **Guardia anti doppio click asincrona.** `onConfirm` restituisce ora
+   `Promise<void>` e la guardia resta alzata fino al **completamento reale**
+   dell'attivazione. Prima si abbassava nel `finally` sincrono, quindi un
+   secondo click partiva mentre la prima attivazione era ancora in volo: G17
+   avrebbe bloccato la seconda, ma il docente avrebbe letto un errore che non
+   sapeva spiegare. Un rifiuto rilascia comunque la guardia — un fallimento non
+   deve lasciare il dialog bloccato per sempre — e dopo lo smontaggio non viene
+   toccato nulla.
+
+2. **`canConfirm`, contratto esplicito del chiamante.** «Conferma attivazione» è
+   disabilitato quando manca il piano, quando esiste un errore, quando il
+   riepilogo contiene blocker o quando l'attivazione è in corso. Il dialog non
+   poteva dedurlo da `summary`: `null` è legittimo su una verifica **senza**
+   varianti, e non distingue «nessuna differenziazione» da «il preflight è
+   fallito» — prima, dopo un errore di preflight, restava un pulsante che
+   sembrava funzionare ed era inerte al click.
+
+   Un fallimento del commit **scarta** inoltre il piano: G17/G18/G19/G20
+   significano che il mondo è cambiato, e riusare la stessa fotografia al
+   secondo click congelerebbe uno stato che sappiamo già stantio. La
+   riattivazione ripassa dal preflight.
+
+3. **Apertura dall'inizio.** `DialogShell` accetta una prop **opzionale e
+   retrocompatibile** `initialFocusRef`, applicata con `preventScroll`; il
+   riepilogo la punta sul proprio paragrafo introduttivo con `tabIndex={-1}`,
+   così il focus arriva a programma senza inserire un paragrafo nell'ordine di
+   Tab. Il dialog si apre a `scrollTop` 0 a tutte e quattro le larghezze, il
+   footer resta raggiungibile scorrendo, e focus trap, Escape e ripristino del
+   focus sul trigger sono invariati. Nessun altro dialog cambia comportamento.
+
+### 20.7 Che cosa VDIF-04 **non** fa
+
+Correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e l'audit di
+privacy end-to-end su tutte le superfici di §4: sono VDIF-05. Questo pacchetto
+rende una verifica differenziata **attivabile e avviabile**, e si ferma lì.

@@ -16,6 +16,36 @@ const mockListVerifications = vi.fn();
 const mockCreateVerification = vi.fn();
 const mockUpdateVerificationConfig = vi.fn();
 const mockActivateVerification = vi.fn();
+/*
+ * VDIF-04 — l'attivazione è ora in due tempi: `prepareVerificationActivation`
+ * esegue il preflight e restituisce il piano su cui il riepilogo è costruito,
+ * `commitVerificationActivation` committa **quello** piano. I test asseriscono
+ * quindi su entrambe, e su nessuna terza porta.
+ */
+const mockPrepareVerificationActivation = vi.fn();
+const mockCommitVerificationActivation = vi.fn();
+/** Piano minimo di una verifica senza varianti: nessun riepilogo, nessun blocker. */
+function makeActivationPlan(over: Record<string, unknown> = {}) {
+  return {
+    verificationId: 'ver-1',
+    ownerUid: 'owner-uid',
+    className: null,
+    preConfig: { questionRefs: [] },
+    teacherQuestions: [],
+    publicQuestions: [],
+    topicOutline: [],
+    verificationDate: null,
+    distributionMode: 'same_questions',
+    assignmentMode: 'same_questions',
+    commonQuestionOrders: [],
+    equivalentGroups: [],
+    differentiation: null,
+    assignmentsFingerprint: null,
+    blockers: [],
+    summary: null,
+    ...over,
+  };
+}
 const mockSetVerificationVisibility = vi.fn();
 const mockSetVerificationOnlineEnabled = vi.fn();
 const mockSetVerificationStudentPdfEnabled = vi.fn();
@@ -63,6 +93,8 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   createVerification: (...args: unknown[]) => mockCreateVerification(...args),
   updateVerificationConfig: (...args: unknown[]) => mockUpdateVerificationConfig(...args),
   activateVerification: (...args: unknown[]) => mockActivateVerification(...args),
+  prepareVerificationActivation: (...args: unknown[]) => mockPrepareVerificationActivation(...args),
+  commitVerificationActivation: (...args: unknown[]) => mockCommitVerificationActivation(...args),
   setVerificationVisibility: (...args: unknown[]) => mockSetVerificationVisibility(...args),
   setVerificationOnlineEnabled: (...args: unknown[]) => mockSetVerificationOnlineEnabled(...args),
   setVerificationStudentPdfEnabled: (...args: unknown[]) =>
@@ -397,6 +429,8 @@ function setupDefaults() {
   ]);
   mockUpdateVerificationConfig.mockResolvedValue(undefined);
   mockActivateVerification.mockResolvedValue(undefined);
+  mockPrepareVerificationActivation.mockResolvedValue(makeActivationPlan());
+  mockCommitVerificationActivation.mockResolvedValue(undefined);
   mockCloseVerification.mockResolvedValue(undefined);
   mockReopenVerification.mockResolvedValue(undefined);
   mockDeleteVerification.mockResolvedValue(undefined);
@@ -743,7 +777,7 @@ describe('VerificationsView', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
     await waitFor(() =>
-      expect(screen.getByRole('region', { name: /conferma attivazione/i })).toBeTruthy(),
+      expect(screen.getByRole('alertdialog', { name: /conferma attivazione/i })).toBeTruthy(),
     );
     expect(screen.getByText(/non sarà più modificabile/)).toBeTruthy();
   });
@@ -762,11 +796,11 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() =>
-      expect(mockActivateVerification).toHaveBeenCalledWith(
+      expect(mockPrepareVerificationActivation).toHaveBeenCalledWith(
         'ver-1',
         sampleClass,
         'owner-uid',
@@ -791,7 +825,7 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     // Back on the list: the draft detail is closed and the archive toolbar is
@@ -807,21 +841,58 @@ describe('VerificationsView', () => {
   it('stays in the detail with the error visible when activation fails', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
-    mockActivateVerification.mockRejectedValue(new Error('Attivazione fallita'));
+    mockCommitVerificationActivation.mockRejectedValue(new Error('Attivazione fallita'));
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
     fireEvent.click(screen.getByText('Verifica Algebra'));
     await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     // Error shown, still in the detail: the confirm panel remains open and the
     // list surface (new-verification title input) is absent.
     await waitFor(() => expect(screen.getByText('Attivazione fallita')).toBeTruthy());
-    expect(screen.getByRole('region', { name: /conferma attivazione/i })).toBeTruthy();
+    expect(screen.getByRole('alertdialog', { name: /conferma attivazione/i })).toBeTruthy();
     expect(screen.queryByPlaceholderText('Titolo nuova verifica')).toBeNull();
+  });
+
+  it('VDIF-04-REVIEW-FIX — dopo un errore concorrente il piano è scartato e serve un nuovo preflight', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    // G17/G18/G19/G20: il mondo è cambiato mentre il dialog era aperto.
+    mockCommitVerificationActivation.mockRejectedValue(
+      new Error('La selezione delle domande è cambiata durante l’attivazione. Riprova.'),
+    );
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
+    expect(mockPrepareVerificationActivation).toHaveBeenCalledTimes(1);
+
+    const dialog = screen.getByRole('alertdialog', { name: /conferma attivazione/i });
+    fireEvent.click(within(dialog).getAllByRole('button')[0]!);
+    await waitFor(() => expect(mockCommitVerificationActivation).toHaveBeenCalledTimes(1));
+
+    // Il piano stantio è stato scartato: la conferma è disabilitata e un altro
+    // click non ricommitta la stessa fotografia.
+    const confirm = within(
+      screen.getByRole('alertdialog', { name: /conferma attivazione/i }),
+    ).getAllByRole('button')[0] as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(true));
+    fireEvent.click(confirm);
+    expect(mockCommitVerificationActivation).toHaveBeenCalledTimes(1);
+
+    // Riprovare passa da un nuovo preflight.
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Annulla' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => expect(mockPrepareVerificationActivation).toHaveBeenCalledTimes(2));
   });
 
   it('publishes a hidden active verification to the student on toggle click', async () => {
@@ -883,7 +954,7 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
@@ -910,7 +981,7 @@ describe('VerificationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Seleziona tutte le domande filtrate' }));
 
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
@@ -941,7 +1012,7 @@ describe('VerificationsView', () => {
     expect(screen.getByLabelText('Punti totali selezionati').textContent).toMatch(/4 punti totali/);
 
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
@@ -994,7 +1065,7 @@ describe('VerificationsView', () => {
     expect(configArg.questionRefs).toHaveLength(1);
     expect(configArg.questionRefs[0].questionIndexEntryId).toBe('qi-1');
     // "Salva bozza" never activates the verification — no immutable snapshot.
-    expect(mockActivateVerification).not.toHaveBeenCalled();
+    expect(mockCommitVerificationActivation).not.toHaveBeenCalled();
   });
 
   it('VDIF-03 — salva le varianti soltanto insieme alla bozza esplicita', async () => {
@@ -1055,7 +1126,7 @@ describe('VerificationsView', () => {
     );
   });
 
-  it('VDIF-03 — una bozza differenziata resta salvabile ma non attivabile', async () => {
+  it('VDIF-04 — una bozza differenziata è attivabile e il riepilogo mostra i percorsi', async () => {
     setupDefaults();
     const differentiation = {
       version: 1 as const,
@@ -1087,14 +1158,123 @@ describe('VerificationsView', () => {
         updatedAt: null,
       },
     ]);
+    mockPrepareVerificationActivation.mockResolvedValue(
+      makeActivationPlan({
+        assignmentMode: 'server_resolved',
+        blockers: [],
+        summary: {
+          baseStudents: 3,
+          differentiatedStudents: 1,
+          unlabelledStudents: 3,
+          labelCount: 1,
+          substitutions: 0,
+          omissions: 1,
+          blockers: [],
+          rows: [
+            {
+              labelId: null,
+              labelName: 'Nessuna etichetta',
+              studentCount: 3,
+              questionCount: 4,
+              maxPoints: 8,
+              substitutions: 0,
+              omissions: 0,
+              blocker: null,
+            },
+            {
+              labelId: 'label-a',
+              labelName: 'Percorso A',
+              studentCount: 1,
+              questionCount: 3,
+              maxPoints: 6,
+              substitutions: 0,
+              omissions: 1,
+              blocker: null,
+            },
+          ],
+        },
+      }),
+    );
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
     fireEvent.click(screen.getByText('Verifica Algebra'));
 
     const activate = await waitFor(() => screen.getByRole('button', { name: /attiva verifica/i }));
-    expect(activate).toHaveProperty('disabled', true);
-    expect(screen.getByText(/attivazione sarà disponibile dopo la configurazione/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /salva bozza/i })).toBeTruthy();
+    expect(activate).toHaveProperty('disabled', false);
+    fireEvent.click(activate);
+
+    const dialog = await waitFor(() =>
+      screen.getByRole('alertdialog', { name: /conferma attivazione/i }),
+    );
+    // Il riepilogo mostra i nomi scelti dal docente e i conteggi per percorso.
+    expect(within(dialog).getByText('Percorso A')).toBeTruthy();
+    expect(within(dialog).getByText('Nessuna etichetta')).toBeTruthy();
+    expect(within(dialog).getByText('3 domande')).toBeTruthy();
+    expect(within(dialog).getByText('4 domande')).toBeTruthy();
+    expect(
+      (within(dialog).getByRole('button', { name: /conferma attivazione/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it('VDIF-04 — un blocker per percorso disabilita la conferma e ne mostra il motivo', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      }),
+    ]);
+    mockPrepareVerificationActivation.mockResolvedValue(
+      makeActivationPlan({
+        blockers: ['Percorso A: non riceverebbe alcuna domanda.'],
+        summary: {
+          baseStudents: 2,
+          differentiatedStudents: 1,
+          unlabelledStudents: 2,
+          labelCount: 1,
+          substitutions: 0,
+          omissions: 1,
+          blockers: ['Percorso A: non riceverebbe alcuna domanda.'],
+          rows: [
+            {
+              labelId: null,
+              labelName: 'Nessuna etichetta',
+              studentCount: 2,
+              questionCount: 1,
+              maxPoints: 2,
+              substitutions: 0,
+              omissions: 0,
+              blocker: null,
+            },
+            {
+              labelId: 'label-a',
+              labelName: 'Percorso A',
+              studentCount: 1,
+              questionCount: 0,
+              maxPoints: 0,
+              substitutions: 0,
+              omissions: 1,
+              blocker: 'Percorso A: non riceverebbe alcuna domanda.',
+            },
+          ],
+        },
+      }),
+    );
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    fireEvent.click(await waitFor(() => screen.getByRole('button', { name: /attiva verifica/i })));
+
+    const dialog = await waitFor(() =>
+      screen.getByRole('alertdialog', { name: /conferma attivazione/i }),
+    );
+    expect(within(dialog).getByText('Percorso A: non riceverebbe alcuna domanda.')).toBeTruthy();
+    const confirm = within(dialog).getByRole('button', {
+      name: /conferma attivazione/i,
+    }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(mockCommitVerificationActivation).not.toHaveBeenCalled();
   });
 
   it('shows persistent dirty and saved feedback for the draft', async () => {
@@ -1171,11 +1351,11 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() =>
-      expect(mockActivateVerification).toHaveBeenCalledWith(
+      expect(mockPrepareVerificationActivation).toHaveBeenCalledWith(
         'ver-1',
         sampleClass,
         'owner-uid',
@@ -1200,7 +1380,7 @@ describe('VerificationsView', () => {
     fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
 
     fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
-    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() =>
@@ -1215,7 +1395,13 @@ describe('VerificationsView', () => {
         {},
       ),
     );
-    expect(mockActivateVerification).toHaveBeenCalledWith('ver-1', null, 'owner-uid', {}, {});
+    expect(mockPrepareVerificationActivation).toHaveBeenCalledWith(
+      'ver-1',
+      null,
+      'owner-uid',
+      {},
+      {},
+    );
   });
 
   it('Salva bozza and Attiva verifica are adjacent, in this order, and neither is duplicated elsewhere', async () => {
@@ -1260,7 +1446,7 @@ describe('VerificationsView', () => {
       'Classe 3A',
     );
     expect(mockUpdateVerificationConfig).not.toHaveBeenCalled();
-    expect(mockActivateVerification).not.toHaveBeenCalled();
+    expect(mockCommitVerificationActivation).not.toHaveBeenCalled();
   });
 
   it('downloads the solutions PDF from a draft using the current saved selection, no Firestore write', async () => {

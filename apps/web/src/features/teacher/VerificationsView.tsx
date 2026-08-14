@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  activateVerification,
+  commitVerificationActivation,
+  prepareVerificationActivation,
+  type ActivationPlan,
   closeVerification,
   createVerification,
   deleteVerification,
@@ -135,6 +137,7 @@ import {
   type AutogroupRef,
 } from '../repository/verifications/vexAutogroup.js';
 import { VexBuilder, type VexBuilderQuestion } from './VexBuilder.js';
+import { ActivationSummaryDialog } from './ActivationSummaryDialog.js';
 import { DifferentiationVariantsDialog } from './DifferentiationVariantsDialog.js';
 import {
   listDifferentiationLabels,
@@ -418,6 +421,14 @@ export function VerificationsView() {
   const [showActivateConfirm, setShowActivateConfirm] = useState(false);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
+  /*
+   * VDIF-04 — il piano prodotto dal preflight. Il riepilogo mostrato nel dialog
+   * è derivato da **questo** oggetto, cioè dagli stessi dati che il commit
+   * congelerà: ricalcolarlo alla conferma significherebbe mostrare un riepilogo
+   * e attivarne un altro. `null` finché il preflight non è riuscito.
+   */
+  const [activationPlan, setActivationPlan] = useState<ActivationPlan | null>(null);
+  const [preparingActivation, setPreparingActivation] = useState(false);
 
   // ── Row actions: PDF / close / delete ────────────────────────────
   const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
@@ -1473,25 +1484,59 @@ export function VerificationsView() {
     }
   }
 
-  async function handleConfirmActivate() {
+  /**
+   * VDIF-04 — apre la conferma **dopo** aver eseguito il preflight, così il
+   * riepilogo mostra numeri autorevoli e non una stima. Salva prima la bozza,
+   * perché l'attivazione deve congelare esattamente ciò che è visibile nel
+   * builder anche se il docente non ha premuto «Salva bozza».
+   */
+  async function handleOpenActivateConfirm() {
     if (!selectedVer) return;
+    if (preparingActivation) return;
     if (questionParticipation === null) {
       setActivateError('La configurazione VEX e le varianti per etichetta sono in conflitto.');
+      setShowActivateConfirm(true);
       return;
     }
-    setActivating(true);
+    setPreparingActivation(true);
     setActivateError(null);
+    setActivationPlan(null);
     try {
+      await persistDraftForActivation();
+      const classItem = classes.find((c) => c.id === (editDraftClassId || null)) ?? null;
+      const plan = await prepareVerificationActivation(
+        selectedVer.id,
+        classItem,
+        ownerUid,
+        db,
+        storage,
+      );
+      setActivationPlan(plan);
+      setShowActivateConfirm(true);
+    } catch (err) {
+      setActivateError(err instanceof Error ? err.message : "Errore durante l'attivazione.");
+      setShowActivateConfirm(true);
+    } finally {
+      setPreparingActivation(false);
+    }
+  }
+
+  /**
+   * Salva la bozza con esattamente ciò che è visibile nel builder. Estratto dal
+   * vecchio `handleConfirmActivate` perché ora serve **prima** della conferma:
+   * il preflight deve leggere lo stato persistito, non quello del componente.
+   */
+  async function persistDraftForActivation(): Promise<void> {
+    if (!selectedVer) return;
+    {
       const title = editDraftTitle.trim();
       if (!title) {
-        setActivateError('Inserisci un titolo prima di attivare la verifica.');
-        return;
+        throw new Error('Inserisci un titolo prima di attivare la verifica.');
       }
       if (title.length > VERIFICATION_TITLE_MAX_LENGTH) {
-        setActivateError(
+        throw new Error(
           `Il titolo della verifica non può superare ${VERIFICATION_TITLE_MAX_LENGTH} caratteri.`,
         );
-        return;
       }
       const classId = editDraftClassId || null;
       const questionRefs = buildQuestionRefsFromSelection();
@@ -1530,9 +1575,21 @@ export function VerificationsView() {
       // Activation must freeze exactly what is currently visible in the draft
       // editor, even when the teacher did not click "Salva bozza" first.
       await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
-      const classItem = classes.find((c) => c.id === classId) ?? null;
-      await activateVerification(selectedVer.id, classItem, ownerUid, db, storage);
+    }
+  }
+
+  /**
+   * Conferma: committa il piano già preparato. Nessuna nuova lettura, nessun
+   * ricalcolo — è esattamente ciò che il riepilogo ha appena mostrato.
+   */
+  async function handleConfirmActivate() {
+    if (!selectedVer || !activationPlan) return;
+    setActivating(true);
+    setActivateError(null);
+    try {
+      await commitVerificationActivation(activationPlan, db);
       setShowActivateConfirm(false);
+      setActivationPlan(null);
       const updated = await listVerifications(ownerUid, db);
       setVerifications(updated);
       // Success: close the draft detail and return to the list, which now
@@ -1542,6 +1599,15 @@ export function VerificationsView() {
       setSelectedVer(null);
     } catch (err) {
       setActivateError(err instanceof Error ? err.message : "Errore durante l'attivazione.");
+      /*
+       * Il piano viene **scartato**. Un fallimento del commit significa quasi
+       * sempre che il mondo è cambiato sotto i piedi — G17 stato, G18 domande,
+       * G19 varianti, G20 assegnazioni — e riusare lo stesso piano al secondo
+       * click congelerebbe una fotografia che sappiamo già stantia. La
+       * riattivazione deve ripassare dal preflight, e il pulsante resta
+       * disabilitato finché non lo fa (`canConfirmActivation`).
+       */
+      setActivationPlan(null);
     } finally {
       setActivating(false);
     }
@@ -2094,11 +2160,19 @@ export function VerificationsView() {
       </p>
     );
 
-  // VDIF-03 costruisce e salva le varianti, mentre l'assegnazione atomica agli
-  // studenti arriva in VDIF-04. Fino ad allora una bozza differenziata non può
-  // essere attivata come verifica normale perdendo silenziosamente le varianti.
-  const differentiationNeedsDistribution = differentiation !== undefined;
-  const canActivate = selectedQuestionIds.size >= 1 && !differentiationNeedsDistribution;
+  // VDIF-04 — una bozza differenziata è attivabile: ciò che la ferma sono le
+  // guardie reali del preflight (G03→G16b) e i blocker per percorso mostrati nel
+  // riepilogo, non un rifiuto generico prima ancora di guardare i dati.
+  const canActivate = selectedQuestionIds.size >= 1;
+  /*
+   * VDIF-04-REVIEW-FIX — contratto esplicito della conferma. Il dialog non può
+   * dedurlo da `summary`: `null` è legittimo su una verifica senza varianti, e
+   * non distingue «nessuna differenziazione» da «il preflight è fallito». Senza
+   * piano, o con un errore in corso, il pulsante deve essere **disabilitato**,
+   * non apparentemente funzionante e inerte al click.
+   */
+  const canConfirmActivation =
+    activationPlan !== null && activateError === null && activationPlan.blockers.length === 0;
   const closeConfirmVerification = verifications.find((item) => item.id === closeConfirmId);
   const reopenConfirmVerification = verifications.find((item) => item.id === reopenConfirmId);
   const deleteConfirmVerification = verifications.find((item) => item.id === deleteConfirmId);
@@ -3033,7 +3107,7 @@ export function VerificationsView() {
                 })()}
 
               {/* Salva bozza + Attiva verifica — kept side by side, in this order */}
-              {!showActivateConfirm ? (
+              {
                 <div className={styles.draftActionArea}>
                   <div className={styles.draftActionBar}>
                     <button
@@ -3055,19 +3129,13 @@ export function VerificationsView() {
                     <button
                       type="button"
                       className="btn-success"
-                      disabled={!canActivate}
-                      onClick={() => setShowActivateConfirm(true)}
+                      disabled={!canActivate || preparingActivation}
+                      onClick={() => void handleOpenActivateConfirm()}
                       aria-label="Attiva verifica"
                     >
-                      Attiva verifica
+                      {preparingActivation ? 'Verifica in corso…' : 'Attiva verifica'}
                     </button>
                   </div>
-                  {differentiationNeedsDistribution && (
-                    <p className={styles.draftSaveFeedback} role="status">
-                      Le varianti sono salvabili in bozza. L’attivazione sarà disponibile dopo la
-                      configurazione della distribuzione agli studenti.
-                    </p>
-                  )}
                   <p
                     className={`${styles.draftSaveFeedback} ${
                       draftSaveStatus === 'error'
@@ -3087,40 +3155,25 @@ export function VerificationsView() {
                     {draftSaveStatus === 'idle' && 'Nessuna modifica da salvare'}
                   </p>
                 </div>
-              ) : (
-                <div
-                  className={styles.confirmPanel}
-                  role="region"
-                  aria-label="Conferma attivazione"
-                >
-                  <p className={styles.confirmMsg}>
-                    Dopo l&apos;attivazione la configurazione non sarà più modificabile. Continuare?
-                  </p>
-                  {activateError && (
-                    <p role="alert" className="text-error">
-                      {activateError}
-                    </p>
-                  )}
-                  <div className={styles.confirmRow}>
-                    <button
-                      type="button"
-                      className="btn-success"
-                      disabled={activating}
-                      onClick={() => void handleConfirmActivate()}
-                    >
-                      {activating ? 'Attivazione…' : 'Conferma attivazione'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowActivateConfirm(false)}
-                      disabled={activating}
-                    >
-                      Annulla
-                    </button>
-                  </div>
-                </div>
-              )}
+              }
             </>
+          )}
+
+          {showActivateConfirm && (
+            <ActivationSummaryDialog
+              summary={activationPlan?.summary ?? null}
+              questionCount={activationPlan?.publicQuestions.length ?? selectedQuestionIds.size}
+              canConfirm={canConfirmActivation}
+              busy={activating}
+              error={activateError}
+              onConfirm={handleConfirmActivate}
+              onCancel={() => {
+                if (activating) return;
+                setShowActivateConfirm(false);
+                setActivationPlan(null);
+                setActivateError(null);
+              }}
+            />
           )}
 
           {/* ── Consegne online monitor (M3F-05) — hidden entirely for draft (M3F-11C) ── */}

@@ -76,7 +76,7 @@ function vexItem(over: Record<string, unknown> = {}) {
     studentPdfEnabled: true,
     ownerUid: 'owner-uid',
     status: 'active',
-    distributionMode: 'equivalent_variants',
+    assignmentMode: 'server_resolved',
     ...over,
   };
 }
@@ -86,7 +86,7 @@ function sameItem(over: Record<string, unknown> = {}) {
     ...vexItem(over),
     id: 'ver-sq',
     title: 'Verifica SQ',
-    distributionMode: 'same_questions',
+    assignmentMode: 'same_questions',
   };
 }
 

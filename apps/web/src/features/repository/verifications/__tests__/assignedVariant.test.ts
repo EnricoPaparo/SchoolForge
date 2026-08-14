@@ -3,7 +3,11 @@ import type {
   VerificationTeacherQuestionSnapshot,
   VerificationTeacherSnapshot,
 } from '../../../../types/firestore.js';
-import { AssignedVariantError, resolveAssignedQuestions } from '../assignedVariant.js';
+import {
+  AssignedVariantError,
+  isServerResolvedSnapshot,
+  resolveAssignedQuestions,
+} from '../assignedVariant.js';
 
 function q(
   order: number,
@@ -181,5 +185,122 @@ describe('resolveAssignedQuestions', () => {
         assignedAnswerKeys: ['0', '1', '3'],
       }),
     ).toThrow(/estranee/);
+  });
+});
+
+/**
+ * VDIF-04 — uno snapshot differenziato è **risolto dal server** anche quando
+ * `distributionMode` è `same_questions`: restituire tutte le domande sarebbe
+ * fail-open, e consegnerebbe a chi corregge un insieme che a quello studente non
+ * è mai stato servito.
+ */
+describe('resolveAssignedQuestions — snapshot differenziato (VDIF-04)', () => {
+  const differentiatedSnapshot = {
+    distributionMode: 'same_questions' as const,
+    questions: [
+      {
+        order: 0,
+        tipo: 'aperta' as const,
+        maxPoints: 2,
+        difficolta: 2 as const,
+        testo: 'Q0',
+        soluzione: 'a',
+      },
+      {
+        order: 1,
+        tipo: 'aperta' as const,
+        maxPoints: 2,
+        difficolta: 2 as const,
+        testo: 'Q1',
+        soluzione: 'b',
+      },
+      {
+        order: 2,
+        tipo: 'aperta' as const,
+        maxPoints: 2,
+        difficolta: 2 as const,
+        testo: 'ALT',
+        soluzione: 'c',
+      },
+    ],
+    commonQuestionOrders: [0, 1],
+    equivalentGroups: [],
+    differentiation: {
+      version: 1 as const,
+      questions: [{ baseOrder: 1, choices: { L1: { kind: 'alternative' as const, order: 2 } } }],
+      labels: [{ labelId: 'L1', labelName: 'Percorso A' }],
+      differentiatedAlternativeOrders: [2],
+    },
+  };
+
+  it('restituisce solo le domande assegnate, non tutto lo snapshot', () => {
+    const result = resolveAssignedQuestions(differentiatedSnapshot, {
+      assignedQuestionOrders: [0, 2],
+      assignedAnswerKeys: ['0', '2'],
+    });
+    expect(result.map((q) => q.order)).toEqual([0, 2]);
+  });
+
+  it('lo studente senza etichetta riceve la base, non l’alternativa', () => {
+    const result = resolveAssignedQuestions(differentiatedSnapshot, {
+      assignedQuestionOrders: [0, 1],
+      assignedAnswerKeys: ['0', '1'],
+    });
+    expect(result.map((q) => q.order)).toEqual([0, 1]);
+  });
+
+  it('un’omissione è ammessa: la cardinalità non è più fissa', () => {
+    const result = resolveAssignedQuestions(differentiatedSnapshot, {
+      assignedQuestionOrders: [0],
+      assignedAnswerKeys: ['0'],
+    });
+    expect(result.map((q) => q.order)).toEqual([0]);
+  });
+
+  it('fail-closed: assegnazione mancante su uno snapshot differenziato', () => {
+    expect(() =>
+      resolveAssignedQuestions(differentiatedSnapshot, {
+        assignedQuestionOrders: undefined,
+        assignedAnswerKeys: undefined,
+      }),
+    ).toThrow(AssignedVariantError);
+  });
+
+  it('fail-closed: assegnazione vuota', () => {
+    expect(() =>
+      resolveAssignedQuestions(differentiatedSnapshot, {
+        assignedQuestionOrders: [],
+        assignedAnswerKeys: [],
+      }),
+    ).toThrow(AssignedVariantError);
+  });
+
+  it('fail-closed: order estraneo a comuni, gruppi e alternative dichiarate', () => {
+    const tampered = {
+      ...differentiatedSnapshot,
+      differentiation: {
+        ...differentiatedSnapshot.differentiation,
+        differentiatedAlternativeOrders: [],
+      },
+    };
+    expect(() =>
+      resolveAssignedQuestions(tampered, {
+        assignedQuestionOrders: [0, 2],
+        assignedAnswerKeys: ['0', '2'],
+      }),
+    ).toThrow(AssignedVariantError);
+  });
+
+  it('isServerResolvedSnapshot copre VEX, differenziazione ed entrambe', () => {
+    expect(isServerResolvedSnapshot(differentiatedSnapshot)).toBe(true);
+    expect(
+      isServerResolvedSnapshot({
+        distributionMode: 'equivalent_variants',
+        differentiation: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      isServerResolvedSnapshot({ distributionMode: 'same_questions', differentiation: undefined }),
+    ).toBe(false);
   });
 });

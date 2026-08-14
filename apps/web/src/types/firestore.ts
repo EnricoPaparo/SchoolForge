@@ -601,6 +601,76 @@ export type VerificationDifferentiationConfig = {
 };
 
 /**
+ * VDIF-04 — scelta **congelata** all'attivazione. Differisce dal contratto di
+ * bozza per un solo motivo, decisivo: l'alternativa è indicata dal suo `order`
+ * dentro `teacherSnapshot.questions[]`, non da un `questionIndexEntryId`. Dopo
+ * l'attivazione il pool non viene mai più letto (ADR-07), quindi un riferimento
+ * all'indice corrente sarebbe un puntatore verso un mondo che può cambiare.
+ */
+export type DifferentiatedChoiceSnapshot =
+  | { kind: 'base' }
+  /** `order` (0-based) dentro `teacherSnapshot.questions[]`. */
+  | { kind: 'alternative'; order: number }
+  | { kind: 'none' };
+
+/** VDIF-04 — varianti congelate di una singola domanda comune. */
+export type DifferentiatedQuestionSnapshot = {
+  /** `order` (0-based) della domanda base dentro `questions[]`. */
+  baseOrder: number;
+  /** Chiave = `labelId`. Etichetta assente ⇒ domanda base. */
+  choices: Record<string, DifferentiatedChoiceSnapshot>;
+};
+
+/**
+ * VDIF-04 — blocco differenziato congelato dentro `teacherSnapshot`, che le
+ * Rules rendono immutabile dopo l'attivazione. Owner-only: non esiste alcuna
+ * proiezione, alcun mirror e alcun percorso student-readable che lo tocchi.
+ */
+export type VerificationDifferentiationSnapshot = {
+  version: 1;
+  questions: DifferentiatedQuestionSnapshot[];
+  /**
+   * Etichette coinvolte, con il **nome al momento dell'attivazione**. Rende lo
+   * snapshot autosufficiente sia per risolvere (`labelId`) sia per rileggere la
+   * configurazione storica (`labelName`), senza alcuna dipendenza dalla
+   * collezione live: una verifica attiva resta eseguibile e leggibile anche
+   * dopo la rinomina o l'eliminazione dell'etichetta.
+   */
+  labels: { labelId: string; labelName: string }[];
+  /**
+   * `order` delle alternative introdotte dalla differenziazione: sono presenti
+   * in `questions[]` (quindi con testo e soluzione congelati) ma **non** in
+   * `commonQuestionOrders` e **non** in alcun `equivalentGroups[].alternativeOrders`.
+   */
+  differentiatedAlternativeOrders: number[];
+};
+
+/**
+ * VDIF-04 — mappa studente → etichetta congelata nella stessa transazione.
+ * È ciò che rende vero il principio 15: la risoluzione usa **questa** mappa,
+ * mai `studentLabelAssignments` corrente. Cambiare l'etichetta di uno studente
+ * dopo l'attivazione non ha effetto — non perché qualcuno lo impedisca, ma
+ * perché nessuno la legge più.
+ */
+export type VerificationLabelAssignmentSnapshot = {
+  version: 1;
+  /** `studentUid` → `labelId`, letta al momento dell'attivazione. Owner-only. */
+  byStudentUid: Record<string, string>;
+};
+
+/**
+ * VDIF-04 — percorso **tecnico** con cui il client studente ottiene le domande
+ * da svolgere. Dice COME, mai PERCHÉ, ed è identico per ogni studente della
+ * classe. È l'unico discriminante nuovo che la proiezione pubblica riceve.
+ *
+ * Un booleano `differentiated` è stato scartato deliberatamente: un campo con
+ * quel nome è una **dichiarazione semantica** su un documento che lo studente
+ * legge, e afferma che questa verifica *è* differenziata — esattamente ciò che
+ * il perimetro privacy tiene fuori dal lato studente.
+ */
+export type VerificationAssignmentMode = 'same_questions' | 'server_resolved';
+
+/**
  * UI-VERIFICHE-06B — una UDA del perimetro didattico della verifica. Contratto
  * **chiuso**: solo titoli, mai identificativi, ordini, testi, soluzioni o
  * metadati tecnici (vedi `topicOutline.ts` per l'elenco esplicito di ciò che è
@@ -716,10 +786,27 @@ export type VerificationTeacherSnapshot = {
    * legacy ⇒ `same_questions`. In `same_questions` `equivalentGroups` è ignorato.
    */
   distributionMode?: VerificationDistributionMode;
-  /** VEX: order (0-based) delle domande comuni (assegnate a tutti). */
+  /**
+   * `order` (0-based) delle domande **comuni**: quelle che ogni studente riceve
+   * prima che la differenziazione le sostituisca o le ometta.
+   *
+   * VEX lo popola in `equivalent_variants`. VDIF-04 lo popola **anche** in
+   * `same_questions` quando esiste `differentiation`: il risolutore parte da
+   * questo insieme, e senza di esso dovrebbe dedurlo sottraendo le alternative
+   * dalle domande — una deduzione in più in un punto in cui un errore serve
+   * allo studente sbagliato la domanda sbagliata.
+   */
   commonQuestionOrders?: number[];
-  /** VEX: presente solo in `equivalent_variants`. */
+  /** VEX: presente solo in `equivalent_variants`; `[]` quando non ci sono gruppi. */
   equivalentGroups?: EquivalentGroupSnapshot[];
+  /**
+   * VDIF-04 — configurazione differenziata congelata. Assente su ogni verifica
+   * senza varianti: la sua sola presenza è ciò che rende la verifica risolta
+   * dal server.
+   */
+  differentiation?: VerificationDifferentiationSnapshot;
+  /** VDIF-04 — assegnazioni congelate. Presente se e solo se `differentiation` lo è. */
+  labelAssignments?: VerificationLabelAssignmentSnapshot;
   /**
    * Absent on verifications activated before this field existed (legacy) —
    * those keep resolving PDFs from `questionRefs` + the current Storage
@@ -862,6 +949,18 @@ export type PublishedProjectionDoc = {
    * domande effettivamente assegnate arrivano esclusivamente dalla callable.
    */
   distributionMode?: VerificationDistributionMode;
+  /**
+   * VDIF-04 — **unico** campo su cui il client studente instrada l'avvio.
+   * `same_questions`: le domande sono già tutte qui, nessuna chiamata al server.
+   * `server_resolved`: l'insieme assegnato è deciso dal server e le domande
+   * arrivano dalla callable — è il valore che VEX produrrebbe da solo, e non
+   * afferma nulla sulla natura della verifica.
+   *
+   * Assente sulle proiezioni scritte prima di VDIF-04 ⇒ derivato in lettura da
+   * `distributionMode`, in un **solo** punto (`normalizeAssignmentMode`), così
+   * la compatibilità legacy non si sparpaglia in rami sulla UI.
+   */
+  assignmentMode?: VerificationAssignmentMode;
   /**
    * UI-VERIFICHE-06B — giorno didattico (`YYYY-MM-DD`), rispecchiato
    * all'attivazione come `className`/`title`: la card studente lo mostra senza
