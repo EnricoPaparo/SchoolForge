@@ -635,7 +635,14 @@ describe('validateForActivation', () => {
     expect(result.errors.some((e) => e.includes('domanda'))).toBe(true);
   });
 
-  it('VDIF-03 fail-closed — una bozza differenziata non è attivabile prima della distribuzione', () => {
+  /*
+   * VDIF-04 — il blocco temporaneo di VDIF-03 è **rimosso**: una bozza
+   * differenziata è ora attivabile, e ciò che la ferma sono le guardie reali
+   * G03→G21, non un rifiuto generico in `validateForActivation`. Questo test
+   * difende esattamente quella rimozione: la validazione di forma non deve più
+   * conoscere la differenziazione.
+   */
+  it('VDIF-04 — una bozza differenziata supera la validazione di forma', () => {
     const result = validateForActivation({
       ...VALID_CONFIG,
       differentiation: {
@@ -650,8 +657,8 @@ describe('validateForActivation', () => {
         ],
       },
     });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContainEqual(expect.stringMatching(/differenziata.*bozza/i));
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
   });
 
   it('POOL-SIMPLE-02 — accepts difficoltà 5 with maxPoints 5', () => {
