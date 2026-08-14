@@ -588,6 +588,77 @@ student-readable porti un campo di etichetta, che il portale studente non nomini
 mai le due collezioni, che le Functions non le conoscano e che solo una lista
 chiusa di moduli le nomini.
 
+### 8e-ter. Attivazione di una verifica differenziata (VDIF-04 — implementato)
+
+**Che cosa viene congelato, e dove.** `teacherSnapshot` guadagna
+`differentiation` (scelte per etichetta, espresse in `order`, più i **nomi**
+delle etichette al momento dell'attivazione) e `labelAssignments` (mappa
+`studentUid` → `labelId`). Entrambi vivono dentro `teacherSnapshot`, che le
+Rules rendono **immutabile** dopo l'attivazione: nessuna regola di update
+post-`draft` include `teacherSnapshot` fra le `affectedKeys()` consentite (§3.2).
+
+**Perché il nome dell'etichetta è congelato.** Rende lo snapshot
+**autosufficiente**: una verifica attiva resta eseguibile e leggibile anche dopo
+che l'etichetta è stata rinominata o eliminata, e nessun percorso che riguardi
+una verifica non più in bozza legge `differentiationLabels` o
+`studentLabelAssignments`. L'alternativa — non congelare il nome e bloccare
+l'eliminazione per ogni verifica che l'ha usata — renderebbe le etichette
+**immortali**. Un test strutturale verifica che i moduli che servono verifiche
+non-bozza non importino quei service, e che le Functions non li conoscano.
+
+**Che cosa raggiunge lo studente.** Un solo campo nuovo sulla proiezione
+pubblica: `assignmentMode`, con due soli valori (`same_questions`,
+`server_resolved`). Dice **come** arrivano le domande, mai **perché**, ed è lo
+stesso valore che VEX produrrebbe da solo. Un booleano `differentiated` è stato
+scartato deliberatamente: sarebbe una dichiarazione semantica su un documento
+che lo studente legge.
+
+La proiezione **perde** invece le domande base differenziate: una base con almeno
+una scelta non-base non vi compare, altrimenti uno studente potrebbe leggerla
+anche quando gli è stata omessa o sostituita. Le alternative non vi compaiono
+mai: arrivano **solo** dalla callable, e solo se effettivamente assegnate.
+
+**Rules invariate, e perché.** `publishedProjection` è già owner-write
+(`allow write: if isOwner()`) e **non** ha un contratto chiuso di chiavi:
+aggiungere `assignmentMode` non richiede alcuna modifica alle Rules, e nessun
+documento owner-only diventa leggibile. Il perimetro di lettura resta quello di
+M3L-D (classe più `visibility == 'public'`).
+
+**Guardie fail-closed all'attivazione.** G01→G16b sul preflight: stato, forma e
+versione della configurazione, esistenza e ownership delle etichette,
+assegnazioni verso studenti inesistenti *ignorate* e verso studenti di altro
+docente *bloccanti*, base ancora selezionata, alternativa esistente nell'indice
+corrente, stessa lezione della base, non già selezionata, nessuna duplicazione
+nella verifica risolta, nessun percorso con zero domande, punteggio massimo
+intero e positivo, dimensione di snapshot e proiezione entro il limite
+conservativo. G17→G21 dentro la transazione: stato ancora `draft`,
+`questionRefs` invariati, configurazione varianti invariata, impronta delle
+assegnazioni invariata, ogni etichetta congelata riletta con `draftUsageCount`
+intero ≥ 1. Nessun dato malformato viene corretto, potato o normalizzato in
+silenzio.
+
+**Atomicità dei contatori.** Stato, snapshot, proiezione e il decremento di
+`draftUsageCount` di **ogni** etichetta congelata stanno nello **stesso commit**.
+Se l'attivazione committasse e il decremento fallisse subito dopo, l'etichetta
+resterebbe bloccata per sempre da una bozza che non esiste più. Il valore scritto
+è **esplicito**, mai `increment` alla cieca e mai `max(0, n − 1)`.
+
+**Limite dichiarato di G20.** La transazione non può rileggere
+`studentLabelAssignments`: una `getDocs` non è ammessa dentro una transazione
+Firestore client. Le assegnazioni si confrontano quindi tramite un'impronta
+SHA-256 canonica calcolata due volte, la seconda **immediatamente prima** di
+aprire la transazione. Chiude una finestra stretta — due schede aperte dello
+stesso docente — e **non** sostituisce una serializzabilità completa, che
+richiederebbe una Cloud Function di attivazione: costo sproporzionato rispetto al
+rischio in un modello single-owner.
+
+**La callable non conosce etichette.** `assignVerificationVariant` risolve
+esclusivamente da `teacherSnapshot` e non legge né `differentiationLabels` né
+`studentLabelAssignments`. La risposta porta `assignmentMode`,
+`assignedQuestionOrders` e le sole domande assegnate: mai soluzioni, mai
+alternative non assegnate, mai un `labelId`, un nome di etichetta o un motivo
+della selezione.
+
 ---
 
 ## 8c. Chiusura e consegna forzata dal docente (FORCE-SUBMIT-01 — implementato)

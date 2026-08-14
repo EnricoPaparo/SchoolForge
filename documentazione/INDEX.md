@@ -97,6 +97,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/vdif-00-prototipo-visivo.md](evidenze/vdif-00-prototipo-visivo.md) — evidenze visive del prototipo VDIF-00 a 1440/1024/390/320 px. **Gate grafico PENDING** fino alla conferma umana.
 - [evidenze/vdif-01-smoke.md](evidenze/vdif-01-smoke.md) — smoke dei componenti reali della scheda Etichette (VDIF-01) a 1440/1024/390/320 px. Nessun deploy.
 - [evidenze/vdif-02-smoke.md](evidenze/vdif-02-smoke.md) — smoke dei componenti reali del controllo «Etichetta» nella card studente (VDIF-02) a 1440/1024/390/320 px. Nessun deploy.
+- [evidenze/vdif-04-smoke.md](evidenze/vdif-04-smoke.md) — smoke del riepilogo di attivazione differenziata (VDIF-04) a 1440/1024/390/320 px. Nessun deploy.
 - [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md) — approvazione HG-M5-1/2/3/4 del 17 luglio 2026: modello/listino pinned, ceiling costi e retention; non autorizza provider, secret, TTL o deploy.
 - [evidenze/G2-M1.md](evidenze/G2-M1.md) — gate G2: evidenze milestone M1.
 - [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) — smoke test MVP docente cartaceo (M1+M2, emulatori locali).
