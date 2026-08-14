@@ -1599,6 +1599,15 @@ export function VerificationsView() {
       setSelectedVer(null);
     } catch (err) {
       setActivateError(err instanceof Error ? err.message : "Errore durante l'attivazione.");
+      /*
+       * Il piano viene **scartato**. Un fallimento del commit significa quasi
+       * sempre che il mondo è cambiato sotto i piedi — G17 stato, G18 domande,
+       * G19 varianti, G20 assegnazioni — e riusare lo stesso piano al secondo
+       * click congelerebbe una fotografia che sappiamo già stantia. La
+       * riattivazione deve ripassare dal preflight, e il pulsante resta
+       * disabilitato finché non lo fa (`canConfirmActivation`).
+       */
+      setActivationPlan(null);
     } finally {
       setActivating(false);
     }
@@ -2155,6 +2164,15 @@ export function VerificationsView() {
   // guardie reali del preflight (G03→G16b) e i blocker per percorso mostrati nel
   // riepilogo, non un rifiuto generico prima ancora di guardare i dati.
   const canActivate = selectedQuestionIds.size >= 1;
+  /*
+   * VDIF-04-REVIEW-FIX — contratto esplicito della conferma. Il dialog non può
+   * dedurlo da `summary`: `null` è legittimo su una verifica senza varianti, e
+   * non distingue «nessuna differenziazione» da «il preflight è fallito». Senza
+   * piano, o con un errore in corso, il pulsante deve essere **disabilitato**,
+   * non apparentemente funzionante e inerte al click.
+   */
+  const canConfirmActivation =
+    activationPlan !== null && activateError === null && activationPlan.blockers.length === 0;
   const closeConfirmVerification = verifications.find((item) => item.id === closeConfirmId);
   const reopenConfirmVerification = verifications.find((item) => item.id === reopenConfirmId);
   const deleteConfirmVerification = verifications.find((item) => item.id === deleteConfirmId);
@@ -3145,9 +3163,10 @@ export function VerificationsView() {
             <ActivationSummaryDialog
               summary={activationPlan?.summary ?? null}
               questionCount={activationPlan?.publicQuestions.length ?? selectedQuestionIds.size}
+              canConfirm={canConfirmActivation}
               busy={activating}
               error={activateError}
-              onConfirm={() => void handleConfirmActivate()}
+              onConfirm={handleConfirmActivate}
               onCancel={() => {
                 if (activating) return;
                 setShowActivateConfirm(false);

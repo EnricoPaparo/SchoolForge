@@ -61,15 +61,31 @@ Misurate nel DOM reale a ciascuna delle quattro larghezze:
   passati dal preflight, e nessuna stringa dell'interfaccia contiene un esempio
   diagnostico.
 
-## 4. Comportamento noto, dichiarato
+## 4. Apertura del dialog (VDIF-04-REVIEW-FIX)
 
-A **320 px** il dialog si apre già scorso verso il footer. Non è un difetto di
-questo componente: `DialogShell` porta il focus sul primo elemento focalizzabile
-al montaggio (qui «Annulla», perché «Conferma attivazione» è disabilitata dal
-blocker) e il browser lo porta in vista. È il comportamento condiviso da ogni
-dialog dell'applicazione dalla sua introduzione; cambiarlo tocca la primitiva
-comune e non appartiene a questo pacchetto. Il contenuto resta interamente
-raggiungibile scorrendo, e a 390 px il riepilogo entra per intero senza scroll.
+La prima versione si apriva **già scorsa sul footer** alle larghezze strette:
+`DialogShell` portava il focus sul primo elemento focalizzabile al montaggio, e
+il browser lo scorreva in vista. Il docente vedeva la fine di un riepilogo di cui
+non aveva ancora letto l'inizio.
+
+Correzione: `DialogShell` accetta ora una prop **opzionale e retrocompatibile**
+`initialFocusRef`, applicata con `preventScroll`. Il riepilogo la punta sul
+proprio paragrafo introduttivo, reso focalizzabile con `tabIndex={-1}` — riceve
+il focus a programma **senza** entrare nell'ordine di Tab. Nessun altro dialog
+cambia comportamento.
+
+Misure con Chromium reale, a tutte e quattro le larghezze:
+
+| Larghezza | `scrollTop` all'apertura | Titolo visibile | Focus | Tab reale porta a | Footer dopo lo scroll |
+|---|---|---|---|---|---|
+| 1440 | 0 | sì | `<p tabindex="-1">` | pulsante | visibile |
+| 1024 | 0 | sì | `<p tabindex="-1">` | pulsante | visibile |
+| 390 | 0 | sì | `<p tabindex="-1">` | pulsante | visibile |
+| 320 | 0 | sì | `<p tabindex="-1">` | pulsante | visibile (`scrollTop` 527 su 1143) |
+
+A 320 px il contenuto resta più alto della viewport — è inevitabile con quattro
+percorsi — ma si apre dall'inizio e il footer è raggiungibile scorrendo. A 390 px
+il riepilogo entra quasi per intero (866 px di contenuto su 820 di dialog).
 
 ## 5. Che cosa questo smoke non dimostra
 

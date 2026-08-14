@@ -2137,6 +2137,40 @@ obbligatoria l'assegnazione, e la validazione ammette omissioni e sostituzioni
 senza smettere di essere chiusa. Il comportamento VEX e quello `same_questions`
 puro sono **invariati**.
 
+### 20.6b Correzioni di revisione (VDIF-04-REVIEW-FIX)
+
+Tre difetti del dialog di conferma, corretti sulla stessa PR.
+
+1. **Guardia anti doppio click asincrona.** `onConfirm` restituisce ora
+   `Promise<void>` e la guardia resta alzata fino al **completamento reale**
+   dell'attivazione. Prima si abbassava nel `finally` sincrono, quindi un
+   secondo click partiva mentre la prima attivazione era ancora in volo: G17
+   avrebbe bloccato la seconda, ma il docente avrebbe letto un errore che non
+   sapeva spiegare. Un rifiuto rilascia comunque la guardia — un fallimento non
+   deve lasciare il dialog bloccato per sempre — e dopo lo smontaggio non viene
+   toccato nulla.
+
+2. **`canConfirm`, contratto esplicito del chiamante.** «Conferma attivazione» è
+   disabilitato quando manca il piano, quando esiste un errore, quando il
+   riepilogo contiene blocker o quando l'attivazione è in corso. Il dialog non
+   poteva dedurlo da `summary`: `null` è legittimo su una verifica **senza**
+   varianti, e non distingue «nessuna differenziazione» da «il preflight è
+   fallito» — prima, dopo un errore di preflight, restava un pulsante che
+   sembrava funzionare ed era inerte al click.
+
+   Un fallimento del commit **scarta** inoltre il piano: G17/G18/G19/G20
+   significano che il mondo è cambiato, e riusare la stessa fotografia al
+   secondo click congelerebbe uno stato che sappiamo già stantio. La
+   riattivazione ripassa dal preflight.
+
+3. **Apertura dall'inizio.** `DialogShell` accetta una prop **opzionale e
+   retrocompatibile** `initialFocusRef`, applicata con `preventScroll`; il
+   riepilogo la punta sul proprio paragrafo introduttivo con `tabIndex={-1}`,
+   così il focus arriva a programma senza inserire un paragrafo nell'ordine di
+   Tab. Il dialog si apre a `scrollTop` 0 a tutte e quattro le larghezze, il
+   footer resta raggiungibile scorrendo, e focus trap, Escape e ripristino del
+   focus sul trigger sono invariati. Nessun altro dialog cambia comportamento.
+
 ### 20.7 Che cosa VDIF-04 **non** fa
 
 Correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e l'audit di

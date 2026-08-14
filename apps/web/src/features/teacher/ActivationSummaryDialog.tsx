@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
 import type { ActivationSummary } from '../repository/verifications/activationSummary.js';
 import styles from './ActivationSummaryDialog.module.css';
@@ -23,36 +23,83 @@ export type ActivationSummaryDialogProps = {
   summary: ActivationSummary | null;
   /** Numero di domande della verifica base, mostrato anche senza varianti. */
   questionCount: number;
+  /**
+   * Contratto esplicito del chiamante: `true` **solo** quando esiste un piano di
+   * attivazione valido, senza errore di preflight. Il dialog non può dedurlo:
+   * `summary === null` è legittimo su una verifica senza varianti, e non
+   * distingue «nessuna differenziazione» da «il preflight è fallito».
+   *
+   * Senza questo contratto il pulsante resterebbe abilitato dopo un errore di
+   * preflight e non farebbe nulla al click — un pulsante che sembra funzionare
+   * ed è inerte è peggio di un pulsante disabilitato.
+   */
+  canConfirm: boolean;
   busy: boolean;
   error: string | null;
-  onConfirm: () => void;
+  /**
+   * Deve restituire la Promise dell'attivazione: la guardia anti doppio click
+   * la attende, e senza di essa non avrebbe nulla da attendere.
+   */
+  onConfirm: () => Promise<void>;
   onCancel: () => void;
 };
 
 export function ActivationSummaryDialog({
   summary,
   questionCount,
+  canConfirm,
   busy,
   error,
   onConfirm,
   onCancel,
 }: ActivationSummaryDialogProps) {
   /*
-   * Guardia **sincrona** contro il doppio click: lo stato `busy` arriva al
-   * prossimo render, cioè troppo tardi per il secondo click di un doppio click
-   * reale. Attivare due volte non produrrebbe due verifiche (G17 blocca la
-   * seconda), ma produrrebbe un secondo errore inspiegabile a schermo.
+   * Guardia **sincrona all'ingresso, asincrona in uscita**: si alza prima di
+   * chiamare e si abbassa solo quando l'attivazione è davvero finita.
+   *
+   * Lo stato `busy` non basta: arriva al render successivo, cioè troppo tardi
+   * per il secondo click di un doppio click reale. Rilasciare la guardia
+   * subito dopo la chiamata non basta a sua volta, perché l'attivazione è
+   * asincrona e la seconda invocazione partirebbe mentre la prima è ancora in
+   * volo. Attivare due volte non produrrebbe due verifiche (G17 blocca la
+   * seconda) ma produrrebbe un secondo errore inspiegabile a schermo.
    */
   const confirmingRef = useRef(false);
-  const blocked = (summary?.blockers.length ?? 0) > 0;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  function handleConfirm() {
-    if (confirmingRef.current || busy || blocked) return;
+  /**
+   * Focus iniziale sull'introduzione invece che sul primo pulsante: su uno
+   * schermo stretto il focus sul footer farebbe aprire il dialog già scorso
+   * fino in fondo. `tabIndex={-1}` lo rende focalizzabile a programma **senza**
+   * inserirlo nell'ordine di Tab.
+   */
+  const introRef = useRef<HTMLParagraphElement>(null);
+
+  const blocked = (summary?.blockers.length ?? 0) > 0;
+  const confirmDisabled = !canConfirm || busy || blocked;
+
+  async function handleConfirm() {
+    if (confirmingRef.current || confirmDisabled) return;
     confirmingRef.current = true;
     try {
-      onConfirm();
+      await onConfirm();
+    } catch {
+      /*
+       * Il chiamante possiede la segnalazione dell'errore (prop `error`): qui
+       * interessa solo che un rifiuto non lasci il dialog bloccato per sempre.
+       * Rilanciare produrrebbe una unhandled rejection senza dire nulla di più
+       * a nessuno.
+       */
     } finally {
-      confirmingRef.current = false;
+      // Dopo lo smontaggio non c'è più nulla da liberare, e nulla da
+      // aggiornare: l'attivazione riuscita chiude il dialog.
+      if (mountedRef.current) confirmingRef.current = false;
     }
   }
 
@@ -63,8 +110,9 @@ export function ActivationSummaryDialog({
       busy={busy}
       variant={summary ? 'wide-scroll' : 'default'}
       role="alertdialog"
+      initialFocusRef={introRef}
     >
-      <p className={styles.intro}>
+      <p className={styles.intro} ref={introRef} tabIndex={-1}>
         Dopo l&apos;attivazione la configurazione non sarà più modificabile.
         {summary ? ' Le etichette sono congelate con il nome attuale.' : ''}
       </p>
@@ -131,8 +179,8 @@ export function ActivationSummaryDialog({
         <button
           type="button"
           className="btn-success"
-          disabled={busy || blocked}
-          onClick={handleConfirm}
+          disabled={confirmDisabled}
+          onClick={() => void handleConfirm()}
           aria-describedby={blocked ? 'activation-blocked-reason' : undefined}
         >
           {busy ? 'Attivazione…' : 'Conferma attivazione'}

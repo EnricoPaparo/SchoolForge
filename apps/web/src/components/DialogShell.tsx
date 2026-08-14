@@ -1,4 +1,11 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef } from 'react';
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+} from 'react';
 import { createPortal } from 'react-dom';
 import styles from './DialogShell.module.css';
 
@@ -19,6 +26,23 @@ export type DialogShellProps = {
   closeOnBackdrop?: boolean;
   closeOnEscape?: boolean;
   role?: 'dialog' | 'alertdialog';
+  /**
+   * Elemento su cui portare il focus all'apertura, al posto del primo
+   * focalizzabile. **Opzionale e retrocompatibile**: senza questa prop il
+   * comportamento resta identico, e nessun altro dialog cambia.
+   *
+   * Serve ai dialog **lunghi**: il focus automatico sul primo pulsante porta il
+   * browser a scorrere fino al footer, e su uno schermo stretto il contenuto si
+   * apre già scorso — il docente vede la fine di un riepilogo di cui non ha
+   * ancora letto l'inizio. Il target va reso focalizzabile con `tabIndex={-1}`,
+   * così riceve il focus programmatico **senza** entrare nell'ordine di Tab: un
+   * paragrafo non deve diventare una tappa della navigazione da tastiera.
+   *
+   * Il focus è applicato con `preventScroll`, quindi il dialog resta a
+   * `scrollTop` 0; il footer resta raggiungibile scorrendo, e il focus trap e il
+   * ripristino del focus sul trigger sono invariati.
+   */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 };
 
 /**
@@ -36,6 +60,7 @@ export function DialogShell({
   closeOnBackdrop = true,
   closeOnEscape = true,
   role = 'dialog',
+  initialFocusRef,
 }: DialogShellProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -50,7 +75,15 @@ export function DialogShell({
         document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)
           ? document.activeElement
           : null;
-      (current ?? focusableElements(dialog)[0] ?? dialog).focus();
+      const requested = initialFocusRef?.current ?? null;
+      if (current === null && requested !== null) {
+        // `preventScroll`: il focus deve dire allo screen reader da dove
+        // comincia il contenuto, non far scorrere il dialog. Restando a
+        // `scrollTop` 0 il riepilogo si apre dall'inizio.
+        requested.focus({ preventScroll: true });
+      } else {
+        (current ?? focusableElements(dialog)[0] ?? dialog).focus();
+      }
     }
 
     return () => {

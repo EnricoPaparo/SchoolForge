@@ -858,6 +858,43 @@ describe('VerificationsView', () => {
     expect(screen.queryByPlaceholderText('Titolo nuova verifica')).toBeNull();
   });
 
+  it('VDIF-04-REVIEW-FIX — dopo un errore concorrente il piano è scartato e serve un nuovo preflight', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    // G17/G18/G19/G20: il mondo è cambiato mentre il dialog era aperto.
+    mockCommitVerificationActivation.mockRejectedValue(
+      new Error('La selezione delle domande è cambiata durante l’attivazione. Riprova.'),
+    );
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('alertdialog', { name: /conferma attivazione/i }));
+    expect(mockPrepareVerificationActivation).toHaveBeenCalledTimes(1);
+
+    const dialog = screen.getByRole('alertdialog', { name: /conferma attivazione/i });
+    fireEvent.click(within(dialog).getAllByRole('button')[0]!);
+    await waitFor(() => expect(mockCommitVerificationActivation).toHaveBeenCalledTimes(1));
+
+    // Il piano stantio è stato scartato: la conferma è disabilitata e un altro
+    // click non ricommitta la stessa fotografia.
+    const confirm = within(
+      screen.getByRole('alertdialog', { name: /conferma attivazione/i }),
+    ).getAllByRole('button')[0] as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(true));
+    fireEvent.click(confirm);
+    expect(mockCommitVerificationActivation).toHaveBeenCalledTimes(1);
+
+    // Riprovare passa da un nuovo preflight.
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Annulla' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => expect(mockPrepareVerificationActivation).toHaveBeenCalledTimes(2));
+  });
+
   it('publishes a hidden active verification to the student on toggle click', async () => {
     setupDefaults();
     const activeVer = makeDraftVer({ status: 'active', visibility: 'hidden' });
