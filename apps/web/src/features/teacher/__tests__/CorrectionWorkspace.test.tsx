@@ -654,7 +654,11 @@ describe('CorrectionWorkspace — question selection on load', () => {
     renderWorkspace();
 
     expect(await screen.findByText('Domanda con order 3.')).toBeTruthy();
-    expect(screen.getByText('Domanda 4')).toBeTruthy();
+    expect(screen.getByText('Domanda 1')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Vai alla domanda 1 / })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Vai alla domanda 2 / })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Vai alla domanda 4 / })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Vai alla domanda 6 / })).toBeNull();
     expect(screen.queryByText('Domanda con order 5.')).toBeNull();
   });
 });

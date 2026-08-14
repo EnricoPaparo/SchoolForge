@@ -36,8 +36,10 @@ import {
 } from './correctionContract.js';
 import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
 import { correctionProgressFromEvaluations } from './submissionCorrectionStatus.js';
-import { resolveAssignedQuestions } from '../verifications/assignedVariant.js';
-import { normalizeDistributionMode } from '../verifications/vexDistribution.js';
+import {
+  isServerResolvedSnapshot,
+  resolveAssignedQuestions,
+} from '../verifications/assignedVariant.js';
 import { assertCopyableVerificationDate } from '../verifications/verificationDate.js';
 import { assertCopyableTopicOutline } from '../verifications/topicOutline.js';
 
@@ -166,8 +168,7 @@ function resolveSnapshotQuestions(
 ): VerificationTeacherQuestionSnapshot[] | null {
   const snapshot = context.verification.teacherSnapshot;
   if (!snapshot) return null; // snapshot legacy: modalita assente => same_questions
-  const mode = normalizeDistributionMode(snapshot.distributionMode);
-  if (mode === 'equivalent_variants') {
+  if (isServerResolvedSnapshot(snapshot)) {
     if (!Array.isArray(snapshot.questions) || snapshot.questions.length === 0) {
       throw new Error('Impossibile correggere: snapshot della variante non disponibile.');
     }

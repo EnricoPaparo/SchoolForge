@@ -1278,6 +1278,49 @@ function seedVexVerification(distributionMode: unknown = 'equivalent_variants') 
   });
 }
 
+function seedDifferentiatedVerification() {
+  seedDoc(`verifications/${VERIFICATION_ID}`, {
+    exists: true,
+    data: {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: { title: 'V', classId: 'class-a', programId: 'p1', importId: 'i1', questionRefs: [] },
+      teacherSnapshot: {
+        title: 'V',
+        classId: 'class-a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+        distributionMode: 'same_questions',
+        commonQuestionOrders: [0, 1],
+        equivalentGroups: [],
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'Comune', soluzione: 'sol0' },
+          { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'Base riservata', soluzione: 'sol1' },
+          {
+            order: 2,
+            tipo: 'aperta',
+            maxPoints: 5,
+            testo: 'Alternativa assegnata',
+            soluzione: 'sol2',
+          },
+        ],
+        differentiation: {
+          version: 1,
+          questions: [{ baseOrder: 1, choices: { L1: { kind: 'alternative', order: 2 } } }],
+          labels: [{ labelId: 'L1', labelName: 'PDP_SEGRETO_ROSSO_7F91' }],
+          differentiatedAlternativeOrders: [2],
+        },
+        labelAssignments: { version: 1, byStudentUid: { [STUDENT_UID]: 'L1' } },
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+      },
+      activatedAt: { seconds: 1, nanoseconds: 0 },
+      closedAt: null,
+    },
+  });
+}
+
 describe('VEX-02B — assigned-variant correction', () => {
   it('fails closed before writes when a VEX assignment is missing or empty', async () => {
     seedSubmittedSubmission();
@@ -1429,5 +1472,65 @@ describe('VEX-02B — assigned-variant correction', () => {
       update.questions.map((question: { correctAnswer: string }) => question.correctAnswer),
     ).toEqual(['sol0', 'sol1']);
     expect(JSON.stringify(update)).not.toContain('sol2');
+  });
+
+  it('VDIF-05 — apertura e scheletro usano solo le domande differenziate assegnate', async () => {
+    seedSubmittedSubmission({ assignedQuestionOrders: [0, 2], assignedAnswerKeys: ['0', '2'] });
+    seedDifferentiatedVerification();
+    let captured: Record<string, unknown> | undefined;
+    mockRunTransaction.mockImplementation(async (_db: unknown, fn: (tx: unknown) => unknown) => {
+      const tx = {
+        get: vi.fn().mockResolvedValue({ exists: () => false }),
+        set: vi.fn((_ref: unknown, data: Record<string, unknown>) => {
+          captured = data;
+        }),
+      };
+      return fn(tx);
+    });
+
+    const { correction } = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
+
+    expect(Object.keys(correction.evaluations).sort()).toEqual(['0', '2']);
+    expect(captured?.evaluations).not.toHaveProperty('1');
+    expect(correction.maxPoints).toBe(15);
+    expect(JSON.stringify(correction)).not.toContain('PDP_SEGRETO_ROSSO_7F91');
+  });
+
+  it('VDIF-05 — restituzione include solo il percorso assegnato e nessun metadato privato', async () => {
+    seedSubmittedSubmission({
+      assignedQuestionOrders: [0, 2],
+      assignedAnswerKeys: ['0', '2'],
+      answers: {
+        '0': { tipo: 'aperta', testo: 'Risposta comune' },
+        '2': { tipo: 'aperta', testo: 'Risposta alternativa' },
+      },
+    });
+    seedDifferentiatedVerification();
+    seedDoc(`corrections/${SUBMISSION_ID}`, {
+      exists: true,
+      data: correctionFixture({
+        status: 'completed',
+        evaluations: {
+          '0': { order: 0, points: 8, maxPoints: 10 },
+          '2': { order: 2, points: 4, maxPoints: 5 },
+        },
+        totalPoints: 12,
+        maxPoints: 15,
+        percentage: 80,
+      }),
+    });
+
+    await returnCorrection(SUBMISSION_ID, fakeDb);
+
+    const [, returnDoc] = mockBatchSet.mock.calls[0]!;
+    expect(returnDoc.questions.map((question: { order: number }) => question.order)).toEqual([
+      0, 2,
+    ]);
+    expect(JSON.stringify(returnDoc)).toContain('sol0');
+    expect(JSON.stringify(returnDoc)).toContain('sol2');
+    expect(JSON.stringify(returnDoc)).not.toContain('Base riservata');
+    expect(JSON.stringify(returnDoc)).not.toContain('sol1');
+    expect(JSON.stringify(returnDoc)).not.toContain('PDP_SEGRETO_ROSSO_7F91');
+    expect(JSON.stringify(returnDoc)).not.toMatch(/labelId|labelName|differentiation/i);
   });
 });

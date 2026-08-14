@@ -110,6 +110,9 @@ function loadVerification(db: Firestore) {
       distributionMode: teacherSnapshot?.distributionMode,
       commonQuestionOrders: teacherSnapshot?.commonQuestionOrders,
       equivalentGroups: teacherSnapshot?.equivalentGroups,
+      // VDIF-05 — resta confinato al motore: serve a validare l'assegnazione
+      // congelata, non viene mai serializzato nel run né inoltrato al provider.
+      resolvableSnapshot: teacherSnapshot,
     };
   };
 }

@@ -586,7 +586,8 @@ export function CorrectionWorkspace({
           aria-label="Navigatore domande"
           className={`${styles.questionNav} ${questionNavigatorStyles.nav}`}
         >
-          {orders.map((order) => {
+          {orders.map((order, index) => {
+            const displayNumber = index + 1;
             const parsed = parsePoints(edit.evaluations[String(order)]?.pointsText ?? '');
             const maxPoints = correction.evaluations[String(order)]?.maxPoints ?? 0;
             const invalid = parsed !== null && !isValidQuestionPoints(parsed, maxPoints);
@@ -606,12 +607,12 @@ export function CorrectionWorkspace({
                 }${invalid ? ` ${styles.navItemInvalid}` : ''}${
                   isCurrent ? ` ${questionNavigatorStyles.current}` : ''
                 }`}
-                title={`Domanda ${order + 1} — ${statusLabel}`}
-                aria-label={`Vai alla domanda ${order + 1} — ${statusLabel}`}
+                title={`Domanda ${displayNumber} — ${statusLabel}`}
+                aria-label={`Vai alla domanda ${displayNumber} — ${statusLabel}`}
                 aria-current={isCurrent ? 'true' : undefined}
                 onClick={() => goTo(order)}
               >
-                {order + 1}
+                {displayNumber}
               </button>
             );
           })}
@@ -627,7 +628,7 @@ export function CorrectionWorkspace({
       <div className={styles.body}>
         <article className={styles.questionCard}>
           <div className={styles.questionHeader}>
-            <span className={styles.questionNumber}>Domanda {currentOrder + 1}</span>
+            <span className={styles.questionNumber}>Domanda {currentIndex + 1}</span>
             <span className={styles.questionType}>
               {currentQuestion
                 ? currentQuestion.tipo === 'aperta'
@@ -672,7 +673,7 @@ export function CorrectionWorkspace({
                 <button
                   type="button"
                   className={styles.stepBtn}
-                  aria-label={`Diminuisci di ${QUESTION_POINTS_STEP} il punteggio della domanda ${currentOrder + 1}`}
+                  aria-label={`Diminuisci di ${QUESTION_POINTS_STEP} il punteggio della domanda ${currentIndex + 1}`}
                   disabled={correction.status !== 'in_progress' || busy !== null}
                   onClick={() => stepPoints(currentOrder, -1)}
                 >
@@ -682,7 +683,7 @@ export function CorrectionWorkspace({
                   type="text"
                   inputMode="decimal"
                   className={styles.pointsInput}
-                  aria-label={`Punteggio per la domanda ${currentOrder + 1}`}
+                  aria-label={`Punteggio per la domanda ${currentIndex + 1}`}
                   value={currentEdit?.pointsText ?? ''}
                   placeholder="—"
                   disabled={correction.status !== 'in_progress' || busy !== null}
@@ -691,7 +692,7 @@ export function CorrectionWorkspace({
                 <button
                   type="button"
                   className={styles.stepBtn}
-                  aria-label={`Aumenta di ${QUESTION_POINTS_STEP} il punteggio della domanda ${currentOrder + 1}`}
+                  aria-label={`Aumenta di ${QUESTION_POINTS_STEP} il punteggio della domanda ${currentIndex + 1}`}
                   disabled={correction.status !== 'in_progress' || busy !== null}
                   onClick={() => stepPoints(currentOrder, 1)}
                 >
@@ -709,7 +710,7 @@ export function CorrectionWorkspace({
               ref={questionFeedbackRef}
               className={styles.feedbackTextarea}
               rows={2}
-              aria-label={`Correzione per la domanda ${currentOrder + 1} (opzionale)`}
+              aria-label={`Correzione per la domanda ${currentIndex + 1} (opzionale)`}
               placeholder="Correzione (opzionale)"
               value={currentEdit?.feedback ?? ''}
               disabled={correction.status !== 'in_progress' || busy !== null}

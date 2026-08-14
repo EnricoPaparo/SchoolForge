@@ -49,6 +49,11 @@ import {
   microUsdToUsd,
 } from './aiCorrectionCost.js';
 import { dayKeyFromMs, monthKeyFromMs } from './aiCorrectionBudget.js';
+import {
+  isValidResolvedAssignment,
+  parseResolvableSnapshot,
+  type ResolvableSnapshot,
+} from './verificationVariantCore.js';
 
 // ── Limiti prudenti (guardie tecniche, non budget definitivi HG-M5-2/3) ──────
 
@@ -207,6 +212,12 @@ export interface VerificationData {
   distributionMode?: unknown;
   commonQuestionOrders?: unknown;
   equivalentGroups?: unknown;
+  /**
+   * VDIF-05 — snapshot grezzo congelato usato soltanto per verificare
+   * server-side l'assegnazione già persistita. Non viene mai inoltrato al
+   * provider né salvato nel run IA.
+   */
+  resolvableSnapshot?: unknown;
 }
 
 export interface SubmissionData {
@@ -543,6 +554,7 @@ function resolveApplicableTeacherQuestions(params: {
   distributionMode: unknown;
   commonQuestionOrders: unknown;
   equivalentGroups: unknown;
+  resolvableSnapshot?: unknown;
   submission: SubmissionData;
 }): TeacherQuestion[] | null {
   const { teacherQuestions, distributionMode, submission } = params;
@@ -551,10 +563,86 @@ function resolveApplicableTeacherQuestions(params: {
     if (!Number.isInteger(question.order) || byOrder.has(question.order)) return null;
     byOrder.set(question.order, question);
   }
-  if (distributionMode === undefined || distributionMode === 'same_questions') {
+  const rawSnapshot = params.resolvableSnapshot;
+  const hasDifferentiation =
+    typeof rawSnapshot === 'object' &&
+    rawSnapshot !== null &&
+    (rawSnapshot as Record<string, unknown>).differentiation != null;
+
+  if (
+    (distributionMode === undefined || distributionMode === 'same_questions') &&
+    !hasDifferentiation
+  ) {
     return [...teacherQuestions].sort((a, b) => a.order - b.order);
   }
-  if (distributionMode !== 'equivalent_variants') return null;
+
+  // VDIF-05 — VEX, differenziazione e combinazione dei due condividono il
+  // risolutore server autorevole. La presenza di `differentiation` rende
+  // server-resolved anche una verifica `same_questions`: ricadere su tutte le
+  // domande invierebbe al provider basi sostituite, domande omesse e soluzioni
+  // mai servite allo studente.
+  if (
+    distributionMode !== 'equivalent_variants' &&
+    !(distributionMode === 'same_questions' && hasDifferentiation)
+  ) {
+    return null;
+  }
+
+  if (rawSnapshot !== undefined) {
+    let snapshot: ResolvableSnapshot;
+    try {
+      snapshot = parseResolvableSnapshot(rawSnapshot);
+    } catch {
+      return null;
+    }
+    const assigned = submission.assignedQuestionOrders;
+    const answerKeys = submission.assignedAnswerKeys;
+    if (
+      !Array.isArray(assigned) ||
+      !assigned.every((order): order is number => Number.isInteger(order)) ||
+      !isValidResolvedAssignment(snapshot, submission.studentUid, assigned) ||
+      !Array.isArray(answerKeys) ||
+      answerKeys.length !== assigned.length
+    ) {
+      return null;
+    }
+    const assignedSet = new Set(assigned);
+    const answerKeySet = new Set(answerKeys);
+    if (
+      assignedSet.size !== assigned.length ||
+      answerKeySet.size !== answerKeys.length ||
+      [...assignedSet].some((order) => !answerKeySet.has(order.toString()))
+    ) {
+      return null;
+    }
+
+    // Il parser autorevole e il modello IA provengono dallo stesso snapshot,
+    // ma la corrispondenza viene comunque dimostrata prima di filtrare: una
+    // porta mal cablata non può far valutare testi o punteggi diversi.
+    const parsedByOrder = new Map(snapshot.questions.map((question) => [question.order, question]));
+    if (
+      parsedByOrder.size !== byOrder.size ||
+      teacherQuestions.some((question) => {
+        const parsed = parsedByOrder.get(question.order);
+        return (
+          !parsed ||
+          parsed.tipo !== question.tipo ||
+          parsed.difficolta !== question.difficolta ||
+          parsed.maxPoints !== question.maxPoints
+        );
+      })
+    ) {
+      return null;
+    }
+    return teacherQuestions
+      .filter((question) => assignedSet.has(question.order))
+      .sort((a, b) => a.order - b.order);
+  }
+
+  // Compatibilità dei test/adapter VEX storici privi dello snapshot grezzo.
+  // La produzione passa sempre `resolvableSnapshot`; la differenziazione non
+  // è mai autorizzata a usare questo ramo.
+  if (hasDifferentiation || distributionMode !== 'equivalent_variants') return null;
 
   const assigned = submission.assignedQuestionOrders;
   const answerKeys = submission.assignedAnswerKeys;
@@ -645,6 +733,7 @@ export function classifySubmission(params: {
   distributionMode?: unknown;
   commonQuestionOrders?: unknown;
   equivalentGroups?: unknown;
+  resolvableSnapshot?: unknown;
   submission: SubmissionData | null;
   correction: CorrectionData | null;
 }): Classification {
@@ -671,6 +760,7 @@ export function classifySubmission(params: {
     distributionMode: params.distributionMode,
     commonQuestionOrders: params.commonQuestionOrders,
     equivalentGroups: params.equivalentGroups,
+    resolvableSnapshot: params.resolvableSnapshot,
     submission,
   });
   if (!applicableQuestions) return { status: 'excluded', code: 'invalid_variant' };
@@ -1180,6 +1270,7 @@ async function buildOperationPreflight(
         distributionMode: verification?.distributionMode,
         commonQuestionOrders: verification?.commonQuestionOrders,
         equivalentGroups: verification?.equivalentGroups,
+        resolvableSnapshot: verification?.resolvableSnapshot,
         submission,
         correction,
       });
@@ -1795,6 +1886,7 @@ export async function runExecution(
                 distributionMode: verification?.distributionMode,
                 commonQuestionOrders: verification?.commonQuestionOrders,
                 equivalentGroups: verification?.equivalentGroups,
+                resolvableSnapshot: verification?.resolvableSnapshot,
                 submission: loadedSubmission,
                 correction,
               }),

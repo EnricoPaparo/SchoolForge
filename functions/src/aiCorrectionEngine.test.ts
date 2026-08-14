@@ -57,6 +57,7 @@ const REQ = 'req-abcdef01';
 const SOL_MARK = 'SOLUZIONE_SEGRETA_XYZ';
 const ANS_MARK = 'RISPOSTA_STUDENTE_XYZ';
 const Q_MARK = 'TESTO_DOMANDA_XYZ';
+const VDIF_LABEL_MARK = 'PDP_SEGRETO_ROSSO_7F91';
 
 function sid(student: string): string {
   return `${VERIF}_${student}`;
@@ -958,6 +959,60 @@ function seedOneOpenOneClosed(store: FakeStore, student = 's1') {
   });
 }
 
+/**
+ * VDIF-05 — snapshot realistico "solo differenziazione": la base 0 viene
+ * sostituita dalla 2 e la base 1 viene omessa per lo studente etichettato.
+ * Il nome dell'etichetta è una sentinella privacy che non deve raggiungere il
+ * provider né alcun artefatto della correzione.
+ */
+function seedDifferentiatedOpenQuestions(store: FakeStore) {
+  const teacherQuestions = [
+    tq(0, 'aperta', 2, `${SOL_MARK}-BASE-0`),
+    tq(1, 'aperta', 2, `${SOL_MARK}-BASE-1`),
+    tq(2, 'aperta', 2, `${SOL_MARK}-ALTERNATIVA-2`),
+  ];
+  const resolvableSnapshot = {
+    distributionMode: 'same_questions',
+    questions: teacherQuestions.map(({ order, tipo, difficolta, maxPoints, testo }) => ({
+      order,
+      tipo,
+      difficolta,
+      maxPoints,
+      testo,
+    })),
+    commonQuestionOrders: [0, 1],
+    equivalentGroups: [],
+    differentiation: {
+      version: 1,
+      questions: [
+        { baseOrder: 0, choices: { L1: { kind: 'alternative', order: 2 } } },
+        { baseOrder: 1, choices: { L1: { kind: 'none' } } },
+      ],
+      labels: [{ labelId: 'L1', labelName: VDIF_LABEL_MARK }],
+      differentiatedAlternativeOrders: [2],
+    },
+    labelAssignments: { version: 1, byStudentUid: { s1: 'L1' } },
+  };
+  store.verification = {
+    ownerUid: OWNER,
+    status: 'active',
+    teacherQuestions,
+    distributionMode: 'same_questions',
+    commonQuestionOrders: [0, 1],
+    equivalentGroups: [],
+    resolvableSnapshot,
+  };
+  store.submissions.set(sid('s1'), {
+    ownerUid: OWNER,
+    verificationId: VERIF,
+    studentUid: 's1',
+    status: 'submitted',
+    assignedQuestionOrders: [2],
+    assignedAnswerKeys: ['2'],
+    answers: { '2': { tipo: 'aperta', testo: `${ANS_MARK}-ALTERNATIVA-2` } },
+  });
+}
+
 // ── M5-05D1: guardrail server-side del provider reale ─────────────────────────
 
 describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
@@ -1256,6 +1311,59 @@ describe('runExecution — closed scoring + open grading', () => {
     });
     expect(store.mirror.get(sid('s1'))!.correctionStatus).toBe('in_progress');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('VDIF-05 — invia al grader solo la domanda differenziata assegnata e nessuna etichetta', async () => {
+    const store = new FakeStore();
+    seedDifferentiatedOpenQuestions(store);
+    const grade = vi.fn((input: { requestId: string; questions: { order: number }[] }) =>
+      Promise.resolve({
+        requestId: input.requestId,
+        results: input.questions.map((question) => ({ order: question.order, points: 2 })),
+        generalFeedback: '[mock] percorso assegnato valutato.',
+      }),
+    );
+    const grader = { id: 'mock', grade } as unknown as AiGrader;
+
+    const result = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+
+    expect(result.results[0]).toMatchObject({ outcome: 'succeeded', openGraded: 1 });
+    expect(grade).toHaveBeenCalledTimes(1);
+    const providerInput = grade.mock.calls[0]![0];
+    expect(providerInput.questions.map((question) => question.order)).toEqual([2]);
+    const serializedInput = JSON.stringify(providerInput);
+    expect(serializedInput).toContain(`${Q_MARK}-2`);
+    expect(serializedInput).toContain(`${SOL_MARK}-ALTERNATIVA-2`);
+    expect(serializedInput).not.toContain(`${Q_MARK}-0`);
+    expect(serializedInput).not.toContain(`${Q_MARK}-1`);
+    expect(serializedInput).not.toContain(`${SOL_MARK}-BASE-0`);
+    expect(serializedInput).not.toContain(`${SOL_MARK}-BASE-1`);
+    expect(serializedInput).not.toContain(VDIF_LABEL_MARK);
+    expect(store.corrections.get(sid('s1'))?.evaluations).toEqual({
+      '2': { order: 2, points: 2, maxPoints: 2 },
+    });
+    expect(JSON.stringify(store.events)).not.toContain(VDIF_LABEL_MARK);
+    expect(JSON.stringify(store.runs)).not.toContain(VDIF_LABEL_MARK);
+  });
+
+  it('VDIF-05 — assegnazione differenziata incoerente fallisce prima del grader e delle scritture', async () => {
+    const store = new FakeStore();
+    seedDifferentiatedOpenQuestions(store);
+    store.submissions.set(sid('s1'), {
+      ...store.submissions.get(sid('s1'))!,
+      assignedQuestionOrders: [0],
+      assignedAnswerKeys: ['0'],
+      answers: { '0': { tipo: 'aperta', testo: ANS_MARK } },
+    });
+    const grade = vi.fn();
+    const grader = { id: 'mock', grade } as unknown as AiGrader;
+
+    const result = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+
+    expect(result.results[0]).toMatchObject({ outcome: 'excluded', reason: 'invalid_variant' });
+    expect(grade).not.toHaveBeenCalled();
+    expect(store.commitCalls).toBe(0);
+    expect(store.corrections.size).toBe(0);
   });
 
   it('never overwrites an already-graded question', async () => {

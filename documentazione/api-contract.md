@@ -55,6 +55,21 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 > persistita fino a «Salva mappa». Structured Output v2, parser v1/v2, cap,
 > prompt, Rules e proiezione studente restano quelli di CONCEPT-MAP-05.
 
+### VDIF-05 — contratto dei consumer post-attivazione
+
+Una verifica con `assignmentMode: 'server_resolved'` — VEX, differenziazione o
+entrambe — ha un solo insieme applicabile: `assignedQuestionOrders` con il
+mirror server-only `assignedAnswerKeys`. Correzione manuale, restituzione e
+archivio risolvono tale insieme con `resolveAssignedQuestions`; la correzione IA
+lo rivalida nelle Functions contro il `teacherSnapshot` congelato prima del
+provider. Non esiste fallback sull'intero snapshot o sulla proiezione comune.
+
+Gli order restano le chiavi persistite di risposte/evaluations; il numero
+mostrato è sempre la posizione locale `1…N`. `SubmissionDoc`, ricevute,
+`CorrectionReturnDoc`, PDF e CSV non guadagnano campi etichetta. Il PDF verifica
+studente resta indisponibile per `server_resolved`; il PDF docente completo è
+invariato. Nessun endpoint, documento, indice o operazione Firebase nuovo.
+
 > **Contratto POOL-ROLLOUT-01 (implementato nel codice, rollout DEV separato).**
 > Per il solo `kind:'pool'`, `modelProfile` deve essere `quality`. Il builder
 > web non accetta un profilo dal chiamante e inserisce la costante Quality; il

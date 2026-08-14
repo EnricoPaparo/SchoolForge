@@ -234,7 +234,8 @@ export function StudentCorrectionView({
           aria-label="Navigatore domande"
           className={`${styles.questionNav} ${questionNavigatorStyles.nav}`}
         >
-          {orders.map((order) => {
+          {orders.map((order, index) => {
+            const displayNumber = index + 1;
             const isCurrent = order === currentOrder;
             return (
               <button
@@ -243,12 +244,12 @@ export function StudentCorrectionView({
                 className={`${questionNavigatorStyles.item}${
                   isCurrent ? ` ${questionNavigatorStyles.current}` : ''
                 }`}
-                title={`Domanda ${order + 1}`}
-                aria-label={`Vai alla domanda ${order + 1}`}
+                title={`Domanda ${displayNumber}`}
+                aria-label={`Vai alla domanda ${displayNumber}`}
                 aria-current={isCurrent ? 'true' : undefined}
                 onClick={() => goTo(order)}
               >
-                {order + 1}
+                {displayNumber}
               </button>
             );
           })}
@@ -264,7 +265,7 @@ export function StudentCorrectionView({
       {currentQuestion && (
         <article className={styles.questionCard}>
           <div className={styles.questionHeader}>
-            <span className={styles.questionNumber}>Domanda {currentOrder + 1}</span>
+            <span className={styles.questionNumber}>Domanda {currentIndex + 1}</span>
             <span className={styles.questionScore}>
               {currentQuestion.points}/{currentQuestion.maxPoints} punti
             </span>

@@ -850,7 +850,7 @@ export function OnlineExamView({
                   <div
                     className={styles.optionsList}
                     role="radiogroup"
-                    aria-label={`Opzioni della domanda ${q.order + 1}`}
+                    aria-label={`Opzioni della domanda ${displayNumber}`}
                   >
                     {q.opzioni?.map((o) => (
                       <label key={o.id} className={styles.optionRow}>

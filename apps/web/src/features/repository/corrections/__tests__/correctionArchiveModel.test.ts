@@ -238,6 +238,50 @@ describe('correctionArchiveModel', () => {
     ).toThrow(/non coerenti/);
   });
 
+  it('VDIF-05 — archivio usa solo le domande differenziate assegnate e non espone etichette', () => {
+    const differentiatedVerification = verification({
+      distributionMode: 'same_questions',
+      commonQuestionOrders: [0, 1],
+      equivalentGroups: [],
+      differentiation: {
+        version: 1,
+        questions: [{ baseOrder: 1, choices: { L1: { kind: 'alternative', order: 2 } } }],
+        labels: [{ labelId: 'L1', labelName: 'PDP_SEGRETO_ROSSO_7F91' }],
+        differentiatedAlternativeOrders: [2],
+      },
+      labelAssignments: { version: 1, byStudentUid: { [studentUid]: 'L1' } },
+    });
+    const differentiatedSubmission = submission({
+      assignedQuestionOrders: [0, 2],
+      assignedAnswerKeys: ['0', '2'],
+      answers: {
+        '0': { tipo: 'aperta', testo: 'Risposta aperta completa' },
+        '2': { tipo: 'chiusa_multipla', selectedIds: ['x'] },
+      },
+    });
+    const differentiatedCorrection = correction({
+      evaluations: {
+        '0': { order: 0, points: 3, maxPoints: 4 },
+        '2': { order: 2, points: 2, maxPoints: 3 },
+      },
+      totalPoints: 5,
+      maxPoints: 7,
+      percentage: 71,
+    });
+
+    const model = build({
+      verification: differentiatedVerification,
+      submission: differentiatedSubmission,
+      correction: differentiatedCorrection,
+    });
+
+    expect(model.questions.map((entry) => entry.order)).toEqual([0, 2]);
+    const serialized = JSON.stringify(model);
+    expect(serialized).not.toContain('Opzione alfa');
+    expect(serialized).not.toContain('PDP_SEGRETO_ROSSO_7F91');
+    expect(serialized).not.toMatch(/labelId|labelName|differentiation|byStudentUid/i);
+  });
+
   it('accepts returned and rejects non-exportable or incomplete corrections', () => {
     expect(
       build({ correction: correction({ status: 'returned', returnedAt: {} as never }) })
