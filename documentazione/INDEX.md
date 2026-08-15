@@ -17,11 +17,17 @@ DEV; Importa UDA ed export archivistico per studente hanno superato lo smoke
 desktop/mobile/Brave. **Gate GTWU superato (PASS)** — vedi
 [evidenze/gtwu-checklist-finale.md](evidenze/gtwu-checklist-finale.md).
 
-**STRUCTURE-IMPORT — progettato, non implementato.** Importazione append-only
-di UDA e lezioni **senza contenuto**, tramite due file YAML versionati e le
-azioni contestuali già presenti in Didattica. Include una fase separata per
-usare nel prompt le competenze/obiettivi UDA senza nuove letture. Contratto e
-roadmap in [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md).
+**STRUCTURE-IMPORT — completato.** Importazione append-only di UDA e lezioni
+**senza contenuto**, formato semplice/YAML, retry idempotente e contesto UDA nel
+prompt lezione. **Gate GSTRUCT PASS** il 15 agosto 2026 — vedi
+[evidenze/gstruct-checklist-finale.md](evidenze/gstruct-checklist-finale.md) e
+[structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md).
+
+**Generazione IA dei contenuti — completata su DEV.** Lezioni, pool e mappe
+concettuali usano il runtime OpenAI fail-closed con TTL, budget, lease e replay;
+gli smoke reali e la conferma docente sono registrati nella checklist finale.
+**Gate GAIGEN PASS** il 15 agosto 2026 — vedi
+[evidenze/gaigen-human-gate.md](evidenze/gaigen-human-gate.md).
 
 **Hardening finale (HARD) — completato.** **Gate GHARD superato (PASS, 15/07/2026):** 0 P0/P1, i P2 F01/F02/F03 risolti, fix accessibilità P2 e import resiliente F06 completati; residui P3 accettati con soglie esplicite. Evidenze finali in [evidenze/ghard-checklist-finale.md](evidenze/ghard-checklist-finale.md). HARD-03 resta condizionato a misure reali e non blocca la V1. Il PASS non autorizza provisioning o deploy PROD.
 
@@ -52,7 +58,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
 12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder assistito docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02C implementati e distribuiti su DEV; **Gate GVEX PASS**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
 13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01→04B, CORR-PDF-01 e recovery chunk completati; contratto Importa UDA in [uda-import-contract.md](uda-import-contract.md), export archivistico in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU PASS** — [evidenze](evidenze/gtwu-checklist-finale.md).
-14. [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) — importazione strutturale append-only: UDA e lezioni con soli metadati, nessun contenuto/pool/IA durante l'import.
+14. [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) — importazione strutturale append-only: UDA e lezioni con soli metadati, nessun contenuto/pool/IA durante l'import. **Gate GSTRUCT PASS.**
 15. [lesson-quality-depth-roadmap.md](lesson-quality-depth-roadmap.md) — profondità delle lezioni generate: i concetti chiave dicono che cosa trattare, non quanto scrivere. Diagnosi misurata, candidato E in produzione, limiti di spesa. **Gate GLESSON aperto.**
 16. [verifiche-differenziate-roadmap.md](verifiche-differenziate-roadmap.md) — verifiche differenziate per etichetta (VDIF) ed esiti per lezione. **VDIF-00→05 implementati e distribuiti su DEV; Gate GVDIF PASS** il 15 agosto 2026. **ESITI-01 implementato, distribuito e validato su DEV**: aggregazione owner-only e di sola lettura per UDA/lezione, senza etichette o dati studente.
 17. [mappa-concettuale-roadmap.md](mappa-concettuale-roadmap.md) — mappa concettuale della lezione: output IA strutturato e composto dal server, Markdown modificabile, diagramma a caratteri e proiezione studente presente solo a lezione svolta. **CONCEPT-MAP-01→07 implementati**: artefatto **v2** Sintesi + Diagramma, lettura compatibile delle mappe v1 e generazione modale con scelta esplicita Economy/Quality (default Quality); tuning reale della sintesi concluso con `concept-map-07-v1`. **Implementate, distribuite e validate con generazioni reali su più lezioni; qualità accettata dal docente** — vedi [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md).
@@ -97,6 +103,8 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/vdif-00-prototipo-visivo.md](evidenze/vdif-00-prototipo-visivo.md) — evidenze visive del prototipo VDIF-00 a 1440/1024/390/320 px; il gate applicativo finale è registrato in [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md).
 - [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md) — smoke multi-studente reale su DEV e verdetto **GVDIF PASS** del 15 agosto 2026.
 - [evidenze/esiti-01-human-gate.md](evidenze/esiti-01-human-gate.md) — conferma umana DEV della vista aggregata per UDA/lezione; UI e comportamento **PASS** il 15 agosto 2026.
+- [evidenze/gaigen-human-gate.md](evidenze/gaigen-human-gate.md) — checklist finale della generazione IA di lezioni, pool e mappe; TTL e smoke reali, **Gate GAIGEN PASS**.
+- [evidenze/gstruct-checklist-finale.md](evidenze/gstruct-checklist-finale.md) — import strutture UDA/lezione, retry/collisioni, responsive e generazione da scheletro; **Gate GSTRUCT PASS**.
 - [evidenze/vdif-01-smoke.md](evidenze/vdif-01-smoke.md) — smoke dei componenti reali della scheda Etichette (VDIF-01) a 1440/1024/390/320 px. Nessun deploy.
 - [evidenze/vdif-02-smoke.md](evidenze/vdif-02-smoke.md) — smoke dei componenti reali del controllo «Etichetta» nella card studente (VDIF-02) a 1440/1024/390/320 px. Nessun deploy.
 - [evidenze/vdif-04-smoke.md](evidenze/vdif-04-smoke.md) — smoke del riepilogo di attivazione differenziata (VDIF-04) a 1440/1024/390/320 px. Nessun deploy.

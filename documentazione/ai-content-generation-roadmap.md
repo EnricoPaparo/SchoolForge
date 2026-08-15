@@ -1,6 +1,13 @@
 # AIGEN — Generazione IA di pool e lezioni (contratto e roadmap)
 
-> Stato: **AIGEN-00 — progettazione congelata, nessuna implementazione applicativa**. Rilevazione evidence-based: 23 luglio 2026. Questo documento e i prototipi statici associati **non** autorizzano deploy, chiamate provider, migrazioni o modifiche ai dati esistenti. Nessuna API key viene letta, nessuna chiamata OpenAI viene effettuata. I pacchetti implementativi successivi sono **AIGEN-01/02/03** e il **Gate GAIGEN**.
+> Stato corrente: **AIGEN implementato e distribuito su DEV; Gate GAIGEN PASS
+> (15 agosto 2026)**. La riga storica AIGEN-00 descriveva soltanto la prima
+> progettazione. TTL, runtime OpenAI, smoke autenticati e conferma docente sono
+> registrati in [`evidenze/gaigen-human-gate.md`](evidenze/gaigen-human-gate.md).
+> Il PASS non autorizza provisioning o deploy PROD.
+> Le note di implementazione sottostanti sono fotografie storiche dei singoli
+> pacchetti: le loro diciture «gate aperto» sono superate da questo verdetto
+> finale e non rappresentano lo stato corrente.
 >
 > **AIGEN-01 implementato** (backend only): `functions/src/aiContent{Core,Validation,Cost,Prompt,Payload,Engine,Provider,RunDoc,Gateway}.ts` + runner condiviso `openAiStructuredRunner.ts` + callable `aiContentPreview`/`aiContentGenerate` (`index.ts`), Rules `aiContentRuns` server-only (`firestore.rules`), test `functions/src/aiContent.test.ts` + `apps/web/src/rules/m5-technical-server-only.rules.test.ts`. **Decisione di scope congelata:** AIGEN-01 valida solo la struttura semantica della proposta pool (nessun ID, nessun `parsePool`, nessuna dipendenza `functions → @schoolforge/lesson-contract`); la materializzazione `schoolforge-pool/v2` (mapper ID → `parsePool` → `poolEditorService`) è di **AIGEN-02** nel web. Nessuna UI, nessun provider reale (kill switch), nessun deploy.
 >

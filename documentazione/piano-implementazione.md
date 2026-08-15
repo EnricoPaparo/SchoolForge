@@ -29,13 +29,17 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 
 Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è completato**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-04) sono completati (Markdown rinviato per assenza di caso d'uso); **Gate G6 superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`.
 
-**STRUCTURE-IMPORT: 01, 02A, 02B e 03 sono implementati; il Gate GSTRUCT resta
-aperto.** La sequenza autorizzata era 01 parser/planner puri → 02A import UDA →
+**STRUCTURE-IMPORT: 01, 02A, 02B, 03 e SIMPLE-01 sono implementati; Gate
+GSTRUCT superato (PASS, 15 agosto 2026).** La sequenza autorizzata era 01 parser/planner puri → 02A import UDA →
 02B import lezioni → 03 contesto UDA per la generazione IA → Gate GSTRUCT.
 I due modelli YAML canonici sono inoltre consultabili, copiabili e scaricabili
 dalla sezione docente **Template**, senza duplicare lo schema nel codice UI.
-Nessuna fase successiva può dichiarare implementata la precedente senza le
-evidenze previste nel contratto.
+Evidenza finale: `evidenze/gstruct-checklist-finale.md`.
+
+**AIGEN: Gate GAIGEN superato (PASS, 15 agosto 2026).** TTL
+`aiContentRuns.expireAt` attiva, runtime OpenAI DEV, smoke reali di lezioni,
+pool e mappe e conferma docente sono registrati in
+`evidenze/gaigen-human-gate.md`.
 
 ---
 
@@ -1154,9 +1158,9 @@ prototipo statico in
 **Stato del percorso.** Pool IA Quality e mappe concettuali sono confermati dal
 docente ([evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md));
 VDIF-01→05 è distribuito e GVDIF è PASS. ESITI-01 è implementato, distribuito
-e validato su DEV come ultimo
-pacchetto applicativo di questa linea. Restano tracciati altrove i Gate GAIGEN,
-GLESSON e GSTRUCT, e ogni attività di provisioning o deploy PROD.
+e validato su DEV come ultimo pacchetto applicativo di questa linea. Anche
+GAIGEN e GSTRUCT sono PASS, con evidenze dedicate. Resta aperto soltanto
+GLESSON, oltre a ogni attività di provisioning o deploy PROD.
 
 **Fuori scope da VDIF, in ogni fase e in ogni forma** (asse distinto, roadmap
 autonoma, mai introdotto «già che ci siamo»): tempo aggiuntivo; limiti

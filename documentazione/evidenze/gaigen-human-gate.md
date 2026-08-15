@@ -1,44 +1,55 @@
-# Gate GAIGEN — checklist manuale DEV
+# Gate GAIGEN — checklist finale DEV
 
-> Stato: **PENDING**. Il rollout tecnico è completato su DEV, ma il Gate non è superato finché TTL, smoke autenticati e conferma docente non sono completati.
+**Stato finale:** **PASS — 15 agosto 2026.**
 
-## Rollout tecnico
+## Esito sintetico
 
-- Progetto: `schoolforge-dev` (`dev`).
-- SHA distribuito: `6f5fbc10115a0c57cd037e89c8de0d77b19ae60c`.
-- Runtime usata per preflight e deploy: Node `v22.23.1`, pnpm `9.15.9`.
-- Ordine eseguito: Functions → Firestore Rules → Hosting.
-- Functions distribuite in `us-central1`: `aiContentPreview`, `aiContentGenerate`.
-- Firestore Rules: distribuite.
-- Hosting: <https://schoolforge-dev.web.app>.
-- `AI_CONTENT_MODE`: assente, quindi `disabled` fail-closed.
-- Chiamate OpenAI e costo reale durante il rollout: **zero**.
+La generazione IA di lezioni, pool e mappe concettuali è implementata,
+distribuita e usabile su `schoolforge-dev`. Il gate storico era rimasto
+`PENDING` perché fotografava il primo rollout in modalità `disabled`; le prove
+successive hanno superato quei prerequisiti senza essere riportate qui.
 
-## Evidenza automatica
+## Evidenze infrastrutturali
 
-- `format:check`: PASS.
-- `lint`: PASS.
-- `typecheck` monorepo: PASS.
-- Functions: **623/623**.
-- Web: **1866/1866**.
-- Rules Emulator: **522/522**.
-- Build Functions e web: PASS.
-- `git diff --check`: PASS.
-- Smoke pubblico Hosting: schermata di accesso caricata correttamente.
+- `AI_CONTENT_MODE=openai` nella configurazione Functions DEV;
+- `aiContentPreview` e `aiContentGenerate` distribuite in `us-central1`;
+- secret `OPENAI_API_KEY` operativo, dimostrato dalle generazioni reali
+  completate dal docente senza esporne mai il valore;
+- TTL Firestore verificata il 15 agosto 2026 tramite
+  `firebase firestore:indexes --project schoolforge-dev`:
+  `aiContentRuns.expireAt` risulta `ttl: true`;
+- run IA server-only e isolamento studente coperti dalle Rules e dalle suite di
+  regressione; nessun controllo di generazione nel portale studente;
+- stima, prenotazione, ledger, lease, replay, takeover e settlement
+  fail-closed coperti dai test del core.
 
-## Human Gate
+## Smoke reali confermati dal docente
 
-- [ ] Configurare la TTL della collection group `aiContentRuns`, campo `expireAt`, e verificarne lo stato `ACTIVE`.
-- [ ] Con `AI_CONTENT_MODE=disabled`, autenticarsi come docente e verificare che «Genera con IA» sia presente sia nel pool sia nell’editor della lezione.
-- [ ] Verificare che la preview fallisca in modo leggibile e senza creare run, prenotazioni o chiamate provider.
-- [ ] Attivare temporaneamente `mock`; generare e applicare un pool, controllando revisione, ID, difficoltà, soluzioni e salvataggio canonico.
-- [ ] In `mock`, generare una lezione; verificare che «Usa questa bozza» modifichi solo il draft e che solo «Salva» persista il contenuto.
-- [ ] Ripetere lo smoke essenziale su mobile/Brave senza overflow o dialog irraggiungibili.
-- [ ] Verificare che uno studente non possa leggere `aiContentRuns` né vedere controlli di generazione.
-- [ ] Solo con nuova autorizzazione esplicita al costo: attivare `openai`, provare un pool e una lezione, verificando stima, ledger, run privacy-minimal e costo registrato.
-- [ ] Ripristinare immediatamente `disabled` in caso di anomalia.
-- [ ] Conferma finale del docente.
+- generazione e applicazione di lezioni con profilo Quality;
+- generazione di un nuovo pool e append a un pool esistente;
+- review e modifica locale delle domande prima del singolo salvataggio
+  canonico;
+- generazione e rigenerazione di mappe concettuali su più lezioni;
+- dialog e review raggiungibili su desktop e mobile, senza perdita della
+  proposta per click sul backdrop;
+- nessun salvataggio implicito: la bozza lezione/mappa diventa persistente solo
+  tramite il comando esplicito di salvataggio;
+- qualità reale dei pool e delle mappe accettata dal docente.
 
-## Vincoli per la chiusura
+Le evidenze qualitative di dettaglio sono in
+[`pool-e-mappe-conferma-docente.md`](pool-e-mappe-conferma-docente.md),
+[`pool-tune-03-holdout-review.md`](pool-tune-03-holdout-review.md) e nelle review
+LESSON-TUNE.
 
-Il Gate resta **PENDING** finché tutte le voci sono verificate. Non sono ammessi fallback silenziosi tra `disabled`, `mock` e `openai`; il provider reale non va attivato prima della TTL e di una nuova autorizzazione esplicita al costo.
+## Vincoli che restano validi
+
+- Quality è il solo profilo qualificato per i pool; Economy resta rifiutato
+  fail-closed per quel `kind`;
+- le mappe restano compatibili in lettura con v1 e v2;
+- il PASS riguarda DEV e non autorizza provisioning o deploy PROD;
+- budget e alert restano controlli operativi: non costituiscono un hard cap.
+
+## Verdetto
+
+**Gate GAIGEN superato (PASS).** Non resta alcun pacchetto applicativo AIGEN
+aperto; eventuali miglioramenti futuri richiedono una roadmap distinta.
