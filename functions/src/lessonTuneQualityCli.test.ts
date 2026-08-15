@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ContentProvider } from './aiContentProvider.js';
 import {
@@ -215,5 +216,12 @@ describe('LESSON-TUNE-01 CLI', () => {
     });
     await expect(runLessonTuneCli(noTty)).rejects.toThrow(/terminale interattivo/);
     expect(noTty.getApiKey).not.toHaveBeenCalled();
+  });
+
+  it('scrive i risultati nella lib di functions senza dipendere dalla cwd', async () => {
+    const source = await readFile(new URL('./lessonTuneQualityCli.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain("fileURLToPath(new URL('../lib/', import.meta.url))");
+    expect(source).not.toContain("resolve('lib', `lesson-tune-01-");
   });
 });

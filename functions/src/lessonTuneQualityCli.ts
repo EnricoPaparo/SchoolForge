@@ -234,7 +234,8 @@ async function defaultWriteOutput(params: {
   samples: Array<LessonTuneGeneratedSample & { body: string }>;
 }): Promise<string> {
   const safeTimestamp = params.generatedAt.replaceAll(':', '-').replaceAll('.', '-');
-  const outputDir = resolve('lib', `lesson-tune-01-${params.split}-${safeTimestamp}`);
+  const outputRoot = fileURLToPath(new URL('../lib/', import.meta.url));
+  const outputDir = resolve(outputRoot, `lesson-tune-01-${params.split}-${safeTimestamp}`);
   await mkdir(outputDir, { recursive: false });
   for (const sample of params.samples) {
     await writeFile(resolve(outputDir, sample.fileName), `${sample.body.trim()}\n`, 'utf8');
