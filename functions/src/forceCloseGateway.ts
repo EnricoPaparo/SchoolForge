@@ -19,7 +19,7 @@ import {
   type ForceCloseEnqueueOptions,
   type ForceCloseTaskEnqueue,
 } from './forceCloseRunner.js';
-import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
+import { SCHOOLFORGE_FUNCTION_REGION, SCHOOLFORGE_TASK_REGION } from './deploymentRegion.js';
 
 /**
  * FORCE-SUBMIT-02 — chiusura multipla con preavviso di 60 secondi.
@@ -37,6 +37,7 @@ import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
  */
 
 export const FORCE_CLOSE_REGION = SCHOOLFORGE_FUNCTION_REGION;
+export const FORCE_CLOSE_TASK_REGION = SCHOOLFORGE_TASK_REGION;
 /** Nome della coda: coincide con il nome della Function task-queue. */
 export const FORCE_CLOSE_QUEUE = 'runScheduledForceClose';
 
@@ -48,7 +49,7 @@ export const FORCE_CLOSE_QUEUE = 'runScheduledForceClose';
  * un percorso inesistente. La forma corretta per una coda regionale è il nome
  * qualificato `locations/{region}/functions/{queue}`, con un solo argomento.
  */
-export const FORCE_CLOSE_QUEUE_PATH = `locations/${FORCE_CLOSE_REGION}/functions/${FORCE_CLOSE_QUEUE}`;
+export const FORCE_CLOSE_QUEUE_PATH = `locations/${FORCE_CLOSE_TASK_REGION}/functions/${FORCE_CLOSE_QUEUE}`;
 
 if (getApps().length === 0) initializeApp();
 
@@ -124,7 +125,7 @@ export const scheduleForceCloseSubmissions = onCall(
 
 export const runScheduledForceClose = onTaskDispatched(
   {
-    region: FORCE_CLOSE_REGION,
+    region: FORCE_CLOSE_TASK_REGION,
     minInstances: 0,
     maxInstances: 5,
     // Retry contenuti: l'operazione è idempotente, ma un retry infinito su uno

@@ -33,8 +33,13 @@ vi.mock('firebase-functions/logger', () => ({
   error: () => {},
 }));
 
-const { enqueueForceCloseTask, FORCE_CLOSE_QUEUE, FORCE_CLOSE_QUEUE_PATH, FORCE_CLOSE_REGION } =
-  await import('./forceCloseGateway.js');
+const {
+  enqueueForceCloseTask,
+  FORCE_CLOSE_QUEUE,
+  FORCE_CLOSE_QUEUE_PATH,
+  FORCE_CLOSE_REGION,
+  FORCE_CLOSE_TASK_REGION,
+} = await import('./forceCloseGateway.js');
 
 const PAYLOAD = {
   verificationId: 'ver-1',
@@ -52,8 +57,10 @@ beforeEach(() => {
 describe('enqueueForceCloseTask — riferimento della coda', () => {
   it('usa il nome qualificato locations/{region}/functions/{queue}', () => {
     expect(FORCE_CLOSE_QUEUE_PATH).toBe(
-      `locations/${FORCE_CLOSE_REGION}/functions/${FORCE_CLOSE_QUEUE}`,
+      `locations/${FORCE_CLOSE_TASK_REGION}/functions/${FORCE_CLOSE_QUEUE}`,
     );
+    expect(FORCE_CLOSE_REGION).toBe('us-central1');
+    expect(FORCE_CLOSE_TASK_REGION).toBe('us-central1');
   });
 
   it('passa **un solo** argomento a taskQueue: la region non è un extensionId', async () => {
@@ -67,7 +74,7 @@ describe('enqueueForceCloseTask — riferimento della coda', () => {
     // e il secondo era la region interpretata come extensionId.
     expect(taskQueue.mock.calls[0]).toHaveLength(1);
     expect(taskQueue.mock.calls[0]![0]).toBe(FORCE_CLOSE_QUEUE_PATH);
-    expect(taskQueue.mock.calls[0]![0]).not.toBe(FORCE_CLOSE_REGION);
+    expect(taskQueue.mock.calls[0]![0]).not.toBe(FORCE_CLOSE_TASK_REGION);
   });
 
   it('accoda il payload con scheduleTime e id deterministico', async () => {
