@@ -325,6 +325,25 @@ vi.mock('../CorrectionWorkspace.js', () => ({
   ),
 }));
 
+const mockOutcomesDialog = vi.fn();
+vi.mock('../VerificationOutcomesDialog.js', () => ({
+  VerificationOutcomesDialog: (props: {
+    verificationId: string;
+    verificationTitle: string;
+    onClose: () => void;
+  }) => {
+    mockOutcomesDialog(props);
+    return (
+      <div data-testid="verification-outcomes-dialog">
+        Esiti — {props.verificationTitle}
+        <button type="button" onClick={props.onClose}>
+          Chiudi esiti
+        </button>
+      </div>
+    );
+  },
+}));
+
 const sampleProgram = {
   id: 'prog-1',
   ownerUid: 'owner-uid',
@@ -1595,7 +1614,7 @@ describe('VerificationsView', () => {
     expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
-  it('shows Riapri instead of Chiudi on closed verifications while keeping six slots', async () => {
+  it('shows Esiti and Riapri instead of Chiudi on closed verifications', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
@@ -1603,11 +1622,12 @@ describe('VerificationsView', () => {
     expect(menuItem(/scarica pdf studenti/i)).toBeTruthy();
     expect(menuItem(/scarica pdf soluzioni/i)).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: /chiudi verifica/i })).toBeNull();
+    expect(menuItem(/^esiti/i)).toBeTruthy();
     expect(menuItem(/riapri verifica/i)).toBeTruthy();
     expect(menuItem(/elimina verifica/i)).toBeTruthy();
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
     expect(within(card).getAllByRole('button')).toHaveLength(3);
-    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(7);
   });
 
   it('keeps the card delete action visually destructive', async () => {
@@ -4643,7 +4663,7 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
   });
 
-  it('keeps the six actions in the approved order inside the menu', async () => {
+  it('keeps the six ordinary actions in the approved order inside the menu', async () => {
     await renderCards([makeDraftVer()]);
     fireEvent.click(actionsTriggers()[0]!);
     const labels = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());
@@ -4661,9 +4681,38 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     await renderCards([makeDraftVer({ id: 'ver-3', status: 'closed' })]);
     fireEvent.click(actionsTriggers()[0]!);
     const labels = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());
-    expect(labels).toHaveLength(6);
-    expect(labels[4]).toBe('Riapri verifica');
+    expect(labels).toHaveLength(7);
+    expect(labels[4]).toBe('Esiti');
+    expect(labels[5]).toBe('Riapri verifica');
     expect(labels).not.toContain('Chiudi verifica');
+  });
+
+  it('offre «Esiti» solo sulla verifica chiusa e apre il dialog corretto', async () => {
+    await renderCards([
+      makeDraftVer({ id: 'draft' }),
+      makeDraftVer({ id: 'active', status: 'active' }),
+      makeDraftVer({
+        id: 'closed',
+        status: 'closed',
+        config: { ...makeDraftVer().config, title: 'Verifica chiusa' },
+      }),
+    ]);
+    fireEvent.click(actionsTriggers()[0]!);
+    expect(screen.queryByRole('menuitem', { name: /^Esiti/ })).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(actionsTriggers()[1]!);
+    expect(screen.queryByRole('menuitem', { name: /^Esiti/ })).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(menuItem(/^Esiti/, 2));
+    expect(await screen.findByTestId('verification-outcomes-dialog')).toBeTruthy();
+    expect(mockOutcomesDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        verificationId: 'closed',
+        verificationTitle: 'Verifica chiusa',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi esiti' }));
+    expect(screen.queryByTestId('verification-outcomes-dialog')).toBeNull();
   });
 
   it('always renders «Elimina», disabled while the verification is active', async () => {

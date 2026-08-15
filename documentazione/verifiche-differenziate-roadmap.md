@@ -1,18 +1,16 @@
 # SchoolForge — Verifiche differenziate per etichetta (VDIF) ed Esiti
 
-**Stato:** **VDIF-00 completato** (contratto tecnico congelato, cost model,
-matrice di test e prototipo UI), **VDIF-01 implementato** — registro etichette
-owner-only, unicità transazionale del nome e terza scheda «Etichette» — e
-**VDIF-02 implementato** — assegnazione privata studente → etichetta con
-contatori atomici. **VDIF-03, VDIF-04 e VDIF-05 implementati; il rollout e il
-Gate GVDIF restano aperti.**
-**Data:** 12 agosto 2026.
+**Stato:** **VDIF-00→05 implementati e distribuiti su DEV; Gate GVDIF PASS**
+il 15 agosto 2026. **ESITI-01 implementato** come vista owner-only e di sola
+lettura; rollout DEV previsto nello stesso ciclo della sua PR.
+**Data:** 15 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
 equivalenti) implementati e distribuiti su DEV con **Gate GVEX PASS**;
 `assignedQuestionOrders` e `resolveAssignedQuestions` già usati da tutti i
 consumer downstream; LESSON-DEPTH-01 in produzione.
 **Prototipo:** [`prototipi/verifiche-differenziate.html`](prototipi/verifiche-differenziate.html).
-**Gate:** **GVDIF aperto.**
+**Gate:** **GVDIF PASS.** Evidenza:
+[`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md).
 
 Questa roadmap affronta due bisogni distinti che condividono gli stessi dati:
 
@@ -23,9 +21,9 @@ Questa roadmap affronta due bisogni distinti che condividono gli stessi dati:
    obiettivi minimi e misure personalizzate. Non è un extra: è un obbligo
    normativo, e oggi il docente lo assolve fuori dallo strumento.
 
-Il pacchetto **B — verifiche differenziate (VDIF)** è quello che questo
-documento congela. Il pacchetto **A — Esiti (ESITI-01)** resta valido come
-descritto in §12 ed è **indipendente e successivo** al Gate GVDIF.
+Il pacchetto **B — verifiche differenziate (VDIF)** è concluso. Il pacchetto
+**A — Esiti (ESITI-01)** è descritto in §12 ed è stato implementato dopo il
+superamento del Gate GVDIF.
 
 ---
 
@@ -1470,7 +1468,7 @@ verificabili a occhio.
   prevede (`DialogShell`);
 - **nessun overflow orizzontale a 320 px**.
 
-### 11.1 Gate grafico — **PENDING**
+### 11.1 Gate grafico — **PASS**
 
 Le misure DOM (larghezze, altezze, target touch, assenza di overflow) dicono che
 la UI **non è rotta**. Non dicono che è bella, e non sostituiscono lo sguardo del
@@ -1480,15 +1478,16 @@ con gli screenshot reali a 1440 (scheda Etichette), 1024 (riepilogo di
 attivazione), 390 (card studente con Classe + Etichetta) e 320 px (dialog
 Varianti).
 
-**Il gate grafico resta PENDING fino alla conferma umana.** Nessuna fase VDIF
-successiva può dichiararlo superato al posto del docente.
+Il docente ha confermato la resa grafica e i flussi reali su DEV il 15 agosto
+2026 insieme al Gate GVDIF. Il verdetto e il perimetro verificato sono registrati
+in [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md).
 
 ---
 
 ## 12. Pacchetto A — Esiti per lezione (ESITI-01)
 
-Invariato rispetto alla stesura precedente, e **indipendente e successivo** al
-Gate GVDIF.
+**Stato:** implementato dopo il Gate GVDIF; vista owner-only, di sola lettura e
+aperta esplicitamente dal menu di una verifica chiusa.
 
 ### Perché è quasi gratis
 
@@ -1497,17 +1496,20 @@ Il collegamento *domanda → lezione → UDA* è già tracciato:
 | Dato | Dove vive già |
 |---|---|
 | punti per domanda e per consegna | `CorrectionDoc.evaluations[order]` (`points`, `maxPoints`) |
-| lezione e UDA di provenienza | `config.questionRefs[order]` (`udaDir`, `lessonFilename`) |
-| titoli leggibili del perimetro | `config.topicOutline` |
+| lezione e UDA di provenienza | `teacherSnapshot.questionRefs[order]` (`udaDir`, `lessonFilename`); le alternative VDIF ereditano l'origine della propria base |
+| titoli leggibili | albero canonico del corso letto una sola volta all'apertura del dialog |
 
-Manca solo la media: è una **derivazione pura**, calcolata su richiesta dai
-documenti che il workspace di correzione già legge. Nessuna collezione nuova,
-nessuna scrittura, nessuna migrazione, nessuna Rule, nessun prompt.
+La media è una **derivazione pura**, calcolata su richiesta. Nessuna collezione
+nuova, scrittura, migrazione, Rule o prompt. L'apertura esegue una lettura
+puntuale della verifica, le query di correzioni e consegne e le due query già
+canoniche dell'albero UDA/lezioni; non esistono letture per riga, listener o
+polling.
 
 ### Che cosa calcola
 
-1. per ogni domanda, media di `points / maxPoints` sulle sole correzioni in
-   stato `completed` (una correzione in corso non è un dato);
+1. per ogni domanda, media di `points / maxPoints` sulle sole correzioni
+   definitive (`completed` o `returned`; una correzione `in_progress` non è un
+   dato);
 2. aggregazione per lezione e per UDA, pesata sul numero di valutazioni.
 
 ### Come si difende dai numeri che sembrano fatti
@@ -1529,9 +1531,9 @@ domande si basa; il solo caso tagliato è l'incrocio dei due.
 ### Interfaccia
 
 Sulla card di una verifica **chiusa**, nel menu azioni esistente, la voce
-`Esiti`. Apre un dialog con una tabella UDA · Lezione · Padronanza · N
-valutazioni, ordinata dalla più debole. Nient'altro: nessuna generazione,
-nessun rimando.
+`Esiti`. Apre un dialog responsive con card UDA e righe lezione: Padronanza,
+Domande e Valutazioni, ordinate dalla più debole. La copertura mostra
+correzioni definitive/consegne. Nient'altro: nessuna generazione o rimando.
 
 ### Interazione con VDIF
 
@@ -1551,9 +1553,10 @@ disponibile in tre clic. Non è rinviata: è fuori perimetro.
 
 ### DoD
 
-Vista `Esiti` funzionante su una verifica chiusa reale; nessuna scrittura
+Vista `Esiti` disponibile solo su una verifica chiusa; nessuna scrittura
 introdotta; test sulla derivazione (media, aggregazione, correzioni non
-completate escluse, copertura dichiarata, numero di domande per riga).
+definitive escluse, copertura dichiarata, numero di domande e valutazioni per
+riga), sul loader fail-closed e sul dialog responsive.
 
 ---
 
@@ -1563,12 +1566,12 @@ completate escluse, copertura dichiarata, numero di domande per riga).
 |---|---|---|---|
 | **VDIF-00** ✅ | Contratto tecnico, privacy, cost model, matrice di test e **prototipo UI**. Solo documentazione e prototipo statico. | GVEX PASS | Questo documento + `prototipi/verifiche-differenziate.html` + fasi in `piano-implementazione.md`. Zero runtime. |
 | **VDIF-01** ✅ | **Registro etichette owner-only**: tipi a **otto chiavi** (`assignedCount` e `draftUsageCount` inclusi, entrambi a `0` alla nascita), `differentiationLabels`, **prenotazione transazionale `differentiationLabelNames`** (creazione, rinomina con rilascio, eliminazione con rilascio, fail-closed su record incoerente), helper puro `labelName.ts` + `labelReservationId.ts`, Rules owner-only a contratto chiuso per entrambe le collezioni, audit atomico, **scheda Etichette** (card, dialog crea/rinomina/elimina, elimina protetta dai due contatori, stato vuoto). | VDIF-00 | **Implementato.** Vedi §18 per lo stato reale, i limiti dichiarati e ciò che resta a VDIF-02. |
-| **VDIF-02** ✅ | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, service interamente **transazionale** con valori espliciti di `assignedCount` (mai `increment` alla cieca), cambio `L1→L2` in un solo commit, selettore nella card studente, ricerca per etichetta, Rules, audit e rimozione studente nella stessa transazione. | VDIF-01 | **Implementato, non distribuito.** Integrità referenziale finale su etichetta e studente (`existsAfter`/`getAfter`); busy e retry per singola card; nessuna etichetta in alcun dato studente. Vedi §19. |
+| **VDIF-02** ✅ | **Assegnazione privata studente → etichetta**: `studentLabelAssignments`, service interamente **transazionale** con valori espliciti di `assignedCount` (mai `increment` alla cieca), cambio `L1→L2` in un solo commit, selettore nella card studente, ricerca per etichetta, Rules, audit e rimozione studente nella stessa transazione. | VDIF-01 | **Implementato e distribuito su DEV.** Integrità referenziale finale su etichetta e studente (`existsAfter`/`getAfter`); busy e retry per singola card; nessuna etichetta in alcun dato studente. Vedi §19. |
 | **VDIF-03** | ✅ **Implementato** — builder delle varianti: `classifyQuestionParticipation`, pulsante «Varianti (n)», dialog a tre valori con dirty guard, filtro alternative, riuso `VexQuestionSelect`, `config.differentiation` nello stesso «Salva bozza», **`updateVerificationConfig` transazionale** con diff di insiemi `added`/`removed` su `draftUsageCount` (§5.F.1), **mutua esclusione VEX bidirezionale**. | VDIF-02 | Configurazione salvata e ricaricata; helper puro condiviso usato da picker, VEX e servizio; replay no-op; **zero letture e zero scritture di etichette quando l'insieme non cambia**. |
-| **VDIF-04** ✅ | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | **Implementato, non distribuito.** Attivazione con sostituzioni/omissioni e combinazione VEX coperta dai test; idempotenza e replay verdi. Vedi §20. |
-| **VDIF-05** ✅ | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | **Implementato, non distribuito.** Ogni consumer opera sulla sola assegnazione; numerazione studente locale e densa; audit strutturale e fixture sentinella dimostrano l'assenza di etichette e alternative non assegnate. Vedi §21 e [`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md). |
-| **GVDIF** | **Rollout DEV e gate umano multi-studente**: smoke reale con più studenti etichettati e non, isolamento, correzione, restituzione, export. | VDIF-05 | Checklist firmata in `evidenze/gvdif-human-gate.md`. **Aperto.** |
-| **ESITI-01** | Vista di **sola lettura** degli esiti aggregati per UDA/lezione (§12). **Indipendente e successiva a GVDIF.** | GVDIF | §12, DoD. |
+| **VDIF-04** ✅ | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | **Implementato e distribuito su DEV.** Attivazione con sostituzioni/omissioni e combinazione VEX coperta dai test; idempotenza e replay verdi. Vedi §20. |
+| **VDIF-05** ✅ | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | **Implementato e distribuito su DEV.** Ogni consumer opera sulla sola assegnazione; numerazione studente locale e densa; audit strutturale e fixture sentinella dimostrano l'assenza di etichette e alternative non assegnate. Vedi §21 e [`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md). |
+| **GVDIF** ✅ | **Rollout DEV e gate umano multi-studente**: smoke reale con più studenti etichettati e non, isolamento, correzione, restituzione, export. | VDIF-05 | **PASS** il 15 agosto 2026; checklist in [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md). |
+| **ESITI-01** ✅ | Vista di **sola lettura** degli esiti aggregati per UDA/lezione (§12). | GVDIF | **Implementato**; rollout DEV nello stesso ciclo della PR. |
 
 ### 13.1 Fuori scope da VDIF — esplicito
 
@@ -1758,8 +1761,8 @@ chiedere.
 
 ## 18. VDIF-01 — che cosa è stato implementato davvero
 
-**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout, Gate
-GVDIF **aperto**.
+**Stato della fase al suo completamento:** implementata, allora non ancora
+distribuita. **Stato corrente del percorso:** distribuita su DEV, GVDIF PASS.
 
 ### 18.1 Superficie realizzata
 
@@ -1904,8 +1907,9 @@ faranno VDIF-02 (assegnazioni) e VDIF-03/04 (bozze e attivazione).
 
 ## 19. VDIF-02 — che cosa è stato implementato davvero
 
-**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout, Gate
-GVDIF **aperto**. VDIF-03 resta aperto.
+**Stato della fase al suo completamento:** implementata, allora non ancora
+distribuita e con VDIF-03 aperto. **Stato corrente del percorso:** distribuita
+su DEV, GVDIF PASS.
 
 ### 19.1 Superficie realizzata
 
@@ -2003,8 +2007,9 @@ flusso lo muove ancora**: lo faranno VDIF-03/04.
 
 ## 20. VDIF-04 — che cosa è stato implementato davvero
 
-**Stato: implementato, non distribuito.** Nessun deploy, nessun rollout.
-VDIF-05 e il Gate GVDIF restano **aperti**.
+**Stato della fase al suo completamento:** implementata, allora non ancora
+distribuita e con VDIF-05 aperto. **Stato corrente del percorso:** distribuita
+su DEV, GVDIF PASS.
 
 ### 20.1 Superficie realizzata
 
@@ -2179,7 +2184,7 @@ rende una verifica differenziata **attivabile e avviabile**, e si ferma lì.
 
 ## 21. VDIF-05 — consumer downstream e privacy audit
 
-**Stato:** implementato, non distribuito. Gate GVDIF **aperto**.
+**Stato:** implementato e distribuito su DEV. Gate GVDIF **PASS**.
 
 ### 21.1 Un solo confine post-attivazione
 
@@ -2223,6 +2228,5 @@ Checklist del rollout: [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gat
 ### 21.4 Costi e confini
 
 Zero nuove letture, scritture, callable, listener, polling, documenti o indici.
-Tutti i filtri operano su snapshot e submission già caricati. VDIF-05 non
-distribuisce nulla e non chiude GVDIF: il gate richiede ancora lo smoke reale
-multi-studente su DEV.
+Tutti i filtri operano su snapshot e submission già caricati. Lo smoke reale
+multi-studente su DEV ha chiuso GVDIF il 15 agosto 2026.
