@@ -9,14 +9,41 @@ import {
   decideAssignment,
   parseAssignInput,
   runAssignVariant,
+  runResolveStudentPdf,
   submissionIdFor,
   type AssignVariantDeps,
+  type ResolveStudentPdfDeps,
   type StudentContext,
   type VerificationContext,
 } from './verificationVariantGatewayCore.js';
 
 function q(order: number, over: Partial<VexSnapshotQuestion> = {}): VexSnapshotQuestion {
   return { order, tipo: 'aperta', maxPoints: 3, difficolta: 3, testo: `t${order}`, ...over };
+}
+
+function pdfHarness(over: Partial<ResolveStudentPdfDeps> = {}) {
+  let orders: number[] | null = null;
+  let writes = 0;
+  const deps: ResolveStudentPdfDeps = {
+    callerUid: STUDENT,
+    portalEnabled: async () => true,
+    loadVerification: async () => verification(),
+    loadStudent: async () => student(),
+    randomIntBelow: rngSeq(0, 0),
+    persistPdfAssignment: async (input) => {
+      if (orders) return { assignedQuestionOrders: [...orders], writes: 0 };
+      orders = decideAssignment(
+        { exists: false },
+        input.snapshot,
+        input.studentUid,
+        input.randomIntBelow,
+      ).assignedQuestionOrders;
+      writes += 1;
+      return { assignedQuestionOrders: [...orders], writes: 1 };
+    },
+    ...over,
+  };
+  return { deps, writesTotal: () => writes };
 }
 
 function snapshot(): VexSnapshot {
@@ -45,6 +72,7 @@ function verification(over: Partial<VerificationContext> = {}): VerificationCont
     ownerUid: OWNER,
     status: 'active',
     onlineEnabled: true,
+    studentPdfEnabled: true,
     visibility: 'public',
     classId: 'class-a',
     title: 'Verifica',
@@ -282,5 +310,47 @@ describe('runAssignVariant — idempotency & concurrency', () => {
     expect(res.assignedQuestionOrders).toEqual([0, 1]);
     await runAssignVariant({ verificationId: VID }, h.deps);
     expect(h.writesTotal()).toBe(1);
+  });
+});
+
+describe('runResolveStudentPdf — PDF personale server-resolved', () => {
+  it('funziona anche a verifica chiusa e online disabilitato, se PDF e visibilità sono attivi', async () => {
+    const h = pdfHarness({
+      loadVerification: async () =>
+        verification({ status: 'closed', onlineEnabled: false, studentPdfEnabled: true }),
+    });
+    const result = await runResolveStudentPdf({ verificationId: VID }, h.deps);
+    expect(result.assignedQuestionOrders).toEqual([0, 1, 3]);
+    expect(result.questions.map((question) => question.order)).toEqual([0, 1, 3]);
+  });
+
+  it.each([
+    ['PDF disabilitato', { studentPdfEnabled: false }],
+    ['verifica nascosta', { visibility: 'hidden' }],
+    ['verifica in bozza', { status: 'draft' }],
+  ])('rifiuta %s prima di persistere', async (_name, override) => {
+    const h = pdfHarness({
+      loadVerification: async () => verification(override),
+    });
+    expect(await codeOf(() => runResolveStudentPdf({ verificationId: VID }, h.deps))).toBe(
+      'failed_precondition',
+    );
+    expect(h.writesTotal()).toBe(0);
+  });
+
+  it('è idempotente: più download riusano lo stesso insieme', async () => {
+    const h = pdfHarness();
+    const first = await runResolveStudentPdf({ verificationId: VID }, h.deps);
+    const second = await runResolveStudentPdf({ verificationId: VID }, h.deps);
+    expect(h.writesTotal()).toBe(1);
+    expect(second.assignedQuestionOrders).toEqual(first.assignedQuestionOrders);
+  });
+
+  it('non restituisce soluzioni né alternative non assegnate', async () => {
+    const result = await runResolveStudentPdf({ verificationId: VID }, pdfHarness().deps);
+    expect(result.questions.map((question) => question.order)).toEqual([0, 1, 3]);
+    expect(JSON.stringify(result)).not.toContain('soluzione');
+    expect(result.questions.map((question) => question.order)).not.toContain(2);
+    expect(result.questions.map((question) => question.order)).not.toContain(4);
   });
 });

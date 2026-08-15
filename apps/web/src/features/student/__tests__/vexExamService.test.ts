@@ -3,6 +3,7 @@ import type { SubmissionDoc } from '../../../types/firestore.js';
 import type { StudentVerificationItem } from '../../repository/verifications/studentVerificationsService.js';
 import type { AssignVariantResponse } from '../verificationVariantClient.js';
 import {
+  resolveVexPdfQuestions,
   resolveVexExam,
   validateAssignResponse,
   VexExamError,
@@ -130,7 +131,7 @@ describe('resolveVexExam', () => {
   it('calls the callable once and uses only the returned variant', async () => {
     const assign = vi.fn(async () => goodResponse());
     const load = vi.fn(async () => draftSubmission);
-    const deps: VexExamDeps = { assign, load };
+    const deps: VexExamDeps = { assign, load, resolvePdf: async () => goodResponse() };
     const resolved = await resolveVexExam(item(), 's1', deps);
     expect(assign).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith('v1');
@@ -144,12 +145,43 @@ describe('resolveVexExam', () => {
     const deps: VexExamDeps = {
       assign: async () => ({ assignmentMode: 'same_questions' }) as never,
       load: async () => draftSubmission,
+      resolvePdf: async () => goodResponse(),
     };
     await expect(resolveVexExam(item(), 's1', deps)).rejects.toBeInstanceOf(VexExamError);
   });
 
   it('fails when no draft submission is available after assignment', async () => {
-    const deps: VexExamDeps = { assign: async () => goodResponse(), load: async () => null };
+    const deps: VexExamDeps = {
+      assign: async () => goodResponse(),
+      load: async () => null,
+      resolvePdf: async () => goodResponse(),
+    };
     await expect(resolveVexExam(item(), 's1', deps)).rejects.toBeInstanceOf(VexExamError);
+  });
+});
+
+describe('resolveVexPdfQuestions', () => {
+  it('uses the PDF resolver without creating or loading a submission', async () => {
+    const assign = vi.fn(async () => goodResponse());
+    const load = vi.fn(async () => draftSubmission);
+    const resolvePdf = vi.fn(async () => goodResponse());
+    const questions = await resolveVexPdfQuestions(item(), { assign, load, resolvePdf });
+
+    expect(resolvePdf).toHaveBeenCalledOnce();
+    expect(resolvePdf).toHaveBeenCalledWith('v1');
+    expect(assign).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    expect(questions.map((question) => question.order)).toEqual([0, 1, 3]);
+    for (const question of questions) expect('soluzione' in question).toBe(false);
+  });
+
+  it('fails closed when the PDF resolver returns a malformed assignment', async () => {
+    const deps: VexExamDeps = {
+      assign: async () => goodResponse(),
+      load: async () => draftSubmission,
+      resolvePdf: async () => ({ assignmentMode: 'same_questions' }) as never,
+    };
+
+    await expect(resolveVexPdfQuestions(item(), deps)).rejects.toBeInstanceOf(VexExamError);
   });
 });

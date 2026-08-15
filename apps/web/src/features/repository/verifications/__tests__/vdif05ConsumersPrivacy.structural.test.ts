@@ -85,9 +85,11 @@ describe('VDIF-05 — un solo insieme assegnato per tutti i consumatori', () => 
     expect(engine).toContain('isValidResolvedAssignment');
   });
 
-  it('i PDF studente server-resolved restano disabilitati', () => {
+  it('i PDF studente server-resolved passano dal resolver personale', () => {
     const view = source('apps/web/src/features/student/StudentVerificationsView.tsx');
-    expect(view).toContain('item.studentPdfEnabled && !isServerResolvedItem(item)');
+    expect(view).toContain('const canDownloadPdf = item.studentPdfEnabled');
+    expect(view).toContain('await resolveVexPdfQuestions(item, vexDepsRef.current!)');
+    expect(view).not.toContain('item.studentPdfEnabled && !isServerResolvedItem(item)');
   });
 });
 

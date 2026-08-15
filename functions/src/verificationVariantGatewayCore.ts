@@ -83,6 +83,7 @@ export interface VerificationContext {
   ownerUid: string;
   status: string;
   onlineEnabled: boolean;
+  studentPdfEnabled: boolean;
   visibility: string;
   classId: string | null;
   title: string;
@@ -122,6 +123,19 @@ export interface AssignVariantDeps {
   loadStudent(uid: string): Promise<StudentContext | null>;
   /** Transazione idempotente read-or-assign su `submissions/{submissionId}`. */
   persistAssignment(input: PersistAssignmentInput): Promise<PersistAssignmentResult>;
+  randomIntBelow: RandomIntBelow;
+}
+
+export interface ResolveStudentPdfDeps {
+  callerUid: string | null;
+  portalEnabled(): Promise<boolean>;
+  loadVerification(verificationId: string): Promise<VerificationContext | null>;
+  loadStudent(uid: string): Promise<StudentContext | null>;
+  /**
+   * Transazione read-or-assign separata dalla submission: scaricare il PDF non
+   * deve far apparire la verifica come iniziata.
+   */
+  persistPdfAssignment(input: PersistAssignmentInput): Promise<PersistAssignmentResult>;
   randomIntBelow: RandomIntBelow;
 }
 
@@ -272,6 +286,77 @@ export async function runAssignVariant(
     assignedQuestionOrders: persisted.assignedQuestionOrders,
     // Solo le domande realmente assegnate: mai un'alternativa non assegnata,
     // mai una soluzione, mai un'etichetta o un motivo della selezione.
+    questions: sanitizeResolvedQuestions(snapshot, persisted.assignedQuestionOrders),
+  };
+}
+
+/**
+ * Risolve il PDF personale di una verifica `server_resolved` senza creare una
+ * submission. Il toggle docente è verificato sul documento autorevole e la
+ * risposta contiene soltanto le domande assegnate e sanitizzate.
+ */
+export async function runResolveStudentPdf(
+  raw: unknown,
+  deps: ResolveStudentPdfDeps,
+): Promise<AssignResponse> {
+  const input = parseAssignInput(raw);
+  const callerUid = deps.callerUid;
+  if (!callerUid) {
+    throw new AssignGatewayError('unauthenticated', 'Autenticazione richiesta.');
+  }
+  if (!(await deps.portalEnabled())) {
+    throw new AssignGatewayError('failed_precondition', 'Portale studenti non attivo.');
+  }
+
+  const verification = await deps.loadVerification(input.verificationId);
+  if (!verification) {
+    throw new AssignGatewayError('not_found', 'Verifica non trovata.');
+  }
+  const student = await deps.loadStudent(callerUid);
+  if (!student || student.status !== 'approved' || student.ownerUid !== verification.ownerUid) {
+    throw new AssignGatewayError('permission_denied', 'Studente non autorizzato.');
+  }
+  if (verification.status !== 'active' && verification.status !== 'closed') {
+    throw new AssignGatewayError('failed_precondition', 'La verifica non è disponibile.');
+  }
+  if (verification.visibility !== 'public' || !verification.studentPdfEnabled) {
+    throw new AssignGatewayError('failed_precondition', 'Il PDF non è disponibile.');
+  }
+  if (verification.classId === null || verification.classId !== student.classId) {
+    throw new AssignGatewayError(
+      'permission_denied',
+      'La verifica non è assegnata alla tua classe.',
+    );
+  }
+
+  let snapshot: ResolvableSnapshot;
+  try {
+    snapshot = parseResolvableSnapshot(verification.teacherSnapshotRaw);
+  } catch (err) {
+    if (err instanceof VexAssignmentError) throw fromCoreError(err);
+    throw err;
+  }
+
+  let persisted: PersistAssignmentResult;
+  try {
+    persisted = await deps.persistPdfAssignment({
+      submissionId: submissionIdFor(input.verificationId, callerUid),
+      verificationId: input.verificationId,
+      studentUid: callerUid,
+      ownerUid: verification.ownerUid,
+      verificationTitle: verification.title,
+      className: verification.className,
+      snapshot,
+      randomIntBelow: deps.randomIntBelow,
+    });
+  } catch (err) {
+    if (err instanceof VexAssignmentError) throw fromCoreError(err);
+    throw err;
+  }
+
+  return {
+    assignmentMode: 'server_resolved',
+    assignedQuestionOrders: persisted.assignedQuestionOrders,
     questions: sanitizeResolvedQuestions(snapshot, persisted.assignedQuestionOrders),
   };
 }

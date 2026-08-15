@@ -15,7 +15,7 @@ smoke multi-studente richiesto da GVDIF.
 | Review studente | `CorrectionReturnDoc` | test di rendering con order non contigui | numerazione locale 1…N, nessun order tecnico mostrato |
 | PDF archivio/correzione | modello archivio filtrato dal resolver | test del modello e PDF esistenti | solo domande assegnate; numerazione locale |
 | PDF verifica docente | snapshot completo owner-only | contratto esistente | resta il documento completo del docente |
-| PDF verifica studente | `assignmentMode` pubblico | guardia UI strutturale | disabilitato per ogni verifica `server_resolved`; nessuna esposizione del compito completo |
+| PDF verifica studente | callable personale + assegnazione server-only | test core, UI, client e Rules | solo domande assegnate; nessuna submission creata dal download e nessuna esposizione del compito completo |
 | CSV registro | riepiloghi della correzione | test export esistenti | soli totali/esiti, nessuna domanda o etichetta |
 | Ricevute | contratto chiuso `SubmissionReceiptDoc` | test strutturale sui tipi e Rules esistenti | nessun campo di differenziazione |
 | Chiusura forzata | submission già assegnata | test strutturale + suite Functions | conserva l'assegnazione; non serializza etichette |

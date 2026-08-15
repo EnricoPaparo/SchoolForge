@@ -333,3 +333,45 @@ describe('Firestore rules — verifications studentPdfEnabled toggle (M3F-09)', 
     await assertFails(getDoc(doc(studentDb(), 'verifications/v1')));
   });
 });
+
+describe('Firestore rules — assegnazione personale del PDF', () => {
+  async function seedAssignment() {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `verifications/v1/studentAssignments/${STUDENT_UID}`), {
+        verificationId: 'v1',
+        studentUid: STUDENT_UID,
+        ownerUid: OWNER_UID,
+        assignedQuestionOrders: [0, 2],
+        createdAt: new Date(),
+      });
+    });
+  }
+
+  it('the owner can read the server-only assignment', async () => {
+    await seedAssignment();
+    await assertSucceeds(
+      getDoc(doc(ownerDb(), `verifications/v1/studentAssignments/${STUDENT_UID}`)),
+    );
+  });
+
+  it('the student cannot read their server-only assignment directly', async () => {
+    await seedAssignment();
+    await assertFails(
+      getDoc(doc(studentDb(), `verifications/v1/studentAssignments/${STUDENT_UID}`)),
+    );
+  });
+
+  it('the student cannot forge or overwrite a server-only assignment', async () => {
+    await seedAssignment();
+    await assertFails(
+      setDoc(doc(studentDb(), `verifications/v1/studentAssignments/${STUDENT_UID}`), {
+        verificationId: 'v1',
+        studentUid: STUDENT_UID,
+        ownerUid: OWNER_UID,
+        assignedQuestionOrders: [1],
+        createdAt: new Date(),
+      }),
+    );
+  });
+});

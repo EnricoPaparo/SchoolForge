@@ -9,8 +9,8 @@ unica scrittura `assignedQuestionOrders`), isolamento delle alternative e Rules 
 VEX-02A: **svolgimento studente della variante assegnata** — il portale instrada
 `equivalent_variants` sulla callable (avvio/ripresa/refresh idempotenti), `OnlineExamView`
 mostra **solo** le domande assegnate, autosave/consegna sono ristretti alla variante (client
-fail-closed + **Rules**: `answers`/`flagged` ⊆ `assignedAnswerKeys`), PDF studente disabilitato
-in VEX. VEX-02B: **correzione, IA, restituzione ed export sulla sola variante assegnata** —
+fail-closed + **Rules**: `answers`/`flagged` ⊆ `assignedAnswerKeys`), PDF studente risolto
+dal server sulla stessa assegnazione. VEX-02B: **correzione, IA, restituzione ed export sulla sola variante assegnata** —
 risolutore canonico condiviso (`assignedVariant.ts`), scheletro correzione + totali +
 restituzione + payload IA costruiti esclusivamente su `assignedQuestionOrders` (fail-closed).
 VEX-02C: **builder assistito locale** — precompilazione **tecnica** dei gruppi (UDA + tipologia +
@@ -283,11 +283,11 @@ ai question ref, non richiede reimport e non introduce alcun costo/storage/schem
 ### 4.4 PDF
 
 - **PDF docente:** continua a contenere **l'insieme completo** configurato (invariato).
-- **PDF studente:** in `equivalent_variants` deve essere **disabilitato/nascosto**. Un PDF
-  generato dalla proiezione completa esporrebbe tutte le alternative → **requisito di
-  sicurezza**: `studentPdfEnabled` è forzato inefficace/nascosto quando
-  `distributionMode == 'equivalent_variants'` (lo studente non ha una proiezione completa
-  da cui generare il PDF, e la UI non offre il download). Da implementare in VEX-02.
+- **PDF studente:** in `equivalent_variants` non viene generato dalla
+  proiezione, che esporrebbe o ometterebbe alternative. Quando
+  `studentPdfEnabled` è attivo, `resolveStudentVerificationPdf` restituisce solo
+  l'assegnazione personale sanitizzata e la conserva server-side senza creare
+  una submission.
 
 ---
 
@@ -395,7 +395,7 @@ codice applicativo.
 - ✅ autosave/consegna ristretti alla variante: filtro client fail-closed + **Rules**
   (`answers`/`flagged` keys ⊆ `assignedAnswerKeys`, mirror string server-only di
   `assignedQuestionOrders` — le Rules non convertono numeri→stringa); cadenza/write invariati;
-- ✅ PDF studente **disabilitato e nascosto** in `equivalent_variants`; `same_questions` invariato;
+- ✅ PDF studente personale in `equivalent_variants` via callable; `same_questions` invariato;
 - ✅ loading/spinner sobrio, guardia doppio-click, nessun setState post-unmount, retry su errore;
 - ✅ test web mirati + Rules Emulator (subset risposte). Nessun listener/polling; nessun nuovo
   documento; nessuna lettura pool/Storage o delle alternative dal browser.
@@ -421,11 +421,11 @@ codice applicativo.
   solo le soluzioni assegnate; nessun `commonQuestionOrders`/`equivalentGroups`/`alternativeOrders`/
   alternative non assegnate; vista studente invariata;
 - ✅ **export**: PDF docente completo invariato; registro/riepilogo PDF+CSV usano i totali della
-  variante (dal `correctionSummary`, già evaluation-based); PDF studente resta disabilitato in VEX;
-- ✅ **ciclo di vita**: nessun documento assignment separato; eliminare la submission elimina
-  `assignedQuestionOrders`/`assignedAnswerKeys`; riapertura/azzeramento/completamento/restituzione
-  conservano la variante; dopo eliminazione un nuovo svolgimento riceve una **nuova** assegnazione
-  server-side (la submission precedente non esiste più);
+  variante (dal `correctionSummary`, già evaluation-based); PDF studente usa la variante personale;
+- ✅ **ciclo di vita**: il download può creare un solo documento assignment
+  server-only; lo svolgimento lo riusa e lo rispecchia nella submission; riapertura/azzeramento/completamento/restituzione
+  conservano la variante; dopo eliminazione un nuovo svolgimento riusa
+  l'assegnazione PDF server-only, se presente, altrimenti ne riceve una nuova;
 - ✅ Rules invariate (`correctionReturns` è già leggibile solo dallo studente proprietario quando
   visibile); il service client owner-only costruisce e valida la proiezione, poi le Rules
   autorizzano la scrittura. Test web + Functions mirati. Nessun nuovo listener/query/documento;

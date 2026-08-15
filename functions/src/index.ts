@@ -16,7 +16,10 @@ export { aiContentPreview, aiContentGenerate } from './aiContentGateway.js';
 export { cleanupProgramLessonNotes } from './programNotesCleanup.js';
 // VEX-01B — callable di assegnazione idempotente delle varianti equivalenti
 // (server-side, isolamento delle alternative). Vedi documentazione/vex-contract.md.
-export { assignVerificationVariant } from './verificationVariantGateway.js';
+export {
+  assignVerificationVariant,
+  resolveStudentVerificationPdf,
+} from './verificationVariantGateway.js';
 // FORCE-SUBMIT-02 — la chiusura forzata è **solo** batch e con preavviso: la
 // callable per singola consegna di FORCE-SUBMIT-01 è stata rimossa, perché
 // avrebbe permesso di chiudere una verifica senza i 60 secondi promessi allo

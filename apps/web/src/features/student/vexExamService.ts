@@ -6,6 +6,7 @@ import { loadSubmission } from './submissionsService.js';
 import { startSubmission } from './submissionsService.js';
 import {
   createAssignVerificationVariant,
+  createResolveStudentVerificationPdf,
   type AssignVariantResponse,
 } from './verificationVariantClient.js';
 
@@ -104,6 +105,8 @@ export function validateAssignResponse(resp: AssignVariantResponse): PublicVerif
 export interface VexExamDeps {
   /** Invoca la callable VEX. Iniettabile nei test. */
   assign: (verificationId: string) => Promise<AssignVariantResponse>;
+  /** Risolve il PDF senza creare né modificare una submission. */
+  resolvePdf: (verificationId: string) => Promise<AssignVariantResponse>;
   /** Carica la submission deterministica. Iniettabile nei test. */
   load: (verificationId: string, uid: string) => Promise<SubmissionDoc | null>;
 }
@@ -112,13 +115,26 @@ export interface VexExamDeps {
  *  (solo al primo avvio VEX): un flusso `same_questions` non la tocca mai. */
 export function productionVexExamDeps(functions: Functions, db: Firestore): VexExamDeps {
   let assignFn: ReturnType<typeof createAssignVerificationVariant> | null = null;
+  let resolvePdfFn: ReturnType<typeof createResolveStudentVerificationPdf> | null = null;
   return {
     assign: (verificationId) => {
       assignFn ??= createAssignVerificationVariant(functions);
       return assignFn({ verificationId });
     },
+    resolvePdf: (verificationId) => {
+      resolvePdfFn ??= createResolveStudentVerificationPdf(functions);
+      return resolvePdfFn({ verificationId });
+    },
     load: (verificationId, uid) => loadSubmission(verificationId, uid, db),
   };
+}
+
+/** Domande personali per il PDF, validate con lo stesso contratto dell'esame. */
+export async function resolveVexPdfQuestions(
+  item: StudentVerificationItem,
+  deps: VexExamDeps,
+): Promise<PublicVerificationQuestion[]> {
+  return validateAssignResponse(await deps.resolvePdf(item.id));
 }
 
 /**

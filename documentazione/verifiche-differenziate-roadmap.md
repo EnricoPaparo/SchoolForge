@@ -2201,8 +2201,9 @@ possono proseguire.
   locale densa `1…N`; gli order canonici restano soltanto chiavi tecniche;
 - `CorrectionReturnDoc` e PDF di correzione contengono soltanto il percorso
   assegnato; il CSV registro conserva i soli riepiloghi;
-- il PDF della verifica per lo studente resta disabilitato per ogni
-  `assignmentMode: 'server_resolved'`; il PDF completo del docente è invariato;
+- il PDF della verifica per lo studente `server_resolved` risolve dal server la
+  sola assegnazione personale e la riusa nello svolgimento; il PDF completo del
+  docente è invariato;
 - ricevute e chiusura forzata conservano l'assegnazione senza aggiungere
   metadati; `topicOutline` resta il perimetro comune congelato.
 
