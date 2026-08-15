@@ -22,6 +22,7 @@ import {
   type StudentContext,
   type VerificationContext,
 } from './verificationVariantGatewayCore.js';
+import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 
 /**
  * VEX-01B — callable `assignVerificationVariant` (Cloud Functions v2 `onCall`,
@@ -32,7 +33,7 @@ import {
  * il wiring Admin SDK (letture puntuali + transazione a scrittura singola).
  */
 
-export const VEX_GATEWAY_REGION = 'us-central1';
+export const VEX_GATEWAY_REGION = SCHOOLFORGE_FUNCTION_REGION;
 
 if (getApps().length === 0) initializeApp();
 

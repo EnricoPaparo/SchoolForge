@@ -15,6 +15,7 @@ import {
   type ProgramNotesCleanupResult,
   type RawLessonNoteIndex,
 } from './programNotesCleanupCore.js';
+import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 
 /**
  * ANNOT-CLEANUP-01 — owner-only Cloud Function v2 `onCall` that deletes a
@@ -23,7 +24,7 @@ import {
  * teacher never gains Rules access to student notes and never reads their
  * content. Same region as the rest of the project. Scale-to-zero.
  */
-export const PROGRAM_NOTES_CLEANUP_REGION = 'us-central1';
+export const PROGRAM_NOTES_CLEANUP_REGION = SCHOOLFORGE_FUNCTION_REGION;
 
 if (getApps().length === 0) initializeApp();
 

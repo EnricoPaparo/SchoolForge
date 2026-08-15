@@ -1,5 +1,6 @@
 {
   "projects": {
-    "dev": "schoolforge-dev"
+    "dev": "schoolforge-dev",
+    "prod": "schoolforge-prod"
   }
 }
