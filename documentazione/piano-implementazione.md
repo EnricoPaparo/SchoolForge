@@ -1153,7 +1153,8 @@ prototipo statico in
 
 **Stato del percorso.** Pool IA Quality e mappe concettuali sono confermati dal
 docente ([evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md));
-VDIF-01→05 è distribuito e GVDIF è PASS. ESITI-01 è implementato come ultimo
+VDIF-01→05 è distribuito e GVDIF è PASS. ESITI-01 è implementato, distribuito
+e validato su DEV come ultimo
 pacchetto applicativo di questa linea. Restano tracciati altrove i Gate GAIGEN,
 GLESSON e GSTRUCT, e ogni attività di provisioning o deploy PROD.
 
@@ -1172,4 +1173,4 @@ proprietà della **consegna**, non della **selezione delle domande**.
 | VDIF-04 ✅ | **Attivazione reale** con guardie G01→G21, snapshot privato autosufficiente, assegnazione server-side e riepilogo owner-only. | VDIF-03 | **Implementato e distribuito su DEV.** Nessuna nuova collezione, callable, dipendenza o indice; smoke responsive documentato. Gate GVDIF PASS. |
 | VDIF-05 ✅ | **Consumer downstream**: svolgimento, correzione manuale e IA, restituzione, PDF, CSV, ricevute e privacy audit end-to-end. | VDIF-04 | **Implementato e distribuito su DEV.** Tutti i consumer operano sulla sola assegnazione; nessun metadato etichetta nei contratti studente, export o run IA. Gate GVDIF PASS. |
 | Gate GVDIF ✅ | Rollout DEV e **gate umano multi-studente**. | VDIF-05 | **PASS** il 15 agosto 2026; evidenza in [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md). |
-| ESITI-01 ✅ | Vista owner-only e di **sola lettura** degli esiti aggregati per UDA/lezione: derivazione pura da correzioni definitive e snapshot, copertura dichiarata, domande e valutazioni per riga. | GVDIF | **Implementato.** Nessuna scrittura, collezione, Rule, prompt o dato etichetta; caricamento soltanto all'apertura del dialog. |
+| ESITI-01 ✅ | Vista owner-only e di **sola lettura** degli esiti aggregati per UDA/lezione: derivazione pura da correzioni definitive e snapshot, copertura dichiarata, domande e valutazioni per riga. | GVDIF | **Implementato, distribuito e validato su DEV — PASS docente 15/08/2026.** Nessuna scrittura, collezione, Rule, prompt o dato etichetta; caricamento soltanto all'apertura del dialog. Evidenza: [`evidenze/esiti-01-human-gate.md`](evidenze/esiti-01-human-gate.md). |
