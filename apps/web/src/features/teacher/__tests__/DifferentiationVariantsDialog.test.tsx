@@ -107,7 +107,10 @@ describe('DifferentiationVariantsDialog', () => {
     fireEvent.click(screen.getAllByLabelText('Nessuna')[0]!);
     fireEvent.click(screen.getByRole('button', { name: /annulla/i }));
     expect(screen.getByRole('alertdialog')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /continua a modificare/i }));
+    expect(screen.getByRole('button', { name: 'Continua' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Abbandona' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continua' }));
     expect(screen.getByText('Domanda base?')).toBeTruthy();
     expect(onCancel).not.toHaveBeenCalled();
   });
@@ -121,7 +124,7 @@ describe('DifferentiationVariantsDialog', () => {
       /@media\s*\(min-width:\s*641px\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.confirmActions\s*\{[^}]*justify-content:\s*center/s,
     );
     expect(css).toMatch(
-      /\.confirmActions button\s*\{[^}]*flex:\s*0\s+1\s+12\.5rem[^}]*min-width:\s*12\.5rem/s,
+      /\.confirmActions button\s*\{[^}]*flex:\s*0\s+1\s+8rem[^}]*min-width:\s*8rem/s,
     );
     expect(css).not.toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*?\.confirmActions button\s*\{/s);
   });

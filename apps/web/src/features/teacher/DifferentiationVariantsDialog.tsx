@@ -104,13 +104,13 @@ export function DifferentiationVariantsDialog({
         <p>Vuoi salvare le varianti prima di chiudere?</p>
         <div className={`dialog-actions ${styles.actions} ${styles.confirmActions}`}>
           <button type="button" onClick={() => setPhase('edit')}>
-            <IconRotateCcw size={16} aria-hidden="true" /> Continua a modificare
+            <IconRotateCcw size={16} aria-hidden="true" /> Continua
           </button>
           <button type="button" className="btn-danger" onClick={onCancel}>
-            <IconCircleX size={16} aria-hidden="true" /> Abbandona modifiche
+            <IconCircleX size={16} aria-hidden="true" /> Abbandona
           </button>
           <button type="button" className="btn-primary" onClick={save}>
-            <IconFileCheck size={16} aria-hidden="true" /> Salva e chiudi
+            <IconFileCheck size={16} aria-hidden="true" /> Salva
           </button>
         </div>
       </DialogShell>

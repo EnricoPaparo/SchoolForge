@@ -210,8 +210,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  margin: 0;
+  padding: 0;
   max-height: 240px;
   overflow-y: auto;
+  list-style: none;
 }
 
 .summaryRow {

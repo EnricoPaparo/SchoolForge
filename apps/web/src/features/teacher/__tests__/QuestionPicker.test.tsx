@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionPicker } from '../QuestionPicker.js';
 import type { QuestionIndexEntry } from '../../repository/verifications/questionIndexService.js';
@@ -269,6 +271,16 @@ describe('QuestionPicker — selection', () => {
 });
 
 describe('QuestionPicker — selected summary', () => {
+  it('rimuove il rientro nativo della lista senza checkbox', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/teacher/QuestionPicker.module.css'),
+      'utf8',
+    );
+    expect(css).toMatch(
+      /\.summaryList\s*\{[^}]*margin:\s*0[^}]*padding:\s*0[^}]*list-style:\s*none/s,
+    );
+  });
+
   it('shows an empty summary message when nothing is selected', () => {
     renderPicker();
     expect(screen.getByText('Nessuna domanda selezionata.')).toBeTruthy();
