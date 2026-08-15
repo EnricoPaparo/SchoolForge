@@ -17,6 +17,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
 import { defineSecret } from 'firebase-functions/params';
+import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
@@ -402,7 +403,7 @@ function readOpenAiSecret(): string | undefined {
  * `aiContentPreview` — stima senza secret/provider/prenotazione/scrittura.
  * **Nessun** binding del secret: la preview non ha accesso alla API key.
  */
-export const aiContentPreview = onCall(async (request) => {
+export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, async (request) => {
   const database = db();
   const mode = contentMode();
   try {
@@ -435,34 +436,37 @@ export const aiContentPreview = onCall(async (request) => {
 });
 
 /** `aiContentGenerate` — ordine fail-closed completo. Una sola generazione logica. */
-export const aiContentGenerate = onCall({ secrets: [OPENAI_API_KEY] }, async (request) => {
-  const database = db();
-  const mode = contentMode();
-  try {
-    // Ordine contratto: auth → owner → mode/kill switch → payload.
-    const ownerUid = await requireOwner(request, database);
-    if (mode === 'disabled') {
-      throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+export const aiContentGenerate = onCall(
+  { region: SCHOOLFORGE_FUNCTION_REGION, secrets: [OPENAI_API_KEY] },
+  async (request) => {
+    const database = db();
+    const mode = contentMode();
+    try {
+      // Ordine contratto: auth → owner → mode/kill switch → payload.
+      const ownerUid = await requireOwner(request, database);
+      if (mode === 'disabled') {
+        throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+      }
+      const validated = validateAiContentRequest(request.data);
+      const config = await loadRuntimeConfig(database);
+      // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
+      const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
+      const ports = createPorts(database, config, mode, secret, true);
+      return await generateContent(
+        validated,
+        {
+          authenticatedOwnerUid: ownerUid,
+          nowMs: Date.now(),
+          executionId: randomUUID(),
+          mode,
+          leaseMs: computeContentLeaseTtlMs(retryPolicyFromConfig(config)),
+        },
+        ports,
+      );
+    } catch (err) {
+      if (err instanceof AiContentError) throw toHttpsError(err);
+      logger.error('aiContentGenerate internal error', { name: (err as Error)?.name });
+      throw new HttpsError('internal', 'Errore interno della generazione IA.');
     }
-    const validated = validateAiContentRequest(request.data);
-    const config = await loadRuntimeConfig(database);
-    // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
-    const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
-    const ports = createPorts(database, config, mode, secret, true);
-    return await generateContent(
-      validated,
-      {
-        authenticatedOwnerUid: ownerUid,
-        nowMs: Date.now(),
-        executionId: randomUUID(),
-        mode,
-        leaseMs: computeContentLeaseTtlMs(retryPolicyFromConfig(config)),
-      },
-      ports,
-    );
-  } catch (err) {
-    if (err instanceof AiContentError) throw toHttpsError(err);
-    logger.error('aiContentGenerate internal error', { name: (err as Error)?.name });
-    throw new HttpsError('internal', 'Errore interno della generazione IA.');
-  }
-});
+  },
+);

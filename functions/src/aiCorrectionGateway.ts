@@ -46,6 +46,7 @@ import {
   type BudgetReservation,
   type ReservationStatus,
 } from './aiCorrectionBudget.js';
+import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 
 /**
  * M5-02 — wiring runtime del motore della correzione assistita da IA.
@@ -58,7 +59,7 @@ import {
  * valorizzato. Nessuna API key, chiamata reale o deploy in questa PR.
  */
 
-export const AI_GATEWAY_REGION = 'us-central1';
+export const AI_GATEWAY_REGION = SCHOOLFORGE_FUNCTION_REGION;
 export const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 if (getApps().length === 0) initializeApp();

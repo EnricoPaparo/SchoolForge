@@ -19,6 +19,7 @@ import {
   type ForceCloseEnqueueOptions,
   type ForceCloseTaskEnqueue,
 } from './forceCloseRunner.js';
+import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 
 /**
  * FORCE-SUBMIT-02 — chiusura multipla con preavviso di 60 secondi.
@@ -35,7 +36,7 @@ import {
  * decisione; la chiusura avviene anche se docente e studente chiudono tutto.
  */
 
-export const FORCE_CLOSE_REGION = 'us-central1';
+export const FORCE_CLOSE_REGION = SCHOOLFORGE_FUNCTION_REGION;
 /** Nome della coda: coincide con il nome della Function task-queue. */
 export const FORCE_CLOSE_QUEUE = 'runScheduledForceClose';
 

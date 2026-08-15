@@ -10,6 +10,7 @@ import {
   parseRoute,
   type GatewayInput,
 } from './repositoryGatewayCore.js';
+import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 
 /**
  * SGW-01 — Repository Storage Gateway (Cloud Function HTTPS 2ª gen).
@@ -28,7 +29,7 @@ import {
  * `location_type: region`): la Function gira nella stessa region del bucket per
  * evitare egress cross-region.
  */
-export const GATEWAY_REGION = 'us-central1';
+export const GATEWAY_REGION = SCHOOLFORGE_FUNCTION_REGION;
 
 if (getApps().length === 0) initializeApp();
 
