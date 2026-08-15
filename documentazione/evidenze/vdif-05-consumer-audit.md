@@ -1,9 +1,10 @@
 # VDIF-05 — audit dei consumer downstream
 
-**Stato:** automatico PASS; rollout DEV e Gate GVDIF **PENDING**.
+**Stato:** automatico PASS; rollout DEV completato e Gate GVDIF **PASS** il 15
+agosto 2026.
 
-Questo documento registra il confine verificato dal codice. Non sostituisce lo
-smoke multi-studente richiesto da GVDIF.
+Questo documento registra il confine verificato dal codice. Lo smoke
+multi-studente è registrato in [`gvdif-human-gate.md`](gvdif-human-gate.md).
 
 | Superficie | Fonte autorevole | Evidenza | Esito |
 |---|---|---|---|

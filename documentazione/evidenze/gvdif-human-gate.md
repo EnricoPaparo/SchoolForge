@@ -1,6 +1,13 @@
 # Gate GVDIF — checklist umana DEV
 
-**Stato:** PENDING. Nessun rollout o PASS dichiarato.
+**Stato:** **PASS** — confermato dal docente su DEV il 15 agosto 2026.
+
+**Ambiente:** `schoolforge-dev`
+
+**Versione verificata:** `main` a `8c1712c` (inclusa la correzione del download
+PDF studente per le verifiche differenziate).
+
+**Anomalie bloccanti:** nessuna.
 
 ## Preparazione
 
@@ -27,17 +34,19 @@
   verificare che feedback e punteggio si riferiscano soltanto a quella domanda.
 - Restituire e riaprire la review studente: domande e soluzioni devono restare
   isolate e numerate localmente.
-- Generare PDF di correzione e CSV registro; il PDF studente della verifica deve
-  restare assente per i compiti server-resolved.
+- Generare PDF di correzione e CSV registro; quando il docente abilita il PDF
+  studente, anche un compito server-resolved deve offrire il download della sola
+  assegnazione personale.
 
 ## Esito
 
-- [ ] PASS docente
-- [ ] PASS studente etichetta A
-- [ ] PASS studente etichetta B
-- [ ] PASS studente senza etichetta
-- [ ] Nessuna esposizione privacy osservata
-- [ ] Costi/operazioni coerenti con il modello documentato
+- [x] PASS docente
+- [x] PASS studente etichetta A
+- [x] PASS studente etichetta B
+- [x] PASS studente senza etichetta
+- [x] Nessuna esposizione privacy osservata
+- [x] Costi/operazioni coerenti con il modello documentato
 
-Compilare data, ambiente, commit/deploy e anomalie prima di cambiare lo stato
-del Gate GVDIF.
+Il docente ha confermato esplicitamente che i test operativi sono riusciti e ha
+dichiarato superato il gate. Questo PASS chiude VDIF-01→05; non autorizza un
+deploy PROD.

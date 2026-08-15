@@ -139,6 +139,7 @@ import {
 import { VexBuilder, type VexBuilderQuestion } from './VexBuilder.js';
 import { ActivationSummaryDialog } from './ActivationSummaryDialog.js';
 import { DifferentiationVariantsDialog } from './DifferentiationVariantsDialog.js';
+import { VerificationOutcomesDialog } from './VerificationOutcomesDialog.js';
 import {
   listDifferentiationLabels,
   type DifferentiationLabelItem,
@@ -461,6 +462,10 @@ export function VerificationsView() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // ESITI-01 — il dialog carica i dati soltanto dopo l'azione esplicita del
+  // docente. La card conserva qui soltanto identità e titolo, nessun esito.
+  const [outcomesTarget, setOutcomesTarget] = useState<VerificationItem | null>(null);
 
   // ── Consegne online monitor (M3F-05, always-on-selection M3F-09) ────
   const [monitorStudents, setMonitorStudents] = useState<StudentItem[] | null>(null);
@@ -2478,6 +2483,18 @@ export function VerificationsView() {
                             ? 'Disabilita PDF studente'
                             : 'Abilita PDF studente'}
                         </button>
+                        {verification.status === 'closed' && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            title="Esiti per lezione"
+                            aria-label={`Esiti — ${verification.config.title}`}
+                            onClick={() => setOutcomesTarget(verification)}
+                          >
+                            <IconClipboardCheck size={15} />
+                            Esiti
+                          </button>
+                        )}
                         {verification.status === 'closed' ? (
                           <button
                             type="button"
@@ -3810,6 +3827,16 @@ export function VerificationsView() {
           run={() => executeCorrectionArchiveExport(archiveEligibility)}
           onClose={() => setArchiveEligibility(null)}
           onReload={reloadCurrentPage}
+        />
+      )}
+
+      {outcomesTarget && (
+        <VerificationOutcomesDialog
+          verificationId={outcomesTarget.id}
+          verificationTitle={outcomesTarget.config.title}
+          ownerUid={ownerUid}
+          db={db}
+          onClose={() => setOutcomesTarget(null)}
         />
       )}
 
