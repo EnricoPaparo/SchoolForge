@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Firestore } from 'firebase/firestore';
 import { DialogShell } from '../../components/DialogShell.js';
-import { loadVerificationLessonOutcomes } from '../repository/outcomes/verificationLessonOutcomesService.js';
+import type { loadVerificationLessonOutcomes } from '../repository/outcomes/verificationLessonOutcomesService.js';
 import type { VerificationLessonOutcomesReport } from '../repository/outcomes/verificationLessonOutcomes.js';
 import styles from './VerificationOutcomesDialog.module.css';
+
+// Il dialog resta importabile senza inizializzare l'adapter Firebase globale.
+// Il service reale viene caricato soltanto quando il docente apre «Esiti»;
+// nei test il caricatore iniettato non attraversa affatto quel confine runtime.
+const defaultLoadReport: typeof loadVerificationLessonOutcomes = async (input) => {
+  const service = await import('../repository/outcomes/verificationLessonOutcomesService.js');
+  return service.loadVerificationLessonOutcomes(input);
+};
 
 export type VerificationOutcomesDialogProps = {
   verificationId: string;
@@ -29,7 +37,7 @@ export function VerificationOutcomesDialog({
   ownerUid,
   db,
   onClose,
-  loadReport = loadVerificationLessonOutcomes,
+  loadReport = defaultLoadReport,
 }: VerificationOutcomesDialogProps) {
   const introRef = useRef<HTMLParagraphElement>(null);
   const [report, setReport] = useState<VerificationLessonOutcomesReport | null>(null);
