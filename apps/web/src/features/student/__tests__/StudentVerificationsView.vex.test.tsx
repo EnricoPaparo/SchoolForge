@@ -9,11 +9,14 @@ vi.mock('../../../lib/auth.js', () => ({
 }));
 
 const mockLoadStudentVerifications = vi.fn();
+const { mockDownloadStudentPdf } = vi.hoisted(() => ({
+  mockDownloadStudentPdf: vi.fn(async () => undefined),
+}));
 vi.mock('../../repository/verifications/studentVerificationsService.js', () => ({
   loadStudentVerifications: (...a: unknown[]) => mockLoadStudentVerifications(...a),
 }));
 vi.mock('../../repository/verifications/verificationPdf.js', () => ({
-  downloadStudentPdfFromProjection: vi.fn(),
+  downloadStudentPdfFromProjection: mockDownloadStudentPdf,
 }));
 
 const mockLoadReceipt = vi.fn();
@@ -32,13 +35,15 @@ vi.mock('../studentCorrectionReturnsService.js', () => ({
 // Mock the VEX exam service so we can assert routing without a real callable.
 const mockResolveVexExam = vi.fn();
 const mockResolveSameQuestionsExam = vi.fn();
+const mockResolveVexPdfQuestions = vi.fn();
 vi.mock('../vexExamService.js', async () => {
   const actual = await vi.importActual<typeof VexExamModule>('../vexExamService.js');
   return {
     ...actual,
-    productionVexExamDeps: () => ({ assign: vi.fn(), load: vi.fn() }),
+    productionVexExamDeps: () => ({ assign: vi.fn(), load: vi.fn(), resolvePdf: vi.fn() }),
     resolveVexExam: (...a: unknown[]) => mockResolveVexExam(...a),
     resolveSameQuestionsExam: (...a: unknown[]) => mockResolveSameQuestionsExam(...a),
+    resolveVexPdfQuestions: (...a: unknown[]) => mockResolveVexPdfQuestions(...a),
   };
 });
 
@@ -125,13 +130,27 @@ describe('StudentVerificationsView — VEX-02A routing', () => {
     await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
   });
 
-  it('hides the student PDF button for a VEX verification', async () => {
+  it('shows and downloads the assigned PDF for a server-resolved verification', async () => {
+    const assigned = [{ order: 7, tipo: 'aperta', maxPoints: 2, testo: 'Personale?' }];
+    mockResolveVexPdfQuestions.mockResolvedValue(assigned);
     await renderWith([vexItem()]);
-    expect(screen.queryByRole('button', { name: /Scarica PDF/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Scarica PDF/ }));
+
+    await waitFor(() => expect(mockResolveVexPdfQuestions).toHaveBeenCalledTimes(1));
+    expect(mockResolveVexPdfQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ver-vex' }),
+      expect.any(Object),
+    );
+    expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ver-vex', questions: assigned }),
+      expect.objectContaining({ email: 's@test.com' }),
+    );
   });
 
   it('keeps the student PDF button for a same_questions verification', async () => {
     await renderWith([sameItem()]);
-    expect(screen.getByRole('button', { name: /Scarica PDF/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Scarica PDF/ }));
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalledTimes(1));
+    expect(mockResolveVexPdfQuestions).not.toHaveBeenCalled();
   });
 });

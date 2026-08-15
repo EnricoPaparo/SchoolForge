@@ -45,6 +45,7 @@ function verification(over: Partial<VerificationContext> = {}): VerificationCont
     ownerUid: OWNER,
     status: 'active',
     onlineEnabled: true,
+    studentPdfEnabled: true,
     visibility: 'public',
     classId: 'class-a',
     title: 'Verifica',

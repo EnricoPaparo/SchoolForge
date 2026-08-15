@@ -16,6 +16,7 @@ import {
   productionVexExamDeps,
   resolveSameQuestionsExam,
   resolveVexExam,
+  resolveVexPdfQuestions,
   VexExamError,
 } from './vexExamService.js';
 import { describeAssignVariantError } from './verificationVariantClient.js';
@@ -366,10 +367,16 @@ export function StudentVerificationsView({
     setPdfErrors((prev) => ({ ...prev, [item.id]: '' }));
     setPdfLoadingId(item.id);
     try {
-      await downloadStudentPdfFromProjection(item, {
-        displayName: user?.displayName ?? null,
-        email: user?.email ?? null,
-      });
+      const questions = isServerResolvedItem(item)
+        ? await resolveVexPdfQuestions(item, vexDepsRef.current!)
+        : item.questions;
+      await downloadStudentPdfFromProjection(
+        { ...item, questions },
+        {
+          displayName: user?.displayName ?? null,
+          email: user?.email ?? null,
+        },
+      );
     } catch {
       setPdfErrors((prev) => ({
         ...prev,
@@ -620,10 +627,10 @@ export function StudentVerificationsView({
     const pdfError = pdfErrors[item.id];
     const startError = startErrors[item.id];
     const status = onlineStatus[item.id];
-    // Il PDF studente si costruisce dalla sola proiezione: con un insieme
-    // deciso dal server la proiezione non contiene le domande assegnate, quindi
-    // il download resta indisponibile (come già per VEX).
-    const canDownloadPdf = item.studentPdfEnabled && !isServerResolvedItem(item);
+    // Il toggle docente è l'unico gate visivo. In `server_resolved` il click
+    // ottiene dalla callable soltanto le domande personali prima di comporre il
+    // PDF; la proiezione non espone mai alternative non assegnate.
+    const canDownloadPdf = item.studentPdfEnabled;
     const canResume = isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft';
     const canStart =
       isActiveVerification(item) &&
@@ -706,11 +713,9 @@ export function StudentVerificationsView({
         actions={
           hasIconActions ? (
             <>
-              {/* VEX-02A: in `equivalent_variants` il PDF studente è disabilitato e
-              NON mostrato — un PDF dalla proiezione esporrebbe/ometterebbe le
-              domande in modo incoerente con la variante assegnata; non esiste
-              alcun modo client-side di ottenere il PDF completo. `same_questions`
-              mantiene il toggle docente esistente. */}
+              {/* `same_questions` usa la proiezione; `server_resolved` usa la
+              callable personale. In entrambi i casi il pulsante segue lo stesso
+              toggle docente e non espone soluzioni o alternative altrui. */}
               {canDownloadPdf && (
                 <button
                   type="button"

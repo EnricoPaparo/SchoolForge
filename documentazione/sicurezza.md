@@ -410,8 +410,9 @@ rete.
   studente non può creare/modificare/rimuovere `assignedQuestionOrders`/`assignedAnswerKeys`, né
   trasformare una submission VEX in `same_questions`, né alterare i campi identitari; altri
   studenti non leggono/scrivono la submission. `same_questions` resta interamente invariato.
-- **PDF studente disabilitato/nascosto** in `equivalent_variants`: nessun modo client-side di
-  ottenere il PDF completo (esporrebbe/ometterebbe le domande in modo incoerente con la variante).
+- **PDF studente personale** in `equivalent_variants`: non usa la proiezione
+  incompleta. `resolveStudentVerificationPdf` autorizza lo studente e
+  restituisce soltanto la variante assegnata sanitizzata.
 
 **Correzione/IA/restituzione/export (VEX-02B).** Ogni flusso post-consegna usa il risolutore
 canonico `resolveAssignedQuestions` (fail-closed) come unica fonte di verità sulle domande
@@ -427,8 +428,8 @@ applicabili:
   assegnate e, se abilitate, solo le relative soluzioni — mai `commonQuestionOrders`,
   `equivalentGroups`, `alternativeOrders`, alternative non assegnate o il teacherSnapshot;
 - gli export riferiti a una consegna (registro PDF/CSV) usano i totali della variante; il **PDF
-  docente** della verifica resta completo (insieme docente), il **PDF studente** resta disabilitato
-  in VEX. Le Rules restano invariate (`correctionReturns` è già letto solo dallo studente
+  docente** della verifica resta completo (insieme docente), il **PDF studente** usa soltanto
+  l'assegnazione personale restituita dal server. Le Rules restano invariate (`correctionReturns` è già letto solo dallo studente
   proprietario quando visibile); la proiezione è costruita e validata dal service client del
   docente owner e la scrittura resta soggetta alle Rules. Dopo l'eliminazione di una submission un nuovo svolgimento riceve una
   **nuova** assegnazione server-side.
@@ -453,9 +454,9 @@ Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
   nuova scrittura ai riaccessi;
 - nessun listener/polling/scheduler, nessun documento per domanda, nessuna copia del pool;
   `same_questions` resta client-side e non paga la callable;
-- **PDF studente disabilitato/nascosto** in `equivalent_variants` (un PDF dalla proiezione
-  completa esporrebbe le alternative); il **PDF docente** continua a usare l'insieme
-  completo configurato;
+- **PDF studente risolto dal server** in `equivalent_variants`: non viene mai
+  costruito dalla proiezione parziale; il **PDF docente** continua a usare
+  l'insieme completo configurato;
 - correzione manuale/IA e restituzione operano **solo** sugli order assegnati
   (`assignedQuestionOrders`); `correctionReturns` contiene solo le domande assegnate; i
   gruppi equivalenti garantiscono lo stesso `maxPoints`, quindi totali/percentuali
@@ -678,7 +679,8 @@ mancante, assegnazione incoerente o snapshot corrotto.
 
 Gli order canonici restano chiavi tecniche necessarie alle Rules, ma le tre
 superfici interattive mostrano soltanto una numerazione locale densa `1…N`.
-Il PDF verifica studente è disabilitato per ogni `server_resolved`; il PDF
+Il PDF verifica studente `server_resolved` usa una callable personale che
+condivide l'assegnazione con lo svolgimento e non crea una submission; il PDF
 docente resta completo. Nessuna nuova lettura live delle etichette, nessun
 indice o costo passivo è stato introdotto. Audit automatico in
 [`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md);

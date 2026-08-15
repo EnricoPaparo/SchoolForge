@@ -11,9 +11,8 @@ import type { Functions } from 'firebase/functions';
  * soluzione o dato sensibile. La risposta rispecchia il contratto del gateway
  * (`functions/src/verificationVariantGatewayCore.ts`).
  *
- * VEX-01B **non** collega ancora questo client a `OnlineExamView`: lo
- * svolgimento studente end-to-end è VEX-02. Qui c'è solo il contratto tipizzato,
- * pronto per essere consumato.
+ * Lo stesso contratto di risposta è riusato dal resolver PDF: cambia la
+ * callable, non la forma sicura delle domande restituite.
  */
 
 export interface AssignVariantRequest {
@@ -52,6 +51,20 @@ export function createAssignVerificationVariant(
   const fn = httpsCallable<AssignVariantRequest, AssignVariantResponse>(
     functions,
     'assignVerificationVariant',
+  );
+  return async (req) => (await fn({ verificationId: req.verificationId })).data;
+}
+
+/**
+ * Risolve le sole domande del PDF personale. È una callable distinta perché il
+ * download non deve creare una submission né segnare la verifica come iniziata.
+ */
+export function createResolveStudentVerificationPdf(
+  functions: Functions,
+): (req: AssignVariantRequest) => Promise<AssignVariantResponse> {
+  const fn = httpsCallable<AssignVariantRequest, AssignVariantResponse>(
+    functions,
+    'resolveStudentVerificationPdf',
   );
   return async (req) => (await fn({ verificationId: req.verificationId })).data;
 }
