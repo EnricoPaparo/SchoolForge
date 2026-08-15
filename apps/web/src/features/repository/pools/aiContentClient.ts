@@ -270,9 +270,21 @@ export const LESSON_DEPTH_OPTIONS: readonly {
   label: string;
   description: string;
 }[] = [
-  { value: 'synthetic', label: 'Sintetica', description: 'Bozza concisa, essenziale.' },
-  { value: 'complete', label: 'Completa', description: 'Copertura equilibrata dell’argomento.' },
-  { value: 'in_depth', label: 'Approfondita', description: 'Trattazione estesa e dettagliata.' },
+  {
+    value: 'synthetic',
+    label: 'Sintetica',
+    description: 'Essenziale: definisce e collega i concetti senza sviluppi estesi.',
+  },
+  {
+    value: 'complete',
+    label: 'Completa',
+    description: 'Predefinita: lezione autosufficiente ed equilibrata, pronta per lo studio.',
+  },
+  {
+    value: 'in_depth',
+    label: 'Approfondita',
+    description: 'Più passaggi, motivazioni ed esempi, sempre entro lo stesso perimetro.',
+  },
 ];
 
 /** Payload chiuso `kind: 'lesson'` (stesso contratto congelato lato backend). */

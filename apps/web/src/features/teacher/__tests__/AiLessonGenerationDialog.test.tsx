@@ -240,6 +240,19 @@ describe('AiLessonGenerationDialog — AIGEN-UI-01 UI', () => {
     expect(ta.getAttribute('aria-describedby')).toBe('ai-lesson-guidance-counter');
   });
 
+  it('spiega il peso dei metadati e mantiene Completa come profondità predefinita', () => {
+    renderDialog(makeCallables().callables);
+
+    const group = screen.getByRole('radiogroup', { name: 'Profondità' });
+    expect(group.getAttribute('aria-describedby')).toBe('ai-lesson-depth-help');
+    expect(screen.getByText(/definiscono il perimetro della lezione/i)).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /Completa/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByText(/lezione autosufficiente ed equilibrata/i)).toBeTruthy();
+    expect(screen.getByText(/sempre entro lo stesso perimetro/i)).toBeTruthy();
+  });
+
   it('no longer shows the "Nessun costo è stato ancora generato" note, keeping the useful estimate info', async () => {
     renderDialog(makeCallables().callables);
     fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
