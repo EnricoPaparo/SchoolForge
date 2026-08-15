@@ -1,7 +1,7 @@
 # SchoolForge — Verifiche differenziate per etichetta (VDIF) ed Esiti
 
 **Stato:** **VDIF-00→05 implementati e distribuiti su DEV; Gate GVDIF PASS**
-il 15 agosto 2026. **ESITI-01 implementato** come vista owner-only e di sola
+il 15 agosto 2026. **ESITI-01 implementato, distribuito e validato su DEV** come vista owner-only e di sola
 lettura; rollout DEV previsto nello stesso ciclo della sua PR.
 **Data:** 15 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
@@ -1486,8 +1486,10 @@ in [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md).
 
 ## 12. Pacchetto A — Esiti per lezione (ESITI-01)
 
-**Stato:** implementato dopo il Gate GVDIF; vista owner-only, di sola lettura e
-aperta esplicitamente dal menu di una verifica chiusa.
+**Stato:** implementato dopo il Gate GVDIF, distribuito e validato dal docente
+su DEV il 15 agosto 2026; vista owner-only, di sola lettura e aperta
+esplicitamente dal menu di una verifica chiusa. Evidenza:
+[`evidenze/esiti-01-human-gate.md`](evidenze/esiti-01-human-gate.md).
 
 ### Perché è quasi gratis
 
@@ -1571,7 +1573,7 @@ riga), sul loader fail-closed e sul dialog responsive.
 | **VDIF-04** ✅ | **Attivazione**: guardie G01→G21, snapshot privato autosufficiente (`differentiation` con `labels[]` = `labelId` + `labelName` congelati, `labelAssignments`), `resolveDifferentiatedOrders`, produzione di `assignedQuestionOrders` via callable esistente, **`assignmentMode` neutro** sulla proiezione, **decremento di `draftUsageCount` nello stesso commit** (§5.F.3), eliminazione bozza che decrementa, riepilogo pre-attivazione. | VDIF-03 | **Implementato e distribuito su DEV.** Attivazione con sostituzioni/omissioni e combinazione VEX coperta dai test; idempotenza e replay verdi. Vedi §20. |
 | **VDIF-05** ✅ | **Consumer downstream**: svolgimento, correzione manuale, correzione IA, restituzione, PDF, CSV, ricevute e **privacy audit** end-to-end. | VDIF-04 | **Implementato e distribuito su DEV.** Ogni consumer opera sulla sola assegnazione; numerazione studente locale e densa; audit strutturale e fixture sentinella dimostrano l'assenza di etichette e alternative non assegnate. Vedi §21 e [`evidenze/vdif-05-consumer-audit.md`](evidenze/vdif-05-consumer-audit.md). |
 | **GVDIF** ✅ | **Rollout DEV e gate umano multi-studente**: smoke reale con più studenti etichettati e non, isolamento, correzione, restituzione, export. | VDIF-05 | **PASS** il 15 agosto 2026; checklist in [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md). |
-| **ESITI-01** ✅ | Vista di **sola lettura** degli esiti aggregati per UDA/lezione (§12). | GVDIF | **Implementato**; rollout DEV nello stesso ciclo della PR. |
+| **ESITI-01** ✅ | Vista di **sola lettura** degli esiti aggregati per UDA/lezione (§12). | GVDIF | **Implementato, distribuito e validato su DEV — PASS docente 15/08/2026**; evidenza in [`evidenze/esiti-01-human-gate.md`](evidenze/esiti-01-human-gate.md). |
 
 ### 13.1 Fuori scope da VDIF — esplicito
 
