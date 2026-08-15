@@ -16,4 +16,14 @@ describe('resolveSchoolForgeFunctionRegion', () => {
       'SCHOOLFORGE_FUNCTION_REGION non valida',
     );
   });
+
+  it('deriva europe-west8 dal project ID durante l’analisi Firebase PROD', () => {
+    expect(resolveSchoolForgeFunctionRegion(undefined, 'schoolforge-prod')).toBe('europe-west8');
+    expect(resolveSchoolForgeFunctionRegion('europe-west8', 'schoolforge-prod')).toBe(
+      'europe-west8',
+    );
+    expect(() => resolveSchoolForgeFunctionRegion('us-central1', 'schoolforge-prod')).toThrow(
+      'schoolforge-prod richiede',
+    );
+  });
 });
