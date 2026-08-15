@@ -29,13 +29,21 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 
 Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è completato**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-04) sono completati (Markdown rinviato per assenza di caso d'uso); **Gate G6 superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`.
 
-**STRUCTURE-IMPORT: 01, 02A, 02B e 03 sono implementati; il Gate GSTRUCT resta
-aperto.** La sequenza autorizzata era 01 parser/planner puri → 02A import UDA →
+**STRUCTURE-IMPORT: 01, 02A, 02B, 03 e SIMPLE-01 sono implementati; Gate
+GSTRUCT superato (PASS, 15 agosto 2026).** La sequenza autorizzata era 01 parser/planner puri → 02A import UDA →
 02B import lezioni → 03 contesto UDA per la generazione IA → Gate GSTRUCT.
 I due modelli YAML canonici sono inoltre consultabili, copiabili e scaricabili
 dalla sezione docente **Template**, senza duplicare lo schema nel codice UI.
-Nessuna fase successiva può dichiarare implementata la precedente senza le
-evidenze previste nel contratto.
+Evidenza finale: `evidenze/gstruct-checklist-finale.md`.
+
+**AIGEN: Gate GAIGEN superato (PASS, 15 agosto 2026).** TTL
+`aiContentRuns.expireAt` attiva, runtime OpenAI DEV, smoke reali di lezioni,
+pool e mappe e conferma docente sono registrati in
+`evidenze/gaigen-human-gate.md`.
+
+**LESSON-DEPTH: Gate GLESSON superato (PASS, 15 agosto 2026).** Diagnosi,
+candidato E, dataset povero e isovariante e holdout reale Quality 4/4 sono
+chiusi; evidenza finale in `evidenze/glesson-checklist-finale.md`.
 
 ---
 
@@ -1082,6 +1090,11 @@ contratti in [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-ro
 **TWU completato e Gate GTWU superato (PASS, 22/07/2026)** — vedi
 [checklist finale](evidenze/gtwu-checklist-finale.md).
 
+> Le diciture di gate contenute nelle singole righe della tabella seguente
+> fotografano lo stato al termine di quel pacchetto e restano come cronologia.
+> Lo stato finale autorevole è quello riepilogato sopra e nelle checklist:
+> **GAIGEN, GSTRUCT e GLESSON sono PASS**.
+
 | Pacchetto | Sintesi | Dipendenze | Stato |
 |---|---|---|---|
 | TWU-01 ✅ | Ellissi due righe nella preview del picker domande; icone SVG coerenti (errore/warning/info) nei messaggi del builder VEX al posto dei glifi testuali; pulsante «Aggiorna» nelle consegne che riusa i refresh già presenti (nessuna nuova query/listener/polling); contratto primo/ultimo accesso studente (`firstPortalAccessAt` immutabile + `lastPortalAccessAt`, writer client-side in `RoleGate`, Rule di self-update ristretta, UI docente «Richiesta/Primo/Ultimo accesso»). `createdAt`/`lastLoginAt` reinterpretati come «Richiesta accesso». | M3-full, VEX | **Implementato, distribuito e verificato su DEV.** Test mirati web + Rules emulator verdi; Functions/provider/IA/VEX runtime invariati; nessun indice nuovo; `firestore.rules` toccato solo per l'accesso studente. |
@@ -1117,7 +1130,9 @@ contratti in [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-ro
 | STRUCTURE-IMPORT-SIMPLE-01 ✅ | Formato di importazione **semplice** — `UDA:` / `LEZIONE:` con etichette italiane e trattini, senza `schema:`, rientri o righe vuote — con parser puro, riconoscimento automatico della sintassi in un'unica porta byte-first e integrazione nelle due finestre. Lo YAML resta supportato. La sezione Template mostra e copia i nuovi modelli; il feedback della copia vive nel pulsante (`Copia`/`Copiato`/`Riprova`) e il messaggio globale sotto la griglia è stato rimosso. | STRUCTURE-IMPORT-UI-PASTE-01 | **Implementato.** Tollerante sulla forma (rientri, righe vuote, CRLF/CR, BOM, `---`, maiuscole, `Difficoltà`/`Difficolta`, `Obiettivi`/`Obbiettivi`, sei simboli di elenco, elenchi numerati, voci senza simbolo, virgolette esterne, blocco Markdown esterno, due punti nei valori) e rigido sul contenuto (riga orfana, titolo o difficoltà mancanti, elenco assente o vuoto, campo o sezione duplicati, etichetta sconosciuta con suggerimento, voce vuota, virgolette non chiuse, fence malformato, titolo duplicato, limiti). Riconoscimento deterministico sulla prima riga significativa, senza fallback; formato giusto ma finestra sbagliata ⇒ `wrong_structure_kind`. Il contratto didattico non è duplicato: entrambe le sintassi passano dagli stessi normalizzatori, quindi stessi DTO, limiti, messaggi, `sourceHash`, `manifestHash`, planner e runtime. 34 grafie equivalenti ⇒ un solo DTO e un solo hash. Nessuna Function, Rule, indice, dipendenza, callable o operazione Firebase in più. Smoke Chromium a 1440/1024/390/320 px su sezione Template e su entrambe le finestre. **Gate GSTRUCT resta aperto.** |
 | LESSON-METADATA-UI-01 ✅ | La scheda docente `Lezione → Informazioni` mostra `concettiChiave` e `obiettivi` come elenchi semantici, mantenendo un `<li>` per ogni elemento importato. | STRUCTURE-IMPORT-SIMPLE-01 | **Implementato, solo UI.** Test end-to-end puro sull'esempio segnalato: la porta byte-first produce 1 concetto e 2 obiettivi distinti; planner, `LessonDoc`, `PublicLessonDoc` e front matter li conservano. Rimossa esclusivamente la resa `join(', ')` da `CourseWorkspace`, riusando l'elenco metadati UDA con chiavi indice+valore e wrapping responsive. Editor newline-separated e UDA invariati; zero impatto su parser, runtime, dati, Firebase, schema e costi. |
 | LESSON-DEPTH-00 ✅ | Roadmap qualità e profondità delle lezioni generate: diagnosi misurata, decisioni aperte, sequenza autorizzata e Gate GLESSON. | AIGEN-CONTEXT-01, M5 | **Solo documentazione** — vedi `lesson-quality-depth-roadmap.md`. Nessun codice, nessuna chiamata IA. |
-| LESSON-DEPTH-01 ✅ | Candidato E del prompt lezione: i concetti chiave dicono che cosa trattare, non quanto scrivere; criterio decidibile contro le divagazioni; completezza come primo punto del controllo finale; tetti di output 8.000/14.000/18.000. | LESSON-DEPTH-00 | **Implementato e misurato.** Il prompt è `lesson-depth-01-candidate-e-v1`. Tre esecuzioni reali su `quality`: sei scenari su sei migliorati sul dataset povero, `in_depth` non produce più meno testo di `complete`, e sul dataset isovariante — unica variabile il numero di concetti — la lunghezza non scala con il conteggio. Prompt del pool byte-identico. **Gate GLESSON resta aperto.** |
+| LESSON-DEPTH-01 ✅ | Candidato E del prompt lezione: i concetti chiave dicono che cosa trattare, non quanto scrivere; criterio decidibile contro le divagazioni; completezza come primo punto del controllo finale; tetti di output 8.000/14.000/18.000. | LESSON-DEPTH-00 | **Implementato, misurato e validato.** Il prompt è `lesson-depth-01-candidate-e-v1`. Dataset povero e isovariante superati; holdout Quality 4/4 PASS. Prompt del pool byte-identico. **Gate GLESSON PASS** — `evidenze/glesson-checklist-finale.md`. |
+| LESSON-DEPTH-03 ✅ | Limiti di spesa fondati sulle misure reali. | LESSON-DEPTH-02 | **PASS.** Restano i ceiling condivisi 0,25 USD per operazione, 1 USD/giorno e 5 USD/mese; il massimo prudenziale per singolo scenario holdout resta sotto il cap. |
+| LESSON-DEPTH-04 ✅ | UI della profondità e ruolo dell'input didattico. | LESSON-DEPTH-02 | **PASS.** `Completa` resta il default; le tre descrizioni distinguono ampiezza e profondità e la UI dichiara che metadati e indicazioni docente definiscono perimetro e taglio. |
 | STRUCTURE-TEMPLATE-GENERIC-01 ✅ | I due modelli YAML della sezione Template diventano **generici**: solo schema obbligatorio, struttura valida e segnaposto che dicono implicitamente cosa inserire. Rimossi commenti `#`, spiegazioni operative ed esempi disciplinari concreti — da quando lo YAML si incolla, erano testo da cancellare riga per riga prima dell'uso. | STRUCTURE-IMPORT-UI-PASTE-01 | **Implementato.** `schema` resta e non cambia valore: è ciò che i validatori esigono. Entrambi i modelli mostrano due voci complete con tutti i campi del formato, superano i validatori reali, attraversano il planner e raggiungono il riepilogo se incollati nei dialog, senza richiedere correzioni. Le costanti restano l'unica fonte per visualizzazione e copia: un test verifica che i due percorsi consegnino gli stessi identici byte. Il download YAML è stato rimosso perché il flusso operativo è copia → incolla. Solo costanti, test e documentazione: parser, validatori, planner, runtime, Functions, Rules, indici, schema, dipendenze e costi invariati. Layout Template misurato in Chromium a 1440/1024/820/390/320 px. **Gate GSTRUCT resta aperto.** |
 | CONCEPT-MAP-00 ✅ | Roadmap della mappa concettuale della lezione: artefatto a quattro parti, Markdown canonico composto dal server, persistenza/proiezione condizionata a `completed`, fasi 01→03 e limiti accettati. | LESSON-DEPTH-01 | **Solo documentazione** — vedi `mappa-concettuale-roadmap.md`. Nessun codice, nessuna chiamata IA. |
 | CONCEPT-MAP-01 ✅ | Core e backend IA: terzo kind `concept_map` di prima classe (payload chiuso `{ requestId, modelProfile, lessonBody }`), prompt dedicato con versione propria, Structured Output strict a tre campi, compositore Markdown deterministico, validazione dei campi e del **documento persistito**, margine provider 6.000 token, cap canonico 32 KB. | CONCEPT-MAP-00, AIGEN-01 | **Implementato e corretto sul provider reale.** La struttura non dipende dal prompt: il server compone intestazioni, fence e avvertenza costante. Validazione fail-closed su heading ATX/Setext, HTML, fence, front matter, forma delle sezioni, larghezza del diagramma e cap. Il confine provider rimuove soltanto gli spazi esterni dei tre campi strutturati; contenuto interno e documento persistito restano canonici byte per byte. `economy` e `quality` sono entrambi espliciti e fail-closed; il default UI è `quality`. Il margine da 6.000 token copre ragionamento + Structured Output ma non amplia il cap di 32 KB. `output_incomplete` distingue l'interruzione del provider dal vero `output_too_large`. Il run persiste il **documento composto**, e il replay lo accetta solo se è byte per byte ciò che il compositore avrebbe prodotto. `inputHash` e prompt di pool e lezione invariati. |
@@ -1154,9 +1169,9 @@ prototipo statico in
 **Stato del percorso.** Pool IA Quality e mappe concettuali sono confermati dal
 docente ([evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md));
 VDIF-01→05 è distribuito e GVDIF è PASS. ESITI-01 è implementato, distribuito
-e validato su DEV come ultimo
-pacchetto applicativo di questa linea. Restano tracciati altrove i Gate GAIGEN,
-GLESSON e GSTRUCT, e ogni attività di provisioning o deploy PROD.
+e validato su DEV come ultimo pacchetto applicativo di questa linea. Anche
+GAIGEN, GSTRUCT e GLESSON sono PASS, con evidenze dedicate. Restano fuori da
+questi gate soltanto le attività di provisioning o deploy PROD.
 
 **Fuori scope da VDIF, in ogni fase e in ogni forma** (asse distinto, roadmap
 autonoma, mai introdotto «già che ci siamo»): tempo aggiuntivo; limiti

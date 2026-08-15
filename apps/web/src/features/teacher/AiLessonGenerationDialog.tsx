@@ -269,6 +269,7 @@ export function AiLessonGenerationDialog({
               className={styles.optionRow}
               role="radiogroup"
               aria-labelledby="ai-lesson-depth-label"
+              aria-describedby="ai-lesson-depth-help"
             >
               {LESSON_DEPTH_OPTIONS.map((o) => (
                 <button
@@ -284,6 +285,10 @@ export function AiLessonGenerationDialog({
                 </button>
               ))}
             </div>
+            <p id="ai-lesson-depth-help" className={styles.choiceMeta}>
+              Titolo, difficoltà, concetti chiave e obiettivi definiscono il perimetro della
+              lezione. Le indicazioni aggiuntive guidano esempi e taglio didattico.
+            </p>
           </div>
 
           {/* Indicazioni del docente */}

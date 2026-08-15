@@ -3,7 +3,8 @@
 > **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A, 02B, 03 e
 > SIMPLE-01 implementati**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
 > `Azioni UDA → Importa lezioni`, e la generazione lezione riceve il contesto
-> generale dell'UDA. **Il Gate GSTRUCT resta aperto.** Questo documento non
+> generale dell'UDA. **Gate GSTRUCT superato (PASS, 15 agosto 2026)** — vedi
+> [`evidenze/gstruct-checklist-finale.md`](evidenze/gstruct-checklist-finale.md). Questo documento non
 > autorizza merge, deploy o migrazioni.
 
 ## 1. Obiettivo
@@ -255,7 +256,7 @@ di generazione; non introduce chiamate aggiuntive.
 | **STRUCTURE-IMPORT-02B** ✅ | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | **Implementato.** Stessa macchina di 02A (`structureAppendProtocol`), lease **per singola UDA**, commit unico con `LessonDoc` + `publicLessons` + incremento unico di `lessonCount`; identità del tentativo estesa a `kind` e UDA di destinazione; filtro studente sulle proiezioni con `content` vuoto. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **STRUCTURE-IMPORT-03** ✅ | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | **Implementato.** I tre campi vivono nello stesso `udaContext` (nessun secondo oggetto parallelo), passano da un unico confine di mapping, partecipano a payload canonico, `inputHash`, replay, stima, prenotazione e prompt effettivo. Zero nuove letture, query, listener o polling. Prompt del pool byte-identico; prompt lezione byte-identico su UDA legacy. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **LESSON-METADATA-UI-01** ✅ | Resa semantica di `concettiChiave` e `obiettivi` nella scheda docente `Lezione → Informazioni`. | **Implementato, solo UI.** La porta byte-first, il planner, `LessonDoc`, `PublicLessonDoc` e il front matter conservavano già gli array distinti; rimossa soltanto la ricomposizione visiva con `join(', ')`, sostituita da `<ul><li>` con wrapping responsive. Parser, runtime d'importazione e persistenza invariati. |
-| **Gate GSTRUCT** | Smoke DEV docente/studente e chiusura evidenze. | Import UDA + lezioni, collisione, retry, mobile/Brave, generazione IA da uno scheletro, nessuna esposizione di card vuote. |
+| **Gate GSTRUCT** ✅ | Smoke DEV docente/studente e chiusura evidenze. | **PASS.** Import UDA + lezioni, collisione, retry, mobile/Brave, generazione IA da uno scheletro e nessuna esposizione di card vuote verificati; evidenza in `evidenze/gstruct-checklist-finale.md`. |
 
 ## 13. Fuori scope
 

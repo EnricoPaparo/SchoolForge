@@ -1,9 +1,10 @@
 # SchoolForge — Roadmap qualità e profondità delle lezioni generate
 
-**Stato:** `LESSON-DEPTH-01` **misurato e in produzione** (candidato E, PR #353
-merged); `LESSON-DEPTH-02` e `02B` eseguiti, dataset merged (#355, #357). Restano
-aperti `LESSON-DEPTH-03` (limiti di spesa) e `LESSON-DEPTH-04` (UI), più le
-decisioni D1-D4. **Per riprendere il lavoro partire dalla §10.**
+**Stato finale:** candidato E misurato e in produzione; tuning, caso povero,
+dataset isovariante e holdout completati. Limiti di spesa e UI sono allineati
+alle misure. **Gate GLESSON PASS — 15 agosto 2026**, evidenza in
+[`evidenze/glesson-checklist-finale.md`](evidenze/glesson-checklist-finale.md).
+La §10 resta soltanto come diario storico della fase di tuning.
 **Data baseline:** 6 agosto 2026.
 **Dipendenze:** M5 operativo su DEV con Gate G7 PASS; AIGEN-01→03,
 AIGEN-PROMPT-01, AIGEN-CONTEXT-01, STRUCTURE-IMPORT-01→03 e SIMPLE-01 completati.
@@ -153,16 +154,14 @@ Cause concorrenti, in ordine di peso stimato:
 4. il default della UI è `Completa`, e `Approfondita` non è descritta in modo da
    invogliare a provarla.
 
-## 4. Decisioni da prendere
-
-Sono aperte e bloccano i pacchetti indicati.
+## 4. Decisioni finali
 
 | # | Decisione | Blocca | Stato |
 |---|---|---|---|
-| D1 | Tetto di costo per operazione: resta condiviso con la correzione IA o diventa dedicato alla generazione di contenuti? | LESSON-DEPTH-03 | **aperta** |
-| D2 | Nuovi valori di tetto per operazione, budget giornaliero e mensile. | LESSON-DEPTH-03 | **aperta** |
-| D3 | Il ciclo di misura viene eseguito dal docente in locale (l'ambiente di sviluppo non ha `OPENAI_API_KEY`). | LESSON-DEPTH-02 | **aperta** |
-| D4 | `Approfondita` diventa il default della UI, oppure resta `Completa` con una descrizione più esplicita? | LESSON-DEPTH-04 | **aperta** |
+| D1 | Tetto di costo per operazione: resta condiviso con la correzione IA o diventa dedicato alla generazione di contenuti? | LESSON-DEPTH-03 | **chiusa:** resta condiviso a 0,25 USD. |
+| D2 | Nuovi valori di tetto per operazione, budget giornaliero e mensile. | LESSON-DEPTH-03 | **chiusa:** restano 0,25 / 1 / 5 USD; coerenti con i costi reali. |
+| D3 | Il ciclo di misura viene eseguito dal docente in locale (l'ambiente di sviluppo non ha `OPENAI_API_KEY`). | LESSON-DEPTH-02 | **chiusa:** tuning e holdout eseguiti localmente dal docente. |
+| D4 | `Approfondita` diventa il default della UI, oppure resta `Completa` con una descrizione più esplicita? | LESSON-DEPTH-04 | **chiusa:** `Completa` resta il default; descrizioni e ruolo dei metadati resi espliciti. |
 
 ## 5. Pacchetti
 
@@ -392,7 +391,7 @@ valutata a parte.
 
 ### Gate GLESSON
 
-Chiusura della roadmap. Richiede:
+**PASS — 15 agosto 2026.** Tutte le condizioni richieste sono soddisfatte:
 
 - candidato E validato su tuning **e** holdout, senza regressioni di perimetro;
 - caso povero (1-2 concetti chiave, senza indicazioni) misurato prima e dopo,
@@ -401,15 +400,18 @@ Chiusura della roadmap. Richiede:
 - smoke DEV su una lezione reale del docente;
 - evidenze in `evidenze/`.
 
+Verdetto e matrice completa:
+[`evidenze/glesson-checklist-finale.md`](evidenze/glesson-checklist-finale.md).
+
 ## 6. Sequenza autorizzata
 
 ```
 LESSON-DEPTH-00 (questa roadmap)
-  └── LESSON-DEPTH-01  candidato E                      [implementato, non validato]
-        └── LESSON-DEPTH-02  dataset povero + misura    ← blocca il merge di 01
-              ├── LESSON-DEPTH-03  limiti di spesa
-              └── LESSON-DEPTH-04  UI dell'input
-                    └── Gate GLESSON
+  └── LESSON-DEPTH-01  candidato E                      [implementato e validato]
+        └── LESSON-DEPTH-02  dataset povero + misura    [PASS]
+              ├── LESSON-DEPTH-03  limiti di spesa      [PASS]
+              └── LESSON-DEPTH-04  UI dell'input        [PASS]
+                    └── Gate GLESSON                    [PASS]
 ```
 
 Nessuna fase può dichiarare implementata la precedente senza le evidenze
@@ -456,9 +458,9 @@ giornaliero e mensile devono accogliere.
 
 ## 10. Stato operativo e ripresa
 
-Questa sezione è **volatile**: serve a chi riprende il lavoro — persona o agente
-— a sapere in trenta secondi dove siamo e qual è la prossima azione. Va
-aggiornata o rimossa quando il Gate GLESSON chiude.
+> **Archivio storico.** Questa sezione descrive lo stato precedente alla misura
+> finale e non contiene più azioni operative. Lo stato autorevole è il PASS in
+> testa al documento e nella checklist finale.
 
 **Ultimo aggiornamento:** 6 agosto 2026.
 
