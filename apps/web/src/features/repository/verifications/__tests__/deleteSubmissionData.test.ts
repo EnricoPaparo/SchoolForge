@@ -195,6 +195,25 @@ describe('deleteSubmissionData', () => {
     ]);
   });
 
+  it('deletes a delivery acquired during a scheduled teacher closure', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, {
+      studentUid: STUDENT,
+      status: 'submitted',
+      forcedByTeacher: true,
+      assignedQuestionOrders: [0, 2],
+      assignedAnswerKeys: ['0', '2'],
+    });
+    seed(`submissionReceipts/${SUBMISSION_ID}`, { forcedByTeacher: true });
+
+    await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
+
+    expect(committedDeletes.flat()).toEqual([
+      `submissionReceipts/${SUBMISSION_ID}`,
+      `submissions/${SUBMISSION_ID}`,
+    ]);
+    expect(addedAudits).toHaveLength(1);
+  });
+
   it('deletes an in_progress correction that was never returned', async () => {
     seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
     seed(`corrections/${SUBMISSION_ID}`, { status: 'in_progress' });

@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DifferentiationVariantsDialog } from '../DifferentiationVariantsDialog.js';
 
@@ -108,6 +110,20 @@ describe('DifferentiationVariantsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /continua a modificare/i }));
     expect(screen.getByText('Domanda base?')).toBeTruthy();
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('centra soltanto su desktop i tre comandi della conferma con larghezza uguale', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/teacher/DifferentiationVariantsDialog.module.css'),
+      'utf8',
+    );
+    expect(css).toMatch(
+      /@media\s*\(min-width:\s*641px\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.confirmActions\s*\{[^}]*justify-content:\s*center/s,
+    );
+    expect(css).toMatch(
+      /\.confirmActions button\s*\{[^}]*flex:\s*0\s+1\s+12\.5rem[^}]*min-width:\s*12\.5rem/s,
+    );
+    expect(css).not.toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*?\.confirmActions button\s*\{/s);
   });
 
   it('chiude subito quando non è dirty', () => {

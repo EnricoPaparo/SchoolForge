@@ -102,7 +102,7 @@ export function DifferentiationVariantsDialog({
         onCancel={() => setPhase('edit')}
       >
         <p>Vuoi salvare le varianti prima di chiudere?</p>
-        <div className={`dialog-actions ${styles.actions}`}>
+        <div className={`dialog-actions ${styles.actions} ${styles.confirmActions}`}>
           <button type="button" onClick={() => setPhase('edit')}>
             <IconRotateCcw size={16} aria-hidden="true" /> Continua a modificare
           </button>

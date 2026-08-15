@@ -274,12 +274,20 @@ describe('QuestionPicker — selected summary', () => {
     expect(screen.getByText('Nessuna domanda selezionata.')).toBeTruthy();
   });
 
-  it('lists selected questions with UDA, lesson, tipo and points', () => {
+  it('lists selected questions with the same preview, id and metadata used by the picker', () => {
     renderPicker(new Set(['qi-1', 'qi-3']));
     const region = screen.getByRole('region', { name: 'Domande selezionate' });
-    expect(within(region).getByText(/uda-01-reti \/ lezione-001-intro\.md · aperta/)).toBeTruthy();
+    expect(within(region).getByText('#q1')).toBeTruthy();
+    expect(within(region).getByText('Descrivi il modello ISO/OSI.')).toBeTruthy();
     expect(
-      within(region).getByText(/uda-02-sicurezza \/ lezione-003-firewall\.md · chiusa multipla/),
+      within(region).getByText(/uda-01-reti \/ lezione-001-intro\.md · aperta · diff 1/),
+    ).toBeTruthy();
+    expect(within(region).getByText('#q3')).toBeTruthy();
+    expect(within(region).getByText('Seleziona le funzioni tipiche di un firewall.')).toBeTruthy();
+    expect(
+      within(region).getByText(
+        /uda-02-sicurezza \/ lezione-003-firewall\.md · chiusa multipla · diff 3/,
+      ),
     ).toBeTruthy();
     expect(within(region).getByText('1pt')).toBeTruthy();
     expect(within(region).getByText('3pt')).toBeTruthy();
@@ -289,6 +297,18 @@ describe('QuestionPicker — selected summary', () => {
     const { onChange } = renderPicker(new Set(['qi-1', 'qi-2']));
     fireEvent.click(screen.getByLabelText('Rimuovi domanda q1 dal riepilogo'));
     expect(onChange).toHaveBeenCalledWith(new Set(['qi-2']));
+  });
+
+  it('uses the same clean fallback in the selected summary for legacy previews', () => {
+    render(
+      <QuestionPicker
+        entries={[{ ...ENTRIES[0]!, questionPreview: '' }]}
+        selectedIds={new Set(['qi-1'])}
+        onChange={vi.fn()}
+      />,
+    );
+    const region = screen.getByRole('region', { name: 'Domande selezionate' });
+    expect(within(region).getByText('Anteprima non disponibile')).toBeTruthy();
   });
 });
 

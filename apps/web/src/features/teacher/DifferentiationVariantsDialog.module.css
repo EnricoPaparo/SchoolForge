@@ -68,6 +68,15 @@
   justify-content: center;
   gap: 0.4rem;
 }
+@media (min-width: 641px) and (pointer: fine) {
+  .confirmActions {
+    justify-content: center;
+  }
+  .confirmActions button {
+    flex: 0 1 12.5rem;
+    min-width: 12.5rem;
+  }
+}
 @media (max-width: 640px), (pointer: coarse) {
   .choiceGrid {
     grid-template-columns: 1fr;

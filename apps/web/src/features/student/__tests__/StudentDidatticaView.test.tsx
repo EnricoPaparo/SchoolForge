@@ -172,4 +172,16 @@ describe('StudentDidatticaView presentation contract', () => {
     expect(css).not.toMatch(/\.searchWrap\b/);
     expect(css).not.toMatch(/\.toolbar\b/);
   });
+
+  it('keeps the saved-note accessible label visually hidden and wraps only the lesson title', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/student/StudentDidatticaView.module.css'),
+      'utf8',
+    );
+    expect(css).toMatch(
+      /\.visuallyHidden\s*\{[^}]*position:\s*absolute[^}]*width:\s*1px[^}]*height:\s*1px[^}]*overflow:\s*hidden/s,
+    );
+    expect(css).toMatch(/\.lessonRowTitle\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+    expect(css).not.toMatch(/\.lessonTreeBtn\s+span:last-child/);
+  });
 });

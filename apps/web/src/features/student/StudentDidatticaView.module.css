@@ -111,8 +111,8 @@
   padding: 0.5rem 0.35rem;
   font-weight: 700;
 }
-.udaTreeBtn span:last-child,
-.lessonTreeBtn span:last-child {
+.udaTreeBtn > span:last-child,
+.lessonRowTitle {
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -155,6 +155,17 @@
 .noteIndicator {
   display: inline-flex;
   color: #e5a82d;
+}
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 .lessonRowTitle {
   min-width: 0;
