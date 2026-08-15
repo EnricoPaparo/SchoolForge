@@ -1379,9 +1379,14 @@ describe('StudentsView — contratto CSS del campo Etichetta (VDIF-02)', () => {
     'utf8',
   );
 
-  it('desktop: Classe ed Etichetta condividono la fascia e vanno a capo se non stanno', () => {
-    expect(labelFieldCss).toMatch(/\.identityFields\s*\{[^}]*display:\s*flex/s);
-    expect(labelFieldCss).toMatch(/\.identityFields\s*\{[^}]*flex-wrap:\s*wrap/s);
+  it('desktop: Classe ed Etichetta usano colonne uguali e select allineate', () => {
+    expect(labelFieldCss).toMatch(/\.identityFields\s*\{[^}]*display:\s*grid/s);
+    expect(labelFieldCss).toMatch(
+      /\.identityFields\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(labelFieldCss).toMatch(
+      /\.identityFields\s*>\s*\.classField\s*\{[^}]*grid-template-columns:\s*5\.5rem\s+minmax\(0,\s*1fr\)/s,
+    );
   });
 
   it('mobile: Etichetta si incolonna sotto Classe, a larghezza piena e con target touch', () => {

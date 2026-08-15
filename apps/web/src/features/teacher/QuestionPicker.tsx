@@ -304,8 +304,23 @@ export function QuestionPicker({
           <ul className={styles.summaryList}>
             {selectedEntries.map((entry) => (
               <li key={entry.id} className={styles.summaryRow}>
-                <span className={styles.summaryMeta}>
-                  {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]}
+                <span className={styles.summaryContent}>
+                  <span className={styles.summaryPreviewLine}>
+                    <span className={styles.rowLocalId}>#{entry.questionLocalId}</span>
+                    {entry.questionPreview.trim() ? (
+                      <span className={styles.summaryPreview} title={entry.questionPreview}>
+                        {entry.questionPreview}
+                      </span>
+                    ) : (
+                      <span className={`${styles.summaryPreview} ${styles.rowPreviewMissing}`}>
+                        Anteprima non disponibile
+                      </span>
+                    )}
+                  </span>
+                  <span className={styles.summaryMeta}>
+                    {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]} · diff{' '}
+                    {entry.difficolta}
+                  </span>
                 </span>
                 <span className={styles.summaryPoints}>{entry.maxPoints}pt</span>
                 {onOpenVariants &&

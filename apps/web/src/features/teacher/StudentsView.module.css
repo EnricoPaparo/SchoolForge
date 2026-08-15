@@ -230,20 +230,28 @@
 
 /*
  * VDIF-02 — Classe ed Etichetta sono due proprietà dello stesso record e stanno
- * nella stessa fascia: affiancate quando c'è spazio, incolonnate quando non ce
- * n'è. `flex-wrap` e non un media query, perché il punto in cui non stanno più
- * dipende dalla lunghezza dei nomi, non dalla larghezza della finestra.
+ * nella stessa fascia: due colonne uguali su desktop, incolonnate su mobile.
+ * La colonna interna riservata alla label è identica per entrambi i campi: le
+ * due select iniziano sulla stessa verticale anche se le etichette hanno
+ * lunghezze diverse.
  */
 .identityFields {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: flex-start;
-  gap: 0.5rem 1.25rem;
+  gap: 1.25rem;
   min-width: 0;
 }
 
 .identityFields > .classField {
-  flex: 1 1 min(16rem, 100%);
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+}
+
+.identityFields .classSelect {
+  width: 100%;
+  max-width: none;
 }
 
 /* Il campo Etichetta può portare un errore sotto la select: serve una riga in
@@ -253,6 +261,7 @@
 }
 
 .labelFieldFeedback {
+  grid-column: 1 / -1;
   flex: 1 1 100%;
   display: flex;
   flex-wrap: wrap;
@@ -333,6 +342,7 @@
    * troncamento (VDIF-02).
    */
   .identityFields {
+    display: flex;
     flex-direction: column;
     gap: 0.6rem;
   }
@@ -342,6 +352,7 @@
   }
 
   .classField {
+    display: flex;
     flex-wrap: wrap;
     width: 100%;
   }

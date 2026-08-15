@@ -216,9 +216,9 @@
 
 .summaryRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.5rem;
   font-size: 0.8125rem;
   border-radius: var(--radius);
 }
@@ -227,11 +227,37 @@
   background: var(--color-surface-subtle);
 }
 
-.summaryMeta {
-  flex: 1;
+.summaryContent {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 0.1875rem;
+  min-width: 0;
+}
+
+.summaryPreviewLine {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.summaryPreview {
+  display: -webkit-box;
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.summaryMeta {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .summaryPoints {
@@ -276,5 +302,8 @@
   }
   .summaryRow {
     flex-wrap: wrap;
+  }
+  .summaryContent {
+    flex: 1 1 100%;
   }
 }
