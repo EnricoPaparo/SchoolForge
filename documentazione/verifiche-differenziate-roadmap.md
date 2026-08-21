@@ -1,11 +1,12 @@
 # SchoolForge — Verifiche differenziate per etichetta (VDIF) ed Esiti
 
-**Stato:** **VDIF-00→05 implementati e distribuiti su DEV; Gate GVDIF PASS**
-il 15 agosto 2026. **ESITI-01 implementato, distribuito e validato su DEV** come vista owner-only e di sola
-lettura; rollout DEV previsto nello stesso ciclo della sua PR.
-**Data:** 15 agosto 2026.
+**Stato:** **VDIF-00→05 implementati e distribuiti su DEV e PROD; Gate GVDIF PASS**
+il 15 agosto 2026. **ESITI-01 implementato, distribuito e validato** come vista owner-only e di sola
+lettura. Il rollout PROD successivo è registrato in
+[`evidenze/prod-rollout-01.md`](evidenze/prod-rollout-01.md).
+**Data:** 21 agosto 2026.
 **Dipendenze operative:** M4 (correzione manuale e IA) e VEX (varianti
-equivalenti) implementati e distribuiti su DEV con **Gate GVEX PASS**;
+equivalenti) implementati e distribuiti con **Gate GVEX PASS**;
 `assignedQuestionOrders` e `resolveAssignedQuestions` già usati da tutti i
 consumer downstream; LESSON-DEPTH-01 in produzione.
 **Prototipo:** [`prototipi/verifiche-differenziate.html`](prototipi/verifiche-differenziate.html).

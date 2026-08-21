@@ -1,5 +1,10 @@
 # Gate GHARD — Checklist finale hardening V1
 
+> **Evidenza storica (15 luglio 2026).** Il limite «non autorizza PROD» qui
+> sotto descrive correttamente questo gate nel momento in cui fu chiuso. PROD è
+> stato autorizzato e distribuito successivamente; stato corrente in
+> [`prod-rollout-01.md`](prod-rollout-01.md).
+
 **Data:** 15 luglio 2026  
 **Verdetto:** **PASS**  
 **Ambito:** hardening finale della V1 SchoolForge su DEV. M5/AI escluso.

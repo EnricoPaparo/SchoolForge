@@ -1,5 +1,10 @@
 # HARD-00 — Audit generale finale V1 (read-only, evidence-based)
 
+> **Nota storica.** Questo audit fotografa il 15 luglio 2026. Le frasi che
+> limitano il PASS a DEV o descrivono PROD come futuro restano evidenza della
+> decisione di allora; il rollout PROD è stato autorizzato ed eseguito in
+> seguito. Stato corrente: [`evidenze/prod-rollout-01.md`](evidenze/prod-rollout-01.md).
+
 **Data:** 15 luglio 2026
 **Ambito:** intera V1 — M1, M2, M3-lite, RE, QE, M3-full, M4 e DUX; Gate G5/G6/GDUX superati. M5/AI fuori scope.
 **Natura:** audit di solo-lettura. **Nessun** file di codice, Security Rule, indice, schema, dipendenza o configurazione è stato modificato; nessun deploy. I finding qui elencati **non** sono corretti in questa fase (per mandato).

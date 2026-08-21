@@ -1,12 +1,15 @@
 # M5-05A — Decisione provider IA
 
-**Stato:** proposta evidence-based storica; decisione finale HG-M5-1..4 approvata il 17 luglio 2026, provider reale non attivo
+**Stato:** documento decisionale storico; HG-M5-1..4 e Gate G7 sono PASS. Il
+runtime OpenAI fail-closed è operativo su DEV e PROD; configurazione corrente e
+rollout sono descritti in `sicurezza.md`, `m5-ai-assisted-roadmap.md` ed
+`evidenze/prod-rollout-01.md`.
 
 **Data della rilevazione:** 16 luglio 2026
 
 **Valuta:** USD, prezzi di listino API; imposte, cambio e costi Firebase esclusi
 
-> **Decisione successiva autoritativa:** il docente ha approvato OpenAI Responses API con snapshot pinned `gpt-5.4-nano-2026-03-17`, listino `v2-2026-07-17-hg-m5`, ceiling costi e retention descritti in [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md). Le raccomandazioni e stime qui sotto restano evidenza del processo di selezione, non configurazione corrente. L'approvazione non abilita provider, secret, chiamate, costi, TTL o deploy.
+> **Decisione successiva autoritativa:** il docente ha approvato OpenAI Responses API; dopo il benchmark, `gpt-5.6-luna` è diventato il profilo Quality operativo e nano il rollback esplicito. Le raccomandazioni e stime qui sotto restano evidenza del processo di selezione, non configurazione corrente. L'approvazione originaria non abilitava da sola provider, secret, chiamate, costi, TTL o deploy; questi passaggi sono stati completati successivamente.
 
 ## Legenda delle evidenze
 

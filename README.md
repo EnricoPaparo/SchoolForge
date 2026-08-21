@@ -29,7 +29,12 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 
 **Stato:** Repository Editor (RE-00 → RE-07), Question Editor (QE-00 → QE-05) e M3-full sono completi e stabili per uso DEV/manuale; Gate G5 superato per M3-full. Vedi `documentazione/repository-editor-roadmap.md`, `documentazione/question-editor-roadmap.md`, `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
 
-**Compatibilità Storage / Brave (SGW in corso).** Il **Repository Storage Gateway same-origin** (`/api/repository/*` → Hosting rewrite → Cloud Function → Admin SDK → Storage) è implementato e verificato su DEV per operazioni singole, pool, editing Markdown ed eliminazione programmi (SGW-01/02A). SGW-02B porta nel gateway export ZIP, backfill e caricamento batch dei pool; resta solo l'upload dell'import ZIP diretto fino a SGW-02C. Contratto e stato in `documentazione/storage-gateway-roadmap.md`.
+**Compatibilità Storage / Brave (SGW).** Il **Repository Storage Gateway
+same-origin** (`/api/repository/*` → Hosting rewrite → Cloud Function → Admin
+SDK → Storage) copre operazioni singole, pool, editing Markdown, eliminazione,
+export/backfill/verifiche e import ZIP batch. Il runtime web non esegue più
+operazioni dati dirette contro Firebase Storage. Contratto e stato in
+`documentazione/storage-gateway-roadmap.md`.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -90,7 +95,6 @@ V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 supe
 ```
 SPA unica (Firebase Hosting)
 ├── /teacher/*  — docente autenticato (ownerUid), Firestore diretto + Storage via gateway SGW
-│                 (import ZIP ancora diretto fino a SGW-02C)
 └── /student/*  — studente autenticato Google
                   M3-lite: lezioni e verifiche read-only, PDF studente browser-side
                   M3-full [completato]: avvio online, bozza, consegna immutabile
@@ -98,14 +102,21 @@ SPA unica (Firebase Hosting)
 Canale cartaceo: PDF generato nel browser dal docente (M2, implementato).
 Consegna online: scritture client dirette con Security Rules (M3-full, no Cloud Functions).
 
-Cloud Functions: una Function HTTPS scale-to-zero per il gateway SGW; AI resta riservata a M5/V2.
+Cloud Functions: gateway SGW, runtime IA, varianti e chiusura programmata; tutte
+scale-to-zero (`minInstances: 0`).
 
 PDF generati nel browser (@react-pdf/renderer) — nessun server coinvolto, nessuna persistenza
 ```
 
 ## Firebase ed esercizio
 
-Il Docente possiede progetto e billing Firebase. **Regioni:** DEV usa Firestore `europe-west8` e Storage/Function gateway `us-central1` (verificati); il target PROD è `europe-west8` con co-locazione, previa verifica di compatibilità prima del provisioning. Nessun dato DEV sarà migrato. Dettaglio in [`documentazione/evidenze/hard-01c-region-matrix.md`](documentazione/evidenze/hard-01c-region-matrix.md). RPO V1: best-effort (export manuale), RTO non garantito. Vedi C-01.
+Il Docente possiede progetto e billing Firebase. **Regioni:** DEV usa
+Firestore `europe-west8` e Storage/Function gateway `us-central1`; PROD è
+operativo con i servizi principali in `europe-west8` e la coda di chiusura
+forzata in `europe-west3`. Nessun dato DEV è stato migrato. Stato attuale in
+[`documentazione/evidenze/prod-rollout-01.md`](documentazione/evidenze/prod-rollout-01.md);
+la matrice HARD-01C resta lo snapshot storico precedente al provisioning. RPO
+V1: best-effort (export manuale), RTO non garantito. Vedi C-01.
 
 ## Prossimo passo
 

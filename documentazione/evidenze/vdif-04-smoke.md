@@ -1,5 +1,8 @@
 # VDIF-04 — smoke del riepilogo di attivazione
 
+> **Evidenza storica di fase.** Il Gate GVDIF è stato successivamente superato;
+> vedi [`gvdif-human-gate.md`](gvdif-human-gate.md).
+
 **Data:** 14 agosto 2026. **Nessun deploy**, nessun rollout: lo smoke gira in
 locale sui componenti dell'applicazione, non su DEV. **Gate GVDIF aperto.**
 

@@ -1,7 +1,11 @@
 # Guida operativa — MVP docente cartaceo
 
-**Stato:** M1 + M2 + M3-lite completati; funzionante sia in locale con emulatori Firebase sia su Firebase DEV (https://schoolforge-dev.web.app). Questa guida descrive il flusso docente in locale; per il portale studente vedi la sezione dedicata più sotto e la checklist manuale in `documentazione/evidenze/`.
-**Aggiornato al:** 2026-07-09
+**Stato:** guida storica del primo MVP. M1 + M2 + M3-lite sono completati e
+SchoolForge è operativo in locale, su Firebase DEV
+(https://schoolforge-dev.web.app) e su PROD
+(https://schoolforge-prod.web.app). Per lo stato attuale usa `INDEX.md`,
+`runbook-operativo-v1.md` ed `evidenze/prod-rollout-01.md`.
+**Aggiornato al:** 2026-08-21
 
 ---
 
@@ -328,7 +332,10 @@ Verifiche online, consegna digitale, correzione automatica e correzione AI **non
 
 ---
 
-## Limiti noti prima del deploy in produzione
+## Limiti storici rilevati prima del deploy in produzione
+
+> Questa sezione conserva le precondizioni usate prima del rollout. PROD è ora
+> operativo; l'esito corrente è in `evidenze/prod-rollout-01.md`.
 
 | Limite | Impatto | Fix richiesto |
 |---|---|---|

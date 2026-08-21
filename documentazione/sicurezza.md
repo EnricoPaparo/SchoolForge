@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** in vigore — Gate G5, G6 e **G7 superati**. M5 è completato: OpenAI `gpt-5.6-luna` è operativo su DEV dietro configurazione fail-closed, kill switch, Secret Manager, limiti e ledger; nano resta rollback esplicito. Evidenze: [g7-m5-checklist-finale.md](evidenze/g7-m5-checklist-finale.md).
+**Stato:** in vigore — Gate G5, G6 e **G7 superati**. M5 è completato: OpenAI `gpt-5.6-luna` è operativo su DEV e PROD dietro configurazione fail-closed, kill switch, Secret Manager, limiti e ledger; nano resta rollback esplicito. Evidenze: [g7-m5-checklist-finale.md](evidenze/g7-m5-checklist-finale.md) e [prod-rollout-01.md](evidenze/prod-rollout-01.md).
 
 ---
 
@@ -101,7 +101,7 @@ La consegna è protetta soltanto mentre la correzione è attualmente `returned` 
   - `storage.rules` ora concede lettura/scrittura sotto `repository/{ownerUid}/**` solo all'owner stesso (`request.auth.uid == ownerUid`). Nessuna altra regola di lettura esiste per quell'albero: Markdown lezione, pool e qualunque altro asset sono tutti owner-only.
   - Il client studente (`StudentDidatticaView`/`studentLessonsService`) non chiama mai Firebase Storage: legge il corpo Markdown esclusivamente da `publicLessons/{id}.content`, una proiezione Firestore scritta da ogni percorso che crea/modifica una lezione (import, creazione, modifica del corpo — vedi `api-contract.md`). Un documento legacy privo di `content` (scritto prima di M3F-08) mostra "Contenuto temporaneamente non disponibile" — mai un fallback su Storage, mai un retry.
   - **Il limite residuo descritto fino a M3F-07** — un utente autenticato che conoscesse/indovinasse un `contentPath` esatto poteva leggere quel file direttamente da Storage, bypassando la discovery Firestore — è chiuso: quello stesso tentativo ora riceve `permission-denied` incondizionatamente, indipendentemente da approvazione, classe o Modalità verifica.
-  - `importRepository` continua a taggare ogni file con `customMetadata: { kind, programId, ownerUid, importId }` all'upload; questa informazione non è mai stata letta da una Security Rule e resta solo per eventuale diagnostica futura.
+  - dal completamento di SGW-02C `importRepository` non carica più direttamente dal browser: usa il gateway owner-only, che valida il percorso e non accetta `customMetadata` dal client. Le autorizzazioni dipendono dall'identità verificata e dal path canonico, non da metadata dichiarati dal chiamante.
   - test Security Rules mirati in `apps/web/src/rules/storage.test.ts` (blocco "student read access — denied unconditionally") e aggiornati in `apps/web/src/rules/import.rules.test.ts`: owner legge/scrive sempre; un utente autenticato non-owner (approvato, classe compatibile, `contentPath` noto o meno) è sempre negato, sia sul Markdown lezione sia sul pool; accesso anonimo negato; scrittura non-owner negata.
 - **Modalità verifica (M3F-07) ora è effettiva end-to-end.** `firestore.rules` nega la *discovery* di `programs`/`publicLessons` a uno studente la cui classe è coperta da `settings/studentAccess.examMode` (funzione `examModeAppliesToClass`, § "M3-full" più sotto); con M3F-08, anche un client che avesse già ottenuto (o indovinato) un `contentPath` prima dell'attivazione della Modalità verifica non può più leggerlo da Storage — quel canale è chiuso a prescindere. "Modalità verifica attiva" significa ora anche "il contenuto è tecnicamente irraggiungibile", non solo "le lezioni sono nascoste e non più scopribili dall'app".
 
@@ -120,16 +120,26 @@ match /{allPaths=**} {
 - `.pool.md`, Markdown lezione e qualunque altro asset sono tutti negati a un non-owner, senza eccezioni.
 - Scritture non-owner e accessi anonimi sono negati dal blocco owner-scoped, più il default-deny finale.
 
-### 3.2b Repository Storage Gateway (SGW) — modello di sicurezza TARGET, non ancora implementato
+### 3.2b Repository Storage Gateway (SGW) — modello di sicurezza implementato
 
-Il gateway same-origin descritto in [storage-gateway-roadmap.md](storage-gateway-roadmap.md) sposterà **tutti** gli accessi Storage del docente (pool, editing Markdown, import/export, eliminazioni, backfill, caricamento domande verifiche) dietro una Cloud Function con Admin SDK. Punto di attenzione critico: **l'Admin SDK bypassa le Storage Rules**. Il gateway deve quindi applicare **autonomamente** vincoli **almeno equivalenti o più stretti** di `storage.rules`:
+Il gateway same-origin descritto in
+[storage-gateway-roadmap.md](storage-gateway-roadmap.md) instrada **tutti** gli
+accessi Storage del docente (pool, editing Markdown, import/export,
+eliminazioni, backfill e caricamento domande verifiche) dietro una Cloud
+Function con Admin SDK. Punto di attenzione critico: **l'Admin SDK bypassa le
+Storage Rules**. Il gateway applica quindi **autonomamente** vincoli **almeno
+equivalenti o più stretti** di `storage.rules`:
 
 - verifica **ID token** (Admin SDK) e che l'uid sia **il docente owner reale** del portale (non un qualsiasi utente autenticato);
 - path obbligatoriamente sotto `repository/{ownerUid}/imports/…` con `ownerUid` == uid autenticato; **normalizzazione** e rifiuto di `..`, slash ambigue, URL, path assoluti, encoding anomalo;
 - **allowlist estensioni** (`.md`/`.pool.md`), solo **UTF-8**, limiti dimensione/numero file, solo metodi `POST` previsti;
 - **nessun endpoint student-facing** (lo studente continua a leggere solo `publicLessons.content`); **nessuna fiducia** nei controlli frontend; **log** privi di contenuti didattici, token, pool, soluzioni o dati personali.
 
-**App Check** è previsto come **hardening futuro** (attestazione app in aggiunta all'ID token), non come requisito iniziale. **Stato: nessuna Function/gateway esiste ancora**; oggi il perimetro resta interamente `storage.rules` (owner-only) con accesso diretto dal client.
+**App Check** resta un **hardening futuro** (attestazione app in aggiunta
+all'ID token), non un requisito iniziale. La Function `repositoryGateway` è
+operativa in DEV e PROD; il runtime web usa soltanto il client same-origin.
+`storage.rules` resta owner-only come difesa del bucket, mentre i test del core
+verificano separatamente l'autorizzazione applicata dall'Admin SDK.
 - **Il filtro per classe sulla sezione Verifiche è implementato da M3L-D**, con un vincolo tecnico nuovo rispetto a Lezioni: il documento padre `verifications/{id}` non deve mai diventare leggibile dallo studente (contiene `config.questionRefs`/`teacherSnapshot`, con `poolStorageRef`/`questionLocalId`), quindi lo studente non può scoprire le verifiche della propria classe interrogando quella collezione. La scoperta avviene con un'unica query `collectionGroup('publishedProjection')` sulla sotto-collezione, il che introduce due requisiti empirici non presenti nel modello Lezioni:
   - **ogni campo su cui la Security Rule autorizza deve essere anche un campo su cui la query filtra.** La discovery continua quindi a filtrare `classId` e `visibility` sulla proiezione. M4-LIFE-01 duplica inoltre `status` solo per la semantica UI (`active`/`closed`, legacy assente = `active`), non come filtro di autorizzazione. `closeVerification` imposta il mirror `closed` preservando `visibility`: una `closed+public` resta leggibile/PDF, mentre `verificationOnlineAndActive()` sul parent continua a negare avvio, autosave e consegna online;
   - **il blocco Security Rules deve usare un prefisso ricorsivo (`{path=**}/publishedProjection/{docId}`), non uno a profondità fissa (`verifications/{verificationId}/publishedProjection/{docId}`).** Confermato empiricamente in questo progetto: con il pattern a profondità fissa, anche una regola banale come `allow read: if true` veniva rifiutata per una `collectionGroup()` `list` (mentre funzionava normalmente per `get()` su un documento singolo) — Firestore non registra un match a profondità fissa come idoneo per una query di collection group. Passando al prefisso ricorsivo, la stessa regola valida correttamente la `list`.
@@ -268,7 +278,11 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 - Log e telemetria non contengono risposte, dati personali completi o punteggi non necessari.
 - Il docente può eliminare una consegna digitale (M3-full): dati personali e correzioni sono rimossi; resta audit non identificativo.
 - `Esporta verifiche` è disponibile solo al docente e generato on-demand nel browser; dipende da consegne M3-full.
-- **Residenza dati (HARD-F02, risolto):** DEV usa Firestore `europe-west8` e Storage/Function gateway `us-central1` (verificati); target PROD `europe-west8` con co-locazione, previa verifica di supporto. Nessun dato DEV sarà migrato. Hosting/Auth non sono dichiarati Italia-only.
+- **Residenza dati (HARD-F02, risolto):** DEV usa Firestore `europe-west8` e
+  Storage/Function gateway `us-central1`; PROD è operativo con Firestore,
+  Storage e Functions applicative in `europe-west8`, mentre la task queue usa
+  `europe-west3`. Nessun dato DEV è stato migrato. Hosting/Auth non sono
+  dichiarati Italia-only. Evidenza: `evidenze/prod-rollout-01.md`.
 - (M3-full, specifica rinviata) il sistema registrerebbe, a fini di audit, nome dichiarato (`Cognome Nome`), IP, user-agent e timestamp per ogni tentativo digitale; dati auto-dichiarati, non verificati. Non applicabile a M3-lite.
 
 ---
@@ -361,7 +375,7 @@ profilo, quindi lezioni, mappe concettuali e correzione IA mantengono i propri
 contratti. Nessuna nuova Rule, collection, chiave, dipendenza o superficie di
 rete.
 
-- **Feature flag** globale `disabled|mock|openai` risolto da `AI_CORRECTION_MODE`, default sicuro `disabled`; sul percorso `openai`, kill switch e modello arrivano dalla config runtime validata, senza fallback. Provider/modello definitivi = Human Gate aperto.
+- **Feature flag** globale `disabled|mock|openai` risolto da `AI_CORRECTION_MODE`, default sicuro `disabled`; sul percorso `openai`, kill switch e modello arrivano dalla config runtime validata, senza fallback. Provider/modello definitivi approvati con Gate G7 PASS; rollout DEV e PROD completato.
 - **Gateway server-side owner-only:** verifica dell'uid dal token Firebase e confronto con `settings/owner` (stesso pattern del `repositoryGateway`) — **implementato in M5-01**.
 - **Autorizzazione per ID, mai per testo:** il client invia solo ID (`verificationId`, `submissionIds`, `requestId`); il server rilegge submission, snapshot e soluzioni via Admin SDK. Il client non può iniettare testi arbitrari come parte della verifica.
 - **Contesto IA chiuso:** solo domanda snapshot, soluzione/criterio, `maxPoints` e risposta studente; nessun dato personale (nome/email) inviato al provider.
