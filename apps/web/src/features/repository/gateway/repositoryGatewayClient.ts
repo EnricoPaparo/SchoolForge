@@ -4,15 +4,16 @@ import { auth } from '../../../lib/firebase.js';
  * SGW-01 — unico client adapter del Repository Storage Gateway same-origin.
  *
  * I service applicativi non conoscono `fetch`, token o dettagli HTTP: usano
- * solo `readText` / `readTexts` / `writeText` / `deleteFile` /
+ * solo `readText` / `readTexts` / `writeText` / `writeTexts` / `deleteFile` /
  * `deleteImportPrefix`. L'adapter recupera il Firebase
  * ID token corrente, chiama gli endpoint same-origin `/api/repository/*` e
  * traduce gli errori del gateway in `GatewayError` leggibili.
  *
  * Regole (SGW-00): timeout ragionevole, **nessun retry infinito**, **nessun
  * fallback automatico** a Firebase Storage dopo un errore del gateway (su Brave
- * riproporrebbe attese di ~120 s). Il fallback diretto resta disponibile solo
- * come rollback esplicito e controllato altrove, mai qui.
+ * riproporrebbe attese di ~120 s). Non esiste alcun fallback diretto nel
+ * runtime web; il rollback richiede il revert e il redeploy di una versione
+ * precedente verificata.
  */
 
 const BASE_PATH = '/api/repository';
@@ -163,6 +164,53 @@ export async function readTexts(paths: string[]): Promise<BatchReadEntry[]> {
 export async function writeText(path: string, content: string): Promise<void> {
   const res = await callGateway('/write', { path, content });
   if (!res.ok) await throwGatewayError(res);
+}
+
+export type BatchWriteFile = { path: string; content: string };
+
+const BATCH_WRITE_CHUNK_SIZE = 300;
+
+async function writeTextsChunk(files: BatchWriteFile[]): Promise<void> {
+  const res = await callGateway('/batch-write', { files });
+  if (!res.ok) {
+    try {
+      await throwGatewayError(res);
+    } catch (err) {
+      if (err instanceof GatewayError && err.code === 'total_too_large' && files.length > 1) {
+        const middle = Math.ceil(files.length / 2);
+        await writeTextsChunk(files.slice(0, middle));
+        await writeTextsChunk(files.slice(middle));
+        return;
+      }
+      throw err;
+    }
+  }
+  const data = (await res.json()) as {
+    files?: Array<{ path?: unknown; bytes?: unknown }>;
+  };
+  if (!Array.isArray(data.files) || data.files.length !== files.length) {
+    throw new GatewayError('invalid_response', 'Risposta batch-write non valida.', 502);
+  }
+  data.files.forEach((file, index) => {
+    if (file.path !== files[index]!.path || typeof file.bytes !== 'number') {
+      throw new GatewayError('invalid_response', 'Ordine batch-write non valido.', 502);
+    }
+  });
+}
+
+/**
+ * Scrive file distinti tramite batch bounded e sequenziali. Un payload troppo
+ * grande viene dimezzato fino a rientrare; non esistono retry infiniti né un
+ * fallback automatico allo Storage SDK del browser.
+ */
+export async function writeTexts(files: BatchWriteFile[]): Promise<void> {
+  if (files.length === 0) return;
+  if (new Set(files.map((file) => file.path)).size !== files.length) {
+    throw new GatewayError('duplicate_path', 'La lista contiene path duplicati.', 400);
+  }
+  for (let i = 0; i < files.length; i += BATCH_WRITE_CHUNK_SIZE) {
+    await writeTextsChunk(files.slice(i, i + BATCH_WRITE_CHUNK_SIZE));
+  }
 }
 
 /** Elimina un singolo file (idempotente: un file assente non è un errore). */

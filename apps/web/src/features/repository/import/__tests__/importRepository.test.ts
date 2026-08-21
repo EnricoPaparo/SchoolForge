@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// ── Ordered event log + Firestore/Storage mocks ─────────────────────────────
+// ── Ordered event log + Firestore/Gateway mocks ─────────────────────────────
 let events: string[] = [];
 
 interface BatchRecord {
@@ -77,10 +77,9 @@ vi.mock('firebase/firestore', () => ({
   where: (...a: unknown[]) => ({ __where: a }),
 }));
 
-const mockUploadBytes = vi.fn();
-vi.mock('firebase/storage', () => ({
-  ref: (_st: unknown, path: string) => ({ __path: path }),
-  uploadBytes: (...a: unknown[]) => mockUploadBytes(...a),
+const mockWriteFiles = vi.fn();
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  writeTexts: vi.fn(),
 }));
 
 const mockValidateImport = vi.fn();
@@ -95,11 +94,10 @@ vi.mock('../buildImportPayload.js', () => ({
 
 import { importRepository } from '../importRepository.js';
 import type { Firestore } from 'firebase/firestore';
-import type { FirebaseStorage } from 'firebase/storage';
 
 const fakeDb = {} as Firestore;
-const fakeStorage = {} as FirebaseStorage;
 const OWNER = 'owner-1';
+const importDeps = { db: fakeDb, writeFiles: mockWriteFiles };
 
 function makePayload(counts: { udas: number; lessons: number; questions: number }) {
   return {
@@ -139,7 +137,7 @@ beforeEach(() => {
   // Existing program with a previous active import → triggers cleanup path.
   programSnap = { exists: () => true, data: () => ({ activeImportId: 'old-imp' }) };
   mockValidateImport.mockReturnValue({ valid: true, issues: [] });
-  mockUploadBytes.mockResolvedValue(undefined);
+  mockWriteFiles.mockResolvedValue(undefined);
   mockBuildImportPayload.mockReturnValue(makePayload({ udas: 2, lessons: 3, questions: 4 }));
   mockGetDocs.mockResolvedValue({ docs: [] }); // no stale publicLessons by default
   mockGetDoc.mockResolvedValue({ exists: () => true }); // old import doc exists
@@ -149,9 +147,9 @@ beforeEach(() => {
 describe('importRepository — validation', () => {
   it('returns validation_failed without any write', async () => {
     mockValidateImport.mockReturnValue({ valid: false, issues: [{ code: 'x' }] });
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res.status).toBe('validation_failed');
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteFiles).not.toHaveBeenCalled();
     expect(batches).toHaveLength(0);
     expect(events).not.toContain('transaction');
   });
@@ -159,7 +157,7 @@ describe('importRepository — validation', () => {
 
 describe('importRepository — happy path (small import)', () => {
   it('stages then switches then reports committed with cleanupPending false', async () => {
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res).toMatchObject({
       status: 'committed',
       programId: 'prog-1',
@@ -171,10 +169,18 @@ describe('importRepository — happy path (small import)', () => {
     // One technical chunk (1 meta + 2 uda + 3 lessons + 4 qi = 10) and one
     // publicLessons chunk (3) — both well under 400.
     expect(batches.length).toBe(2);
+    expect(mockWriteFiles).toHaveBeenCalledWith([
+      expect.objectContaining({
+        path: expect.stringMatching(
+          /^repository\/owner-1\/imports\/[^/]+\/uda-01\/lezione-001\.md$/,
+        ),
+        content: 'x',
+      }),
+    ]);
   });
 
   it('never changes activeImportId during staging; switch happens after all chunks', async () => {
-    await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    await importRepository(baseInput('prog-1'), importDeps);
     // No staging batch ever writes the program doc.
     for (const b of batches) {
       expect(
@@ -188,7 +194,7 @@ describe('importRepository — happy path (small import)', () => {
   });
 
   it('switch transaction contains ONLY program + import status + audit', async () => {
-    await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    await importRepository(baseInput('prog-1'), importDeps);
     // program updated with new activeImportId
     expect(txRecord.updates).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: 'programs/prog-1' })]),
@@ -216,7 +222,7 @@ describe('importRepository — large import (>500 mutations)', () => {
     // 600 lessons → technical ops = 1 + 0 + 600 + 0 = 601 → 2 chunks;
     // publicLessons = 600 → 2 chunks. Total 4 staging batches.
     mockBuildImportPayload.mockReturnValue(makePayload({ udas: 0, lessons: 600, questions: 0 }));
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res.status).toBe('committed');
     expect(batches.length).toBe(4);
     // No single batch exceeds 400 mutations.
@@ -235,8 +241,8 @@ describe('importRepository — large import (>500 mutations)', () => {
 
 describe('importRepository — pre-switch failures (not applied)', () => {
   it('Storage upload error → not_applied, no switch, activeImportId untouched', async () => {
-    mockUploadBytes.mockRejectedValueOnce(new Error('storage down'));
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    mockWriteFiles.mockRejectedValueOnce(new Error('gateway down'));
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res).toEqual({
       status: 'not_applied',
       message: 'Import non applicato: il corso precedente è rimasto intatto.',
@@ -246,7 +252,7 @@ describe('importRepository — pre-switch failures (not applied)', () => {
 
   it('error in a staging chunk → not_applied, no switch', async () => {
     failBatchAt = 0; // first technical chunk fails
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res.status).toBe('not_applied');
     expect(events).not.toContain('transaction');
   });
@@ -254,14 +260,14 @@ describe('importRepository — pre-switch failures (not applied)', () => {
   it('error in the publicLessons chunk → not_applied, no switch', async () => {
     mockBuildImportPayload.mockReturnValue(makePayload({ udas: 0, lessons: 1, questions: 0 }));
     failBatchAt = 1; // technical chunk 0 ok, publicLessons chunk 1 fails
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res.status).toBe('not_applied');
     expect(events).not.toContain('transaction');
   });
 
   it('switch transaction failure → not_applied', async () => {
     failTransaction = true;
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res.status).toBe('not_applied');
   });
 });
@@ -269,7 +275,7 @@ describe('importRepository — pre-switch failures (not applied)', () => {
 describe('importRepository — cleanup semantics', () => {
   it('cleanup failure after switch → committed with cleanupPending true', async () => {
     mockGetDocs.mockRejectedValueOnce(new Error('cleanup read failed'));
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res).toMatchObject({ status: 'committed', cleanupPending: true });
     // Switch still happened.
     expect(events).toContain('transaction');
@@ -277,7 +283,7 @@ describe('importRepository — cleanup semantics', () => {
 
   it('cleanup uses the PREVIOUS activeImportId', async () => {
     mockGetDocs.mockResolvedValue({ docs: [{ ref: { __path: 'publicLessons/old-imp_l0' } }] });
-    const res = await importRepository(baseInput('prog-1'), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput('prog-1'), importDeps);
     expect(res).toMatchObject({ status: 'committed', cleanupPending: false });
     // The stale doc from the old import was deleted.
     const deleted = batches.flatMap((b) => b.deletePaths);
@@ -286,7 +292,7 @@ describe('importRepository — cleanup semantics', () => {
 
   it('new program (no previous import) → no cleanup attempted', async () => {
     programSnap = { exists: () => false, data: () => ({}) };
-    const res = await importRepository(baseInput(undefined), { db: fakeDb, storage: fakeStorage });
+    const res = await importRepository(baseInput(undefined), importDeps);
     expect(res).toMatchObject({ status: 'committed', cleanupPending: false });
     expect(mockGetDocs).not.toHaveBeenCalled();
   });

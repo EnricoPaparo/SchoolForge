@@ -1,8 +1,7 @@
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import { ref, uploadBytes } from 'firebase/storage';
-import type { FirebaseStorage } from 'firebase/storage';
 import { validateImport } from '../validation/index.js';
+import { writeTexts, type BatchWriteFile } from '../gateway/repositoryGatewayClient.js';
 import { commitOpsInChunks } from '../firestoreChunks.js';
 import type { BatchOp } from '../firestoreChunks.js';
 import { buildImportPayload } from './buildImportPayload.js';
@@ -46,10 +45,11 @@ const NOT_APPLIED_MESSAGE = 'Import non applicato: il corso precedente è rimast
  */
 export async function importRepository(
   input: ImportRepositoryInput,
-  deps: { db: Firestore; storage: FirebaseStorage },
+  deps: { db: Firestore; writeFiles?: (files: BatchWriteFile[]) => Promise<void> },
 ): Promise<ImportRepositoryResult> {
   const { ownerUid, programmaTitle, programId: existingProgramId, files } = input;
-  const { db, storage: st } = deps;
+  const { db } = deps;
+  const writeFiles = deps.writeFiles ?? writeTexts;
 
   // ── Step B: Validate ────────────────────────────────────────────────────────
   const validation = validateImport(programmaTitle, files);
@@ -78,19 +78,11 @@ export async function importRepository(
   // invisible orphans carrying the not-yet-active importId).
   try {
     // ── Step C: Upload files to Storage ──────────────────────────────────────
-    // customMetadata is written here but is no longer read by any Security
-    // Rule (see storage.rules): the real class/approval gate lives upstream in
-    // Firestore discovery of programs/publicLessons. kind/programId/ownerUid/
-    // importId are kept only as debugging/cleanup metadata.
-    const encoder = new TextEncoder();
-    await Promise.all(
-      files.map((file) => {
-        const storagePath = `repository/${ownerUid}/imports/${importId}/${file.path}`;
-        const kind = file.path.endsWith('.pool.md') ? 'pool' : 'lesson';
-        return uploadBytes(ref(st, storagePath), encoder.encode(file.content), {
-          customMetadata: { kind, programId, ownerUid, importId },
-        });
-      }),
+    await writeFiles(
+      files.map((file) => ({
+        path: `repository/${ownerUid}/imports/${importId}/${file.path}`,
+        content: file.content,
+      })),
     );
 
     // ── Step D: Chunk-write technical docs (staging, invisible) ──────────────

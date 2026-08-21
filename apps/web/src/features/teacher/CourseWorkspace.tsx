@@ -713,7 +713,7 @@ export function CourseWorkspace({
         const files = await readZipFile(file);
         const result = await importRepository(
           { ownerUid, programmaTitle: card.title, programId: card.programId, files },
-          { db, storage },
+          { db },
         );
         if (!mountedRef.current) return;
         if (result.status === 'validation_failed') {
