@@ -15,6 +15,7 @@ const dialogShell = read('src/components/DialogShell.module.css');
 const aigen = read('src/features/teacher/AiPoolGenerationDialog.module.css');
 const workspace = read('src/features/teacher/CourseWorkspace.module.css');
 const stepper = read('src/features/teacher/QuestionCountStepper.module.css');
+const poolEditor = read('src/features/teacher/QuestionPoolEditor.module.css');
 
 describe('AIGEN dialog viewport containment', () => {
   it('bounds the wide-scroll variant to the dynamic viewport with internal vertical scroll', () => {
@@ -119,9 +120,19 @@ describe('AIGEN review card compact metadata row', () => {
     const width = /width:\s*(\d+)ch/.exec(block);
     expect(width).not.toBeNull();
     expect(Number(width![1])).toBeGreaterThanOrEqual(5);
-    // Non si comprime nemmeno su mobile.
+    // Su mobile il campo prende tutto lo spazio rimasto nella cella della griglia.
     expect(stepper).toMatch(
-      /@media \(max-width: 640px\)[\s\S]*?\.stepperInline\.stepperWide \.input\s*\{[^}]*width:\s*6ch/,
+      /@media \(max-width: 640px\)[\s\S]*?\.stepperInline \.input,\s*\.stepperInline\.stepperWide \.input\s*\{[^}]*flex:\s*1 1 0/,
+    );
+  });
+
+  it('gives both review steppers full, non-shrinking mobile grid cells', () => {
+    expect(aigen).toMatch(
+      /@media \(max-width: 640px\)[\s\S]*?\.reviewMeta\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
+    expect(aigen).toMatch(/@media \(max-width: 360px\)[\s\S]*?grid-template-columns:\s*1fr/);
+    expect(stepper).toMatch(
+      /@media \(max-width: 640px\)[\s\S]*?\.stepperInline \.control\s*\{[^}]*width:\s*100%[^}]*height:\s*2\.75rem/,
     );
   });
 
@@ -150,8 +161,6 @@ describe('lesson toolbar on mobile', () => {
 });
 
 describe('pool question metadata group (Dim. risposta)', () => {
-  const poolEditor = read('src/features/teacher/QuestionPoolEditor.module.css');
-
   it('keeps difficulty and answer size in one group that wraps in an orderly way', () => {
     const block = poolEditor.match(/\.questionMetaGroup\s*\{[^}]*\}/s)?.[0] ?? '';
     expect(block).toMatch(/display:\s*flex/);
@@ -161,5 +170,36 @@ describe('pool question metadata group (Dim. risposta)', () => {
     // L'allineamento a destra si è spostato dal singolo meta al gruppo.
     expect(block).toMatch(/margin-left:\s*auto/);
     expect(poolEditor).not.toMatch(/\.questionMeta\s*\{[^}]*margin-left:\s*auto/s);
+  });
+});
+
+describe('pool action toolbar on mobile', () => {
+  it('places the count on its own row and the four actions in an equal 2 × 2 grid', () => {
+    const mobile =
+      poolEditor.match(
+        /@media \(max-width: 640px\)[\s\S]*?\.poolMetaActions > button\s*\{[^}]*\}/,
+      )?.[0] ?? '';
+    expect(mobile).toMatch(
+      /\.poolMeta\s*\{[^}]*flex-direction:\s*column[^}]*align-items:\s*stretch/s,
+    );
+    expect(mobile).toMatch(/\.poolMetaActions\s*\{[^}]*display:\s*grid/s);
+    expect(mobile).toMatch(/grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+    expect(mobile).toMatch(
+      /\.poolMetaActions > button\s*\{[^}]*width:\s*100%[^}]*min-height:\s*2\.75rem/s,
+    );
+  });
+});
+
+describe('lesson generation choices on mobile', () => {
+  it('allows profile and depth descriptions to wrap inside the dialog', () => {
+    const choice = aigen.match(/\.choice\s*\{[^}]*\}/s)?.[0] ?? '';
+    const meta = aigen.match(/\.choiceMeta\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(choice).toMatch(/min-width:\s*0/);
+    expect(choice).toMatch(/max-width:\s*100%/);
+    expect(choice).toMatch(/white-space:\s*normal/);
+    expect(meta).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(aigen).toMatch(
+      /@media \(max-width: 640px\)[\s\S]*?\.choice\s*\{[^}]*flex-basis:\s*100%[^}]*width:\s*100%/,
+    );
   });
 });
