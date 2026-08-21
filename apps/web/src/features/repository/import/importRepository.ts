@@ -1,7 +1,7 @@
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { validateImport } from '../validation/index.js';
-import { writeTexts, type BatchWriteFile } from '../gateway/repositoryGatewayClient.js';
+import type { BatchWriteFile } from '../gateway/repositoryGatewayClient.js';
 import { commitOpsInChunks } from '../firestoreChunks.js';
 import type { BatchOp } from '../firestoreChunks.js';
 import { buildImportPayload } from './buildImportPayload.js';
@@ -49,7 +49,15 @@ export async function importRepository(
 ): Promise<ImportRepositoryResult> {
   const { ownerUid, programmaTitle, programId: existingProgramId, files } = input;
   const { db } = deps;
-  const writeFiles = deps.writeFiles ?? writeTexts;
+  // Import lazily: Rules tests inject a Storage-emulator writer and must not
+  // initialize the production Firebase Auth singleton merely by importing this
+  // otherwise-pure service module.
+  const writeFiles =
+    deps.writeFiles ??
+    (async (batch: BatchWriteFile[]) => {
+      const { writeTexts } = await import('../gateway/repositoryGatewayClient.js');
+      await writeTexts(batch);
+    });
 
   // ── Step B: Validate ────────────────────────────────────────────────────────
   const validation = validateImport(programmaTitle, files);
