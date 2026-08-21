@@ -1,5 +1,9 @@
 # VDIF-00 — evidenze visive del prototipo
 
+> **Evidenza storica.** Il gate grafico era PENDING al momento del prototipo;
+> VDIF-00→05 sono poi stati implementati e Gate GVDIF è PASS. Stato finale:
+> [`gvdif-human-gate.md`](gvdif-human-gate.md).
+
 **Gate grafico: PENDING.** Questo documento raccoglie screenshot reali; **non**
 dichiara approvata la resa visiva. L'approvazione è del docente e non può essere
 sostituita da alcuna misura automatica.

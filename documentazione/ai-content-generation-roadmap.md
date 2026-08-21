@@ -1,10 +1,12 @@
 # AIGEN — Generazione IA di pool e lezioni (contratto e roadmap)
 
-> Stato corrente: **AIGEN implementato e distribuito su DEV; Gate GAIGEN PASS
+> Stato corrente: **AIGEN implementato e distribuito su DEV e PROD; Gate GAIGEN PASS
 > (15 agosto 2026)**. La riga storica AIGEN-00 descriveva soltanto la prima
 > progettazione. TTL, runtime OpenAI, smoke autenticati e conferma docente sono
 > registrati in [`evidenze/gaigen-human-gate.md`](evidenze/gaigen-human-gate.md).
-> Il PASS non autorizza provisioning o deploy PROD.
+> Il PASS, da solo, non autorizzava provisioning o deploy PROD; l'autorizzazione
+> è arrivata successivamente e il rollout operativo è registrato in
+> [`evidenze/prod-rollout-01.md`](evidenze/prod-rollout-01.md).
 > Le note di implementazione sottostanti sono fotografie storiche dei singoli
 > pacchetti: le loro diciture «gate aperto» sono superate da questo verdetto
 > finale e non rappresentano lo stato corrente.

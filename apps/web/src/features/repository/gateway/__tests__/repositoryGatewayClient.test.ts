@@ -19,6 +19,7 @@ import {
   readText,
   readTexts,
   writeText,
+  writeTexts,
 } from '../repositoryGatewayClient.js';
 
 beforeEach(() => {
@@ -131,6 +132,120 @@ describe('repositoryGatewayClient adapter', () => {
     expect(fetchSpy.mock.calls[0][0]).toBe('/api/repository/write');
     expect(fetchSpy.mock.calls[1][0]).toBe('/api/repository/delete');
     expect(fetchSpy.mock.calls[2][0]).toBe('/api/repository/delete-prefix');
+  });
+
+  it('writeTexts sends an ordered batch and skips the network for empty input', async () => {
+    const a = { path: 'repository/uid/imports/imp/a.md', content: 'A' };
+    const b = { path: 'repository/uid/imports/imp/b.md', content: 'Bè' };
+    const fetchSpy = fetchOk({
+      files: [
+        { path: a.path, bytes: 1 },
+        { path: b.path, bytes: 3 },
+      ],
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(writeTexts([])).resolves.toBeUndefined();
+    await expect(writeTexts([a, b])).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/repository/batch-write');
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ files: [a, b] });
+  });
+
+  it('writeTexts rejects duplicate paths before authentication or network I/O', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const file = { path: 'repository/uid/imports/imp/a.md', content: 'A' };
+
+    await expect(writeTexts([file, { ...file, content: 'B' }])).rejects.toMatchObject({
+      code: 'duplicate_path',
+    });
+    expect(mockGetIdToken).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('writeTexts chunks more than 300 files without changing order', async () => {
+    const files = Array.from({ length: 301 }, (_, index) => ({
+      path: `repository/uid/imports/imp/file-${index}.md`,
+      content: `body-${index}`,
+    }));
+    const requestedPaths: string[] = [];
+    const fetchSpy = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      const requested = (JSON.parse(init.body as string) as { files: typeof files }).files;
+      requestedPaths.push(...requested.map((file) => file.path));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          files: requested.map((file) => ({
+            path: file.path,
+            bytes: new TextEncoder().encode(file.content).byteLength,
+          })),
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(writeTexts(files)).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(requestedPaths).toEqual(files.map((file) => file.path));
+  });
+
+  it('writeTexts halves an oversized chunk and never retries a single file forever', async () => {
+    const files = [
+      { path: 'repository/uid/imports/imp/a.md', content: 'A' },
+      { path: 'repository/uid/imports/imp/b.md', content: 'B' },
+    ];
+    let calls = 0;
+    const fetchSpy = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      calls += 1;
+      const requested = (JSON.parse(init.body as string) as { files: typeof files }).files;
+      if (calls === 1) {
+        return {
+          ok: false,
+          status: 413,
+          json: async () => ({ error: { code: 'total_too_large', message: 'Troppo grande.' } }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          files: requested.map((file) => ({ path: file.path, bytes: 1 })),
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(writeTexts(files)).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+    calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 413,
+        json: async () => ({ error: { code: 'total_too_large', message: 'Troppo grande.' } }),
+      }),
+    );
+    await expect(writeTexts([files[0]])).rejects.toMatchObject({ code: 'total_too_large' });
+  });
+
+  it('writeTexts rejects a malformed or reordered gateway response', async () => {
+    const a = { path: 'repository/uid/imports/imp/a.md', content: 'A' };
+    const b = { path: 'repository/uid/imports/imp/b.md', content: 'B' };
+    vi.stubGlobal(
+      'fetch',
+      fetchOk({
+        files: [
+          { path: b.path, bytes: 1 },
+          { path: a.path, bytes: 1 },
+        ],
+      }),
+    );
+
+    await expect(writeTexts([a, b])).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
   it('translates a structured gateway error into a GatewayError (code + status)', async () => {

@@ -1,8 +1,11 @@
 # Repository Storage Gateway — roadmap e contratto (SGW)
 
-> **Stato: SGW-01 e SGW-02A implementati, deployati su DEV e verificati;
-> SGW-02B batch-read implementato nel codice e in attesa di deploy/smoke DEV;
-> resta SGW-02C batch-write per l'import, poi il Gate SGW-03.**
+> **Stato: SGW-01, SGW-02A e SGW-02B sono operativi; SGW-02C batch-write è
+> implementato nel codice.** Tutte le operazioni dati del repository passano
+> dal gateway same-origin; nel runtime web non resta alcuna chiamata diretta a
+> Firebase Storage. Il rollout del nuovo endpoint batch-write segue il normale
+> ciclo di deploy dopo il merge; budget e fatturazione restano verifiche
+> operative manuali del docente, non requisiti del codice.
 > Il codice del gateway esiste ora nel repo: la Cloud Function
 > `repositoryGateway` (`functions/src/repositoryGateway.ts` +
 > `repositoryGatewayCore.ts`), il client adapter
@@ -10,10 +13,9 @@
 > rewrite `/api/repository/**` in `firebase.json` e la migrazione delle
 > operazioni **singolo-file** (editing lezioni/UDA, pool, fallback lezione) e,
 > con SGW-02A, la cancellazione della root esatta di un import; con SGW-02B,
-> export ZIP, backfill e caricamenti batch dei pool. Il deploy DEV della
-> Function in `us-central1`, la rewrite Hosting e gli smoke reali sono
-> completati fino a SGW-02A. L'import ZIP resta l'unico flusso applicativo con
-> accesso Storage diretto fino a SGW-02C.
+> export ZIP, backfill e caricamenti batch dei pool; con SGW-02C, l'upload
+> dell'import ZIP. DEV e PROD hanno Hosting + gateway operativi; la versione
+> batch-write diventa effettiva in ciascun ambiente al relativo deploy.
 
 ## 0. Perché (contesto verificato su DEV)
 
@@ -26,9 +28,9 @@
 - **MOB-01C** ha risolto **solo** la *consultazione* delle lezioni docente,
   spostandola su `publicLessons.content` (Firestore, un `getDoc`), con Storage
   come fallback legacy.
-- Dopo SGW-01/02A e il codice SGW-02B, **resta dipendente direttamente da
-  Firebase Storage solo l'import ZIP** (`uploadBytes` multipli). È l'ultimo
-  flusso bloccabile su Brave e viene migrato in SGW-02C.
+- SGW-02C ha rimosso l'ultimo accesso dati diretto: l'import ZIP usa ora
+  `writeTexts`, con batch same-origin, validazione completa prima del primo
+  upload e split adattivo del client.
 
 L'obiettivo SGW è instradare **tutti** questi accessi attraverso un endpoint
 **same-origin** (`https://<hosting-domain>/api/repository/*`), servito da
@@ -55,7 +57,7 @@ Verificato con `rg "from 'firebase/storage'"` e
 | 6 | `repository/editor/repositoryEditorService.ts` · `writeStorageText` (:52) | write | Markdown lezione/UDA | `uploadBytes` | owner | media (create/edit/reorder metadata) | no | **alta (scrittura)** | **SGW-01** |
 | 7 | `repository/editor/repositoryEditorService.ts` · delete lezione/UDA (:830) | delete | file lezione/UDA | `deleteObject` | owner | bassa | no | alta | **SGW-01** |
 | 8 | `teacher/exportZip.ts` · `buildExportZip` | read | Markdown UDA+lezioni | gateway `readTexts` | owner | bassa (export) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
-| 9 | `repository/import/importRepository.ts` (:74) | write | tutti i file Markdown+pool | `uploadBytes` (loop) | owner | bassa (import) | **sì** | **alta (scrittura, molti file)** | **SGW-02C** |
+| 9 | `repository/import/importRepository.ts` | write | tutti i file Markdown+pool | gateway `writeTexts` | owner | bassa (import) | **sì** | risolta nel codice | **SGW-02C ✅ codice** |
 | 10 | `repository/programs/programsService.ts` · `deleteProgram` | delete-prefix | intero prefisso import | gateway `deleteImportPrefix` | owner | rara (elimina programma/import) | **sì (prefix)** | risolta su DEV | **SGW-02A ✅** |
 | 11 | `repository/programs/publicLessonsBackfillService.ts` | read | Markdown lezione | gateway `readTexts` | owner | rara (migrazione one-shot) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
 | 12 | `repository/verifications/loadSelectedQuestions.ts` | read | pool files (raggruppati) | gateway `readTexts` | owner | media (prep/attivazione verifica, PDF studenti) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
@@ -132,8 +134,9 @@ errore usa `{ "error": { "code": "...", "message": "..." } }`.
 |---|---|---|
 | Byte per file | **700.000** | = `MAX_LESSON_CONTENT_BYTES` esistente (coerenza con la proiezione) |
 | File per batch-read | **300** | copre export/verifica di corsi grandi |
-| File per batch-write (import) | **500** | copre import di corsi grandi |
-| Byte totali per richiesta | **20 MB** | sotto il limite ~32 MB della 2ª gen, con margine per l'overhead JSON |
+| File per batch-write (import) | **300** | il client divide automaticamente import più grandi |
+| Byte totali batch-read | **20 MB** | limite sulla risposta UTF-8 |
+| Byte totali batch-write | **4 MB** | margine anche nel caso peggiore di escaping JSON sotto il limite HTTP della 2ª gen |
 | Estensioni ammesse | `.md`, `.pool.md` | allowlist; qualsiasi altra → `415` |
 
 ### 3.1 Leggere un singolo file — `POST /api/repository/read`
@@ -192,18 +195,21 @@ Per **export** e **preparazione/attivazione verifica** e **PDF soluzioni**.
 
 Per **import** di un corso.
 
-- **Request**: `{ "files": [ { "path": "…", "content": "…" } ] }` (≤ 500,
-  ≤ 20 MB totali).
-- **Response 200**: `{ "written": N, "results": [ { "path": "…", "ok": true } | { "path": "…", "error": {…} } ] }`.
+- **Request**: `{ "files": [ { "path": "…", "content": "…" } ] }` (≤ 300,
+  ≤ 4 MB UTF-8 totali).
+- **Response 200**: `{ "files": [ { "path": "…", "bytes": 123 } ] }`,
+  nello stesso ordine dell'input.
 - **Errori a livello richiesta**: `400 too_many_files`, `401`, `403 not_owner`,
   `413 total_too_large`, `415`.
 - **Atomicità**: **NON atomica** tra i file, e **non** copre la scrittura
   Firestore. Il client **conserva l'attuale orchestrazione a due fasi**
   (Storage prima, poi commit Firestore transazionale): il gateway garantisce
   solo la **durabilità per-file**, non l'atomicità multi-file o cross-service.
-  Su fallimento parziale il client ripulisce/ritenta come oggi.
-- **Retry/Idempotenza**: sì per-path (upsert). Un retry ripete solo i path non
-  riusciti.
+  Un errore può lasciare oggetti staged, ma non rende visibile il nuovo import:
+  lo switch Firestore non viene eseguito e il corso precedente resta attivo.
+- **Retry/Idempotenza**: sì per-path (upsert dello stesso contenuto). Il client
+  invia chunk sequenziali da massimo 300 file e dimezza un chunk su
+  `total_too_large`; non usa fallback allo Storage SDK del browser.
 - **Costo**: 1 invocazione + N operazioni classe A + ingress = somma dimensioni.
 
 ### 3.6 Eliminare un prefisso repository — `POST /api/repository/delete-prefix`
@@ -333,9 +339,10 @@ qui come opzione, non come requisito SGW-01.
   ```
 - **Configurazione DEV**: progetto `schoolforge-dev` (già su piano **Blaze**,
   requisito della 2ª gen). Region della Function pinnata a quella del bucket.
-- **Deploy**: SGW-01 fa il **primo deploy solo su DEV**
-  (`firebase deploy --only functions,hosting --project dev`), seguito da smoke
-  Brave.
+- **Deploy**: DEV usa `firebase.json`/`us-central1`; PROD usa
+  `firebase.prod.json`/`europe-west8`. Entrambi gli ambienti sono operativi e
+  restano separati. Ogni modifica al gateway richiede deploy di Functions e
+  Hosting nell'ambiente autorizzato, seguito da smoke.
 - **Rollback**: la migrazione mantiene per una fase l'accesso Storage diretto
   come fallback dietro flag/adapter; il rollback consiste nel ripuntare
   l'adapter sul percorso diretto e/o ripristinare la rewrite SPA-only e
@@ -363,27 +370,31 @@ qui come opzione, non come requisito SGW-01.
   region `us-central1` confermata.
 - Copre le righe **1–7** dell'inventario.
 
-### SGW-02 — Batch + prefissi + accessi residui
+### SGW-02 — Batch + prefissi + accessi residui — **completato nel codice**
 - ✅ **SGW-02A**: endpoint owner-only `delete-prefix` limitato alla root esatta
   dell'import; `deleteProgram` non usa più `listAll`/`deleteObject` dal browser,
   scopre in parallelo import/proiezioni e sottocollezioni, poi effettua una sola
   chiamata gateway per import. Create/salvataggi UDA/lezioni accorpano inoltre
   documenti tecnici, proiezioni e audit in un solo batch Firestore.
   `minInstances: 0` resta invariato: nessun costo fisso, possibile cold start.
-- ✅ **SGW-02B codice**: endpoint owner-only `batch-read`; massimo 300 path e
+- ✅ **SGW-02B**: endpoint owner-only `batch-read`; massimo 300 path e
   20 MB, risultati per-file ordinati, assenze isolate, letture server con
   concorrenza 8. Il client `readTexts` deduplica, mantiene l'ordine, effettua
   chunking e split adattivo su payload troppo grande. Migrati **export ZIP**,
   **backfill**, **`loadSelectedQuestions`** e
   **`loadSelectedQuestionsWithSolutions`** senza accessi Storage diretti.
-- ⏳ **SGW-02C**: endpoint `batch-write` e migrazione del solo accesso residuo,
-  **import ZIP** (`importRepository`).
+- ✅ **SGW-02C codice**: endpoint owner-only `batch-write`; massimo 300 file,
+  700.000 byte per file e 4 MB complessivi, validazione integrale prima di ogni
+  I/O e scritture server-side con concorrenza limitata a 8. Il client mantiene
+  ordine, chunking e split adattivo. `importRepository` in produzione non
+  importa più `firebase/storage`; i writer diretti restano soltanto nei test
+  delle Rules per esercitare l'emulatore Storage.
 - **Gate `rg`**: nessuna operazione Storage diretta nel frontend fuori
   dall'adapter/configurazione autorizzata
   (`rg "getBytes\(|uploadBytes\(|deleteObject\(|listAll\(" apps/web/src`
   deve restare vuoto fuori da `lib/firebase.ts` e dall'adapter).
-- SGW-02A copre la riga **10**; SGW-02B copre **8, 11, 12, 13**; resta solo la
-  riga **9** per SGW-02C.
+- SGW-02A copre la riga **10**; SGW-02B copre **8, 11, 12, 13**; SGW-02C copre
+  la riga **9**. L'inventario runtime è chiuso.
 
 #### Misura strutturale SGW-02A (round-trip, non tempi reali)
 
@@ -401,7 +412,11 @@ vanno misurati con lo smoke DEV; il cold start può ancora dominare la prima
 operazione dopo un periodo di inattività.
 
 ### SGW-03 / Gate
-- **Smoke completo** Brave / Safari / desktop su tutti i flussi.
+- **Automazione PASS**: route chiusa, owner/path/UTF-8/limiti, zero I/O su
+  richiesta invalida, ordine, chunking, split adattivo, assenza di fallback
+  diretto e regressione dell'import sono coperti dai test.
+- **Smoke operativo** Brave / Safari / desktop sui flussi resta la verifica
+  post-deploy; non viene dichiarato eseguito da una PR di solo codice.
 - **Sicurezza** (rivalutazione, eventuale App Check), **prestazioni**, **costi**,
   **rollback** verificato.
 - Aggiornamento della documentazione da **"target"** a **"implementato"** (questo
@@ -443,8 +458,9 @@ Acceptance criteria implementati in una PR UX separata (**DUX-09**):
    (`/api/repository/v1/*`) da decidere in SGW-01.
 3. **`maxInstances`** iniziale a 3: rivedere solo con evidenza di throttling.
 4. **App Check**: se/quando introdurlo (post-stabilizzazione SGW).
-5. **Fallback diretto durante la migrazione**: mantenere l'accesso Storage
-   diretto dietro flag per il rollback fino al Gate SGW-03, poi rimuoverlo.
+5. **Rollback**: avviene tramite revert + redeploy del gateway/client. Non
+   esiste più un fallback diretto nel runtime web, per non riaprire il difetto
+   Brave né mantenere due percorsi divergenti.
 6. **Manutenzione runtime**: migrare Functions da Node 20 prima della
    dismissione prevista il 30 ottobre 2026 e aggiornare `firebase-functions`
    con una PR infrastrutturale dedicata, senza mescolarla a DUX-09.

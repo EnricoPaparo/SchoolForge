@@ -23,7 +23,13 @@ Il progetto non richiede Google Workspace for Education per il Docente né Googl
 
 ### 1.1 Localizzazione
 
-La regione target PROD è **`europe-west8` (Milano)**, con Firestore, Storage e Functions co-locati, previa verifica di supporto prima del provisioning. **Stato DEV:** Cloud Storage e Function gateway sono in `us-central1`; Cloud Firestore è in `europe-west8` (tutto verificato — vedi `evidenze/hard-01c-region-matrix.md`). Firebase Hosting usa una CDN globale; Firebase Authentication ha proprie caratteristiche di localizzazione. Nessun dato DEV sarà migrato in PROD. **HARD-F02 è risolto.**
+PROD è operativo: Firestore, Storage e le Functions applicative sono in
+**`europe-west8` (Milano)**; la sola task queue di chiusura forzata usa
+`europe-west3`, regione europea supportata da Cloud Tasks. **DEV:** Cloud
+Storage e Function gateway sono in `us-central1`; Cloud Firestore è in
+`europe-west8`. Firebase Hosting usa una CDN globale; Firebase Authentication
+ha proprie caratteristiche di localizzazione. Nessun dato DEV è stato migrato
+in PROD. Stato verificato in `evidenze/prod-rollout-01.md`; HARD-F02 è risolto.
 
 ### 1.2 Esito atteso
 
@@ -211,17 +217,34 @@ In entrambi i casi, "agli utenti autenticati non-owner" della prima versione di 
 
 **Motivazione.** ADR-14/ADR-15 (M3L-C) avevano già chiuso la *discovery* Firestore per classe/approvazione, ma Storage restava un secondo hop che non ripeteva quel controllo (per evitare le letture cross-service che in produzione causavano `403` non riproducibili — vedi ADR-14). Questo lasciava un gap accettato ma reale: un `contentPath` esatto, conosciuto o indovinato, bypassava interamente la discovery. La Modalità verifica (M3F-07) rendeva il gap più visibile, perché negava la discovery ma non la lettura diretta. Spostare il corpo lezione dentro Firestore stesso — il servizio su cui tutte le altre Security Rules già operano — elimina la necessità di un secondo hop verso Storage per lo studente, e permette di restringere Storage a owner-only senza introdurre alcuna lettura cross-service.
 
-**Conseguenza.** Storage resta la sorgente canonica del Markdown per il docente in scrittura/editor, import ed export ZIP, e per il backfill owner-only; `publicLessons.content` è sempre una proiezione derivata, mai la fonte di verità. Dal MOB-01C, però, la sola **consultazione** del corpo lezione nel workspace docente (`CourseWorkspace`) legge in via primaria `publicLessons/{lessonId}.content` con un solo `getDoc` deterministico (validato per `ownerUid`/`programId`/`importId`), e usa la lettura Storage `getBytes` solo come **fallback legacy** quando la proiezione è assente/non valida/incoerente: questo elimina il timeout `storage/retry-limit-exceeded` osservato su Brave mobile (Storage `getBytes` non completa il round-trip), mentre creazione, modifica del corpo, export e import continuano a passare da Storage. Un errore Firestore (transitorio o permission-denied) sul `getDoc` non ricade su Storage: mostra l'errore con "Riprova", per non mascherare problemi reali. Un limite dimensionale conservativo (700.000 byte UTF-8, ben sotto il limite Firestore di 1 MiB per documento) è validato a ogni scrittura. I documenti `publicLessons` scritti prima di M3F-08 non hanno `content`: sono validi ma il client li tratta come "proiezione non disponibile", mai come corpo vuoto, e un backfill idempotente owner-only li migra su richiesta esplicita del docente (mai automaticamente). Il rollout (deploy in ordine sicuro, backfill, poi Storage Rules restrittive) è documentato in `m3-full-roadmap.md` ed eseguito in M3F-11, non in questa milestone.
+**Conseguenza.** Storage resta la sorgente canonica del Markdown per il docente in scrittura/editor, import ed export ZIP, e per il backfill owner-only; `publicLessons.content` è sempre una proiezione derivata, mai la fonte di verità. Dal MOB-01C, però, la sola **consultazione** del corpo lezione nel workspace docente (`CourseWorkspace`) legge in via primaria `publicLessons/{lessonId}.content` con un solo `getDoc` deterministico (validato per `ownerUid`/`programId`/`importId`), e usa il Repository Storage Gateway same-origin solo come **fallback legacy** quando la proiezione è assente/non valida/incoerente: questo evita il timeout `storage/retry-limit-exceeded` osservato su Brave mobile con l'accesso diretto a Storage, mentre creazione, modifica del corpo, export e import passano anch'essi dal gateway. Un errore Firestore (transitorio o permission-denied) sul `getDoc` non ricade sul gateway: mostra l'errore con "Riprova", per non mascherare problemi reali. Un limite dimensionale conservativo (700.000 byte UTF-8, ben sotto il limite Firestore di 1 MiB per documento) è validato a ogni scrittura. I documenti `publicLessons` scritti prima di M3F-08 non hanno `content`: sono validi ma il client li tratta come "proiezione non disponibile", mai come corpo vuoto, e un backfill idempotente owner-only li migra su richiesta esplicita del docente (mai automaticamente). Il rollout (deploy in ordine sicuro, backfill, poi Storage Rules restrittive) è documentato in `m3-full-roadmap.md` ed eseguito in M3F-11, non in questa milestone.
 
 ---
 
-### ADR-17 — Repository Storage Gateway same-origin (SGW) — TARGET, non ancora implementato
+### ADR-17 — Repository Storage Gateway same-origin (SGW) — implementato
 
-**Contesto.** MOB-01C ha risolto solo la *consultazione* delle lezioni (via `publicLessons.content`). Tutti gli altri accessi Storage del docente restano **diretti** dal browser (`getBytes`/`uploadBytes`/`deleteObject`/`listAll`): pool, editing Markdown lezioni/UDA, import, export, eliminazioni, backfill, caricamento domande verifiche. Su **Brave mobile** le richieste dirette a `firebasestorage.googleapis.com` falliscono (`storage/retry-limit-exceeded`, HTTP 0, ~120 s), anche in scrittura.
+**Contesto storico.** MOB-01C aveva risolto solo la *consultazione* delle
+lezioni (via `publicLessons.content`); pool, editing Markdown, import/export,
+eliminazioni, backfill e caricamento domande verifiche contattavano ancora
+Firebase Storage dal browser. Su **Brave mobile** quelle richieste fallivano
+con `storage/retry-limit-exceeded`, HTTP 0, dopo circa 120 secondi.
 
-**Decisione (approvata, NON ancora implementata).** Instradare tutti questi accessi attraverso un **gateway HTTPS same-origin**: `web app → /api/repository/* → Hosting rewrite → Cloud Function HTTPS 2ª gen → Admin SDK → Cloud Storage`. Autenticazione con Firebase ID token, accesso **solo al docente owner**, path obbligatoriamente sotto `repository/{ownerUid}/imports/…`, solo Markdown/pool UTF-8, nessun endpoint generico o student-facing. Poiché l'Admin SDK **bypassa le Storage Rules**, il gateway applica autonomamente vincoli equivalenti o più stretti. `minInstances: 0`, `maxInstances` basso, region pinnata al bucket. La consultazione ordinaria della lezione **resta Firestore-first**.
+**Decisione implementata.** Tutti questi accessi attraversano un **gateway
+HTTPS same-origin**: `web app → /api/repository/* → Hosting rewrite → Cloud
+Function HTTPS 2ª gen → Admin SDK → Cloud Storage`. Autenticazione con Firebase
+ID token, accesso **solo al docente owner**, path sotto
+`repository/{ownerUid}/imports/…`, solo Markdown/pool UTF-8, nessun endpoint
+generico o student-facing. Poiché l'Admin SDK **bypassa le Storage Rules**, il
+gateway applica autonomamente vincoli equivalenti o più stretti.
+`minInstances: 0`, `maxInstances` basso, regione derivata dall'ambiente. La
+consultazione ordinaria della lezione **resta Firestore-first**.
 
-**Stato.** Contratto completo, API, sicurezza, costi, emulatori e roadmap SGW-01/02/03 in [storage-gateway-roadmap.md](storage-gateway-roadmap.md). **SGW-01 è implementato, deployato su DEV e verificato su Brave mobile** (Function `repositoryGateway` in `functions/`, client adapter in `apps/web/.../gateway/`, rewrite `/api/repository/**` in `firebase.json`, migrazione delle operazioni singolo-file: editing lezioni/UDA, pool, fallback lezione). Le operazioni batch/prefix restano accesso Storage diretto fino a **SGW-02**.
+**Stato.** Contratto completo, API, sicurezza, costi, emulatori e roadmap
+SGW-01/02/03 in [storage-gateway-roadmap.md](storage-gateway-roadmap.md).
+Operazioni singole, batch-read, batch-write e delete-prefix sono implementate;
+editing, pool, fallback legacy, import/export, backfill e preparazione verifiche
+usano il client adapter same-origin. Non resta alcuna operazione dati Storage
+diretta nel runtime web.
 
 ### ADR-18 — Contesto didattico della generazione IA dalla memoria del workspace (AIGEN-CONTEXT-01)
 
@@ -273,9 +296,9 @@ flowchart LR
 |---|---|---|
 | Applicazione web | Firebase Hosting | SPA TypeScript, HTTPS, code splitting `/teacher` e `/exam`. |
 | Identità docente | Firebase Authentication | Provider configurabile; `ownerUid` verificato nelle Security Rules. |
-| Backend (limitato) | Cloud Functions v2 | TypeScript; target PROD **UE**, ma la Function gateway su DEV è in `us-central1` (co-locata col bucket) — vedi `evidenze/hard-01c-region-matrix.md`. |
-| Dati operativi | Cloud Firestore Native | Firestore DEV `europe-west8` verificata; target PROD `europe-west8`, da verificare prima del provisioning. |
-| File | Cloud Storage | Bucket privato; su DEV in `us-central1` (verificato); target PROD **UE**. Versioning per backup. |
+| Backend (limitato) | Cloud Functions v2 | TypeScript; PROD `europe-west8`, salvo task queue `europe-west3`; gateway DEV `us-central1`. |
+| Dati operativi | Cloud Firestore Native | DEV e PROD separati; Firestore in `europe-west8`. |
+| File | Cloud Storage | Bucket privato owner-only; DEV `us-central1`, PROD `europe-west8`. Versioning/backup secondo runbook. |
 | Segreti | Secret Manager | Solo da M5 (V2): chiave API provider AI. |
 | Osservabilità | Cloud Logging e Error Reporting | Log strutturati senza risposte o PDF. |
 
@@ -283,7 +306,7 @@ flowchart LR
 |---|---|---|
 | `dev` | Progetto separato + Emulator Suite | Solo fixture sintetiche. |
 | `test` | Emulatori controllati | Dati di collaudo isolati. |
-| `prod` | Progetto Firebase del Docente (`schoolforge-prod`, esistente ma **servizi non ancora provisionati**) | Dati reali; regione target **UE** da decidere prima del provisioning (HARD-F02); nessun dato DEV migrato; export Firestore manuale disponibile. |
+| `prod` | `schoolforge-prod`, separato e operativo | Dati reali; servizi principali `europe-west8`; nessun dato DEV migrato; export Firestore manuale disponibile. |
 
 `dev`, `test` e `prod` non condividono utenti, database, bucket o token.
 
@@ -589,7 +612,10 @@ SchoolForge/
 L'implementazione è conforme solo se dimostra che:
 
 1. solo il `ownerUid` configurato scrive dati applicativi privati;
-2. la regione target PROD per Firestore, Storage e Functions è `europe-west8`, da co-locare e verificare prima del provisioning; su DEV Storage/Function sono in `us-central1` e Firestore è in `europe-west8` (HARD-F02 risolto, `evidenze/hard-01c-region-matrix.md`);
+2. PROD usa `europe-west8` per Firestore, Storage e Functions applicative, con
+   la task queue in `europe-west3`; su DEV Storage/Function sono in
+   `us-central1` e Firestore è in `europe-west8` (stato corrente in
+   `evidenze/prod-rollout-01.md`);
 3. Markdown e asset restano esportabili e leggibili fuori da SchoolForge;
 4. il ruolo utente è risolto correttamente (docente vs studente) e nessun accesso anonimo è possibile in M3-lite;
 5. lo studente legge solo proiezioni pubbliche read-only, mai pool, soluzioni, `questionIndex` o documenti tecnici del docente;

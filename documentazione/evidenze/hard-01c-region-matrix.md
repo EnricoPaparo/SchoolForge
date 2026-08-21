@@ -1,5 +1,10 @@
 # HARD-01C — Matrice regioni e residenza dati (finding HARD-F02)
 
+> **Snapshot storico (15 luglio 2026).** Le righe «non provisionato» descrivono
+> lo stato osservato durante HARD-01C, non lo stato corrente. PROD è ora
+> operativo; vedi [`prod-rollout-01.md`](prod-rollout-01.md). La decisione di
+> non migrare i dati DEV resta invariata.
+
 **Data:** 15 luglio 2026 · **Ambito:** finding **HARD-F02** (residenza dati / coerenza doc↔regioni).
 **Natura:** audit **read-only**. Nessun servizio creato/abilitato, nessun dato migrato, nessun deploy, nessun costo introdotto.
 **Riferimenti:** `functions/src/repositoryGateway.ts`, `firebase.json`, `.firebaserc`, `runbook-operativo-v1.md`, `hardening-audit-v1.md`.

@@ -1,13 +1,20 @@
 # Runbook operativo V1 — SchoolForge
 
-**Versione:** 1.0 · **Data:** 15 luglio 2026 · **Ambito:** HARD-01A (finding HARD-F01).
+**Versione:** 1.1 · **Data:** 21 agosto 2026 · **Ambito:** HARD-01A (finding HARD-F01).
 **Natura:** procedure operative per il **singolo docente**. Documento di sola operatività: non modifica codice, Rules o configurazione. Le azioni su Firebase Console / Google Cloud Billing sono **manuali** e vanno eseguite dal docente — questo runbook le descrive, non le esegue.
 
 > **Convenzioni.** I comandi shell sono pensati per essere **copiabili in PowerShell (Windows)** oltre che in bash/zsh: usano solo la Firebase CLI / gcloud, che sono identiche tra le shell. Dove serve una variabile o un percorso, si usa un **file** (`.env.local`) invece di export di shell, così non cambia nulla tra PowerShell e bash. Ogni passaggio che **non** ha un comando CLI verificato è marcato **[Console]** ed è da fare a mano dall'interfaccia web.
 >
-> **Stato ambienti oggi.** Il progetto Firebase **`schoolforge-prod` esiste già**, ma `.firebaserc` espone solo `dev → schoolforge-dev`: l'alias `prod` non è configurato, i servizi PROD non sono verificati e nessun deploy PROD è stato eseguito. Il Gate GHARD è superato, ma **non autorizza automaticamente PROD**: provisioning e deploy richiedono una futura autorizzazione esplicita. Ovunque sotto, "PROD" indica il progetto esistente ma non operativo.
+> **Stato ambienti oggi.** DEV e PROD sono due progetti Firebase separati,
+> configurati e operativi: `schoolforge-dev` e `schoolforge-prod`. `.firebaserc`
+> espone entrambi gli alias. Il rollout PROD è stato autorizzato ed eseguito
+> dopo il Gate GHARD; evidenza corrente in
+> [`evidenze/prod-rollout-01.md`](evidenze/prod-rollout-01.md).
 >
-> **Nota residenza dati (HARD-F02, risolto).** DEV: Firestore `europe-west8`, Storage/Function `us-central1`. PROD: target `europe-west8` con co-locazione, da verificare prima del provisioning; nessun dato DEV sarà migrato. Il Gate GHARD non autorizza automaticamente servizi o deploy PROD.
+> **Nota residenza dati (HARD-F02, risolto).** DEV: Firestore `europe-west8`,
+> Storage/Function `us-central1`. PROD: Firestore, Storage e Functions
+> applicative `europe-west8`; la task queue di chiusura programmata usa
+> `europe-west3`. Nessun dato DEV è stato migrato.
 
 ---
 
@@ -15,10 +22,10 @@
 
 | | **DEV** | **PROD** |
 |---|---|---|
-| Progetto Firebase | `schoolforge-dev` — **esistente e operativo** | `schoolforge-prod` — **progetto esistente**; servizi/configurazione/deploy **da verificare prima dell'uso** |
-| Alias `.firebaserc` | `dev` (presente) | **alias `prod` non configurato** |
-| URL | https://schoolforge-dev.web.app | n/d finché non rilasciato |
-| Piano | Blaze | Blaze (budget da configurare prima del rilascio) |
+| Progetto Firebase | `schoolforge-dev` — **operativo** | `schoolforge-prod` — **operativo** |
+| Alias `.firebaserc` | `dev` | `prod` |
+| URL | https://schoolforge-dev.web.app | https://schoolforge-prod.web.app |
+| Piano | Blaze | Blaze; budget e avvisi da verificare periodicamente dal docente |
 | Dati | **solo fixture sintetiche** | dati reali di studenti (PII) |
 | Prove distruttive | **consentite** su dati di test sacrificabili (vedi sotto) | **vietate** |
 
@@ -54,20 +61,21 @@ Deploy **manuale**, solo su autorizzazione esplicita del docente (vedi `CONTRIBU
    pnpm test
    ```
 4. **Build con l'env corretto**
-   - il file `.env.local` deve puntare all'ambiente giusto e avere **`VITE_USE_EMULATORS=false`** per un deploy reale (con `true` l'app parlerebbe con gli emulatori — errore classico);
-   - `pnpm build`.
-5. **Selezione ambiente**
+   - DEV usa la configurazione prevista da `firebase.json`;
+   - PROD usa `firebase.prod.json`, il cui predeploy esegue `pnpm --dir apps/web build:prod` con `.env.prod` e `VITE_USE_EMULATORS=false`;
+   - non copiare mai un file env da un ambiente all'altro.
+5. **Selezione ambiente esplicita**
    ```
-   firebase use dev            # DEV
-   # firebase use prod         # SOLO quando l'alias prod sarà configurato
+   firebase use dev
+   firebase use prod
    ```
+   Prima di ogni deploy verifica comunque il progetto con `firebase use`.
 6. **Deploy selettivo** — distribuisci **solo** ciò che è cambiato, non tutto:
    ```
-   firebase deploy --only hosting
-   firebase deploy --only firestore:rules
-   firebase deploy --only storage
-   firebase deploy --only firestore:indexes
-   firebase deploy --only functions        # solo se il gateway è cambiato
+   firebase deploy --project schoolforge-dev --config firebase.json --only hosting
+   firebase deploy --project schoolforge-prod --config firebase.prod.json --only hosting
+   # sostituisci hosting con firestore:rules,storage,firestore:indexes,functions
+   # oppure con l'elenco minimo dei target effettivamente cambiati
    ```
    Evita `firebase deploy` senza `--only`: ridistribuirebbe componenti non modificati (incluse Functions) senza motivo.
 7. **Smoke post-deploy** (§ vedi checklist qui sotto)
@@ -130,7 +138,9 @@ Percorso: **console.cloud.google.com → Billing → Budgets & alerts → Create
   - soglie di avviso: **50%, 80%, 100%** (dell'importo);
   - notifiche: all'**owner** (email del docente / amministratore fatturazione del progetto);
   - opzionale: includere anche una soglia previsionale (*forecasted*) se offerta, per essere avvisati in anticipo.
-- **PROD** — **da configurare solo prima del rilascio pubblico**, con un importo **esplicitamente approvato dal docente** (nessun valore di default proposto qui: dipende dalle classi/studenti reali). Stesse soglie 50/80/100% e notifica all'owner.
+- **PROD** — ambiente operativo: il docente verifica importo, destinatari e
+  soglie 50/80/100% prima di caricare dati reali e poi periodicamente. Nessun
+  valore di default è imposto dal repository: dipende dall'uso reale.
 
 > Nessuna di queste soglie ferma la spesa. Servono a **reagire in fretta**, non a impedire il costo.
 
@@ -200,8 +210,10 @@ Il piano di rollout/rollback vincolante è nell'[evidenza tecnica](evidenze/hard
 - **Nessun dato DEV viene migrato o copiato in PROD:** PROD partirà da una base pulita e indipendente.
 - Un export DEV è **facoltativo** prima di una migrazione, cancellazione massiva o modifica strutturale: serve solo se il docente vuole conservare dati DEV ancora utili (verifiche, consegne o correzioni di prova). Se tali dati sono sacrificabili, il docente accetta esplicitamente di poterli perdere.
 
-### 5.2 PROD (piano da attivare **prima** del rilascio)
-- Da definire e **approvare dal docente** prima di aprire PROD: cadenza, retention e relativi **costi di storage degli export** (gli export occupano spazio su un bucket GCS → costo).
+### 5.2 PROD (piano operativo)
+- PROD è aperto; il docente deve ora definire e approvare cadenza, retention e
+  relativi **costi di storage degli export** (gli export occupano spazio su un
+  bucket GCS → costo) prima di affidargli dati non ricostruibili.
 - **Firestore** e **Storage** trattati separatamente.
 - Gli **ZIP/Markdown originali** del materiale didattico restano il **formato portabile**: se conservati dal docente, sono già una copia del contenuto delle lezioni/pool indipendente da Firebase (ma **non** contengono verifiche, consegne, correzioni, studenti — quelli vivono solo in Firestore).
 
@@ -239,7 +251,9 @@ Il piano di rollout/rollback vincolante è nell'[evidenza tecnica](evidenze/hard
 5. **Verifica dati e collegamenti:** controlla che Firestore e Storage siano **coerenti tra loro** — es. le lezioni referenziate da Firestore hanno i file `.md` corrispondenti in Storage; `publicLessons.content` coerente con le lezioni; nessuna verifica che punti a pool mancanti.
 6. **Smoke docente e studente:** login docente (lezioni, verifiche, correzioni), login studente approvato (Didattica read-only, eventuale verifica). Nessun errore console.
 7. **Registrazione dell'incidente:** data, causa, export usato (data), passi eseguiti, esito, residui.
-8. **Restore drill consigliato prima di PROD:** esegui almeno **una** prova completa di export→import **su DEV** prima di considerare PROD pronto — un backup mai ripristinato non è un backup verificato.
+8. **Restore drill periodico:** esegui almeno **una** prova completa di
+   export→import **su DEV**, poi ripetila quando cambia la strategia di backup —
+   un backup mai ripristinato non è un backup verificato.
 
 ---
 

@@ -117,6 +117,24 @@ function ownerStorage() {
   return testEnv.authenticatedContext(OWNER_UID).storage() as unknown as FirebaseStorage;
 }
 
+// The production ZIP importer writes through the owner-only HTTP gateway.
+// Rules tests inject the Firebase Storage SDK deliberately so they can still
+// exercise storage.rules against the emulator without running the Function.
+function rulesImportDeps(db: Firestore, storage: FirebaseStorage) {
+  return {
+    db,
+    writeFiles: async (files: Array<{ path: string; content: string }>) => {
+      await Promise.all(
+        files.map((file) =>
+          uploadBytes(ref(storage, file.path), new TextEncoder().encode(file.content), {
+            contentType: 'text/markdown; charset=utf-8',
+          }),
+        ),
+      );
+    },
+  };
+}
+
 function otherDb() {
   return testEnv.authenticatedContext(OTHER_UID).firestore() as unknown as Firestore;
 }
@@ -255,7 +273,7 @@ describe('importRepository — valid import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     expect(result.status).toBe('committed');
@@ -274,7 +292,7 @@ describe('importRepository — valid import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     if (result.status !== 'committed') throw new Error('expected committed');
@@ -292,7 +310,7 @@ describe('importRepository — valid import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     if (result.status !== 'committed') throw new Error('expected committed');
@@ -317,7 +335,7 @@ describe('importRepository — valid import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     if (result.status !== 'committed') throw new Error('expected committed');
@@ -336,7 +354,7 @@ describe('importRepository — valid import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     if (result.status !== 'committed') throw new Error('expected committed');
@@ -363,7 +381,7 @@ describe('importRepository — valid import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     if (result.status !== 'committed') throw new Error('expected committed');
@@ -386,7 +404,7 @@ describe('importRepository — valid import', () => {
     // First import
     const r1 = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (r1.status !== 'committed') throw new Error('expected committed');
 
@@ -398,7 +416,7 @@ describe('importRepository — valid import', () => {
         programId: r1.programId,
         files: VALID_FILES,
       },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (r2.status !== 'committed') throw new Error('expected committed');
 
@@ -418,7 +436,7 @@ describe('importRepository — invalid pool does not block import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: INVALID_POOL_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     expect(result.status).toBe('committed');
@@ -437,7 +455,7 @@ describe('importRepository — invalid pool does not block import', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: INVALID_POOL_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     if (result.status !== 'committed') throw new Error('expected committed');
@@ -458,7 +476,7 @@ describe('importRepository — structural validation failure', () => {
     // Empty file list → NO_UDAS
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: [] },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     expect(result.status).toBe('validation_failed');
@@ -475,7 +493,7 @@ describe('importRepository — structural validation failure', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: '   ', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     expect(result.status).toBe('validation_failed');
@@ -491,14 +509,14 @@ describe('importRepository — structural validation failure', () => {
     // First valid import
     const r1 = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (r1.status !== 'committed') throw new Error('expected committed');
 
     // Second import with structural failure using same programId
     const r2 = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', programId: r1.programId, files: [] },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
 
     expect(r2.status).toBe('validation_failed');
@@ -517,7 +535,7 @@ describe('importRepository — owner isolation', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -546,7 +564,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -563,7 +581,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -592,7 +610,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -614,7 +632,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -636,7 +654,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -657,7 +675,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -677,7 +695,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -697,7 +715,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -717,7 +735,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -734,7 +752,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -754,7 +772,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -786,7 +804,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const r1 = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (r1.status !== 'committed') throw new Error('expected committed');
 
@@ -802,7 +820,7 @@ describe('importRepository — publicLessons projection', () => {
         programId: r1.programId,
         files: VALID_FILES,
       },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (r2.status !== 'committed') throw new Error('expected committed');
 
@@ -817,22 +835,22 @@ describe('importRepository — publicLessons projection', () => {
     expect(currentPublicLessons.size).toBe(r2.lessonCount);
   });
 
-  it('uploads lesson files to Storage tagged with customMetadata.programId (written for diagnostics only — no longer read by any Security Rule)', async () => {
+  it('uploads lesson files without relying on client-supplied custom metadata', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
     const meta = await getMetadata(
       ref(storage, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`),
     );
-    expect(meta.customMetadata?.kind).toBe('lesson');
-    expect(meta.customMetadata?.programId).toBe(result.programId);
+    expect(meta.contentType).toBe('text/markdown; charset=utf-8');
+    expect(meta.customMetadata).toEqual({});
   });
 
   it('M3F-08: an approved, class-compatible student can no longer read the lesson file directly from Storage — publicLessons.content is the only student-facing source', async () => {
@@ -842,7 +860,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
@@ -868,7 +886,7 @@ describe('importRepository — publicLessons projection', () => {
 
     const result = await importRepository(
       { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
+      rulesImportDeps(db, storage),
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 

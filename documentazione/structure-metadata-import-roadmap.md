@@ -1,11 +1,12 @@
 # STRUCTURE-IMPORT — Importazione di UDA e lezioni senza contenuto
 
 > **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A, 02B, 03 e
-> SIMPLE-01 implementati**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
+> SIMPLE-01 implementati e distribuiti su DEV e PROD**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
 > `Azioni UDA → Importa lezioni`, e la generazione lezione riceve il contesto
 > generale dell'UDA. **Gate GSTRUCT superato (PASS, 15 agosto 2026)** — vedi
 > [`evidenze/gstruct-checklist-finale.md`](evidenze/gstruct-checklist-finale.md). Questo documento non
-> autorizza merge, deploy o migrazioni.
+> descrive il contratto applicativo; lo stato operativo corrente è registrato in
+> [`evidenze/prod-rollout-01.md`](evidenze/prod-rollout-01.md).
 
 ## 1. Obiettivo
 

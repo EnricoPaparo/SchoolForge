@@ -2,7 +2,9 @@
 
 ## Stato MVP
 
-**M1 + M2 + M3-lite + RE + QE + M3-full completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
+**M1 + M2 + M3-lite + RE + QE + M3-full completati. DEV e PROD operativi:**
+https://schoolforge-dev.web.app · https://schoolforge-prod.web.app. Stato PROD:
+[evidenze/prod-rollout-01.md](evidenze/prod-rollout-01.md).
 
 Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) è completato e **Gate G6 è superato** ([evidenze](evidenze/g6-m4-checklist-finale.md)). **M5 — Correzione assistita con IA è COMPLETATO e Gate G7 è PASS**: `gpt-5.6-luna` è approvato per DEV, con nano come rollback esplicito; vedi [checklist finale G7](evidenze/g7-m5-checklist-finale.md) e [roadmap M5](m5-ai-assisted-roadmap.md).
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
@@ -23,13 +25,13 @@ prompt lezione. **Gate GSTRUCT PASS** il 15 agosto 2026 — vedi
 [evidenze/gstruct-checklist-finale.md](evidenze/gstruct-checklist-finale.md) e
 [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md).
 
-**Generazione IA dei contenuti — completata su DEV.** Lezioni, pool e mappe
+**Generazione IA dei contenuti — completata e distribuita su DEV e PROD.** Lezioni, pool e mappe
 concettuali usano il runtime OpenAI fail-closed con TTL, budget, lease e replay;
 gli smoke reali e la conferma docente sono registrati nella checklist finale.
 **Gate GAIGEN PASS** il 15 agosto 2026 — vedi
 [evidenze/gaigen-human-gate.md](evidenze/gaigen-human-gate.md).
 
-**Hardening finale (HARD) — completato.** **Gate GHARD superato (PASS, 15/07/2026):** 0 P0/P1, i P2 F01/F02/F03 risolti, fix accessibilità P2 e import resiliente F06 completati; residui P3 accettati con soglie esplicite. Evidenze finali in [evidenze/ghard-checklist-finale.md](evidenze/ghard-checklist-finale.md). HARD-03 resta condizionato a misure reali e non blocca la V1. Il PASS non autorizza provisioning o deploy PROD.
+**Hardening finale (HARD) — completato.** **Gate GHARD superato (PASS, 15/07/2026):** 0 P0/P1, i P2 F01/F02/F03 risolti, fix accessibilità P2 e import resiliente F06 completati; residui P3 accettati con soglie esplicite. Evidenze finali in [evidenze/ghard-checklist-finale.md](evidenze/ghard-checklist-finale.md). Quel gate non autorizzava da solo PROD; l'autorizzazione e il rollout sono avvenuti successivamente e sono registrati in [PROD-ROLLOUT-01](evidenze/prod-rollout-01.md).
 
 **Didattica studente (SDUX) — completata.** Libreria corsi e workspace corso/UDA/lezione read-only su sole proiezioni pubbliche; nessun componente/service docente, pool o accesso Storage. SDUX-02 e Modalità verifica confermati su DEV — vedi [student-didattica-ux-roadmap.md](student-didattica-ux-roadmap.md).
 
@@ -89,7 +91,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05, completato): editor pool domande Markdown-first, senza reimport ZIP. | Per consultare contratto, decisioni e implementazione della sezione "Domande". |
 | [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) | Contratto e roadmap STRUCTURE-IMPORT: file YAML di sole UDA/lezioni metadata, append atomico, UI nei menu Azioni e fase contesto IA UDA. | Per implementare la preparazione massiva degli scheletri didattici senza contenuti. |
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
-| [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01/02A verificati su DEV; SGW-02B batch-read implementato nel codice; restano SGW-02C import e SGW-03.** | Per capire il gateway, l'ultimo accesso Storage diretto e i prossimi passi. |
+| [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). Operazioni singole, batch-read, batch-write e delete-prefix implementate; nessun accesso dati Storage diretto nel runtime web. | Per capire il gateway, i limiti e il rollout. |
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md). | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
 | [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) | Roadmap M5-00→M5-08: modulo completato, provider Luna operativo su DEV e **Gate G7 PASS**. | Per consultare contratto IA/gateway, privacy, limiti costo, benchmark e rollout controllato. |
 | [correction-archive-export-contract.md](correction-archive-export-contract.md) | Contratto `CORR-PDF-01` e `CHUNK-RECOVERY-01`: un PDF distinto per ogni studente selezionato, ZIP solo come contenitore multiplo, contenuti/privacy/costi e recovery dei moduli PDF obsoleti. | Per implementare l'export scolastico delle correzioni e rendere affidabili i download PDF dopo i deploy. |
@@ -99,7 +101,8 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 
 ## Evidenze
 
-- [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md) — conferma del docente dell'11 agosto 2026: rollout DEV di POOL-ROLLOUT-01 eseguito con smoke reale PASS, e mappe concettuali distribuite e validate con generazioni reali su più lezioni. Non riabilita `economy`, non autorizza PROD.
+- [evidenze/prod-rollout-01.md](evidenze/prod-rollout-01.md) — stato operativo verificato di `schoolforge-prod`, separazione da DEV, regioni e confini delle attività manuali residue.
+- [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md) — conferma del docente dell'11 agosto 2026: rollout DEV di POOL-ROLLOUT-01 eseguito con smoke reale PASS, e mappe concettuali distribuite e validate con generazioni reali su più lezioni. Non riabilita `economy`; il suo limite storico su PROD è stato superato dalla successiva autorizzazione registrata in [PROD-ROLLOUT-01](evidenze/prod-rollout-01.md).
 - [evidenze/vdif-00-prototipo-visivo.md](evidenze/vdif-00-prototipo-visivo.md) — evidenze visive del prototipo VDIF-00 a 1440/1024/390/320 px; il gate applicativo finale è registrato in [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md).
 - [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md) — smoke multi-studente reale su DEV e verdetto **GVDIF PASS** del 15 agosto 2026.
 - [evidenze/esiti-01-human-gate.md](evidenze/esiti-01-human-gate.md) — conferma umana DEV della vista aggregata per UDA/lezione; UI e comportamento **PASS** il 15 agosto 2026.

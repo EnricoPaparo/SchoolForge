@@ -11,6 +11,12 @@ export const MAX_FILE_BYTES = 700_000;
 export const MAX_BATCH_READ_FILES = 300;
 export const MAX_BATCH_READ_TOTAL_BYTES = 20_000_000;
 const BATCH_READ_CONCURRENCY = 8;
+export const MAX_BATCH_WRITE_FILES = 300;
+// The request body is JSON: control characters can expand up to six bytes when
+// escaped. Keeping the raw UTF-8 payload at 4 MB leaves a safe margin below the
+// HTTP request limit even for the worst valid string representation.
+export const MAX_BATCH_WRITE_TOTAL_BYTES = 4_000_000;
+const BATCH_WRITE_CONCURRENCY = 8;
 
 /** Errore applicativo del gateway: `code` + `status` HTTP. */
 export class GatewayError extends Error {
@@ -24,11 +30,11 @@ export class GatewayError extends Error {
   }
 }
 
-export type Route = 'read' | 'write' | 'delete' | 'delete-prefix' | 'batch-read';
+export type Route = 'read' | 'write' | 'delete' | 'delete-prefix' | 'batch-read' | 'batch-write';
 
 /**
  * Routing rigoroso: accetta **solo**
- * `/api/repository/{read|write|delete|delete-prefix|batch-read}`
+ * `/api/repository/{read|write|delete|delete-prefix|batch-read|batch-write}`
  * (con un eventuale singolo slash finale tollerato). Qualsiasi prefisso,
  * suffisso o segmento aggiuntivo → `null` (l'handler risponde 404 senza toccare
  * Storage). Rifiuta `/repository/read`, `/evil/repository/read`,
@@ -37,9 +43,10 @@ export type Route = 'read' | 'write' | 'delete' | 'delete-prefix' | 'batch-read'
 export function parseRoute(requestPath: string): Route | null {
   if (typeof requestPath !== 'string') return null;
   const normalized = requestPath.endsWith('/') ? requestPath.slice(0, -1) : requestPath;
-  const match = /^\/api\/repository\/(read|write|delete|delete-prefix|batch-read)$/.exec(
-    normalized,
-  );
+  const match =
+    /^\/api\/repository\/(read|write|delete|delete-prefix|batch-read|batch-write)$/.exec(
+      normalized,
+    );
   return match ? (match[1] as Route) : null;
 }
 
@@ -172,6 +179,58 @@ export function validateBatchReadPaths(rawPaths: unknown, uid: string): string[]
     throw new GatewayError('duplicate_path', 'La lista contiene path duplicati.', 400);
   }
   return paths;
+}
+
+export type ValidatedBatchWriteFile = { path: string; buf: Buffer };
+
+/**
+ * Valida l'intero batch prima di qualunque I/O: forma chiusa, path owner-only,
+ * contenuto UTF-8, limite per file, unicità e tetto complessivo. In questo modo
+ * un input invalido non può produrre un upload parziale.
+ */
+export function validateBatchWriteFiles(rawFiles: unknown, uid: string): ValidatedBatchWriteFile[] {
+  if (!Array.isArray(rawFiles) || rawFiles.length === 0) {
+    throw new GatewayError('invalid_files', 'La lista dei file è mancante o vuota.', 400);
+  }
+  if (rawFiles.length > MAX_BATCH_WRITE_FILES) {
+    throw new GatewayError(
+      'too_many_files',
+      `Sono ammessi al massimo ${MAX_BATCH_WRITE_FILES} file per richiesta.`,
+      400,
+    );
+  }
+
+  let totalBytes = 0;
+  const files = rawFiles.map((rawFile) => {
+    if (typeof rawFile !== 'object' || rawFile === null || Array.isArray(rawFile)) {
+      throw new GatewayError('invalid_file', 'Elemento file non valido.', 400);
+    }
+    const record = rawFile as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    if (keys.length !== 2 || keys[0] !== 'content' || keys[1] !== 'path') {
+      throw new GatewayError(
+        'invalid_file',
+        'Ogni file deve contenere soltanto path e content.',
+        400,
+      );
+    }
+    const path = validateRepositoryPath(record.path, uid);
+    const buf = validateContent(record.content);
+    totalBytes += buf.byteLength;
+    if (totalBytes > MAX_BATCH_WRITE_TOTAL_BYTES) {
+      throw new GatewayError(
+        'total_too_large',
+        `La richiesta supera il limite di ${MAX_BATCH_WRITE_TOTAL_BYTES} byte.`,
+        413,
+      );
+    }
+    return { path, buf };
+  });
+
+  if (new Set(files.map((file) => file.path)).size !== files.length) {
+    throw new GatewayError('duplicate_path', 'La lista contiene path duplicati.', 400);
+  }
+  return files;
 }
 
 /** True se la stringa contiene surrogati UTF-16 isolati (UTF-8 non codificabile). */
@@ -330,7 +389,7 @@ export type GatewayInput = {
   route: Route | null;
   contentType: string | undefined;
   authHeader: string | undefined;
-  body: { path?: unknown; paths?: unknown; content?: unknown } | undefined;
+  body: { path?: unknown; paths?: unknown; files?: unknown; content?: unknown } | undefined;
 };
 
 export type GatewayResult = { status: number; body: unknown };
@@ -398,6 +457,17 @@ export async function handleGateway(
         }
       }
       return { status: 200, body: { files } };
+    }
+
+    if (input.route === 'batch-write') {
+      const files = validateBatchWriteFiles(input.body?.files, uid);
+      const written: Array<{ path: string; bytes: number }> = [];
+      for (let i = 0; i < files.length; i += BATCH_WRITE_CONCURRENCY) {
+        const chunk = files.slice(i, i + BATCH_WRITE_CONCURRENCY);
+        await Promise.all(chunk.map((file) => deps.storage.write(file.path, file.buf)));
+        written.push(...chunk.map((file) => ({ path: file.path, bytes: file.buf.byteLength })));
+      }
+      return { status: 200, body: { files: written } };
     }
 
     const path =

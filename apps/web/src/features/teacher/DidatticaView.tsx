@@ -214,7 +214,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
       const files = await readZipFile(file);
       const result = await importRepository(
         { ownerUid, programmaTitle: title, programId, files },
-        { db, storage },
+        { db },
       );
       if (result.status === 'validation_failed') {
         setDialogError(describeImportValidationError(result.validationIssues));

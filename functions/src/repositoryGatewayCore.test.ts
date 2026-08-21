@@ -9,11 +9,14 @@ import {
   parseRoute,
   validateContent,
   validateBatchReadPaths,
+  validateBatchWriteFiles,
   validateImportPrefix,
   validateRepositoryPath,
   GatewayError,
   MAX_BATCH_READ_FILES,
   MAX_BATCH_READ_TOTAL_BYTES,
+  MAX_BATCH_WRITE_FILES,
+  MAX_BATCH_WRITE_TOTAL_BYTES,
   MAX_FILE_BYTES,
   type BucketLike,
   type Route,
@@ -72,12 +75,13 @@ function req(over: Partial<Parameters<typeof handleGateway>[0]> = {}) {
 }
 
 describe('parseRoute (routing rigoroso)', () => {
-  it('accepts exactly the five documented repository routes', () => {
+  it('accepts exactly the six documented repository routes', () => {
     expect(parseRoute('/api/repository/read')).toBe('read');
     expect(parseRoute('/api/repository/write')).toBe('write');
     expect(parseRoute('/api/repository/delete')).toBe('delete');
     expect(parseRoute('/api/repository/delete-prefix')).toBe('delete-prefix');
     expect(parseRoute('/api/repository/batch-read')).toBe('batch-read');
+    expect(parseRoute('/api/repository/batch-write')).toBe('batch-write');
     expect(parseRoute('/api/repository/read/')).toBe('read'); // single trailing slash tolerated
   });
 
@@ -93,6 +97,65 @@ describe('parseRoute (routing rigoroso)', () => {
     ]) {
       expect(parseRoute(p)).toBeNull();
     }
+  });
+});
+
+describe('validateBatchWriteFiles', () => {
+  const secondPath = `repository/${UID}/imports/imp-1/uda-01/lezione-002-y.md`;
+
+  it('validates every entry and preserves order', () => {
+    const files = validateBatchWriteFiles(
+      [
+        { path: OK_PATH, content: 'Uno' },
+        { path: secondPath, content: 'Due' },
+      ],
+      UID,
+    );
+    expect(files.map((file) => file.path)).toEqual([OK_PATH, secondPath]);
+    expect(files.map((file) => file.buf.toString('utf-8'))).toEqual(['Uno', 'Due']);
+  });
+
+  it('rejects empty, oversized, duplicate and open-shape inputs before I/O', () => {
+    expect(() => validateBatchWriteFiles([], UID)).toThrowError(
+      expect.objectContaining({ code: 'invalid_files' }),
+    );
+    expect(() =>
+      validateBatchWriteFiles(
+        Array.from({ length: MAX_BATCH_WRITE_FILES + 1 }, (_, index) => ({
+          path: `repository/${UID}/imports/imp-1/uda-01/lezione-${index}.md`,
+          content: 'x',
+        })),
+        UID,
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'too_many_files' }));
+    expect(() =>
+      validateBatchWriteFiles(
+        [
+          { path: OK_PATH, content: 'Uno' },
+          { path: OK_PATH, content: 'Due' },
+        ],
+        UID,
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'duplicate_path' }));
+    expect(() =>
+      validateBatchWriteFiles([{ path: OK_PATH, content: 'x', extra: true }], UID),
+    ).toThrowError(expect.objectContaining({ code: 'invalid_file' }));
+  });
+
+  it('applies path, per-file UTF-8 and aggregate byte limits', () => {
+    expect(() =>
+      validateBatchWriteFiles([{ path: 'repository/other/imports/imp-1/x.md', content: 'x' }], UID),
+    ).toThrowError(expect.objectContaining({ code: 'not_owner' }));
+    expect(() => validateBatchWriteFiles([{ path: OK_PATH, content: '\uD800' }], UID)).toThrowError(
+      expect.objectContaining({ code: 'invalid_utf8' }),
+    );
+    const aggregateOverflow = Array.from({ length: 8 }, (_, index) => ({
+      path: `repository/${UID}/imports/imp-1/uda-01/lezione-${index}.md`,
+      content: 'x'.repeat(MAX_BATCH_WRITE_TOTAL_BYTES / 8 + 1),
+    }));
+    expect(() => validateBatchWriteFiles(aggregateOverflow, UID)).toThrowError(
+      expect.objectContaining({ code: 'total_too_large' }),
+    );
   });
 });
 
@@ -394,6 +457,54 @@ describe('handleGateway', () => {
         ],
       },
     });
+  });
+
+  it('batch-write validates the full request, writes all files and preserves response order', async () => {
+    const firstPath = `repository/${UID}/imports/imp-1/uda-01/uno.md`;
+    const secondPath = `repository/${UID}/imports/imp-1/uda-01/due.md`;
+    const storage = memoryStorage();
+    const result = await handleGateway(
+      req({
+        route: 'batch-write',
+        body: {
+          files: [
+            { path: firstPath, content: 'Uno' },
+            { path: secondPath, content: 'Dùe' },
+          ],
+        },
+      }),
+      deps({ storage }),
+    );
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        files: [
+          { path: firstPath, bytes: 3 },
+          { path: secondPath, bytes: 4 },
+        ],
+      },
+    });
+    expect(storage.files.get(firstPath)).toBe('Uno');
+    expect(storage.files.get(secondPath)).toBe('Dùe');
+  });
+
+  it('batch-write performs zero writes when any entry is invalid', async () => {
+    const storage = memoryStorage();
+    const writeSpy = vi.spyOn(storage, 'write');
+    const result = await handleGateway(
+      req({
+        route: 'batch-write',
+        body: {
+          files: [
+            { path: OK_PATH, content: 'valido' },
+            { path: 'repository/other/imports/imp-1/x.md', content: 'vietato' },
+          ],
+        },
+      }),
+      deps({ storage }),
+    );
+    expect(result).toMatchObject({ status: 403, body: { error: { code: 'not_owner' } } });
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 
   it('batch-read rejects a response above the total byte limit', async () => {

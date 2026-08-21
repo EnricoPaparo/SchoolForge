@@ -1,7 +1,7 @@
 # SchoolForge — Piano di implementazione
 
-**Versione:** 4.1
-**Data:** 24 giugno 2026
+**Versione:** 4.2
+**Data:** 21 agosto 2026
 **Stato:** piano esecutivo per agenti di coding
 **Input vincolanti:** `brief.md`, `analisi-requisiti.md`, `architettura.md`, `api-contract.md`
 **Regola di precedenza:** requisiti e architettura prevalgono su questo piano in caso di conflitto
@@ -25,15 +25,19 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 | STRUCTURE-IMPORT — Scheletri didattici | Append massivo e validato di UDA e lezioni con soli metadati YAML; nessun contenuto, pool o chiamata IA durante l'import. Specifica in `structure-metadata-import-roadmap.md`. | Sì |
 
-**M5 — Correzione assistita da IA**: la progettazione **M5-00** è completata (contratto, UX batch, sicurezza, cost model — [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); l'implementazione (M5-01→M5-05, Gate G7) non è ancora avviata. Vedi l'Appendice C in fondo. M5 non fa parte del perimetro della V1.
+**M5 — Correzione assistita da IA**: progettazione e implementazione
+M5-00→M5-05 completate, runtime operativo e **Gate G7 PASS**. Contratto, UX
+batch, sicurezza, cost model ed evidenze sono in
+[m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) e
+[evidenze/g7-m5-checklist-finale.md](evidenze/g7-m5-checklist-finale.md).
 
 Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è completato**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-04) sono completati (Markdown rinviato per assenza di caso d'uso); **Gate G6 superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`.
 
 **STRUCTURE-IMPORT: 01, 02A, 02B, 03 e SIMPLE-01 sono implementati; Gate
 GSTRUCT superato (PASS, 15 agosto 2026).** La sequenza autorizzata era 01 parser/planner puri → 02A import UDA →
 02B import lezioni → 03 contesto UDA per la generazione IA → Gate GSTRUCT.
-I due modelli YAML canonici sono inoltre consultabili, copiabili e scaricabili
-dalla sezione docente **Template**, senza duplicare lo schema nel codice UI.
+I due modelli del formato semplice sono consultabili e copiabili dalla sezione
+docente **Template**, senza duplicare lo schema nel codice UI.
 Evidenza finale: `evidenze/gstruct-checklist-finale.md`.
 
 **AIGEN: Gate GAIGEN superato (PASS, 15 agosto 2026).** TTL
@@ -59,9 +63,9 @@ chiusi; evidenza finale in `evidenze/glesson-checklist-finale.md`.
 
 | ID | Azione umana | Quando | Un agente può farla? |
 |---|---|---|---|
-| H-01 | Creare progetti Firebase `dev` e `prod`, attivare billing Blaze, mantenere la proprietà. | Prima del provisioning reale. | Solo dopo accesso CLI autorizzato e approvazione esplicita. |
-| H-02 | Creare Firestore e bucket PROD nella regione **UE** scelta (target Milano `europe-west8` ove supportato), co-locando Firestore/Storage/Functions. **Nota:** DEV è finito in `us-central1`; la scelta regione PROD è decisione HARD-F02 (`evidenze/hard-01c-human-gate.md`). | Prima del primo deploy dati PROD. | Può eseguire la configurazione tecnica se H-01 è completata. |
-| H-03 | Configurare budget e avvisi di spesa; verificare l'export Firestore manuale dalle impostazioni. | Prima di dati reali, gate G1. | Può assistere con accesso autorizzato; il Docente verifica l'esito. |
+| H-01 ✅ | Progetti Firebase `dev` e `prod` separati, billing Blaze e proprietà mantenuta dal docente. | Completata. | — |
+| H-02 ✅ | Firestore, Storage e Functions PROD provisionati in `europe-west8` (task queue programmata in `europe-west3`); nessun dato DEV migrato. | Completata; vedi `evidenze/prod-rollout-01.md`. | — |
+| H-03 | Verificare budget e avvisi di spesa PROD; definire e provare la politica di export/restore. | Attività operativa manuale ricorrente. | Può assistere; il Docente verifica l'esito in Console. |
 | H-04 | Formati `Esporta verifiche` — **risolta**: **CSV** = formato principale per elaborare i dati (M4-03A); **PDF** = formato per consultazione e stampa (M4-03B); **Markdown** rinviato e non necessario per Gate G6, salvo una futura esigenza esplicita. | Risolta con M4-03A/M4-03B. | Renderer CSV e PDF implementati; Markdown non implementato per assenza di caso d'uso. |
 | H-05 (M5) | **CHIUSA.** HG-M5-1/2/3/4 approvati; benchmark Luna, revisione docente e rollout DEV completati; Gate G7 PASS. Vedi [checklist finale](evidenze/g7-m5-checklist-finale.md). | — | No, è C-02 + soglie di spesa. |
 | H-06 (rinviata) | Decidere regola didattica della **correzione automatica** (C-03). Fuori dalla linea M5-00→M5-05 (Gate G8). | Rinviata, prima di un eventuale G8. | No, è C-03. |
@@ -448,7 +452,7 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 
 ## 12b.0 Evoluzioni apprendimento approvate (post UI-POLISH)
 
-Specifica completa e vincolante in [`evoluzioni-apprendimento-roadmap.md`](evoluzioni-apprendimento-roadmap.md). **Stato: progettazione approvata, implementazione non avviata.** Le decisioni includono: calibrazione IA strutturata; rimozione completa di `peso` senza compatibilità legacy; difficoltà intera `1..5` con `maxPoints = difficolta`; aggiornamento obbligatorio di template/kit/fixture; appunti personali a costo controllato; varianti equivalenti a gruppi con warning non bloccanti quando esiste una sola alternativa; visual boost preceduto da prototipo.
+Specifica completa e vincolante in [`evoluzioni-apprendimento-roadmap.md`](evoluzioni-apprendimento-roadmap.md). **Stato corrente: percorso implementato e relativi gate applicativi superati.** Le decisioni includono: calibrazione IA strutturata; rimozione completa di `peso` senza compatibilità legacy; difficoltà intera `1..5` con `maxPoints = difficolta`; aggiornamento obbligatorio di template/kit/fixture; appunti personali a costo controllato; varianti equivalenti a gruppi con warning non bloccanti quando esiste una sola alternativa; visual boost preceduto da prototipo.
 
 | Ordine | Pacchetto | Outcome |
 |---:|---|---|
@@ -487,16 +491,20 @@ Specifica e confini in [`student-didattica-ux-roadmap.md`](student-didattica-ux-
 
 ## 12c. SGW — Repository Storage Gateway same-origin (SGW-00 → 03)
 
-> Fase infrastrutturale approvata, specifica completa in [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md). Instrada gli accessi Storage del docente dietro `/api/repository/*` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen → Admin SDK → Storage, per renderli affidabili anche su Brave mobile. **Stato: SGW-01 e SGW-02A completati e verificati su DEV; SGW-02B batch-read implementato nel codice e in attesa di deploy/smoke; restano SGW-02C batch-write import e SGW-03.**
+> Fase infrastrutturale implementata, specifica completa in
+> [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md). Instrada gli
+> accessi Storage del docente dietro `/api/repository/*` → Hosting rewrite →
+> Cloud Function HTTPS 2ª gen → Admin SDK → Storage. **SGW-01, 02A e 02B sono
+> operativi; SGW-02C chiude nel codice l'ultimo accesso diretto, l'import ZIP.**
 
 | ID | Outcome e scope | Dipende da | Evidenza DoD |
 |---|---|---|---|
 | SGW-00 | Contratto definitivo del gateway: inventario Storage, API `/api/repository/*`, sicurezza (Admin SDK bypassa le Rules → vincoli equivalenti/più stretti), costi/prestazioni, emulatori/deploy, roadmap SGW-01/02/03, backlog DUX-09. Solo documentazione. | MOB-01C | Questo documento + `storage-gateway-roadmap.md`; nessuna modifica a codice/Rules/`firebase.json`/dipendenze. |
 | SGW-01 ✅ | Function `repositoryGateway` + client adapter; read/write/delete singolo; migrazione contenuto/metadata lezioni e UDA e pool (load/save/delete); test sicurezza; deploy DEV + smoke Brave. | SGW-00 | Codice, rewrite e dipendenze implementati; deploy DEV in `us-central1` e smoke Brave mobile confermati dal docente. |
 | SGW-02A ✅ | Delete-prefix owner-only sulla root esatta di un import; eliminazione programma senza Storage SDK diretto; letture parallele e batch Firestore per create/save UDA e lezioni; `minInstances: 0` invariato. | SGW-01 | Test gateway/service, deploy Function+Hosting e smoke DEV completati. |
-| SGW-02B ✅ codice | Batch-read owner-only (300 file, 20 MB, ordine stabile, errori per-file, chunk/split client); migrazione export ZIP, backfill e loader pool verifiche con e senza soluzioni. | SGW-02A | Test gateway/client/flussi, typecheck e build; deploy Function+Hosting e smoke Brave ancora da eseguire. |
-| SGW-02C | Batch-write owner-only e migrazione dell'import ZIP, ultimo accesso Storage diretto applicativo; gate `rg`. | SGW-02B | Import dal gateway; nessuna operazione Storage diretta nel frontend fuori dalla configurazione autorizzata; smoke Brave. |
-| SGW-03 / Gate | Smoke completo Brave/Safari/desktop, sicurezza, prestazioni, costi, rollback; documentazione da "target" a "implementato". | SGW-02 | Checklist DEV multi-browser + evidenze; doc aggiornata. Richiede Docente. |
+| SGW-02B ✅ | Batch-read owner-only (300 file, 20 MB, ordine stabile, errori per-file, chunk/split client); migrazione export ZIP, backfill e loader pool verifiche con e senza soluzioni. | SGW-02A | Implementato e operativo tramite il gateway. |
+| SGW-02C ✅ codice | Batch-write owner-only (300 file, 4 MB), validazione integrale prima dell'I/O, concorrenza server 8 e split adattivo client; migrazione dell'import ZIP, ultimo accesso Storage diretto applicativo. | SGW-02B | Test core/client/import verdi; gate statico senza operazioni Storage dirette nel runtime. Rollout con il normale deploy Functions+Hosting post-merge. |
+| SGW-03 / Gate | Sicurezza e regressioni automatiche chiuse; smoke multi-browser post-deploy, prestazioni/costi e rollback restano attività operative. | SGW-02 | Automazione PASS; nessun falso PASS dichiarato per uno smoke non ancora eseguito sulla nuova route. |
 
 ---
 
@@ -1170,8 +1178,10 @@ prototipo statico in
 docente ([evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md));
 VDIF-01→05 è distribuito e GVDIF è PASS. ESITI-01 è implementato, distribuito
 e validato su DEV come ultimo pacchetto applicativo di questa linea. Anche
-GAIGEN, GSTRUCT e GLESSON sono PASS, con evidenze dedicate. Restano fuori da
-questi gate soltanto le attività di provisioning o deploy PROD.
+GAIGEN, GSTRUCT e GLESSON sono PASS, con evidenze dedicate. PROD è stato poi
+provisionato e distribuito separatamente; stato corrente in
+[`evidenze/prod-rollout-01.md`](evidenze/prod-rollout-01.md). Restano manuali
+soltanto budget, monitoraggio costi e backup periodici del runbook.
 
 **Fuori scope da VDIF, in ogni fase e in ogni forma** (asse distinto, roadmap
 autonoma, mai introdotto «già che ci siamo»): tempo aggiuntivo; limiti

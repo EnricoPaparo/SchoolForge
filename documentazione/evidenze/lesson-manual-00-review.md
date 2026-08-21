@@ -1,5 +1,10 @@
 # LESSON-MANUAL-00 — evidenza di review docente
 
+> **Evidenza storica del prototipo.** La review era PENDING in questa fase; il
+> renderer Manuale è stato poi implementato, distribuito e approvato dal
+> docente. Lo stato corrente è riepilogato in `INDEX.md` e
+> `piano-implementazione.md`.
+
 **Stato: PENDING.** Nessun gate è superato.
 
 **Aggiornamento (LESSON-MANUAL-01):** la resa è ora disponibile nel runtime come

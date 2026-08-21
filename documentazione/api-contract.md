@@ -84,9 +84,17 @@ docente completo resta invariato.
 
 La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5); **M5-01** le ha implementate in **modalità mock** (0 token, nessuna scrittura), il comportamento pieno è M5-02.
 
-#### Repository Storage Gateway (SGW) — TARGET, non ancora implementato
+#### Repository Storage Gateway (SGW) — implementato
 
-Per rendere gli accessi Storage del docente affidabili anche su Brave mobile è **approvato ma non ancora implementato** un gateway HTTPS same-origin: `POST /api/repository/{read|write|delete|batch-read|batch-write|delete-prefix}` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen (`repositoryGateway`) → Admin SDK → Storage. Autenticato con Firebase ID token, **solo owner**, solo Markdown/pool UTF-8 sotto `repository/{ownerUid}/imports/…`, con validazione path e limiti dimensione/numero file server-side. Il contratto completo (endpoint, request/response, status/error, limiti, atomicità, idempotenza, costi) è in [storage-gateway-roadmap.md](storage-gateway-roadmap.md) §Task 3. **Allo stato attuale queste Function non esistono** (`functions/src/index.ts` è vuoto); la web app accede a Storage **direttamente**.
+Gli accessi Storage del docente passano dal gateway HTTPS same-origin:
+`POST /api/repository/{read|write|delete|batch-read|batch-write|delete-prefix}`
+→ Hosting rewrite → Cloud Function HTTPS 2ª gen `repositoryGateway` → Admin
+SDK → Storage. È autenticato con Firebase ID token, **solo owner**, limitato a
+Markdown/pool UTF-8 sotto `repository/{ownerUid}/imports/…`, con validazione
+server-side di path, forma, dimensione e numero di file. Il contratto completo
+(request/response, errori, limiti, atomicità, idempotenza e costi) è in
+[storage-gateway-roadmap.md](storage-gateway-roadmap.md) §Task 3. Il runtime
+web non contiene fallback dati tramite Firebase Storage diretto.
 
 ### 1.3 Convenzioni risposta
 
@@ -1130,7 +1138,7 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 
 Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).
 
-**Storage Rules — modello attuale (M3F-08)**: `storage.rules` non chiama mai `firestore.get()`/`firestore.exists()`, e non concede più alcuna lettura sotto `repository/{ownerUid}/**` a un non-owner — Markdown lezione e pool sono entrambi owner-only, senza eccezioni per estensione o `customMetadata`. Il gate di classe/approvazione resta **solo su Firestore** (discovery `programs`→`publicLessons`, sopra), ma dal M3F-08 è anche l'unica strada per ottenere il corpo lezione, perché il client studente non legge mai Storage. Fino a M3F-07 inclusa, un blocco aggiuntivo concedeva la lettura di un file `.md` (non `.pool.md`) a qualunque utente autenticato non-owner — il compromesso storico security-vs-reliability descritto sotto — rimosso da M3F-08. `importRepository` continua a scrivere `customMetadata: { kind, programId, ownerUid, importId }` all'upload, ma nessuna Security Rule lo legge: resta solo per eventuale diagnostica. **Limite residuo chiuso**: un `contentPath` esatto, anche se conosciuto o indovinato, non è più leggibile da nessuno tranne l'owner — vedi `sicurezza.md` §3.2a per il dettaglio e lo storico del compromesso.
+**Storage Rules — modello attuale (M3F-08 + SGW-02C)**: `storage.rules` non chiama mai `firestore.get()`/`firestore.exists()`, e non concede più alcuna lettura sotto `repository/{ownerUid}/**` a un non-owner — Markdown lezione e pool sono entrambi owner-only, senza eccezioni per estensione o metadata. Il gate di classe/approvazione resta **solo su Firestore** (discovery `programs`→`publicLessons`, sopra), ma dal M3F-08 è anche l'unica strada per ottenere il corpo lezione, perché il client studente non legge mai Storage. Fino a M3F-07 inclusa, un blocco aggiuntivo concedeva la lettura di un file `.md` (non `.pool.md`) a qualunque utente autenticato non-owner — il compromesso storico security-vs-reliability descritto sotto — rimosso da M3F-08. Con SGW-02C gli upload runtime transitano dal gateway owner-only, che ricava identità e autorizzazione dalla sessione e non accetta `customMetadata` dal client. **Limite residuo chiuso**: un `contentPath` esatto, anche se conosciuto o indovinato, non è più leggibile da nessuno tranne l'owner — vedi `sicurezza.md` §3.2a per il dettaglio e lo storico del compromesso.
 
 **Verifiche studente (M3L-D, esteso da M4-LIFE-01)**: lo studente scopre le verifiche della propria classe con un'unica query `collectionGroup('publishedProjection')` filtrata su `classId`+`visibility`; il parent non è mai letto. La proiezione duplica anche `status` per distinguere `active`/`closed` nella UI (legacy assente = `active`). La chiusura preserva `visibility`: una `closed+public` resta consultabile/PDF, mentre le Rules sul parent negano comunque avvio, ripresa, autosave e consegna online. Il match usa il prefisso ricorsivo `{path=**}` necessario alle collection group query e l'indice resta quello già esistente su `classId`+`visibility`.
 
