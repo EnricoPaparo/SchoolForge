@@ -533,6 +533,38 @@
   flex-wrap: wrap;
 }
 
+/*
+ * MOBILE-UI-POOL-01 — sul telefono il contatore non deve diventare una
+ * colonna laterale che lascia ai quattro comandi soltanto lo spazio residuo.
+ * Il riepilogo occupa la propria riga e le azioni formano una griglia 2 × 2
+ * stabile: stessa larghezza, target comodi e nessun allineamento "a scaletta".
+ */
+@media (max-width: 640px) {
+  .poolMeta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .poolCount {
+    width: 100%;
+  }
+
+  .poolMetaActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .poolMetaActions > button {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.75rem;
+    white-space: normal;
+    text-align: center;
+  }
+}
+
 .btnSm {
   padding: 0.25rem 0.625rem;
   font-size: 0.75rem;

@@ -48,21 +48,26 @@
   padding-inline: 0.25rem;
 }
 
-/* Ingombro ridotto su mobile: i controlli della riga metadati restano su una riga. */
+/* Su mobile ogni stepper occupa per intero la propria cella metadati. */
 @media (max-width: 640px) {
+  .stepperInline {
+    display: block;
+    width: 100%;
+  }
+
+  .stepperInline .control {
+    width: 100%;
+    height: 2.75rem;
+  }
+
   .stepperInline .button {
-    flex-basis: 1.5rem;
+    flex-basis: 2.5rem;
   }
-  .stepperInline .input {
-    width: 2.25rem;
-    flex: 0 1 2.25rem;
-    padding-inline: 0.15rem;
-  }
-  /* Anche su mobile la variante wide non comprime le 5 cifre. */
+  .stepperInline .input,
   .stepperInline.stepperWide .input {
-    width: 6ch;
-    flex: 0 0 6ch;
-    padding-inline: 0.15rem;
+    width: auto;
+    flex: 1 1 0;
+    padding-inline: 0.2rem;
   }
 }
 
