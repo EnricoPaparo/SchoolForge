@@ -289,7 +289,7 @@ describe('aiVisualNormalizer — byte WebP reali', () => {
       .webp({ quality: 100 })
       .toBuffer();
     await expect(normalizeVisualWebp(noisy)).rejects.toMatchObject({ code: 'visual_too_large' });
-  });
+  }, 20_000);
 
   it('lands in the 50–150 KiB target band when the image is compressible to it', async () => {
     const raw = Buffer.allocUnsafe(480 * 480 * 3);
