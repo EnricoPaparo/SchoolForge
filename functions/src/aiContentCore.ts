@@ -158,7 +158,7 @@ export const POOL_LEVEL_DIFFICULTY: Readonly<Record<PoolLevel, { min: number; ma
 export const LESSON_DEPTHS = ['synthetic', 'complete', 'in_depth'] as const;
 export type LessonDepth = (typeof LESSON_DEPTHS)[number];
 
-export type ContentKind = 'pool' | 'lesson' | 'concept_map';
+export type ContentKind = 'pool' | 'lesson' | 'concept_map' | 'visual_proposal';
 export const QUESTION_TYPES = ['aperta', 'chiusa_singola', 'chiusa_multipla'] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
@@ -260,7 +260,42 @@ export interface ConceptMapRequest {
   lessonBody: string;
 }
 
-export type AiContentRequest = PoolRequest | LessonRequest | ConceptMapRequest;
+/**
+ * VISUAL-ENRICHMENT-01 — fase **testuale** dell'arricchimento visuale: decide se
+ * una lezione beneficia davvero di una piccola illustrazione didattica.
+ *
+ * A differenza della mappa concettuale, qui i metadati didattici servono
+ * davvero: la domanda «questa immagine aiuta?» non si risponde dal solo corpo,
+ * perché dipende dal livello, dagli obiettivi e da ciò che le altre lezioni
+ * dell'UDA hanno già trattato. Il perimetro resta però chiuso: niente
+ * indicazioni docente, niente profondità, niente dati studente, niente URL o
+ * riferimenti Storage, e **nessun hash dichiarato dal client** — `sourceBodyHash`
+ * sarà calcolato server-side dall'esatto `lessonBody` quando servirà (VE-03).
+ *
+ * Il profilo è **fisso a `quality`**: questa fase produce un giudizio che il
+ * docente approva e che poi autorizza una spesa in immagini. Un giudizio
+ * economico che sbaglia costa più di quanto risparmi.
+ */
+export interface VisualProposalRequest {
+  kind: 'visual_proposal';
+  requestId: string;
+  modelProfile: 'quality';
+  titolo: string;
+  sottotitolo: string | null;
+  difficolta: string;
+  concettiChiave: string[];
+  obiettivi: string[];
+  udaTitle: string;
+  udaContext: LessonUdaContext;
+  /** Corpo salvato della lezione — dato **non attendibile**, delimitato nel prompt. */
+  lessonBody: string;
+}
+
+export type AiContentRequest =
+  | PoolRequest
+  | LessonRequest
+  | ConceptMapRequest
+  | VisualProposalRequest;
 
 // ─── Helpers puri ─────────────────────────────────────────────────────────────
 
@@ -268,6 +303,36 @@ const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 
 export function utf8ByteLength(value: string): number {
   return Buffer.byteLength(value, 'utf8');
+}
+
+/**
+ * Millisecondi di un `Timestamp` Firestore **per duck-typing**, o `null`.
+ *
+ * Vive qui, ed è condiviso, perché ne esisteva già una copia privata nel parser
+ * del documento run: due implementazioni della stessa domanda divergono al primo
+ * cambiamento, e questa è una domanda di validazione fail-closed.
+ *
+ * `toMillis()` è **invocato dentro un try/catch**: un oggetto che ha il metodo
+ * ma lo fa esplodere non è un timestamp valido, ed è comunque un input che il
+ * validatore deve poter rifiutare senza propagare l'eccezione al chiamante.
+ * Il risultato deve essere un `number` **finito**: `NaN` e `Infinity` superano
+ * `typeof === 'number'` e sarebbero il tipo di valore che passa la validazione e
+ * rompe tutto ciò che viene dopo.
+ *
+ * Nessuna dipendenza Firebase: il `Timestamp` reale soddisfa la forma, ma non
+ * viene importato.
+ */
+export function timestampToMillis(value: unknown): number | null {
+  if (!value || typeof (value as { toMillis?: unknown }).toMillis !== 'function') {
+    return null;
+  }
+  let ms: unknown;
+  try {
+    ms = (value as { toMillis: () => unknown }).toMillis();
+  } catch {
+    return null;
+  }
+  return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
 }
 
 /** Serializzazione canonica non ambigua di una tupla di stringhe. */
@@ -313,6 +378,33 @@ export function canonicalRequest(request: AiContentRequest): string {
     return JSON.stringify({
       kind: 'concept_map',
       modelProfile: request.modelProfile,
+      lessonBody: request.lessonBody,
+    });
+  }
+  // VISUAL-ENRICHMENT-01 — quarto kind, stessa regola: la sua forma canonica è
+  // un ramo a sé e non tocca un byte di quelle già esistenti.
+  if (request.kind === 'visual_proposal') {
+    return JSON.stringify({
+      kind: 'visual_proposal',
+      modelProfile: request.modelProfile,
+      titolo: request.titolo,
+      sottotitolo: request.sottotitolo,
+      difficolta: request.difficolta,
+      udaTitle: request.udaTitle,
+      udaContext: {
+        title: request.udaContext.title,
+        descrizione: request.udaContext.descrizione,
+        competenze: request.udaContext.competenze,
+        obiettivi: request.udaContext.obiettivi,
+        currentLessonPosition: request.udaContext.currentLessonPosition,
+        lessons: request.udaContext.lessons.map((l) => ({
+          position: l.position,
+          titolo: l.titolo,
+          sottotitolo: l.sottotitolo,
+        })),
+      },
+      concettiChiave: request.concettiChiave,
+      obiettivi: request.obiettivi,
       lessonBody: request.lessonBody,
     });
   }
@@ -593,8 +685,63 @@ function validateAiContentRequestWithPolicy(
   if (typeof requestId !== 'string' || !UUID_RE.test(requestId)) {
     throw new AiContentError('invalid_input', 'requestId mancante o malformato.');
   }
-  if (input.kind !== 'pool' && input.kind !== 'lesson' && input.kind !== 'concept_map') {
+  if (
+    input.kind !== 'pool' &&
+    input.kind !== 'lesson' &&
+    input.kind !== 'concept_map' &&
+    input.kind !== 'visual_proposal'
+  ) {
     throw new AiContentError('invalid_input', 'kind non supportato.');
+  }
+
+  // VISUAL-ENRICHMENT-01 — proposta visuale: payload chiuso, profilo fisso a
+  // `quality`, nessun hash dichiarato dal client. Validato **prima** di
+  // qualunque altra cosa nella callable, quindi prima di provider, stima,
+  // prenotazione, run e scritture.
+  if (input.kind === 'visual_proposal') {
+    assertNoExtraKeys(input, [
+      'kind',
+      'requestId',
+      'modelProfile',
+      'titolo',
+      'sottotitolo',
+      'difficolta',
+      'concettiChiave',
+      'obiettivi',
+      'udaTitle',
+      'udaContext',
+      'lessonBody',
+    ]);
+    // Il profilo è verificato come letterale, non tramite il parser condiviso:
+    // `economy` è un valore *valido* per gli altri kind, quindi il parser lo
+    // accetterebbe e il rifiuto arriverebbe più tardi, o non arriverebbe.
+    if (input.modelProfile !== 'quality') {
+      throw new AiContentError(
+        'invalid_input',
+        'La proposta visuale è disponibile solo con il profilo quality.',
+      );
+    }
+    if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
+      throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
+    }
+    if (utf8ByteLength(input.lessonBody) > AI_CONTENT_LIMITS.MAX_LESSON_SOURCE_BYTES) {
+      throw new AiContentError('content_too_large', 'Il corpo della lezione è troppo grande.');
+    }
+    return enforceTotalRequestSize({
+      kind: 'visual_proposal',
+      requestId,
+      modelProfile: 'quality',
+      titolo: parseRequiredText(input.titolo, 'Titolo', MAX_TITLE_CHARS),
+      sottotitolo: parseTitle(input.sottotitolo, 'Sottotitolo'),
+      difficolta: parseRequiredText(input.difficolta, 'Difficoltà', MAX_DIFFICOLTA_CHARS),
+      concettiChiave: parseRequiredStringArray(input.concettiChiave, 'Concetti chiave'),
+      obiettivi: parseRequiredStringArray(input.obiettivi, 'Obiettivi'),
+      udaTitle: parseRequiredText(input.udaTitle, 'Titolo UDA', MAX_TITLE_CHARS),
+      udaContext: parseUdaContext(input.udaContext),
+      // Nessun `trim()`: al prompt arriva esattamente il testo salvato, e
+      // l'`inputHash` copre quel testo.
+      lessonBody: input.lessonBody,
+    });
   }
 
   // CONCEPT-MAP-01 — payload povero, validato prima di tutto il resto. Il

@@ -154,6 +154,24 @@ del § 6bis.
   che non riceve non può contraddirlo. Qualunque proprietà extra ⇒
   `invalid_input`.
 
+**`kind: 'visual_proposal'`** (VISUAL-ENRICHMENT-01, implementato): quarto kind di
+prima classe per la **fase testuale** dell'arricchimento visuale. Payload chiuso a
+undici chiavi (`kind`, `requestId`, `modelProfile`, `titolo`, `sottotitolo`,
+`difficolta`, `concettiChiave`, `obiettivi`, `udaTitle`, `udaContext`,
+`lessonBody`): niente `teacherGuidance`, `depth`, `hasCurrentContent`, dati
+studente, URL, riferimenti Storage o hash dichiarati dal client. `modelProfile` è
+**letteralmente `quality`** e `economy` produce `invalid_input` nella validazione
+del payload, prima di provider, stima, prenotazione, run e scritture. Structured
+Output: **union discriminata chiusa** `{ decision: 'none', reason }` |
+`{ decision: 'image', subject, rationale, anchorHeadingText, caption, altText }`,
+`additionalProperties: false` a ogni livello, rami disgiunti. Limiti in **code
+point** (400/600/800/300/500/1.000), campi senza spazi esterni, senza caratteri
+di controllo, HTML o fence, e **nessuna coercizione**. Versione di prompt
+dedicata `visual-proposal-01-v1`; quelle di pool, lezione e mappa non sono
+toccate, e i rispettivi `inputHash`, prompt, schema e tetti di output restano
+byte-identici. Il kind **non genera immagini**: nessun provider, byte, Storage,
+Firestore, Rules, UI o deploy.
+
 ### 2.3 Ordine dei controlli (fail-closed)
 
 Nessuna chiamata provider parte se un controllo precedente fallisce:
