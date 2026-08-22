@@ -24,7 +24,7 @@
  * Puro: nessuna rete, nessun I/O, nessuna dipendenza Firebase.
  */
 
-import { AiContentError, AI_CONTENT_RUN_TTL_MS } from './aiContentCore.js';
+import { AiContentError, AI_CONTENT_RUN_TTL_MS, timestampToMillis } from './aiContentCore.js';
 
 // ─── Limiti ───────────────────────────────────────────────────────────────────
 
@@ -316,10 +316,33 @@ export function validateVisualProposalOutput(output: unknown): VisualProposalOut
   invalidOutput('Esito della proposta visuale non riconosciuto.');
 }
 
+/** Chiave dell'envelope richiesto dallo Structured Output strict. */
+export const VISUAL_PROPOSAL_ENVELOPE_KEY = 'proposal' as const;
+
+/**
+ * Valida la risposta **grezza del provider** ed estrae l'esito canonico.
+ *
+ * Lo schema strict impone una radice `object` con una proprietà obbligatoria
+ * (`proposal`), perché un'unione alla radice non è accettata. Quell'envelope è
+ * però una necessità del **trasporto**, non del dominio: viene tolto qui, prima
+ * di qualunque persistenza, così il valore salvato nel run e restituito dal
+ * replay resta l'unione pura. Se filtrasse fino al documento persistito, il
+ * contratto pubblico diventerebbe ostaggio della forma che un provider richiede
+ * oggi.
+ */
+export function validateVisualProposalEnvelope(output: unknown): VisualProposalOutput {
+  const root = asObject(output, 'Struttura della proposta visuale non valida.');
+  const keys = Object.keys(root);
+  if (keys.length !== 1 || keys[0] !== VISUAL_PROPOSAL_ENVELOPE_KEY) {
+    invalidOutput('La proposta visuale non rispetta la forma attesa.');
+  }
+  return validateVisualProposalOutput(root[VISUAL_PROPOSAL_ENVELOPE_KEY]);
+}
+
 /**
  * Forma dell'`output` di un run `visual_proposal` completato. Il run persiste
- * **l'esito validato**, che è già il documento finale di questa fase: non c'è
- * nulla da comporre, a differenza della mappa concettuale.
+ * **l'esito validato senza envelope**, che è già il documento finale di questa
+ * fase: non c'è nulla da comporre, a differenza della mappa concettuale.
  */
 export function validateStoredVisualProposalOutput(output: unknown): VisualProposalOutput {
   return validateVisualProposalOutput(output);
@@ -469,14 +492,7 @@ export function validateLessonVisualManifest(value: unknown): LessonVisualManife
   if (typeof assetId !== 'string' || !UUID_RE.test(assetId)) {
     invalidManifest('assetId non valido.');
   }
-  const storageRef = root.storageRef;
-  if (
-    typeof storageRef !== 'string' ||
-    storageRef.length === 0 ||
-    storageRef !== storageRef.trim()
-  ) {
-    invalidManifest('storageRef non valido.');
-  }
+  const storageRef = assertCanonicalStorageRef(root.storageRef, assetId);
   const anchor = validateLessonVisualAnchor(root.anchor);
   const caption = assertManifestText(root.caption, 'Didascalia', MAX_VISUAL_CAPTION_CHARS);
   const altText = assertManifestText(root.altText, 'Testo alternativo', MAX_VISUAL_ALT_TEXT_CHARS);
@@ -500,12 +516,15 @@ export function validateLessonVisualManifest(value: unknown): LessonVisualManife
   if (typeof sourceBodyHash !== 'string' || !SHA256_HEX_RE.test(sourceBodyHash)) {
     invalidManifest('sourceBodyHash non valido.');
   }
+  /*
+   * `approvedAt` non è validato dalla sola presenza di `toMillis`: un oggetto
+   * che ha il metodo e restituisce `NaN`, `Infinity` o una stringa — o che lo fa
+   * esplodere — supererebbe quel controllo e romperebbe tutto ciò che viene
+   * dopo. L'helper condiviso lo invoca in modo protetto e pretende un `number`
+   * finito; il valore **non viene normalizzato**, si conserva l'oggetto ricevuto.
+   */
   const approvedAt = root.approvedAt;
-  if (
-    typeof approvedAt !== 'object' ||
-    approvedAt === null ||
-    typeof (approvedAt as VisualTimestampLike).toMillis !== 'function'
-  ) {
+  if (timestampToMillis(approvedAt) === null) {
     invalidManifest('approvedAt non valido.');
   }
 
@@ -539,6 +558,145 @@ function assertManifestText(value: unknown, label: string, maxChars: number): st
     invalidManifest(`${label} non valida.`);
   }
   return value;
+}
+
+/**
+ * Verifica che `storageRef` sia **esattamente** il percorso canonico:
+ *
+ * `repository/{ownerUid}/{importId}/{udaDir}/visuals/{assetId}.webp`
+ *
+ * Un percorso è un'autorizzazione implicita: le Rules di Storage sono owner-only
+ * e ancorate al prefisso `repository/{ownerUid}/…`, quindi uno `storageRef` fuori
+ * forma non è un dettaglio estetico ma un riferimento che punta dove non
+ * dovrebbe. Il controllo è strutturale e **senza correzioni**: nessun fallback,
+ * nessun suffisso aggiunto, nessuna normalizzazione.
+ *
+ * L'`assetId` finale deve coincidere con quello del manifest: due identificatori
+ * divergenti descriverebbero due asset diversi nello stesso documento, e la
+ * verifica dei byte in fase di promozione (§4.1) controllerebbe l'uno mentre la
+ * proiezione userebbe l'altro.
+ */
+function assertCanonicalStorageRef(value: unknown, assetId: string): string {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) {
+    invalidManifest('storageRef non valido.');
+  }
+  if (hasControlChars(value)) {
+    invalidManifest('storageRef contiene caratteri di controllo.');
+  }
+  const segments = value.split('/');
+  if (segments.length !== 6) {
+    invalidManifest('storageRef non ha la forma canonica.');
+  }
+  for (const segment of segments) {
+    // Uno slash doppio produce un segmento vuoto; «.» e «..» sono traversal.
+    if (segment.length === 0 || segment === '.' || segment === '..') {
+      invalidManifest('storageRef non ha la forma canonica.');
+    }
+  }
+  if (segments[0] !== 'repository') {
+    invalidManifest('storageRef non parte dal prefisso del repository.');
+  }
+  if (segments[4] !== 'visuals') {
+    invalidManifest('storageRef non punta alla cartella degli asset visuali.');
+  }
+  if (segments[5] !== `${assetId}.webp`) {
+    invalidManifest('storageRef non corrisponde all’assetId del manifest.');
+  }
+  return value;
+}
+
+// ─── Heading realmente presenti nella lezione ─────────────────────────────────
+
+/** Apertura/chiusura di un blocco recintato: almeno tre backtick o tre tilde. */
+const FENCE_LINE_RE = /^ {0,3}(`{3,}|~{3,})/;
+/** Heading ATX: da uno a sei `#`, con l'indentazione tollerata da CommonMark. */
+const ATX_LINE_RE = /^ {0,3}(#{1,6})(?:\s+(.*?))?\s*$/;
+/** Sottolineatura Setext: `===` (H1) o `---` (H2). */
+const SETEXT_UNDERLINE_LINE_RE = /^ {0,3}(=+|-+)\s*$/;
+
+/**
+ * Estrae il **testo** degli heading realmente presenti nel corpo della lezione.
+ *
+ * Riconosce le due sintassi che il renderer delle lezioni interpreta davvero —
+ * ATX (`## Titolo`) e Setext (titolo sottolineato da `===` o `---`) — e ignora
+ * tutto ciò che sta dentro un blocco recintato: un `# Titolo` dentro un esempio
+ * di codice **non è** un heading, e trattarlo come tale permetterebbe di ancorare
+ * un'immagine a una sezione che nella pagina non esiste.
+ *
+ * Il testo è estratto come lo interpreta CommonMark: marcatori rimossi, eventuale
+ * sequenza di chiusura `###` scartata, contenuto ripulito dagli spazi di bordo.
+ * È l'estrazione a normalizzare la **sintassi**; il confronto con la proposta
+ * resta poi rigorosamente esatto.
+ */
+export function extractLessonHeadings(markdown: string): string[] {
+  const lines = markdown.split('\n');
+  const headings: string[] = [];
+  let fence: string | null = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+
+    const fenceMatch = FENCE_LINE_RE.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1]![0]!;
+      if (fence === null) {
+        fence = marker;
+      } else if (marker === fence) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fence !== null) continue;
+
+    const atx = ATX_LINE_RE.exec(line);
+    if (atx) {
+      // Sequenza di chiusura opzionale: «## Titolo ##» ha per testo «Titolo».
+      const text = (atx[2] ?? '').replace(/\s+#+\s*$/, '').trim();
+      if (text.length > 0) headings.push(text);
+      continue;
+    }
+
+    // Setext: la riga corrente è il testo, la successiva la sottolineatura.
+    const next = lines[i + 1];
+    if (next !== undefined && line.trim().length > 0 && SETEXT_UNDERLINE_LINE_RE.test(next)) {
+      headings.push(line.trim());
+      i += 1;
+    }
+  }
+
+  return headings;
+}
+
+/**
+ * Controllo **relazionale** fra la risposta del provider e la richiesta.
+ *
+ * È deliberatamente separato dalla validazione strutturale: quella dice se
+ * l'esito ha la forma giusta, questo dice se l'esito parla **della lezione che è
+ * stata mandata**. Un `anchorHeadingText` inventato o parafrasato produrrebbe
+ * un'ancora inesistente nella pagina, e l'immagine finirebbe silenziosamente in
+ * coda al corpo per un difetto della proposta e non per una modifica del docente
+ * — cioè il fallback di §5.3 verrebbe imboccato dalla porta sbagliata.
+ *
+ * Il confronto è **esatto**: nessun trim aggiuntivo, nessun case folding, nessuno
+ * slug, nessun fuzzy matching. «Evaporazione» ed «evaporazione» sono due cose
+ * diverse, e indovinare quale intendesse il modello è esattamente ciò che questo
+ * contratto rifiuta di fare.
+ *
+ * **Confine dichiarato:** vive prima della prima persistenza, non nel replay. Il
+ * replay valida la sola struttura, perché la richiesta originale non è più
+ * disponibile e il corpo della lezione potrebbe essere cambiato nel frattempo:
+ * rieseguire qui il controllo relazionale renderebbe irreplayabile un run
+ * legittimo a causa di una modifica successiva del testo.
+ */
+export function assertVisualProposalMatchesRequest(
+  output: VisualProposalOutput,
+  lessonBody: string,
+): VisualProposalOutput {
+  if (output.decision !== 'image') return output;
+  if (!extractLessonHeadings(lessonBody).includes(output.anchorHeadingText)) {
+    invalidOutput('L’heading di ancoraggio non esiste nel corpo della lezione.');
+  }
+  return output;
 }
 
 // ─── Risolutore d'ancora ──────────────────────────────────────────────────────

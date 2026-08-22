@@ -884,6 +884,18 @@ prima di provider, stima, prenotazione, run e qualunque scrittura. Il controllo 
 sul letterale e non passa dal parser condiviso del profilo, che accetterebbe
 `economy` come valore valido per gli altri kind.
 
+**Schema trasmesso al provider.** Lo Structured Output strict non accetta
+un'unione alla radice: la radice è quindi un `object` chiuso con l'unica
+proprietà obbligatoria `proposal`, e l'unione vive **annidata** dentro di essa
+espressa con `anyOf` — `oneOf` non compare in alcun punto dello schema
+trasmesso. Entrambi i rami hanno `additionalProperties: false` e **tutte** le
+proprietà dichiarate anche `required`, perché strict non ammette campi
+facoltativi. L'envelope `proposal` è **provider-specifico**: viene validato ed
+estratto prima di qualunque persistenza, e il valore salvato nel run e
+restituito dal replay è l'unione **senza** envelope. Se filtrasse fino al
+documento persistito, il contratto pubblico diventerebbe ostaggio della forma
+che un provider richiede oggi.
+
 **Esito: union discriminata chiusa.** Due rami disgiunti — `{ decision: 'none',
 reason }` e `{ decision: 'image', subject, rationale, anchorHeadingText, caption,
 altText }` — con `additionalProperties: false` a ogni livello. Nessun booleano,
@@ -943,6 +955,41 @@ invece di duplicarne il valore.
 > **strutturalmente** alla sola forma che serve a validarlo (`toMillis()`). Il
 > `Timestamp` reale la soddisfa, e VE-03 lo legherà al tipo concreto nel punto in
 > cui la persistenza esiste davvero.
+
+**`approvedAt` è validato invocando il metodo, non solo constatandolo.** Un
+oggetto che espone `toMillis()` ma restituisce `NaN`, `Infinity`, una stringa o
+`null` — o che lo fa esplodere — supererebbe un controllo di sola presenza e
+romperebbe tutto ciò che viene dopo. L'helper condiviso `timestampToMillis`
+(estratto da `aiContentRunDoc`, dove ne esisteva una copia privata) invoca il
+metodo in `try/catch` e pretende un `number` finito; il valore non viene
+normalizzato.
+
+**`storageRef` è verificato contro il percorso canonico**
+`repository/{ownerUid}/{importId}/{udaDir}/visuals/{assetId}.webp`: esattamente
+sei segmenti non vuoti, primo `repository`, quinto `visuals`, ultimo
+`${assetId}.webp` con l'`assetId` **del manifest**, nessun segmento `.` o `..`,
+nessun doppio slash, nessun carattere di controllo, nessuna estensione diversa.
+Un percorso è un'autorizzazione implicita — le Rules di Storage sono owner-only
+e ancorate a quel prefisso — quindi un `storageRef` fuori forma non è un
+dettaglio estetico ma un riferimento che punta dove non dovrebbe. Nessun
+fallback, nessun suffisso aggiunto, nessuna correzione.
+
+**L'ancoraggio deve esistere davvero nella lezione.** Il controllo strutturale
+dice se l'esito ha la forma giusta; un controllo **relazionale** separato dice
+se parla della lezione che è stata mandata. Per `decision: 'image'` vengono
+estratti gli heading realmente presenti in `lessonBody` — ATX e Setext, con
+tutto ciò che sta dentro un blocco recintato **ignorato**, perché un `# Titolo`
+dentro un esempio di codice non è un heading della pagina — e
+`anchorHeadingText` è confrontato in modo **esatto**: nessun trim aggiuntivo,
+nessun case folding, nessuno slug, nessun fuzzy matching. Un ancoraggio
+inventato o parafrasato produce `provider_invalid_output` **prima** della prima
+persistenza. `decision: 'none'` non richiede alcun heading.
+
+> **Confine dichiarato.** Il controllo relazionale vive prima della prima
+> persistenza e **non** nel replay, dove la validazione resta strutturale: in
+> replay la richiesta originale non è più disponibile e il corpo della lezione
+> potrebbe essere cambiato, quindi rieseguirlo renderebbe irreplayabile un run
+> legittimo a causa di una modifica successiva del testo.
 
 **Risolutore d'ancora.** `resolveLessonVisualAnchor(headingSlug,
 presentHeadingSlugs)` restituisce `{ status: 'resolved', headingSlug }` oppure

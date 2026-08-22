@@ -270,42 +270,59 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
  * costante e non un contenuto negoziabile.
  */
 /**
- * VISUAL-ENRICHMENT-01 — union discriminata **chiusa** dei due esiti.
+ * VISUAL-ENRICHMENT-01 — schema **strict** dei due esiti della proposta.
  *
- * `oneOf` con `additionalProperties: false` su entrambi i rami è ciò che rende
- * i due esiti reciprocamente esclusivi già a livello di schema: il ramo `none`
- * non ammette `subject`, e il ramo `image` non ammette `reason`. Un booleano con
- * campi opzionali avrebbe reso rappresentabile — e quindi prima o poi reale — un
- * «nessuna immagine» con la didascalia già scritta.
+ * **Perché un envelope `proposal` e non l'unione alla radice.** Lo Structured
+ * Output strict di OpenAI richiede che la radice sia un `object` con
+ * `additionalProperties: false` e proprietà dichiarate: un `oneOf` alla radice
+ * non è accettato. L'unione vive quindi **annidata** dentro una proprietà
+ * obbligatoria, ed è espressa con `anyOf` — `oneOf` non compare in alcun punto
+ * dello schema trasmesso.
  *
- * Nessun campo per il prompt immagine: quel prompt lo compone il server (VE-03)
- * a partire dal solo `subject` validato, e non è negoziabile dal modello.
+ * I due rami restano chiusi e disgiunti, con **tutte** le proprietà dichiarate
+ * anche `required`: strict non ammette proprietà facoltative, e un ramo con un
+ * campo opzionale sarebbe di nuovo la porta da cui rientra un «nessuna immagine»
+ * con la didascalia già scritta.
+ *
+ * **L'envelope è provider-specifico e si ferma al confine.** Viene validato ed
+ * estratto prima di qualunque persistenza: il valore canonico salvato nel run e
+ * restituito dal replay è l'unione **senza** envelope. Un envelope che filtrasse
+ * fino al documento persistito renderebbe il contratto pubblico ostaggio della
+ * forma richiesta oggi da un provider.
  */
+const VISUAL_PROPOSAL_NONE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['decision', 'reason'],
+  properties: {
+    decision: { type: 'string', enum: ['none'] },
+    reason: { type: 'string' },
+  },
+};
+
+const VISUAL_PROPOSAL_IMAGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['decision', 'subject', 'rationale', 'anchorHeadingText', 'caption', 'altText'],
+  properties: {
+    decision: { type: 'string', enum: ['image'] },
+    subject: { type: 'string' },
+    rationale: { type: 'string' },
+    anchorHeadingText: { type: 'string' },
+    caption: { type: 'string' },
+    altText: { type: 'string' },
+  },
+};
+
 export const VISUAL_PROPOSAL_OUTPUT_SCHEMA: Record<string, unknown> = {
-  oneOf: [
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['decision', 'reason'],
-      properties: {
-        decision: { type: 'string', enum: ['none'] },
-        reason: { type: 'string' },
-      },
+  type: 'object',
+  additionalProperties: false,
+  required: ['proposal'],
+  properties: {
+    proposal: {
+      anyOf: [VISUAL_PROPOSAL_NONE_SCHEMA, VISUAL_PROPOSAL_IMAGE_SCHEMA],
     },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['decision', 'subject', 'rationale', 'anchorHeadingText', 'caption', 'altText'],
-      properties: {
-        decision: { type: 'string', enum: ['image'] },
-        subject: { type: 'string' },
-        rationale: { type: 'string' },
-        anchorHeadingText: { type: 'string' },
-        caption: { type: 'string' },
-        altText: { type: 'string' },
-      },
-    },
-  ],
+  },
 };
 
 export const CONCEPT_MAP_OUTPUT_SCHEMA: Record<string, unknown> = {

@@ -11,7 +11,12 @@
  */
 
 import { Timestamp } from 'firebase-admin/firestore';
-import { AI_CONTENT_CONTRACT_VERSION, AI_CONTENT_LIMITS, utf8ByteLength } from './aiContentCore.js';
+import {
+  AI_CONTENT_CONTRACT_VERSION,
+  AI_CONTENT_LIMITS,
+  timestampToMillis,
+  utf8ByteLength,
+} from './aiContentCore.js';
 import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
 import { isValidStoredVisualProposalOutput } from './aiContentVisualProposal.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
@@ -53,14 +58,13 @@ function isNonNegInt(v: unknown): v is number {
 function isNonNegIntOrNull(v: unknown): v is number | null {
   return v === null || isNonNegInt(v);
 }
-/** Duck-typing: `Timestamp` reale o qualunque oggetto con `toMillis()` intero. */
-function tsToMillis(v: unknown): number | null {
-  if (v && typeof (v as { toMillis?: unknown }).toMillis === 'function') {
-    const ms = (v as { toMillis: () => unknown }).toMillis();
-    return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
-  }
-  return null;
-}
+/**
+ * Duck-typing del `Timestamp`. Delega all'helper condiviso di `aiContentCore`,
+ * che invoca `toMillis()` in modo protetto: la copia locale precedente lasciava
+ * propagare l'eccezione di un `toMillis()` che lancia, e un parser fail-closed
+ * non deve poter esplodere su un input malformato.
+ */
+const tsToMillis = timestampToMillis;
 
 /**
  * Parser **fail-closed** del documento tecnico (AIGEN-01-REVIEW-FIX §9): valida

@@ -24,7 +24,10 @@ import {
 import { estimateContentCost } from './aiContentCost.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
 import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
-import { validateVisualProposalOutput } from './aiContentVisualProposal.js';
+import {
+  assertVisualProposalMatchesRequest,
+  validateVisualProposalEnvelope,
+} from './aiContentVisualProposal.js';
 import { actualCostMicroUsd, normalizeUsageActual } from './aiCorrectionCost.js';
 import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import type { ContentProviderOutcome } from './aiContentProvider.js';
@@ -492,10 +495,23 @@ export async function generateContent(
                 .conceptMapMarkdown,
             }
           : request.kind === 'visual_proposal'
-            ? // VISUAL-ENRICHMENT-01 — il run persiste l'**esito già validato**:
-              // a differenza della mappa non c'è nulla da comporre, perché la
-              // proposta è essa stessa il documento finale di questa fase.
-              validateVisualProposalOutput(providerOutcome.output)
+            ? /*
+               * VISUAL-ENRICHMENT-01 — due passaggi, in quest'ordine.
+               *
+               * 1. L'envelope `{ proposal }` richiesto dallo Structured Output
+               *    strict viene validato ed **estratto**: nel run finisce
+               *    l'unione pura, così il contratto persistito non eredita una
+               *    forma imposta dal trasporto.
+               * 2. Il controllo **relazionale** verifica che l'heading di
+               *    ancoraggio esista davvero nel corpo mandato in richiesta.
+               *    Vive qui, prima della prima persistenza, e non nel replay:
+               *    lì la richiesta non c'è più e il corpo potrebbe essere
+               *    cambiato.
+               */
+              assertVisualProposalMatchesRequest(
+                validateVisualProposalEnvelope(providerOutcome.output),
+                request.lessonBody,
+              )
             : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({

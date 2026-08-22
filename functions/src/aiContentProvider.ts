@@ -112,9 +112,14 @@ class MockContentProvider implements ContentProvider {
       // mock non può sbagliare inventando un soggetto plausibile.
       return {
         status: 'ok',
+        // L'envelope `{ proposal }` è quello che il provider reale restituisce
+        // per lo Structured Output strict: il mock deve produrlo identico,
+        // altrimenti verificherebbe un percorso che in produzione non esiste.
         output: {
-          decision: 'none',
-          reason: 'Esito di riferimento (mock): nessuna illustrazione utile.',
+          proposal: {
+            decision: 'none',
+            reason: 'Esito di riferimento (mock): nessuna illustrazione utile.',
+          },
         },
         usage: { inputTokens: 0, outputTokens: 0 },
         metered: false,

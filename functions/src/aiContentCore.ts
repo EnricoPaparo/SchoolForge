@@ -305,6 +305,36 @@ export function utf8ByteLength(value: string): number {
   return Buffer.byteLength(value, 'utf8');
 }
 
+/**
+ * Millisecondi di un `Timestamp` Firestore **per duck-typing**, o `null`.
+ *
+ * Vive qui, ed è condiviso, perché ne esisteva già una copia privata nel parser
+ * del documento run: due implementazioni della stessa domanda divergono al primo
+ * cambiamento, e questa è una domanda di validazione fail-closed.
+ *
+ * `toMillis()` è **invocato dentro un try/catch**: un oggetto che ha il metodo
+ * ma lo fa esplodere non è un timestamp valido, ed è comunque un input che il
+ * validatore deve poter rifiutare senza propagare l'eccezione al chiamante.
+ * Il risultato deve essere un `number` **finito**: `NaN` e `Infinity` superano
+ * `typeof === 'number'` e sarebbero il tipo di valore che passa la validazione e
+ * rompe tutto ciò che viene dopo.
+ *
+ * Nessuna dipendenza Firebase: il `Timestamp` reale soddisfa la forma, ma non
+ * viene importato.
+ */
+export function timestampToMillis(value: unknown): number | null {
+  if (!value || typeof (value as { toMillis?: unknown }).toMillis !== 'function') {
+    return null;
+  }
+  let ms: unknown;
+  try {
+    ms = (value as { toMillis: () => unknown }).toMillis();
+  } catch {
+    return null;
+  }
+  return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+}
+
 /** Serializzazione canonica non ambigua di una tupla di stringhe. */
 export function canonicalTuple(parts: string[]): string {
   return JSON.stringify(parts);
