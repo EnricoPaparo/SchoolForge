@@ -129,6 +129,7 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G6 — Correzione ed export ✅ | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/CSV da snapshot (Markdown rinviato). | **Superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`. Fine V1 lato correzione. |
 | G7 — IA assistita (M5) | M5-01..05 integrati e H-05 completata. | Contesto chiuso, audit minimale, batch «Correggi con IA» che scrive bozze nelle `evaluations`, chiuse deterministiche, validazione punteggi server-side. | IA assistita (nessuna correzione/restituzione automatica). |
 | G8 — IA automatica (rinviata) | G7 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. **Fuori dalla linea M5-00→M5-05.** |
+| GVISUAL — Arricchimento visivo | VE-01→05 completati e distribuiti su DEV. | Il docente giudica su lezioni reali se le immagini valgono il loro costo: funzione didattica effettiva, resa dello stile «SchoolForge Sketch v1», tasso credibile di «nessuna immagine utile», peso e assenza di layout shift, visibilità corretta svolta/non svolta, rollback totale per rimozione. | **PENDING.** VE-00 è documentale; VE-01→05 sono aperti. Vedi [visual-enrichment-roadmap.md](visual-enrichment-roadmap.md). |
 
 > **Numerazione gate (univoca).** `G6` identifica **esclusivamente** il gate finale di M4 (Correzione ed export). I gate AI della V2 sono `G7` (AI assistita) e `G8` (AI automatica): rinumerati da una precedente stesura che riusava `G6`/`G7` anche per l'AI, senza alcuna modifica al loro scope.
 
@@ -1199,3 +1200,57 @@ proprietà della **consegna**, non della **selezione delle domande**.
 | VDIF-05 ✅ | **Consumer downstream**: svolgimento, correzione manuale e IA, restituzione, PDF, CSV, ricevute e privacy audit end-to-end. | VDIF-04 | **Implementato e distribuito su DEV.** Tutti i consumer operano sulla sola assegnazione; nessun metadato etichetta nei contratti studente, export o run IA. Gate GVDIF PASS. |
 | Gate GVDIF ✅ | Rollout DEV e **gate umano multi-studente**. | VDIF-05 | **PASS** il 15 agosto 2026; evidenza in [`evidenze/gvdif-human-gate.md`](evidenze/gvdif-human-gate.md). |
 | ESITI-01 ✅ | Vista owner-only e di **sola lettura** degli esiti aggregati per UDA/lezione: derivazione pura da correzioni definitive e snapshot, copertura dichiarata, domande e valutazioni per riga. | GVDIF | **Implementato, distribuito e validato su DEV — PASS docente 15/08/2026.** Nessuna scrittura, collezione, Rule, prompt o dato etichetta; caricamento soltanto all'apertura del dialog. Evidenza: [`evidenze/esiti-01-human-gate.md`](evidenze/esiti-01-human-gate.md). |
+
+---
+
+## Appendice F — VISUAL-ENRICHMENT — Arricchimento visivo delle lezioni
+
+**Una sola** piccola illustrazione didattica per lezione, generata su richiesta
+in uno stile fisso e versionato («SchoolForge Sketch v1»), approvata
+esplicitamente dal docente e visibile allo studente **solo a lezione svolta**.
+Contratto architetturale, forma chiusa del manifest, politica di ancoraggio,
+ciclo di vita dell'asset, modello di autorizzazione, cost model e principi di
+sicurezza in [visual-enrichment-roadmap.md](visual-enrichment-roadmap.md);
+prototipo statico a dieci stati in
+[prototipi/lesson-visual-enrichment.html](prototipi/lesson-visual-enrichment.html);
+review della fase documentale in
+[evidenze/visual-enrichment-00-review.md](evidenze/visual-enrichment-00-review.md).
+
+**La decisione che governa il resto.** Lo studente non ha, e non deve avere,
+alcun accesso a Firebase Storage: `storage.rules` è owner-only e M3F-08 ha
+rimosso deliberatamente il "second hop" verso i byte. I byte canonici restano
+quindi in Storage sotto l'owner (`storageRef`, dentro il prefisso dell'import,
+quindi già coperto da `deleteImportPrefix`), mentre la copia leggibile dallo
+studente è un **documento Firestore dedicato**, separato dal testo: il manifest
+pubblico viaggia dentro `publicLessons` — che lo studente legge già, quindi a
+costo marginale zero — e i byte stanno in `publicLessonVisuals/{publicLessonId}`,
+letti **una sola volta all'apertura** e **solo** se un'immagine esiste davvero.
+Una lezione senza immagine costa esattamente quanto oggi; nessuna card paga mai
+nulla.
+
+**Fuori scope, in ogni fase e in ogni forma** (dichiarato perché non rientri
+«già che ci siamo»): più immagini per lezione, gallerie e caroselli; immagini
+per pool, verifiche, UDA o mappe concettuali; upload di immagini proprie del
+docente; modifica dell'immagine dopo la generazione; stili alternativi o
+configurabili; immagini con persone riconoscibili; **diagrammi tecnici precisi**
+— che restano testo Markdown o diagramma a caratteri della mappa concettuale;
+profilo `economy`; import di immagini da ZIP.
+
+| Pacchetto | Sintesi | Dipendenze | Stato |
+|---|---|---|---|
+| VISUAL-ENRICHMENT-00 | **Contratto e prototipo.** Decisione architetturale sulla proiezione studente (con le quattro alternative scartate e la motivazione), forma chiusa del manifest, ancoraggio via slug deterministici degli heading e politica di perdita dell'ancora, ciclo di vita completo dell'asset (proposta → staging → approvazione → proiezione → rimozione), promozione e rimozione atomiche con ordine motivato, idempotenza per `requestId` e replay, corsa fra modifica lezione e approvazione chiusa da `sourceBodyHash`, cost model, confine illustrativo/tecnico, sicurezza congelata, prototipo statico responsive a dieci stati. | CONCEPT-MAP-02, LESSON-MANUAL-01, SGW-02C, ANNOT-03B | **Implementato come contratto/prototipo.** Nessun runtime, nessuna immagine generata. |
+| VISUAL-ENRICHMENT-01 | **Proposta testuale e contratti.** `kind: 'visual_proposal'` di prima classe in `AiContentRequest`; payload chiuso con profilo forzato a `quality`; prompt dedicato con versione propria e corpo lezione delimitato come dato non attendibile; Structured Output strict con l'esito «nessuna immagine utile» di prima classe; validatore del `subject`; tipi e validatore puro del manifest; risolutore d'ancora puro; test di **non-regressione byte-identica** degli `inputHash` di pool, lezione e mappa. Backend-only e puro. | VE-00 | **Aperto.** |
+| VISUAL-ENRICHMENT-02 | **Catena binaria completa.** Provider immagini; operazione binaria del gateway (oggi testuale per contratto); normalizzazione server-side — sniffing del MIME sui magic bytes, resize a lato lungo 1200 px, WebP, rimozione metadati, cap rigido 200 KB, `sha256` sui byte finali; staging con TTL 24 h, replay senza seconda spesa e cleanup. | VE-01 | **Aperto.** |
+| VISUAL-ENRICHMENT-03 | **Persistenza, proiezione e lifecycle.** Manifest privato sul `LessonDoc`; promozione atomica con verifica di `sourceBodyHash` e `sha256`; proiezione pubblica in due pezzi; `publicLessonVisuals` e relative Rules; estensione della transazione `setLessonCompleted`; rimozione con ordine di cleanup motivato; export ZIP con binario; eliminazioni lezione/UDA/corso; audit. | VE-02 | **Aperto.** |
+| VISUAL-ENRICHMENT-04 | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token **prima** della serializzazione con doppia sanificazione, così l'immagine entra fra due frammenti senza che una sola stringa di HTML sia aggiunta dopo `DOMPurify`; `<figure>` come nodo React controllato; avviso e azione di riancoraggio senza spesa; vista studente condizionale; responsive e accessibilità sui componenti reali. | VE-03 | **Aperto.** |
+| VISUAL-ENRICHMENT-05 | **Benchmark qualitativo e rollout DEV.** Scenari congelati, rubrica con blocker espliciti, misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo), peso/tempi/layout shift reali, rollout DEV. | VE-04 | **Aperto.** |
+| Gate GVISUAL | **Approvazione umana** su lezioni reali. | VE-05 | **PENDING.** |
+
+> **Modifica motivata alla suddivisione proposta.** Il mandato collocava
+> «generazione, compressione e staging» in VE-02 e «salvataggio, proiezione e
+> lifecycle» in VE-03. Il confine tecnico reale non passa però fra *generare* e
+> *salvare*: passa fra **testo** e **binario**. Accettare byte, sniffare il MIME,
+> ridimensionare, convertire, hashare e scriverli attraverso un gateway che oggi
+> è testuale per contratto è un unico problema con un'unica superficie di
+> rischio; spezzarlo a metà consegnerebbe VE-02 con un percorso binario non
+> verificabile end-to-end. Il resto della suddivisione resta invariato.

@@ -1,0 +1,1162 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SchoolForge — Prototipo Arricchimento visivo (VISUAL-ENRICHMENT-00)</title>
+    <style>
+      /* ══════════════════════════════════════════════════════════════════
+         Design tokens — riuso della palette scura esistente di SchoolForge
+         (apps/web/src/index.css). Nessun font, asset o CDN esterno.
+         Nessun token nuovo rispetto ai prototipi già approvati.
+         ══════════════════════════════════════════════════════════════════ */
+      :root {
+        --color-primary: #4a8bf7;
+        --color-primary-hover: #60a5fa;
+        --color-primary-light: rgba(59, 130, 246, 0.16);
+        --color-brand-blue: #38bdf8;
+        --color-brand-orange: #fb923c;
+        --color-surface: #141a24;
+        --color-surface-subtle: #090d14;
+        --color-surface-raised: #1d2532;
+        --color-border: #334052;
+        --color-text: #e7ebf2;
+        --color-text-muted: #93a0b4;
+        --color-error: #f87171;
+        --color-error-bg: rgba(248, 113, 113, 0.12);
+        --color-error-border: #7f2b2b;
+        --color-success: #4ade80;
+        --color-success-bg: rgba(74, 222, 128, 0.12);
+        --color-success-border: #1f5c37;
+        --color-warning: #fbbf24;
+        --color-warning-bg: rgba(251, 191, 36, 0.12);
+        --color-warning-border: #6b4a12;
+        --color-focus-ring: rgba(59, 130, 246, 0.35);
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-mono: ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+        --radius: 6px;
+        --radius-lg: 10px;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+        /* Target touch minimo su mobile (44 px). */
+        --touch: 44px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        /* Invariante: nessun overflow orizzontale della pagina, mai. */
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      img,
+      svg {
+        max-width: 100%;
+        height: auto;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--color-brand-orange);
+        outline-offset: 2px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      /* ── Barra demo — NON fa parte della UI di prodotto ────────────────── */
+      .demo-bar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 10px 16px;
+        background: #05070c;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .demo-bar__label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        width: 100%;
+      }
+      .demo-bar button {
+        min-height: var(--touch);
+        padding: 8px 12px;
+        font-family: inherit;
+        font-size: 12px;
+        color: var(--color-text-muted);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        cursor: pointer;
+      }
+      .demo-bar button:hover {
+        color: var(--color-text);
+        border-color: var(--color-primary);
+      }
+      .demo-bar button[aria-pressed='true'] {
+        color: #05070c;
+        background: var(--color-brand-blue);
+        border-color: var(--color-brand-blue);
+        font-weight: 600;
+      }
+
+      .stage {
+        padding: 20px 16px 72px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      .stage__caption {
+        font-size: 12px;
+        color: var(--color-text-muted);
+        border-left: 3px solid var(--color-brand-blue);
+        padding: 6px 0 6px 12px;
+        margin: 0 0 18px;
+      }
+      .panel[hidden] {
+        display: none !important;
+      }
+
+      /* ── Primitive dialog (riuso di DialogShell) ───────────────────────── */
+      .dialog {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+        max-width: 720px;
+        margin: 0 auto;
+        overflow: hidden;
+      }
+      .dialog__title {
+        margin: 0;
+        padding: 16px 20px;
+        font-size: 16px;
+        font-weight: 650;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .dialog__body {
+        padding: 20px;
+      }
+      .dialog__footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        padding: 16px 20px;
+        border-top: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+      }
+
+      .btn {
+        min-height: var(--touch);
+        padding: 10px 16px;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+        cursor: pointer;
+      }
+      .btn:hover {
+        border-color: var(--color-primary);
+      }
+      .btn--primary {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #05070c;
+      }
+      .btn--primary:hover {
+        background: var(--color-primary-hover);
+        border-color: var(--color-primary-hover);
+      }
+      .btn--danger {
+        color: var(--color-error);
+        border-color: var(--color-error-border);
+        background: var(--color-error-bg);
+      }
+      .btn--ghost {
+        background: transparent;
+        color: var(--color-text-muted);
+      }
+      .btn[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .field {
+        margin-bottom: 16px;
+      }
+      .field__label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        margin-bottom: 6px;
+      }
+      .field__hint {
+        font-size: 12px;
+        color: var(--color-text-muted);
+        margin: 6px 0 0;
+      }
+      .field input[type='text'],
+      .field textarea {
+        width: 100%;
+        min-height: var(--touch);
+        padding: 10px 12px;
+        font-family: inherit;
+        font-size: 14px;
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        resize: vertical;
+      }
+      .field textarea {
+        min-height: 76px;
+        line-height: 1.55;
+      }
+      .field--mono textarea {
+        font-family: var(--font-mono);
+        font-size: 13px;
+      }
+
+      .note {
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        font-size: 13px;
+        margin: 0 0 16px;
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+      }
+      .note--info {
+        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.1);
+      }
+      .note--warn {
+        border-color: var(--color-warning-border);
+        background: var(--color-warning-bg);
+      }
+      .note--error {
+        border-color: var(--color-error-border);
+        background: var(--color-error-bg);
+      }
+      .note--ok {
+        border-color: var(--color-success-border);
+        background: var(--color-success-bg);
+      }
+      .note__title {
+        font-weight: 650;
+        margin: 0 0 4px;
+      }
+      .note p {
+        margin: 0;
+      }
+      .note p + p {
+        margin-top: 8px;
+      }
+
+      /* Metriche dell'anteprima: griglia fluida, mai una tabella rigida. */
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+        gap: 10px;
+        margin: 16px 0;
+      }
+      .metric {
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 10px 12px;
+        min-width: 0;
+      }
+      .metric__k {
+        display: block;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+      .metric__v {
+        display: block;
+        font-size: 15px;
+        font-weight: 650;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+      .metric__v--ok {
+        color: var(--color-success);
+      }
+
+      /* ── Riquadro immagine ─────────────────────────────────────────────── */
+      .shot {
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 10px;
+      }
+      .shot > svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 3px;
+      }
+      .shot__tag {
+        display: inline-block;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        margin-bottom: 8px;
+      }
+      .compare {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      /* Barra di avanzamento — indeterminata, disattivata da reduced-motion. */
+      .progress {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--color-surface-raised);
+        overflow: hidden;
+        margin: 14px 0 6px;
+      }
+      .progress__bar {
+        height: 100%;
+        width: 38%;
+        background: var(--color-brand-blue);
+        animation: slide 1.4s ease-in-out infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+      .steps {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 13px;
+        color: var(--color-text-muted);
+      }
+      .steps li + li {
+        margin-top: 4px;
+      }
+      .steps li[data-done='true'] {
+        color: var(--color-text);
+      }
+
+      /* ══════════════════════════════════════════════════════════════════
+         Vista lezione — riuso della resa «manuale digitale»
+         (lesson-manual-contract.md). Colonna di lettura 42rem.
+         ══════════════════════════════════════════════════════════════════ */
+      .lesson {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .lesson__bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        font-size: 12px;
+        color: var(--color-text-muted);
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid var(--color-border);
+      }
+      .pill--done {
+        color: var(--color-success);
+        border-color: var(--color-success-border);
+        background: var(--color-success-bg);
+      }
+      .pill--todo {
+        color: var(--color-text-muted);
+      }
+      .pill--role {
+        color: var(--color-brand-blue);
+        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.1);
+      }
+      .lesson__body {
+        padding: 24px 20px 32px;
+      }
+      .prose {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+      .prose h1 {
+        font-size: 1.75rem;
+        line-height: 1.2;
+        margin: 0 0 4px;
+      }
+      .prose .sub {
+        color: var(--color-text-muted);
+        margin: 0 0 28px;
+      }
+      .prose h2 {
+        font-size: 1.375rem;
+        color: var(--color-brand-blue);
+        border-bottom: 1px solid var(--color-border);
+        padding-bottom: 6px;
+        margin: 2.75rem 0 0.75rem;
+      }
+      .prose h2:first-of-type {
+        margin-top: 0;
+      }
+      .prose p {
+        margin: 0 0 1rem;
+      }
+      .prose ul {
+        margin: 0 0 1rem;
+        padding-left: 20px;
+      }
+      .prose li::marker {
+        color: var(--color-brand-blue);
+      }
+
+      /* La figura: nodo controllato, mai HTML iniettato dopo la sanificazione. */
+      figure.lv {
+        margin: 1.5rem 0 1.75rem;
+        padding: 0;
+      }
+      figure.lv > svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: #f7f5f0;
+      }
+      figure.lv > figcaption {
+        margin-top: 8px;
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--color-text-muted);
+        border-left: 2px solid var(--color-brand-blue);
+        padding-left: 10px;
+      }
+
+      .teacher-hint {
+        max-width: 42rem;
+        margin: 0 auto 20px;
+      }
+
+      /* ── Mobile ───────────────────────────────────────────────────────── */
+      @media (max-width: 640px) {
+        .stage {
+          padding: 16px 12px 64px;
+        }
+        .dialog__body,
+        .dialog__title,
+        .dialog__footer {
+          padding-left: 14px;
+          padding-right: 14px;
+        }
+        .dialog__footer {
+          justify-content: stretch;
+        }
+        /* Target touch pieni: su schermo stretto ogni azione è a riga intera. */
+        .dialog__footer .btn {
+          flex: 1 1 100%;
+        }
+        .lesson__body {
+          padding: 18px 14px 26px;
+        }
+        .prose h1 {
+          font-size: 1.4rem;
+        }
+        .prose h2 {
+          font-size: 1.15rem;
+        }
+      }
+      @media (max-width: 360px) {
+        .metrics {
+          grid-template-columns: 1fr 1fr;
+        }
+        .compare {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .foot {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 20px 16px 40px;
+        border-top: 1px solid var(--color-border);
+        font-size: 12px;
+        color: var(--color-text-muted);
+      }
+      .foot code {
+        font-family: var(--font-mono);
+        color: var(--color-brand-blue);
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SVG «SchoolForge Sketch v1» — definizione unica, riusata via <use>.
+         Locale e inline: nessuna risorsa remota, nessun data URI esterno.
+         Schizzo a penna, sfondo chiaro, ciano e arancione al minimo.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="sketch-water-cycle" viewBox="0 0 480 300">
+          <rect width="480" height="300" fill="#f7f5f0" />
+          <g
+            fill="none"
+            stroke="#2a2f38"
+            stroke-width="2.1"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <!-- sole: unico elemento arancione -->
+            <circle cx="404" cy="56" r="19" stroke="#e07a2f" />
+            <g stroke="#e07a2f" stroke-width="1.8">
+              <path d="M404 24v-9M404 97v9M436 56h9M363 56h-9M427 33l6-6M381 79l-6 6M427 79l6 6M381 33l-6-6" />
+            </g>
+            <!-- nuvola -->
+            <path
+              d="M120 74c-15 0-26 10-26 22 0 13 11 22 26 22h96c16 0 28-10 28-23 0-13-12-22-27-22-4-16-19-27-37-27-19 0-35 12-38 28z"
+              stroke="#1c8fb8"
+            />
+            <!-- precipitazione -->
+            <g stroke="#1c8fb8" stroke-width="1.9">
+              <path d="M132 128l-9 26M162 128l-9 26M192 128l-9 26M222 128l-9 26" />
+            </g>
+            <!-- montagna -->
+            <path d="M18 232l72-96 42 56 26-33 58 73z" />
+            <path d="M74 158l16 12 14-10" stroke-width="1.6" />
+            <!-- mare -->
+            <path d="M258 232h206" />
+            <path d="M272 246q13-9 26 0t26 0t26 0t26 0t26 0t26 0" stroke="#1c8fb8" stroke-width="1.7" />
+            <path d="M272 266q13-9 26 0t26 0t26 0t26 0t26 0t26 0" stroke="#1c8fb8" stroke-width="1.7" />
+            <!-- evaporazione: freccia su -->
+            <path d="M338 224c-8-26-4-48 6-70" stroke="#1c8fb8" />
+            <path d="M338 148l6 8 8-4" stroke="#1c8fb8" />
+            <!-- ruscellamento: freccia giù verso il mare -->
+            <path d="M216 232q24 8 40 0" />
+            <path d="M256 232l-9-5m9 5l-9 6" />
+            <!-- suolo -->
+            <path d="M18 232h240" />
+          </g>
+          <g
+            font-family="system-ui, sans-serif"
+            font-size="13"
+            fill="#2a2f38"
+            text-anchor="middle"
+          >
+            <!-- testo ridotto al minimo: tre etichette, tutte presenti nel corpo -->
+            <text x="168" y="103">nubi</text>
+            <text x="360" y="196">evaporazione</text>
+            <text x="104" y="216">rilievo</text>
+          </g>
+        </symbol>
+      </defs>
+    </svg>
+
+    <!-- ── Barra demo (impalcatura di prototipo, non UI) ─────────────────── -->
+    <nav class="demo-bar" aria-label="Selettore degli stati del prototipo">
+      <span class="demo-bar__label"
+        >Prototipo VISUAL-ENRICHMENT-00 — dieci stati · nessun runtime</span
+      >
+      <button type="button" data-go="s1" aria-pressed="true">1 · Proposta</button>
+      <button type="button" data-go="s2" aria-pressed="false">2 · Generazione</button>
+      <button type="button" data-go="s3" aria-pressed="false">3 · Anteprima</button>
+      <button type="button" data-go="s4" aria-pressed="false">4 · Errore</button>
+      <button type="button" data-go="s5" aria-pressed="false">5 · Sostituzione</button>
+      <button type="button" data-go="s6" aria-pressed="false">6 · Abbandono</button>
+      <button type="button" data-go="s7" aria-pressed="false">7 · Lezione docente</button>
+      <button type="button" data-go="s8" aria-pressed="false">8 · Studente · con</button>
+      <button type="button" data-go="s9" aria-pressed="false">9 · Studente · senza</button>
+      <button type="button" data-go="s10" aria-pressed="false">10 · Nessuna immagine</button>
+    </nav>
+
+    <main class="stage">
+      <!-- ═════════════ 1 · PROPOSTA ═════════════ -->
+      <section class="panel" id="s1" aria-label="Stato: proposta">
+        <p class="stage__caption">
+          <strong>1 · Proposta.</strong> Nessuna immagine è stata ancora generata e nessuna spesa di
+          generazione è avvenuta. Ogni campo è modificabile dal docente prima di spendere.
+        </p>
+        <div class="dialog" role="dialog" aria-labelledby="t1" aria-modal="true">
+          <h2 class="dialog__title" id="t1">Arricchisci visivamente — Il ciclo dell'acqua</h2>
+          <div class="dialog__body">
+            <div class="note note--info">
+              <p class="note__title">Proposta di SchoolForge</p>
+              <p>
+                Puoi modificare qualunque campo. L'immagine viene generata solo quando premi
+                «Genera immagine», e il costo ti viene mostrato prima.
+              </p>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="f-subject">Soggetto dell'immagine</label>
+              <textarea id="f-subject" rows="2">
+Schizzo del ciclo dell'acqua: evaporazione dal mare, formazione delle nubi, precipitazione sul rilievo, ruscellamento verso il mare.</textarea
+              >
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="f-why">Utilità didattica</label>
+              <textarea id="f-why" rows="2">
+Il testo descrive quattro fasi in sequenza; vederle disposte nello spazio rende immediato che il ciclo si chiude su sé stesso.</textarea
+              >
+              <p class="field__hint">
+                Se non sai dire che cosa l'immagine fa capire in più rispetto al testo, la risposta
+                giusta è non generarla.
+              </p>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="f-anchor">Posizione suggerita</label>
+              <input id="f-anchor" type="text" value="Dopo la sezione «Le quattro fasi»" />
+              <p class="field__hint">
+                Ancoraggio tecnico <code>#le-quattro-fasi</code> — l'immagine non viene scritta nel
+                Markdown della lezione.
+              </p>
+            </div>
+
+            <div class="field field--mono">
+              <label class="field__label" for="f-prompt">Prompt</label>
+              <textarea id="f-prompt" rows="3">
+ciclo dell'acqua: mare, evaporazione, nube, pioggia su un rilievo, ruscellamento di ritorno al mare; etichette brevi «nubi», «evaporazione», «rilievo»</textarea
+              >
+              <p class="field__hint">
+                Lo stile <strong>SchoolForge Sketch v1</strong> è fisso e viene aggiunto dal
+                server: schizzo a penna, sfondo chiaro, ciano e arancione al minimo.
+              </p>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="f-caption">Didascalia <span aria-hidden="true">·</span> obbligatoria</label>
+              <textarea id="f-caption" rows="2">
+Il ciclo dell'acqua: l'evaporazione dal mare alimenta le nubi, che restituiscono l'acqua come precipitazione sul rilievo.</textarea
+              >
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="f-alt">Testo alternativo <span aria-hidden="true">·</span> obbligatorio</label>
+              <textarea id="f-alt" rows="2">
+Schema del ciclo dell'acqua: frecce salgono dal mare verso una nube, dalla nube la pioggia cade su un rilievo e l'acqua torna al mare.</textarea
+              >
+              <p class="field__hint">
+                Non «immagine di…»: deve spiegare che cosa l'immagine fa capire, per chi non la
+                vede.
+              </p>
+            </div>
+
+            <div class="note note--warn">
+              <p>
+                <strong>Costo stimato della generazione</strong> — profilo <code>quality</code>.
+                Verrà addebitato solo alla conferma. La proposta che stai leggendo è già stata
+                pagata a parte e costa molto meno.
+              </p>
+            </div>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn btn--ghost">Abbandona</button>
+            <button type="button" class="btn btn--primary" data-go="s2">Genera immagine</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 2 · GENERAZIONE ═════════════ -->
+      <section class="panel" id="s2" hidden aria-label="Stato: generazione in corso">
+        <p class="stage__caption">
+          <strong>2 · Generazione.</strong> La normalizzazione è server-side: il browser non
+          ridimensiona, non converte e non calcola l'impronta.
+        </p>
+        <div class="dialog" role="dialog" aria-labelledby="t2" aria-modal="true">
+          <h2 class="dialog__title" id="t2">Generazione in corso…</h2>
+          <div class="dialog__body">
+            <div class="progress" role="presentation"><div class="progress__bar"></div></div>
+            <p class="sr-only" role="status">Generazione dell'immagine in corso.</p>
+            <ol class="steps">
+              <li data-done="true">Richiesta inviata al provider · profilo <code>quality</code></li>
+              <li data-done="true">Verifica del formato reale sui primi byte</li>
+              <li>Ridimensionamento al lato lungo 1200 px</li>
+              <li>Conversione in WebP e rimozione dei metadati</li>
+              <li>Controllo del limite di 200 KB e impronta SHA-256</li>
+            </ol>
+            <div class="note note--info" style="margin: 16px 0 0">
+              <p>
+                Se chiudi questa finestra ora, l'immagine non viene persa: resta recuperabile per
+                24 ore riprendendo la stessa richiesta, senza pagarla una seconda volta.
+              </p>
+            </div>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn" disabled>Annulla</button>
+            <button type="button" class="btn btn--primary" disabled>Applica alla lezione</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 3 · ANTEPRIMA RIUSCITA ═════════════ -->
+      <section class="panel" id="s3" hidden aria-label="Stato: anteprima riuscita">
+        <p class="stage__caption">
+          <strong>3 · Anteprima riuscita.</strong> L'immagine esiste ma <em>non</em> è ancora nella
+          lezione: nessuna scrittura canonica è avvenuta.
+        </p>
+        <div class="dialog" role="dialog" aria-labelledby="t3" aria-modal="true">
+          <h2 class="dialog__title" id="t3">Anteprima — Il ciclo dell'acqua</h2>
+          <div class="dialog__body">
+            <div class="shot">
+              <span class="shot__tag">Anteprima · non ancora applicata</span>
+              <svg viewBox="0 0 480 300" role="img" aria-label="Schema del ciclo dell'acqua: frecce salgono dal mare verso una nube, dalla nube la pioggia cade su un rilievo e l'acqua torna al mare.">
+                <use href="#sketch-water-cycle" />
+              </svg>
+            </div>
+
+            <div class="metrics">
+              <div class="metric">
+                <span class="metric__k">Peso</span><span class="metric__v metric__v--ok">96 KB</span>
+              </div>
+              <div class="metric">
+                <span class="metric__k">Dimensioni</span><span class="metric__v">1200 × 750</span>
+              </div>
+              <div class="metric">
+                <span class="metric__k">Formato</span><span class="metric__v">WebP</span>
+              </div>
+              <div class="metric">
+                <span class="metric__k">Costo reale</span><span class="metric__v">quality</span>
+              </div>
+            </div>
+            <p class="field__hint" style="margin: -6px 0 16px">
+              Entro l'obiettivo ordinario 50–150 KB e sotto il limite rigido di 200 KB.
+            </p>
+
+            <div class="field">
+              <label class="field__label" for="f3-caption">Didascalia</label>
+              <textarea id="f3-caption" rows="2">
+Il ciclo dell'acqua: l'evaporazione dal mare alimenta le nubi, che restituiscono l'acqua come precipitazione sul rilievo.</textarea
+              >
+            </div>
+            <div class="field">
+              <label class="field__label" for="f3-alt">Testo alternativo</label>
+              <textarea id="f3-alt" rows="2">
+Schema del ciclo dell'acqua: frecce salgono dal mare verso una nube, dalla nube la pioggia cade su un rilievo e l'acqua torna al mare.</textarea
+              >
+            </div>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn btn--ghost" data-go="s6">Abbandona</button>
+            <button type="button" class="btn" data-go="s1">Modifica la richiesta</button>
+            <button type="button" class="btn" data-go="s2">Rigenera</button>
+            <button type="button" class="btn btn--primary" data-go="s7">Applica alla lezione</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 4 · ERRORE ═════════════ -->
+      <section class="panel" id="s4" hidden aria-label="Stato: errore">
+        <p class="stage__caption">
+          <strong>4 · Errore.</strong> Fail-closed: nulla è stato salvato e la lezione è intatta. Il
+          messaggio dice che cosa è successo e che cosa si può fare.
+        </p>
+        <div class="dialog" role="dialog" aria-labelledby="t4" aria-modal="true">
+          <h2 class="dialog__title" id="t4">Generazione non riuscita</h2>
+          <div class="dialog__body">
+            <div class="note note--error">
+              <p class="note__title">L'immagine supera il limite di peso</p>
+              <p>
+                Dopo la conversione in WebP il file resta sopra i 200 KB consentiti. La qualità è
+                già stata ridotta al minimo previsto senza rientrare nel limite.
+              </p>
+              <p>
+                <strong>La lezione non è stata modificata</strong> e nessun asset è stato salvato.
+              </p>
+            </div>
+            <p class="field__hint" style="margin-bottom: 16px">
+              Un soggetto con meno elementi e meno etichette produce quasi sempre un file più
+              leggero. Puoi modificare la richiesta e riprovare.
+            </p>
+            <div class="note">
+              <p>
+                Codice tecnico: <code>visual_too_large</code> — utile se devi segnalare il
+                problema.
+              </p>
+            </div>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn btn--ghost">Chiudi</button>
+            <button type="button" class="btn btn--primary" data-go="s1">Modifica la richiesta</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 5 · SOSTITUZIONE ═════════════ -->
+      <section class="panel" id="s5" hidden aria-label="Stato: sostituzione di immagine approvata">
+        <p class="stage__caption">
+          <strong>5 · Sostituzione.</strong> Esiste già un'immagine approvata. La nuova vive in
+          staging e <em>non</em> sostituisce nulla finché non lo confermi.
+        </p>
+        <div class="dialog" role="dialog" aria-labelledby="t5" aria-modal="true">
+          <h2 class="dialog__title" id="t5">Sostituire l'immagine della lezione?</h2>
+          <div class="dialog__body">
+            <div class="note note--warn">
+              <p>
+                Una lezione può avere <strong>una sola</strong> immagine. Confermando, quella
+                attuale viene sostituita e non è recuperabile.
+              </p>
+            </div>
+
+            <div class="compare">
+              <div class="shot">
+                <span class="shot__tag">Attuale · nella lezione</span>
+                <svg viewBox="0 0 480 300" role="img" aria-label="Immagine attualmente applicata alla lezione: schema del ciclo dell'acqua.">
+                  <use href="#sketch-water-cycle" />
+                </svg>
+              </div>
+              <div class="shot">
+                <span class="shot__tag">Nuova · in attesa</span>
+                <svg viewBox="0 0 480 300" role="img" aria-label="Nuova immagine proposta: schema del ciclo dell'acqua con etichette diverse.">
+                  <use href="#sketch-water-cycle" />
+                </svg>
+              </div>
+            </div>
+
+            <div class="metrics">
+              <div class="metric">
+                <span class="metric__k">Peso · nuova</span><span class="metric__v metric__v--ok">88 KB</span>
+              </div>
+              <div class="metric">
+                <span class="metric__k">Dimensioni</span><span class="metric__v">1200 × 750</span>
+              </div>
+              <div class="metric">
+                <span class="metric__k">Ancoraggio</span><span class="metric__v">invariato</span>
+              </div>
+              <div class="metric">
+                <span class="metric__k">Stato attuale</span><span class="metric__v">intatto</span>
+              </div>
+            </div>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn btn--ghost" data-go="s7">Mantieni quella attuale</button>
+            <button type="button" class="btn btn--primary" data-go="s7">
+              Sostituisci l'immagine attuale
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 6 · ABBANDONO ═════════════ -->
+      <section class="panel" id="s6" hidden aria-label="Stato: conferma di abbandono">
+        <p class="stage__caption">
+          <strong>6 · Abbandono.</strong> Backdrop ed <kbd>Esc</kbd> non scartano un'immagine
+          generata: costa denaro reale. Si passa sempre da questa conferma.
+        </p>
+        <div class="dialog" role="alertdialog" aria-labelledby="t6" aria-describedby="d6" aria-modal="true" style="max-width: 520px">
+          <h2 class="dialog__title" id="t6">Abbandonare senza applicare?</h2>
+          <div class="dialog__body" id="d6">
+            <div class="note note--warn">
+              <p class="note__title">L'immagine generata verrà eliminata</p>
+              <p>È già stata pagata. Rigenerarla comporterà una nuova spesa.</p>
+            </div>
+            <p style="margin: 0 0 6px"><strong>Che cosa resta invariato:</strong></p>
+            <ul class="steps" style="color: var(--color-text)">
+              <li>Il testo della lezione — non viene toccato</li>
+              <li>L'immagine già applicata, se esiste — resta al suo posto</li>
+              <li>La vista dello studente — nessun cambiamento</li>
+            </ul>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn" data-go="s3">Torna all'anteprima</button>
+            <button type="button" class="btn btn--danger" data-go="s7">Abbandona ed elimina</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 7 · LEZIONE DOCENTE ═════════════ -->
+      <section class="panel" id="s7" hidden aria-label="Stato: lezione docente con immagine">
+        <p class="stage__caption">
+          <strong>7 · Vista docente.</strong> L'immagine è resa dopo l'heading ancorato. Il Markdown
+          della lezione non contiene alcun riferimento all'immagine.
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Docente</span>
+            <span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <div class="teacher-hint">
+              <div class="note note--ok" style="margin: 0">
+                <p class="note__title">Immagine applicata</p>
+                <p>
+                  Ancorata a «Le quattro fasi» · 96 KB · 1200 × 750 · visibile agli studenti perché
+                  la lezione è svolta.
+                </p>
+              </div>
+            </div>
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+
+              <h2>Perché è un ciclo</h2>
+              <p>
+                L'acqua del pianeta non si consuma e non si crea: cambia stato e cambia posto. La
+                stessa massa d'acqua che oggi è nel mare può domani trovarsi in una nube e dopodomani
+                in un torrente di montagna.
+              </p>
+
+              <h2 id="le-quattro-fasi">Le quattro fasi</h2>
+
+              <!-- Nodo React controllato, inserito fra due frammenti sanificati
+                   distinti. Nessun HTML aggiunto dopo la sanificazione. -->
+              <figure class="lv">
+                <svg viewBox="0 0 480 300" width="480" height="300" role="img" aria-label="Schema del ciclo dell'acqua: frecce salgono dal mare verso una nube, dalla nube la pioggia cade su un rilievo e l'acqua torna al mare.">
+                  <use href="#sketch-water-cycle" />
+                </svg>
+                <figcaption>
+                  Il ciclo dell'acqua: l'evaporazione dal mare alimenta le nubi, che restituiscono
+                  l'acqua come precipitazione sul rilievo.
+                </figcaption>
+              </figure>
+
+              <ul>
+                <li><strong>Evaporazione</strong> — il calore solare porta l'acqua allo stato di vapore.</li>
+                <li><strong>Condensazione</strong> — salendo, il vapore si raffredda e forma le nubi.</li>
+                <li><strong>Precipitazione</strong> — l'acqua ricade come pioggia o neve.</li>
+                <li><strong>Ruscellamento</strong> — dai rilievi l'acqua torna al mare.</li>
+              </ul>
+              <p>
+                Le quattro fasi non sono tappe separate: avvengono contemporaneamente in punti
+                diversi del pianeta, ed è questo che rende il ciclo continuo.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 8 · STUDENTE · CON IMMAGINE ═════════════ -->
+      <section class="panel" id="s8" hidden aria-label="Stato: studente con immagine">
+        <p class="stage__caption">
+          <strong>8 · Vista studente · lezione svolta.</strong> Resa identica a quella del docente,
+          senza i controlli. Una sola lettura puntuale, all'apertura.
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Studente</span>
+            <span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+
+              <h2>Perché è un ciclo</h2>
+              <p>
+                L'acqua del pianeta non si consuma e non si crea: cambia stato e cambia posto. La
+                stessa massa d'acqua che oggi è nel mare può domani trovarsi in una nube e dopodomani
+                in un torrente di montagna.
+              </p>
+
+              <h2>Le quattro fasi</h2>
+              <figure class="lv">
+                <svg viewBox="0 0 480 300" width="480" height="300" role="img" aria-label="Schema del ciclo dell'acqua: frecce salgono dal mare verso una nube, dalla nube la pioggia cade su un rilievo e l'acqua torna al mare.">
+                  <use href="#sketch-water-cycle" />
+                </svg>
+                <figcaption>
+                  Il ciclo dell'acqua: l'evaporazione dal mare alimenta le nubi, che restituiscono
+                  l'acqua come precipitazione sul rilievo.
+                </figcaption>
+              </figure>
+              <ul>
+                <li><strong>Evaporazione</strong> — il calore solare porta l'acqua allo stato di vapore.</li>
+                <li><strong>Condensazione</strong> — salendo, il vapore si raffredda e forma le nubi.</li>
+                <li><strong>Precipitazione</strong> — l'acqua ricade come pioggia o neve.</li>
+                <li><strong>Ruscellamento</strong> — dai rilievi l'acqua torna al mare.</li>
+              </ul>
+              <p>
+                Le quattro fasi non sono tappe separate: avvengono contemporaneamente in punti
+                diversi del pianeta, ed è questo che rende il ciclo continuo.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 9 · STUDENTE · SENZA IMMAGINE ═════════════ -->
+      <section class="panel" id="s9" hidden aria-label="Stato: studente senza immagine">
+        <p class="stage__caption">
+          <strong>9 · Vista studente · lezione non svolta.</strong> Nessun riquadro vuoto, nessun
+          «disponibile più avanti»: un segnaposto sarebbe un invito a cercare la scorciatoia. Il
+          documento leggibile dallo studente <em>non contiene</em> l'immagine.
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Studente</span>
+            <span class="pill pill--todo">Non svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+
+              <h2>Perché è un ciclo</h2>
+              <p>
+                L'acqua del pianeta non si consuma e non si crea: cambia stato e cambia posto. La
+                stessa massa d'acqua che oggi è nel mare può domani trovarsi in una nube e dopodomani
+                in un torrente di montagna.
+              </p>
+
+              <h2>Le quattro fasi</h2>
+              <ul>
+                <li><strong>Evaporazione</strong> — il calore solare porta l'acqua allo stato di vapore.</li>
+                <li><strong>Condensazione</strong> — salendo, il vapore si raffredda e forma le nubi.</li>
+                <li><strong>Precipitazione</strong> — l'acqua ricade come pioggia o neve.</li>
+                <li><strong>Ruscellamento</strong> — dai rilievi l'acqua torna al mare.</li>
+              </ul>
+              <p>
+                Le quattro fasi non sono tappe separate: avvengono contemporaneamente in punti
+                diversi del pianeta, ed è questo che rende il ciclo continuo.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════ 10 · NESSUNA IMMAGINE UTILE ═════════════ -->
+      <section class="panel" id="s10" hidden aria-label="Stato: nessuna immagine utile">
+        <p class="stage__caption">
+          <strong>10 · Nessuna immagine utile.</strong> Esito legittimo, non un guasto: non è offerto
+          alcun pulsante «genera comunque», e la spesa di generazione non avviene mai.
+        </p>
+        <div class="dialog" role="dialog" aria-labelledby="t10" aria-modal="true" style="max-width: 620px">
+          <h2 class="dialog__title" id="t10">
+            Arricchisci visivamente — Le leggi di Ohm
+          </h2>
+          <div class="dialog__body">
+            <div class="note note--info">
+              <p class="note__title">Per questa lezione un'immagine non aggiungerebbe nulla</p>
+              <p>
+                Il contenuto è quantitativo: relazioni fra grandezze, formule e valori numerici. Un
+                disegno non può rappresentarli in modo verificabile, e un'illustrazione con
+                etichette o valori inventati sarebbe peggio dell'assenza di immagine.
+              </p>
+            </div>
+
+            <p style="margin: 0 0 8px"><strong>Che cosa può servire invece:</strong></p>
+            <ul class="steps" style="color: var(--color-text); margin-bottom: 16px">
+              <li>La <strong>mappa concettuale</strong>, per la struttura e le dipendenze</li>
+              <li>Una <strong>tabella</strong> nel testo della lezione, per i valori</li>
+              <li>Un <strong>pool di domande</strong>, per l'applicazione delle formule</li>
+            </ul>
+
+            <div class="note">
+              <p>
+                Nessuna immagine è stata generata e <strong>non è stato addebitato</strong> alcun
+                costo di generazione.
+              </p>
+            </div>
+          </div>
+          <div class="dialog__footer">
+            <button type="button" class="btn btn--primary">Ho capito</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p style="margin: 0 0 6px">
+        <strong>Prototipo statico.</strong> Nessuna chiamata di rete, nessuna dipendenza, nessuna
+        risorsa remota, nessun runtime. L'illustrazione è un <code>&lt;svg&gt;</code> inline
+        disegnato a mano in stile <code>schoolforge-sketch/v1</code> e non è stata generata da un
+        modello.
+      </p>
+      <p style="margin: 0">
+        Contratto:
+        <code>documentazione/visual-enrichment-roadmap.md</code> · Gate <strong>GVISUAL: PENDING</strong>.
+      </p>
+    </footer>
+
+    <script>
+      // Impalcatura del prototipo: commuta i pannelli. Non è codice di prodotto.
+      (function () {
+        var panels = Array.prototype.slice.call(document.querySelectorAll('.panel'));
+        var tabs = Array.prototype.slice.call(document.querySelectorAll('.demo-bar [data-go]'));
+
+        function show(id) {
+          panels.forEach(function (p) {
+            p.hidden = p.id !== id;
+          });
+          tabs.forEach(function (b) {
+            b.setAttribute('aria-pressed', String(b.getAttribute('data-go') === id));
+          });
+          window.scrollTo({ top: 0, behavior: 'auto' });
+        }
+
+        document.addEventListener('click', function (event) {
+          // `closest` va cercato su un Element: dentro un <svg> il target puo'
+          // essere un nodo che non lo espone.
+          var node = event.target;
+          while (node && node.nodeType !== 1) node = node.parentNode;
+          var trigger = node && node.closest ? node.closest('[data-go]') : null;
+          if (!trigger) return;
+          show(trigger.getAttribute('data-go'));
+        });
+
+        show('s1');
+      })();
+    </script>
+  </body>
+</html>
