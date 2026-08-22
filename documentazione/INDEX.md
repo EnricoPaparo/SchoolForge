@@ -102,6 +102,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 ## Evidenze
 
 - [evidenze/prod-rollout-01.md](evidenze/prod-rollout-01.md) — stato operativo verificato di `schoolforge-prod`, separazione da DEV, regioni e confini delle attività manuali residue.
+- [evidenze/ops-backup-01.md](evidenze/ops-backup-01.md) — decisione sul backup documentale: archivi correzioni/CSV/ZIP corso in due copie protette; nessun backup Firestore/Storage schedulato e rischio di ricostruzione manuale accettato.
 - [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md) — conferma del docente dell'11 agosto 2026: rollout DEV di POOL-ROLLOUT-01 eseguito con smoke reale PASS, e mappe concettuali distribuite e validate con generazioni reali su più lezioni. Non riabilita `economy`; il suo limite storico su PROD è stato superato dalla successiva autorizzazione registrata in [PROD-ROLLOUT-01](evidenze/prod-rollout-01.md).
 - [evidenze/vdif-00-prototipo-visivo.md](evidenze/vdif-00-prototipo-visivo.md) — evidenze visive del prototipo VDIF-00 a 1440/1024/390/320 px; il gate applicativo finale è registrato in [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md).
 - [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md) — smoke multi-studente reale su DEV e verdetto **GVDIF PASS** del 15 agosto 2026.

@@ -33,9 +33,11 @@ luglio/agosto che dichiaravano di non autorizzare PROD restano corretti come
 evidenze storiche: quel singolo gate non costituiva l'autorizzazione. Il
 rollout è stato autorizzato ed eseguito successivamente.
 
-La configurazione del budget, il controllo periodico dei costi e la politica
-di backup restano attività manuali del docente secondo il runbook. Un budget
-Cloud Billing invia avvisi ma non costituisce un hard cap.
+La configurazione del budget e il controllo periodico dei costi restano
+attività manuali del docente. La politica di conservazione è invece definita da
+[OPS-BACKUP-01](ops-backup-01.md): archivio documentale verificato, senza backup
+gestiti o schedulati di Firestore/Storage. Un budget Cloud Billing invia avvisi
+ma non costituisce un hard cap.
 
 Il batch-write del Repository Storage Gateway introdotto da SGW-02C è coperto
 da test e CI nella relativa modifica; la presente evidenza non dichiara un

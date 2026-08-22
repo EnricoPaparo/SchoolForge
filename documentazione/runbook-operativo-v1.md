@@ -203,21 +203,46 @@ Il piano di rollout/rollback vincolante è nell'[evidenza tecnica](evidenze/hard
 
 ## 5. Backup ed export
 
-> **Oggi non esiste alcun backup automatico.** Non chiamare "backup" una copia locale non verificata: un export è un backup solo se è stato **prodotto e verificato** (contenuto leggibile, ripristinabile). Firestore e Storage sono **due cose separate** e vanno esportati separatamente.
+> **Decisione operativa OPS-BACKUP-01 (22/08/2026).** SchoolForge non usa
+> backup gestiti o schedulati di Firestore/Storage. Per il singolo docente il
+> presidio scelto è un **archivio documentale verificato**: correzioni ed esiti
+> esportati dopo le verifiche concluse, più ZIP dei corsi dopo modifiche
+> didattiche importanti. Questa scelta conserva i documenti scolastici utili,
+> ma **non permette di ripristinare l'applicazione nello stato precedente**:
+> classi, configurazioni e dati operativi potrebbero dover essere ricostruiti.
+> Il docente accetta esplicitamente questo rischio e rivaluterà un backup
+> tecnico se la ricostruzione manuale diventerà troppo onerosa.
 
 ### 5.1 DEV
 - **Nessun backup schedulato obbligatorio** (dati sintetici, ricreabili).
 - **Nessun dato DEV viene migrato o copiato in PROD:** PROD partirà da una base pulita e indipendente.
 - Un export DEV è **facoltativo** prima di una migrazione, cancellazione massiva o modifica strutturale: serve solo se il docente vuole conservare dati DEV ancora utili (verifiche, consegne o correzioni di prova). Se tali dati sono sacrificabili, il docente accetta esplicitamente di poterli perdere.
 
-### 5.2 PROD (piano operativo)
-- PROD è aperto; il docente deve ora definire e approvare cadenza, retention e
-  relativi **costi di storage degli export** (gli export occupano spazio su un
-  bucket GCS → costo) prima di affidargli dati non ricostruibili.
-- **Firestore** e **Storage** trattati separatamente.
-- Gli **ZIP/Markdown originali** del materiale didattico restano il **formato portabile**: se conservati dal docente, sono già una copia del contenuto delle lezioni/pool indipendente da Firebase (ma **non** contengono verifiche, consegne, correzioni, studenti — quelli vivono solo in Firestore).
+### 5.2 PROD — procedura documentale scelta
 
-### 5.3 Come fare un export (manuale)
+1. Dopo ogni verifica conclusa e restituita, esporta l'**archivio delle
+   correzioni** (PDF singoli o ZIP multiplo) e il **CSV del Registro
+   Correzioni**.
+2. Dopo modifiche didattiche importanti, esporta il **corso in ZIP**: è la
+   copia portabile di UDA, lezioni e pool.
+3. Apri almeno un PDF/ZIP e il CSV appena prodotti: un download non controllato
+   non è un archivio verificato.
+4. Conserva gli export in **due destinazioni separate**, per esempio PC e uno
+   spazio cloud personale protetto o un supporto esterno.
+5. Gli archivi contengono dati degli studenti: non inserirli nel repository Git,
+   non lasciarli in cartelle pubbliche e limita l'accesso al docente.
+
+Il formato documentale è sufficiente per consultazione, rendicontazione e
+conservazione degli elaborati. Non contiene l'intero stato applicativo, gli
+audit tecnici o tutte le relazioni Firestore e quindi non è importabile come
+restore di SchoolForge.
+
+### 5.3 Export tecnico opzionale
+
+Se in futuro servirà un ripristino applicativo, Firestore e Storage dovranno
+essere esportati separatamente. Questa procedura **non è attiva né schedulata**
+oggi e comporta costi del provider.
+
 - **Firestore — [Console] (via preferita per un docente):** Firebase/GCP Console → Firestore → **Import/Export** → *Export*, scegliendo un **bucket GCS di destinazione** dedicato agli export. In alternativa CLI (richiede `gcloud`, il progetto attivo e un bucket):
   ```
   gcloud firestore export gs://NOME-BUCKET-EXPORT/firestore/AAAA-MM-GG --project schoolforge-dev
@@ -228,16 +253,19 @@ Il piano di rollout/rollback vincolante è nell'[evidenza tecnica](evidenze/hard
   ```
   Sostituisci `NOME-BUCKET-*` con i nomi reali dei bucket dell'ambiente (**non** incollarli nel repository).
 
-### 5.4 Cosa contiene / cosa NON contiene un export
+### 5.4 Cosa contiene / cosa NON contiene un export tecnico
 - **Export Firestore** = documenti (settings, students, classes, programs, verifications, submissions, receipts, corrections, correctionReturns, auditEvents, …). **NON** contiene i file Markdown/pool (quelli sono in Storage) né i PDF (generati al volo nel browser, mai persistiti).
 - **Copia Storage** = i file `.md`/`.pool.md` del repository didattico. **NON** contiene i dati Firestore.
 - Un ripristino completo richiede **entrambi** + coerenza tra loro (§6).
 
 ---
 
-## 6. Ripristino
+## 6. Ripristino tecnico opzionale
 
-> **Nessun RPO/RTO garantito.** Il ripristino dipende dall'esistenza e dalla verifica di un export recente. Questo runbook non promette tempi né perdita-dati massima garantiti.
+> **Non è la strategia operativa attuale.** Questa procedura è applicabile solo
+> se esiste un export tecnico Firestore/Storage. Gli archivi documentali della
+> §5.2 sono consultabili, ma non ricostruiscono il database. Nessun RPO/RTO è
+> garantito.
 
 1. **Prerequisiti:** un export Firestore verificato e/o una copia Storage verificata, con data nota; accesso owner al progetto; `gcloud`/Firebase CLI configurate.
 2. **Scelta dell'ambiente:** conferma con `firebase use` di essere sull'ambiente giusto. **Mai** ripristinare dati di un ambiente nell'altro. Per un **restore drill** usa **DEV**.
@@ -348,7 +376,7 @@ superata, marcatori presenti e nessuna ricevuta.
 - [ ] **Errori:** errori ricorrenti in Cloud Logging / console browser durante l'uso normale?
 - [ ] **Utenti/studenti inattesi:** richieste studente `pending` non riconosciute? account owner corretto?
 - [ ] **Deploy attivo:** la versione servita corrisponde al commit atteso?
-- [ ] **Stato backup previsto:** (PROD, quando attivo) l'ultimo export esiste, ha la data attesa ed è verificato?
+- [ ] **Archivio documentale:** l'ultima verifica conclusa ha archivio correzioni e CSV verificati in due destinazioni? L'ultimo corso modificato ha uno ZIP recente?
 - [ ] **Warning Firebase:** avvisi in Console (quota, fatturazione, deprecazioni)?
 
 > Se una voce è rossa, apri la sezione corrispondente (§4/§7/§8/§9). La checklist mensile serve a **notare presto**, non a risolvere tutto sul momento.

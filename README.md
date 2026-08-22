@@ -115,8 +115,10 @@ Firestore `europe-west8` e Storage/Function gateway `us-central1`; PROD è
 operativo con i servizi principali in `europe-west8` e la coda di chiusura
 forzata in `europe-west3`. Nessun dato DEV è stato migrato. Stato attuale in
 [`documentazione/evidenze/prod-rollout-01.md`](documentazione/evidenze/prod-rollout-01.md);
-la matrice HARD-01C resta lo snapshot storico precedente al provisioning. RPO
-V1: best-effort (export manuale), RTO non garantito. Vedi C-01.
+la matrice HARD-01C resta lo snapshot storico precedente al provisioning. La
+strategia corrente è il backup documentale manuale (archivio correzioni, CSV e
+ZIP corsi in due copie protette), non un backup tecnico ripristinabile; RPO/RTO
+non sono garantiti. Vedi `documentazione/evidenze/ops-backup-01.md`.
 
 ## Prossimo passo
 
