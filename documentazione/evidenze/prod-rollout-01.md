@@ -1,6 +1,6 @@
 # PROD-ROLLOUT-01 — stato operativo di produzione
 
-**Data verifica:** 21 agosto 2026  
+**Data verifica:** 22 agosto 2026  
 **Progetto:** `schoolforge-prod`  
 **Esito:** **PROD operativo**
 
@@ -16,6 +16,12 @@
   evidenza.
 - Firebase Hosting espone `https://schoolforge-prod.web.app`; il 21 agosto
   2026 la pagina ha risposto HTTP 200 con `Cache-Control: no-cache`.
+- Il 22 agosto 2026 il rollout SGW-02C ha aggiornato Hosting e
+  `repositoryGateway` in `europe-west8` su Node.js 22. Lo smoke successivo ha
+  rilevato l'asset `assets/index-Cq_NCfKa.js`, HTTP 200 e
+  `Cache-Control: no-cache`; una richiesta priva di autenticazione a
+  `/api/repository/batch-write` è stata rifiutata con HTTP 401 e codice
+  `unauthenticated`, senza scritture.
 - L'asset JavaScript servito da PROD contiene l'identità `schoolforge-prod` e
   non contiene `schoolforge-dev` né il marcatore di uso emulatori.
 - L'inventario Firebase conferma Functions v2 su Node.js 22: le Functions
@@ -40,5 +46,6 @@ gestiti o schedulati di Firestore/Storage. Un budget Cloud Billing invia avvisi
 ma non costituisce un hard cap.
 
 Il batch-write del Repository Storage Gateway introdotto da SGW-02C è coperto
-da test e CI nella relativa modifica; la presente evidenza non dichiara un
-deploy successivo di quel commit.
+da test e CI ed è distribuito su DEV e PROD. Lo smoke HTTP dimostra routing e
+rifiuto fail-closed; l'importazione ZIP autenticata resta una verifica manuale
+funzionale, perché richiede un account docente e dati controllati.
