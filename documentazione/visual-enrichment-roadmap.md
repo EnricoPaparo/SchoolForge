@@ -1,11 +1,11 @@
 # VISUAL-ENRICHMENT — Arricchimento visivo delle lezioni (contratto e roadmap)
 
-> **Stato: VISUAL-ENRICHMENT-00 implementato come contratto e prototipo statico.**
-> VISUAL-ENRICHMENT-01 e successivi sono **aperti**. **Gate GVISUAL: PENDING.**
+> **Stato: VISUAL-ENRICHMENT-00→02 implementati.**
+> VISUAL-ENRICHMENT-03 e successivi sono **aperti**. **Gate GVISUAL: PENDING.**
 >
-> Questa fase è **esclusivamente documentale e di prototipazione statica**. Non
-> introduce runtime, UI React, Cloud Functions, provider, Firebase, Rules,
-> Storage, dipendenze o chiamate OpenAI. Nessuna immagine reale è stata generata.
+> VE-02 introduce la catena binaria server-side e i relativi contratti, ma resta
+> **non distribuita**: nessuna UI, proiezione studente, chiamata OpenAI reale o
+> deploy. Default runtime `disabled`; `mock` è deterministico e a costo zero.
 >
 > **Prototipo:** [`prototipi/lesson-visual-enrichment.html`](prototipi/lesson-visual-enrichment.html)
 > **Review di fase:** [`evidenze/visual-enrichment-00-review.md`](evidenze/visual-enrichment-00-review.md)
@@ -851,7 +851,7 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 |---|---|---|---|
 | **VISUAL-ENRICHMENT-00** | **Contratto e prototipo.** Decisione architetturale sulla proiezione studente, forma chiusa del manifest, politica di ancoraggio e di perdita dell'ancora, ciclo di vita completo, modello di autorizzazione, idempotenza e cleanup, cost model, confine illustrativo/tecnico, principi di sicurezza congelati, e prototipo statico responsive a dieci stati. | CONCEPT-MAP-02, LESSON-MANUAL-01, SGW-02C, ANNOT-03B | **Implementato come contratto/prototipo.** Nessun runtime. |
 | **VISUAL-ENRICHMENT-01** | **Proposta testuale e contratti.** Nuovo `kind: 'visual_proposal'` in `AiContentRequest`; payload chiuso; prompt dedicato con versione propria; Structured Output a campi chiusi incluso l'esito «nessuna immagine utile»; validazione del `subject`; tipi del manifest e validatore puro fail-closed; risolutore d'ancora puro; test di **non-regressione byte-identica** di pool, lezione e mappa. Nessuna immagine, nessuna UI, nessuna persistenza, nessun deploy. | VE-00 | **Implementato.** Vedi §15.1. Nessuna immagine, UI, persistenza o deploy. |
-| **VISUAL-ENRICHMENT-02** | **Catena binaria completa.** Provider immagini; operazione binaria del gateway; normalizzazione server-side (sniffing MIME, resize, WebP, strip metadati, cap 200 KB, sha256); staging con TTL, replay e cleanup; cost model reale del provider. Nessuna UI, nessuna proiezione studente. | VE-01 | **Aperto.** |
+| **VISUAL-ENRICHMENT-02** | **Catena binaria completa.** Provider immagini; operazione binaria del gateway; normalizzazione server-side (sniffing MIME, resize, WebP, strip metadati, cap 200 KB, sha256); staging con TTL, replay e cleanup; cost model reale del provider. Nessuna UI, nessuna proiezione studente. | VE-01 | **Implementato, non distribuito.** Vedi §15.2. |
 | **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Manifest privato sul `LessonDoc`; promozione atomica; proiezione pubblica in due pezzi; `publicLessonVisuals` e relative Rules; estensione della transazione `setLessonCompleted`; rimozione e cleanup ordinato; export ZIP con binario; eliminazioni lezione/UDA/corso; audit. | VE-02 | **Aperto.** |
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; avviso e azione di riancoraggio; vista studente condizionale; responsive e accessibilità verificate sui componenti reali. | VE-03 | **Aperto.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
@@ -861,8 +861,9 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 
 **Nessuna immagine esiste, e nessuna funzionalità è disponibile.** Questa fase
 aggiunge contratti puri e un quarto kind IA; non c'è UI, non c'è persistenza, non
-c'è provider di immagini e non è stato fatto alcun deploy. VE-02→VE-05 restano
-aperti e **Gate GVISUAL resta PENDING**.
+c'è provider di immagini e non è stato fatto alcun deploy. Questa descrizione
+resta la fotografia della fase VE-01; VE-02 è ora documentata in §15.2, mentre
+VE-03→VE-05 restano aperte e **Gate GVISUAL resta PENDING**.
 
 **Il quarto kind.** `visual_proposal` partecipa esplicitamente a parser chiuso,
 `canonicalRequest`, `inputHash`, `computeOpaqueRunId`,
@@ -877,6 +878,8 @@ rifiuta quelli degli altri tre.
 `hasCurrentContent`, dati studente, classi, etichette, UID, URL, riferimenti
 Storage o hash dichiarati dal client. `sourceBodyHash` sarà calcolato
 **server-side** dall'esatto `lessonBody` quando servirà (VE-03).
+
+#### Dettagli del contratto testuale VE-01
 
 **Quality-only, fail-closed.** `modelProfile` deve essere letteralmente
 `quality`; `economy` produce `invalid_input` nella validazione del payload, cioè
@@ -1013,6 +1016,79 @@ esito «rimuovi»: rinominare un titolo non deve distruggere un asset approvato.
 invariati, la forma canonica dei tre kind non contiene traccia del quarto, e
 prompt, schema e tetti di output di pool, lezione e mappa sono byte-identici.
 Nessuna costante di riferimento è stata aggiornata per far passare un test.
+
+### 15.2 VISUAL-ENRICHMENT-02 — catena binaria implementata
+
+**Callable e modalità.** `aiVisualPreview` e `aiVisualGenerate` sono owner-only e
+accettano esclusivamente `{ requestId, subject }`; proprietà extra e UUID non v4
+sono rifiutati. `AI_VISUAL_MODE` ammette solo `disabled|mock|openai`, con default
+`disabled` e nessun fallback. La preview è read-only: nessun secret binding,
+provider, run, prenotazione, upload o scrittura. `mock` produce un WebP binario
+deterministico, senza chiave e a costo zero. Il binding del secret Firebase
+esistente `OPENAI_API_KEY` appartiene soltanto a `aiVisualGenerate`; `.value()`
+è eseguito solo nel ramo runtime `openai`, dopo autenticazione, validazione,
+lease, prenotazione e transizione `pending`. Secret assente ⇒ errore tipizzato e
+sanitizzato pre-provider, mai fallback a mock.
+
+**Preset server-owned e costo.** Image API con snapshot pinned
+`gpt-image-2-2026-04-21`, `n=1`, `size=1024x1024`, `quality=low`,
+`output_format=webp`, `background=opaque`. Il prompt è esattamente il preambolo
+costante SchoolForge Sketch v1 seguito dal solo `subject` validato. Listino
+standard ufficiale verificato il 22 agosto 2026: testo input **$5/MTok**,
+immagine output **$30/MTok**; il calcolatore ufficiale attribuisce **196 token**
+output al quadrato low, cioè **$0,00588** (arrotondato a $0,006 nella tabella)
+più il testo input. La stima descrive un tentativo; la prenotazione copre due
+tentativi massimi (SDK retry 0, retry applicativo ≤1).
+
+**Byte reali.** Il provider è una porta iniettata. La risposta deve contenere
+esattamente un base64 canonico entro 5 MiB; assenza, molteplicità o base64
+malformato è `billed_unusable`. Il server verifica RIFF/WEBP, chunk e dimensioni
+reali, rifiuta corruzione, animazione e input-bomb, ridimensiona senza upscaling
+al lato lungo ≤1200, ricodifica WebP con la sequenza finita
+`82,74,66,58,50,42`, rimuove EXIF/ICC/XMP, punta a 150 KiB e impone il cap
+rigido **204.800 byte**. Dimensioni, lunghezza e SHA-256 derivano sempre dai byte
+finali. I test esercitano file WebP binari reali con `sharp`, metadati, resize,
+troncamento, flag di animazione e input ad alta entropia.
+
+**Stato e replay.** Il documento server-only `visualRuns/{opaqueRunId}` è
+chiuso e privacy-minimal:
+
+```text
+contractVersion, status(reserved|pending|completed|failed), inputHash,
+config{preset,listino,normalizzatore,qualità/cap}, leaseExecutionId,
+leaseExpiresAt, budget{monthKey,reservationKey,stima/prenotazione/actual/settled},
+image|null{dataUri,width,height,byteLength,sha256,mimeType,styleVersion,
+           webpQuality,normalizationAttempts},
+stagingRef, createdAt, updatedAt, expireAt
+```
+
+Non contiene un campo UID separato, requestId, prompt, subject, lezione, dati
+studente o risposta grezza provider; l'owner UID compare soltanto nel percorso
+obbligatorio `stagingRef`. Il parser richiede chiavi esatte, preset congelato,
+timestamp e
+coerenza stato/costo; per un completed ridecodifica la data URI e riverifica
+contenitore, dimensioni, cap e hash. Il replay restituisce la stessa data URI,
+quindi gli stessi byte, e non richiama provider, normalizzatore, upload o ledger.
+`stagingRef` è esattamente `staging/{ownerUid}/{opaqueRunId}.webp`; Rules negano
+ogni accesso client sia ai run sia allo staging.
+
+**Finestre non atomiche e recovery.** Run+budget sono atomici nella prenotazione;
+`reserved→pending` è una seconda transazione gated dalla lease. Un crash in
+`reserved` libera la prenotazione alla scadenza; un crash dopo `pending` la
+addebita al tetto, perché il provider potrebbe aver fatturato. Provider→
+normalizzazione e normalizzazione→upload non possono essere atomici: il run
+fallisce con settlement noto o conservativo. Upload→finalizzazione è la finestra
+più delicata: un commit di esito ignoto produce `uncertain_state`, non ripete
+provider né upload; run pending e oggetto esatto vengono chiusi dal settlement
+conservativo e dal cleanup TTL. `expireAt` riusa le 24 ore di AIGEN; il trigger
+delete con retry elimina solo lo `stagingRef` validato, considera 404 un successo
+e propaga gli errori infrastrutturali. La policy TTL va attivata nel rollout,
+non in questa PR.
+
+**Perimetro.** Nessun campo su `LessonDoc`/`publicLessons`, nessuna UI e nessuna
+proiezione studente: restano VE-03/04. Questa implementazione non ha effettuato
+chiamate OpenAI reali, non ha letto secret locali e non è stata distribuita.
+
 
 ---
 

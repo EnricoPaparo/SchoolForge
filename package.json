@@ -22,7 +22,8 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "protobufjs",
-      "re2"
+      "re2",
+      "sharp"
     ]
   },
   "devDependencies": {

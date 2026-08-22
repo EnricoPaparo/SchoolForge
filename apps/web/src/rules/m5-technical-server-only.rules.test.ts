@@ -21,6 +21,8 @@ const TECHNICAL_DOCUMENTS = [
   'aiBudgetLedger/2026-07',
   // AIGEN-01 — run tecnici della generazione contenuti IA, server-only.
   'aiContentRuns/opaque-run-1',
+  // VISUAL-ENRICHMENT-02 — byte inline, lease e costi visuali server-only.
+  'visualRuns/opaque-visual-run-1',
 ] as const;
 
 let testEnv: RulesTestEnvironment;
