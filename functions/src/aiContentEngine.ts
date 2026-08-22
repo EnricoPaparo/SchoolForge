@@ -24,6 +24,7 @@ import {
 import { estimateContentCost } from './aiContentCost.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
 import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
+import { validateVisualProposalOutput } from './aiContentVisualProposal.js';
 import { actualCostMicroUsd, normalizeUsageActual } from './aiCorrectionCost.js';
 import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import type { ContentProviderOutcome } from './aiContentProvider.js';
@@ -490,7 +491,12 @@ export async function generateContent(
               conceptMapMarkdown: validateAndComposeConceptMap(providerOutcome.output)
                 .conceptMapMarkdown,
             }
-          : validateLessonProposal(providerOutcome.output);
+          : request.kind === 'visual_proposal'
+            ? // VISUAL-ENRICHMENT-01 — il run persiste l'**esito già validato**:
+              // a differenza della mappa non c'è nulla da comporre, perché la
+              // proposta è essa stessa il documento finale di questa fase.
+              validateVisualProposalOutput(providerOutcome.output)
+            : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({
       opaqueRunId,

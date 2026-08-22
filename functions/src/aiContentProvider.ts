@@ -106,6 +106,21 @@ class MockContentProvider implements ContentProvider {
         priorBillingRisk: false,
       };
     }
+    if (request.kind === 'visual_proposal') {
+      // VISUAL-ENRICHMENT-01 — il mock sceglie deliberatamente `none`: è l'esito
+      // che il contratto considera legittimo e frequente, ed è quello che un
+      // mock non può sbagliare inventando un soggetto plausibile.
+      return {
+        status: 'ok',
+        output: {
+          decision: 'none',
+          reason: 'Esito di riferimento (mock): nessuna illustrazione utile.',
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
+    }
     return {
       status: 'ok',
       output: { body: `## ${request.titolo ?? 'Lezione'}\n\nBozza generata (mock).` },

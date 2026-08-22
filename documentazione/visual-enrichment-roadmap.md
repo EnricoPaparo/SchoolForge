@@ -850,12 +850,112 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | Pacchetto | Sintesi | Dipendenze | Stato |
 |---|---|---|---|
 | **VISUAL-ENRICHMENT-00** | **Contratto e prototipo.** Decisione architetturale sulla proiezione studente, forma chiusa del manifest, politica di ancoraggio e di perdita dell'ancora, ciclo di vita completo, modello di autorizzazione, idempotenza e cleanup, cost model, confine illustrativo/tecnico, principi di sicurezza congelati, e prototipo statico responsive a dieci stati. | CONCEPT-MAP-02, LESSON-MANUAL-01, SGW-02C, ANNOT-03B | **Implementato come contratto/prototipo.** Nessun runtime. |
-| **VISUAL-ENRICHMENT-01** | **Proposta testuale e contratti.** Nuovo `kind: 'visual_proposal'` in `AiContentRequest`; payload chiuso; prompt dedicato con versione propria; Structured Output a campi chiusi incluso l'esito «nessuna immagine utile»; validazione del `subject`; tipi del manifest e validatore puro fail-closed; risolutore d'ancora puro; test di **non-regressione byte-identica** di pool, lezione e mappa. Nessuna immagine, nessuna UI, nessuna persistenza, nessun deploy. | VE-00 | **Aperto.** |
+| **VISUAL-ENRICHMENT-01** | **Proposta testuale e contratti.** Nuovo `kind: 'visual_proposal'` in `AiContentRequest`; payload chiuso; prompt dedicato con versione propria; Structured Output a campi chiusi incluso l'esito «nessuna immagine utile»; validazione del `subject`; tipi del manifest e validatore puro fail-closed; risolutore d'ancora puro; test di **non-regressione byte-identica** di pool, lezione e mappa. Nessuna immagine, nessuna UI, nessuna persistenza, nessun deploy. | VE-00 | **Implementato.** Vedi §15.1. Nessuna immagine, UI, persistenza o deploy. |
 | **VISUAL-ENRICHMENT-02** | **Catena binaria completa.** Provider immagini; operazione binaria del gateway; normalizzazione server-side (sniffing MIME, resize, WebP, strip metadati, cap 200 KB, sha256); staging con TTL, replay e cleanup; cost model reale del provider. Nessuna UI, nessuna proiezione studente. | VE-01 | **Aperto.** |
 | **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Manifest privato sul `LessonDoc`; promozione atomica; proiezione pubblica in due pezzi; `publicLessonVisuals` e relative Rules; estensione della transazione `setLessonCompleted`; rimozione e cleanup ordinato; export ZIP con binario; eliminazioni lezione/UDA/corso; audit. | VE-02 | **Aperto.** |
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; avviso e azione di riancoraggio; vista studente condizionale; responsive e accessibilità verificate sui componenti reali. | VE-03 | **Aperto.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
+
+### 15.1 VISUAL-ENRICHMENT-01 — che cosa è operativo
+
+**Nessuna immagine esiste, e nessuna funzionalità è disponibile.** Questa fase
+aggiunge contratti puri e un quarto kind IA; non c'è UI, non c'è persistenza, non
+c'è provider di immagini e non è stato fatto alcun deploy. VE-02→VE-05 restano
+aperti e **Gate GVISUAL resta PENDING**.
+
+**Il quarto kind.** `visual_proposal` partecipa esplicitamente a parser chiuso,
+`canonicalRequest`, `inputHash`, `computeOpaqueRunId`,
+`computeBudgetReservationKey`, stima, prenotazione, prompt, Structured Output,
+validazione dell'output e replay. Non è veicolato dentro `lesson` né dentro
+`concept_map`: i quattro kind hanno output reciprocamente incompatibili, e ognuno
+rifiuta quelli degli altri tre.
+
+**Payload chiuso.** `kind`, `requestId`, `modelProfile`, `titolo`, `sottotitolo`,
+`difficolta`, `concettiChiave`, `obiettivi`, `udaTitle`, `udaContext`,
+`lessonBody`. Nient'altro è ammesso: niente `teacherGuidance`, `depth`,
+`hasCurrentContent`, dati studente, classi, etichette, UID, URL, riferimenti
+Storage o hash dichiarati dal client. `sourceBodyHash` sarà calcolato
+**server-side** dall'esatto `lessonBody` quando servirà (VE-03).
+
+**Quality-only, fail-closed.** `modelProfile` deve essere letteralmente
+`quality`; `economy` produce `invalid_input` nella validazione del payload, cioè
+prima di provider, stima, prenotazione, run e qualunque scrittura. Il controllo è
+sul letterale e non passa dal parser condiviso del profilo, che accetterebbe
+`economy` come valore valido per gli altri kind.
+
+**Esito: union discriminata chiusa.** Due rami disgiunti — `{ decision: 'none',
+reason }` e `{ decision: 'image', subject, rationale, anchorHeadingText, caption,
+altText }` — con `additionalProperties: false` a ogni livello. Nessun booleano,
+nessun campo nullable, nessuna proprietà condivisa fra i rami: un «nessuna
+immagine» con la didascalia già scritta non è rappresentabile. Nessun prompt
+immagine compare nell'output: quel prompt lo comporrà il server in VE-03.
+
+**Limiti dei campi, in code point Unicode** — non in unità UTF-16, così
+un'emoji fuori dal BMP conta una volta sola:
+
+| Campo | Limite |
+|---|---|
+| `subject` | 400 |
+| `reason` | 600 |
+| `rationale` | 800 |
+| `anchorHeadingText` | 300 |
+| `caption` | 500 |
+| `altText` | 1.000 |
+
+Ogni campo deve essere una stringa non vuota, senza spazi esterni, entro il
+limite, priva di caratteri di controllo, HTML e fence Markdown. **Nessun trim,
+nessun troncamento, nessuna normalizzazione silenziosa:** un valore non canonico
+è rifiutato, non aggiustato.
+
+**Ordine di validazione:** tipo → non vuoto → spazi esterni → limite → markup →
+(per il solo `subject`) filtro dei soggetti fuori contratto. Lo spazio esterno è
+controllato prima del limite perché un valore con spazi in testa è già non
+canonico, e rifiutarlo per lunghezza direbbe al chiamante la cosa sbagliata.
+
+**Filtro del `subject`.** Rifiuta imitazioni di artisti viventi, studi, marchi e
+stili proprietari; persone riconoscibili o identificabili; tentativi di ignorare
+le istruzioni precedenti o di sostituire il preambolo SchoolForge; concetti
+dichiaratamente assenti dalla lezione; testo esteso, loghi, firme e watermark.
+**Il messaggio d'errore non riporta mai il soggetto integrale** — i log di un
+tentativo di injection sono esattamente il posto in cui quel testo non deve
+essere replicato: viene riportata solo la categoria.
+
+**Prompt.** Versione dedicata `AI_VISUAL_PROPOSAL_PROMPT_VERSION =
+'visual-proposal-01-v1'`, distinta da quelle di pool, lezione e mappa, che non
+sono state toccate. Il prompt tratta metadati e corpo come dati, delimita
+`lessonBody` con `fence()`, chiede una sola immagine e testo minimo al suo
+interno, vieta i concetti assenti, chiede caption e alt text sostanziali e
+distinti, e spinge esplicitamente verso `decision: 'none'` quando l'immagine
+sarebbe decorativa, ridondante, imprecisa, non verificabile o meno chiara del
+testo. Il preambolo `schoolforge-sketch/v1` e il prompt del provider immagini
+**non compaiono**: sono fuori scope.
+
+**Manifest e ancoraggio.** `LessonVisualManifest` e `LessonVisualAnchor` sono
+implementati come tipi e validatori puri, a chiavi chiuse, senza correzioni
+automatiche e **senza dipendenze Firebase**. Costanti: `MAX_VISUAL_BYTES =
+204.800`, `MAX_VISUAL_LONG_EDGE = 1200`, `VISUAL_STYLE_VERSION =
+'schoolforge-sketch/v1'`. Il TTL dello staging **riusa** `AI_CONTENT_RUN_TTL_MS`
+invece di duplicarne il valore.
+
+> **Nota sul campo `approvedAt`.** §4 lo dichiara `Timestamp` di Firestore, ma
+> questa fase deve restare priva di dipendenze Firebase: è quindi vincolato
+> **strutturalmente** alla sola forma che serve a validarlo (`toMillis()`). Il
+> `Timestamp` reale la soddisfa, e VE-03 lo legherà al tipo concreto nel punto in
+> cui la persistenza esiste davvero.
+
+**Risolutore d'ancora.** `resolveLessonVisualAnchor(headingSlug,
+presentHeadingSlugs)` restituisce `{ status: 'resolved', headingSlug }` oppure
+`{ status: 'fallback' }`, **per solo confronto esatto**. Nessun fuzzy match,
+nessun prefisso, nessuna similarità, nessun case-insensitive — coerente con §5.3:
+un'illustrazione che riappare sotto un heading «somigliante» insegna una cosa
+falsa, mentre una in fondo alla pagina è solo mal impaginata. Non esiste alcun
+esito «rimuovi»: rinominare un titolo non deve distruggere un asset approvato.
+
+**Non-regressione verificata.** Gli `inputHash` congelati di pool e lezione sono
+invariati, la forma canonica dei tre kind non contiene traccia del quarto, e
+prompt, schema e tetti di output di pool, lezione e mappa sono byte-identici.
+Nessuna costante di riferimento è stata aggiornata per far passare un test.
 
 ---
 

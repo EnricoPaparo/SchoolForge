@@ -13,9 +13,10 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { AI_CONTENT_CONTRACT_VERSION, AI_CONTENT_LIMITS, utf8ByteLength } from './aiContentCore.js';
 import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
+import { isValidStoredVisualProposalOutput } from './aiContentVisualProposal.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
-const RUN_KINDS = new Set(['pool', 'lesson', 'concept_map']);
+const RUN_KINDS = new Set(['pool', 'lesson', 'concept_map', 'visual_proposal']);
 const RUN_STATUSES = new Set(['running', 'completed', 'failed']);
 
 /** Serializza il run con i quattro istanti come `Timestamp` Firestore. */
@@ -84,6 +85,9 @@ function isCoherentCompletedOutput(kind: StoredAiContentRun['kind'], output: unk
   // contenuto dopo). Un documento accettato in replay è così, per costruzione,
   // indistinguibile da uno appena prodotto.
   if (kind === 'concept_map') return isValidStoredConceptMapOutput(o);
+  // VISUAL-ENRICHMENT-01 — un run `visual_proposal` completato deve portare un
+  // esito valido dell'union chiusa, non un output di un altro kind.
+  if (kind === 'visual_proposal') return isValidStoredVisualProposalOutput(o);
   // kind === 'pool'
   if ('body' in o || 'conceptMapMarkdown' in o) return false;
   return Array.isArray(o.questions) && o.questions.length > 0;

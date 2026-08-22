@@ -11,7 +11,12 @@
  * validator runtime (`aiContentValidation`) resta comunque autorevole.
  */
 
-import { buildConceptMapPrompt, buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import {
+  buildConceptMapPrompt,
+  buildLessonPrompt,
+  buildPoolPrompt,
+  buildVisualProposalPrompt,
+} from './aiContentPrompt.js';
 import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
 import type { OpenAiStructuredRequest } from './openAiGrader.js';
 
@@ -74,6 +79,14 @@ export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
 export const CONCEPT_MAP_OUTPUT_TOKENS = 6_000;
 
 /**
+ * VISUAL-ENRICHMENT-01 — la proposta visuale produce pochi campi brevi, ma deve
+ * poter *ragionare* prima di rispondere «nessuna immagine utile»: il tetto
+ * copre il ragionamento, non la lunghezza dell'esito, che resta vincolata
+ * campo per campo dai limiti in code point.
+ */
+export const VISUAL_PROPOSAL_OUTPUT_TOKENS = 3_000;
+
+/**
  * Hard `max_output_tokens` realmente trasmesso al provider per la richiesta: è il
  * **tetto** dell'output fatturabile e la base della componente output della
  * prenotazione.
@@ -88,6 +101,7 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
     );
   }
   if (request.kind === 'concept_map') return CONCEPT_MAP_OUTPUT_TOKENS;
+  if (request.kind === 'visual_proposal') return VISUAL_PROPOSAL_OUTPUT_TOKENS;
   return LESSON_OUTPUT_TOKENS[request.depth];
 }
 
@@ -95,6 +109,26 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
 export function estimateInputTokens(request: AiContentRequest): number {
   if (request.kind === 'concept_map') {
     return Math.ceil(request.lessonBody.length / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
+  }
+  if (request.kind === 'visual_proposal') {
+    // Stessa regola degli altri kind: entra nella stima tutto ciò che entra nel
+    // prompt effettivo, altrimenti una UDA con descrizione lunga costerebbe più
+    // di quanto la stima lascia prevedere.
+    const chars =
+      request.lessonBody.length +
+      request.titolo.length +
+      (request.sottotitolo?.length ?? 0) +
+      request.difficolta.length +
+      request.concettiChiave.join('').length +
+      request.obiettivi.join('').length +
+      request.udaTitle.length +
+      (request.udaContext.descrizione?.length ?? 0) +
+      request.udaContext.competenze.join('').length +
+      request.udaContext.obiettivi.join('').length +
+      request.udaContext.lessons
+        .map((l) => l.titolo.length + (l.sottotitolo?.length ?? 0))
+        .reduce((a, b) => a + b, 0);
+    return Math.ceil(chars / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
   }
   const chars =
     request.kind === 'pool'
@@ -235,6 +269,45 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
  * il server (`aiContentConceptMap`). Nessun campo per l'avvertenza, che è una
  * costante e non un contenuto negoziabile.
  */
+/**
+ * VISUAL-ENRICHMENT-01 — union discriminata **chiusa** dei due esiti.
+ *
+ * `oneOf` con `additionalProperties: false` su entrambi i rami è ciò che rende
+ * i due esiti reciprocamente esclusivi già a livello di schema: il ramo `none`
+ * non ammette `subject`, e il ramo `image` non ammette `reason`. Un booleano con
+ * campi opzionali avrebbe reso rappresentabile — e quindi prima o poi reale — un
+ * «nessuna immagine» con la didascalia già scritta.
+ *
+ * Nessun campo per il prompt immagine: quel prompt lo compone il server (VE-03)
+ * a partire dal solo `subject` validato, e non è negoziabile dal modello.
+ */
+export const VISUAL_PROPOSAL_OUTPUT_SCHEMA: Record<string, unknown> = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['decision', 'reason'],
+      properties: {
+        decision: { type: 'string', enum: ['none'] },
+        reason: { type: 'string' },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['decision', 'subject', 'rationale', 'anchorHeadingText', 'caption', 'altText'],
+      properties: {
+        decision: { type: 'string', enum: ['image'] },
+        subject: { type: 'string' },
+        rationale: { type: 'string' },
+        anchorHeadingText: { type: 'string' },
+        caption: { type: 'string' },
+        altText: { type: 'string' },
+      },
+    },
+  ],
+};
+
 export const CONCEPT_MAP_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -259,13 +332,17 @@ export function buildContentStructuredRequest(
       ? buildPoolPrompt(request)
       : request.kind === 'concept_map'
         ? buildConceptMapPrompt(request)
-        : buildLessonPrompt(request);
+        : request.kind === 'visual_proposal'
+          ? buildVisualProposalPrompt(request)
+          : buildLessonPrompt(request);
   const schema =
     request.kind === 'pool'
       ? buildPoolOutputSchema(request)
       : request.kind === 'concept_map'
         ? CONCEPT_MAP_OUTPUT_SCHEMA
-        : LESSON_OUTPUT_SCHEMA;
+        : request.kind === 'visual_proposal'
+          ? VISUAL_PROPOSAL_OUTPUT_SCHEMA
+          : LESSON_OUTPUT_SCHEMA;
   return {
     model,
     input: [
