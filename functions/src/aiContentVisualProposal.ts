@@ -607,8 +607,54 @@ function assertCanonicalStorageRef(value: unknown, assetId: string): string {
 
 // ─── Heading realmente presenti nella lezione ─────────────────────────────────
 
-/** Apertura/chiusura di un blocco recintato: almeno tre backtick o tre tilde. */
-const FENCE_LINE_RE = /^ {0,3}(`{3,}|~{3,})/;
+/**
+ * Riga di fence: fino a tre spazi di indentazione, poi una sequenza di almeno
+ * tre backtick o tre tilde, poi il resto della riga.
+ *
+ * I tre gruppi servono tutti: il **carattere** e la **lunghezza** della sequenza
+ * decidono se una riga chiude il blocco, e la coda decide se è una chiusura o
+ * solo l'apertura con un info string.
+ */
+const FENCE_LINE_RE = /^ {0,3}((`{3,})|(~{3,}))([^]*)$/;
+/** Dopo una sequenza di chiusura può esserci solo spazio bianco. */
+const ONLY_WHITESPACE_RE = /^[ \t]*$/;
+
+/** Fence aperta: carattere **e** lunghezza della sequenza di apertura. */
+interface OpenFence {
+  char: '`' | '~';
+  length: number;
+}
+
+/**
+ * Legge una riga come possibile fence, restituendo carattere, lunghezza e coda.
+ * `null` se la riga non è una fence.
+ */
+function readFenceLine(line: string): { char: '`' | '~'; length: number; rest: string } | null {
+  const m = FENCE_LINE_RE.exec(line);
+  if (!m) return null;
+  const run = m[1]!;
+  return { char: run[0] as '`' | '~', length: run.length, rest: m[4] ?? '' };
+}
+
+/**
+ * Una riga chiude il blocco **solo** se rispetta tutte le condizioni di
+ * CommonMark: stesso carattere, sequenza **lunga almeno quanto** quella di
+ * apertura, e nient'altro che spazi o tabulazioni dopo di essa.
+ *
+ * Conservare solo il carattere non basta, ed è il difetto che questo controllo
+ * corregge: una fence aperta con quattro backtick veniva chiusa da una riga di
+ * tre backtick, che per Markdown è ancora **contenuto** del blocco. Il testo
+ * successivo tornava così a essere interpretato, e un `# Titolo` dentro un
+ * esempio di codice diventava un heading ancorabile che nella pagina non
+ * esiste.
+ */
+function closesFence(line: string, open: OpenFence): boolean {
+  const fence = readFenceLine(line);
+  if (!fence) return false;
+  return (
+    fence.char === open.char && fence.length >= open.length && ONLY_WHITESPACE_RE.test(fence.rest)
+  );
+}
 /** Heading ATX: da uno a sei `#`, con l'indentazione tollerata da CommonMark. */
 const ATX_LINE_RE = /^ {0,3}(#{1,6})(?:\s+(.*?))?\s*$/;
 /** Sottolineatura Setext: `===` (H1) o `---` (H2). */
@@ -631,22 +677,24 @@ const SETEXT_UNDERLINE_LINE_RE = /^ {0,3}(=+|-+)\s*$/;
 export function extractLessonHeadings(markdown: string): string[] {
   const lines = markdown.split('\n');
   const headings: string[] = [];
-  let fence: string | null = null;
+  let open: OpenFence | null = null;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? '';
 
-    const fenceMatch = FENCE_LINE_RE.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[1]![0]!;
-      if (fence === null) {
-        fence = marker;
-      } else if (marker === fence) {
-        fence = null;
-      }
+    if (open !== null) {
+      // Dentro un blocco: l'unica cosa che conta è se questa riga lo chiude
+      // davvero. Qualunque altra riga — comprese sequenze più corte, di un
+      // carattere diverso, o seguite da testo — resta contenuto.
+      if (closesFence(line, open)) open = null;
       continue;
     }
-    if (fence !== null) continue;
+
+    const fence = readFenceLine(line);
+    if (fence) {
+      open = { char: fence.char, length: fence.length };
+      continue;
+    }
 
     const atx = ATX_LINE_RE.exec(line);
     if (atx) {

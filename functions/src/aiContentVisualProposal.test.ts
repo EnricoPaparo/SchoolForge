@@ -1265,3 +1265,106 @@ describe('controllo relazionale proposta ↔ richiesta', () => {
     expect(parseStoredRunDocument(storedRunFor(withAnyAnchor))!.output).toEqual(withAnyAnchor);
   });
 });
+
+// ─── REVIEW-FIX 2: lunghezza della fence, non solo il carattere ──────────────
+
+describe('fence annidate — la lunghezza della sequenza conta', () => {
+  /*
+   * Il difetto corretto qui: conservando solo il carattere della fence, una
+   * apertura a quattro backtick veniva chiusa da una riga di tre backtick, che
+   * per CommonMark è ancora **contenuto**. Il testo successivo tornava a essere
+   * interpretato, e un `# Titolo` dentro un esempio di codice diventava un
+   * heading ancorabile che nella pagina non esiste.
+   */
+
+  it('quattro backtick con tripli backtick interni: nessun heading estratto', () => {
+    const body = ['````markdown', '```text', '# Questo non è un heading', '```', '````'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual([]);
+  });
+
+  it('quattro tilde con triple tilde interne: nessun heading estratto', () => {
+    const body = ['~~~~markdown', '~~~text', '# Nemmeno questo', '~~~', '~~~~'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual([]);
+  });
+
+  it('apertura a tre e chiusura a quattro: la chiusura è valida', () => {
+    // Più lunga della sequenza di apertura: CommonMark la accetta.
+    const body = ['```', '# Finto', '````', '', '## Vero'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual(['Vero']);
+  });
+
+  it('carattere diverso: la tilde non chiude una fence a backtick', () => {
+    const body = ['```', '# Finto', '~~~~', '# Ancora finto'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual([]);
+  });
+
+  it('sequenza dello stesso carattere ma più corta: non chiude', () => {
+    const body = ['`````', '# Finto', '```', '# Ancora finto'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual([]);
+  });
+
+  it('sequenza abbastanza lunga ma seguita da testo: non chiude', () => {
+    // Una riga di chiusura non può portare un info string.
+    const body = ['```', '# Finto', '``` ancora codice', '# Ancora finto'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual([]);
+  });
+
+  it('spazi e tabulazioni dopo la sequenza non impediscono la chiusura', () => {
+    const body = ['```', '# Finto', '```   ', '', '## Vero'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual(['Vero']);
+    const withTab = ['```', '# Finto', '```\t', '', '## Vero'].join('\n');
+    expect(extractLessonHeadings(withTab)).toEqual(['Vero']);
+  });
+
+  it('un heading reale subito dopo la chiusura corretta è riconosciuto', () => {
+    const body = ['````', '```', '# Finto', '```', '````', '## Reale'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual(['Reale']);
+  });
+
+  it('tre spazi di indentazione sono ancora una fence', () => {
+    const body = ['   ```', '# Finto', '   ```', '', '## Vero'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual(['Vero']);
+  });
+
+  it('con quattro spazi non è più una fence', () => {
+    // Oltre i tre spazi CommonMark non vede più una fence: la riga con il
+    // cancelletto torna a essere un heading ordinario, ed è giusto così.
+    const body = ['    ```', '# Vero heading', '    ```'].join('\n');
+    expect(extractLessonHeadings(body)).toEqual(['Vero heading']);
+  });
+
+  it('una proposta che si ancora al falso heading è rifiutata prima della persistenza', () => {
+    const body = [
+      '````markdown',
+      '```text',
+      '# Questo non è un heading',
+      '```',
+      '````',
+      '',
+      '## Sezione reale',
+    ].join('\n');
+    // Il falso heading non esiste per il renderer, quindi non è ancorabile.
+    expect(() =>
+      assertVisualProposalMatchesRequest(
+        validateVisualProposalOutput(imageOutput({ anchorHeadingText: 'Questo non è un heading' })),
+        body,
+      ),
+    ).toThrow(/non esiste nel corpo/);
+    try {
+      assertVisualProposalMatchesRequest(
+        validateVisualProposalOutput(imageOutput({ anchorHeadingText: 'Questo non è un heading' })),
+        body,
+      );
+      throw new Error('avrebbe dovuto lanciare');
+    } catch (err) {
+      expect((err as AiContentError).code).toBe('provider_invalid_output');
+    }
+    // La sezione reale, invece, è ancorabile.
+    expect(() =>
+      assertVisualProposalMatchesRequest(
+        validateVisualProposalOutput(imageOutput({ anchorHeadingText: 'Sezione reale' })),
+        body,
+      ),
+    ).not.toThrow();
+  });
+});

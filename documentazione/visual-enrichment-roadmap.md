@@ -985,6 +985,16 @@ nessun case folding, nessuno slug, nessun fuzzy matching. Un ancoraggio
 inventato o parafrasato produce `provider_invalid_output` **prima** della prima
 persistenza. `decision: 'none'` non richiede alcun heading.
 
+**Le fence sono riconosciute secondo CommonMark, lunghezza compresa.** Di una
+fence aperta si memorizzano **carattere e lunghezza** della sequenza: una riga
+chiude il blocco solo se usa lo stesso carattere, ha una sequenza lunga almeno
+quanto quella di apertura, e dopo di essa non contiene altro che spazi o
+tabulazioni (indentazione ammessa fino a tre spazi). Conservare il solo
+carattere non basta: una fence aperta con quattro backtick verrebbe chiusa da
+una riga di tre backtick — che per Markdown è ancora **contenuto** — e il testo
+successivo tornerebbe a essere interpretato, rendendo ancorabile un heading che
+nella pagina non esiste.
+
 > **Confine dichiarato.** Il controllo relazionale vive prima della prima
 > persistenza e **non** nel replay, dove la validazione resta strutturale: in
 > replay la richiesta originale non è più disponibile e il corpo della lezione
