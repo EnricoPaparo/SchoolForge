@@ -1,8 +1,12 @@
 # VISUAL-ENRICHMENT — Arricchimento visivo delle lezioni (contratto e roadmap)
 
-> **Stato: VISUAL-ENRICHMENT-00→02 implementati.**
-> VE-03A e VE-03B sono implementati, non distribuiti; VISUAL-ENRICHMENT-03
-> resta **aperto** fino a VE-03C. VE-04/05 sono aperti. **Gate GVISUAL: PENDING.**
+> **Stato: VISUAL-ENRICHMENT-00→03 implementati, non distribuiti.**
+> VE-03A, VE-03B e VE-03C sono chiusi: **VISUAL-ENRICHMENT-03 è chiuso.**
+> VE-04 e VE-05 restano aperti. **Gate GVISUAL: PENDING.**
+>
+> Chiudere VE-03 non rende disponibile alcuna funzionalità al docente: il
+> backend è completo, ma senza la UI di VE-04 non esiste ancora un percorso per
+> generare o approvare un'immagine.
 >
 > VE-02 introduce la catena binaria server-side e i relativi contratti, ma resta
 > **non distribuita**: nessuna UI, proiezione studente, chiamata OpenAI reale o
@@ -763,8 +767,8 @@ migrazione**. Nessun backfill è previsto né necessario.
 
 | Operazione | Comportamento V1 | Note |
 |---|---|---|
-| **Export ZIP** | Include un sidecar `visuals/{assetId}.json` con il manifest; **il binario WebP richiede l'operazione binaria del gateway** e arriva con VISUAL-ENRICHMENT-03. | Il gateway è oggi testuale (`.md`/`.pool.md`). Limite dichiarato, non nascosto: fino a VE-03 l'export documenta l'immagine ma non la trasporta. |
-| **Import ZIP** | **Nessun manifest e nessun binario viene importato.** | Deliberato. L'import è append-only e accetta oggi solo testo validabile; accettare binari arbitrari da un archivio è una superficie di rischio che questa funzione non giustifica. Una lezione importata nasce senza immagine e può riceverne una generandola. |
+| **Export ZIP** | Include `visuals/{assetId}.json` (manifest privato serializzato) **e** `visuals/{assetId}.webp` (byte canonici). Implementato in VE-03C. | Il limite dichiarato in VE-00 è chiuso: l'export non documenta più soltanto l'immagine, la trasporta. I sidecar stanno in una directory di primo livello, così nessun file visuale può occupare il nome di una lezione, di un pool o di un manifest di UDA. |
+| **Import ZIP** | **Nessun manifest e nessun binario viene importato.** `visuals/` è escluso alla lettura dello ZIP, prima e dopo lo strip dell'eventuale cartella wrapper. | Deliberato, e con un motivo tecnico in più scoperto in VE-03C: per `validateImport` una directory di primo livello **è** una UDA, quindi senza l'esclusione esplicita un archivio esportato da SchoolForge verrebbe rifiutato al reimport con `MISSING_UDA_FILE` su una UDA che non esiste. L'import deve ignorarli, non inciamparci. Una lezione importata nasce senza immagine e può riceverne una generandola. |
 | **Eliminazione lezione** | Rimozione completa secondo §6.5, nello stesso flusso che già elimina la lezione. | Nessun percorso separato da ricordare. |
 | **Eliminazione UDA** | Idem per ogni lezione contenuta. | |
 | **Eliminazione corso / import** | I binari cadono dentro il prefisso già cancellato da `deleteImportPrefix` (SGW-02A); i documenti `publicLessonVisuals` sono eliminati insieme alle rispettive `publicLessons`. | L'immagine è **dentro** il prefisso dell'import proprio per questo: nessuna cancellazione aggiuntiva da progettare. |
@@ -853,10 +857,10 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VISUAL-ENRICHMENT-00** | **Contratto e prototipo.** Decisione architetturale sulla proiezione studente, forma chiusa del manifest, politica di ancoraggio e di perdita dell'ancora, ciclo di vita completo, modello di autorizzazione, idempotenza e cleanup, cost model, confine illustrativo/tecnico, principi di sicurezza congelati, e prototipo statico responsive a dieci stati. | CONCEPT-MAP-02, LESSON-MANUAL-01, SGW-02C, ANNOT-03B | **Implementato come contratto/prototipo.** Nessun runtime. |
 | **VISUAL-ENRICHMENT-01** | **Proposta testuale e contratti.** Nuovo `kind: 'visual_proposal'` in `AiContentRequest`; payload chiuso; prompt dedicato con versione propria; Structured Output a campi chiusi incluso l'esito «nessuna immagine utile»; validazione del `subject`; tipi del manifest e validatore puro fail-closed; risolutore d'ancora puro; test di **non-regressione byte-identica** di pool, lezione e mappa. Nessuna immagine, nessuna UI, nessuna persistenza, nessun deploy. | VE-00 | **Implementato.** Vedi §15.1. Nessuna immagine, UI, persistenza o deploy. |
 | **VISUAL-ENRICHMENT-02** | **Catena binaria completa.** Provider immagini; operazione binaria del gateway; normalizzazione server-side (sniffing MIME, resize, WebP, strip metadati, cap 200 KB, sha256); staging con TTL, replay e cleanup; cost model reale del provider. Nessuna UI, nessuna proiezione studente. | VE-01 | **Implementato, non distribuito.** Vedi §15.2. |
-| **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Suddiviso in **A + B + C** (vedi sotto). | VE-02 | **Aperto** finché A, B e C non sono tutti chiusi. |
+| **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Suddiviso in **A + B + C** (vedi sotto). | VE-02 | **Chiuso.** A, B e C sono tutti chiusi. |
 | **VE-03A** | **Ticket, manifest e promozione.** Ticket autorevole candidato↔lezione (`aiVisualCandidates`), binding **prima** della generazione, manifest privato e pubblico, promozione con copia canonica, sostituzione, idempotenza e Rules fondamentali (`publicLessonVisuals`, `publicLessons.visual` solo su lezione svolta). | VE-02 | **Implementato, non distribuito.** |
 | **VE-03B** | **Lifecycle.** `completed` true/false lato server, rimozione dell'immagine, abbandono dello staging, cleanup e cancellazioni lezione/UDA/corso. | VE-03A | **Implementato, non distribuito.** |
-| **VE-03C** | **Chiusura.** Export ZIP con binario, cost model e audit definitivi, integrazioni Emulator end-to-end, chiusura documentale della fase. | VE-03B | **Aperto.** |
+| **VE-03C** | **Chiusura.** Export ZIP con binario, cost model e audit definitivi, integrazioni Emulator end-to-end, chiusura documentale della fase. | VE-03B | **Implementato, non distribuito.** |
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; avviso e azione di riancoraggio; vista studente condizionale; responsive e accessibilità verificate sui componenti reali. | VE-03 | **Aperto.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
@@ -1179,7 +1183,7 @@ accade per il corpo della lezione.
 
 ---
 
-### 15.3 VE-03B implementato — lifecycle e cancellazioni
+### 15.4 VE-03B — lifecycle e cancellazioni
 
 `setLessonCompleted` è ora una callable owner-only con payload chiuso e il
 service web non esegue più la vecchia transazione client. Nel verso `false→true`
@@ -1228,6 +1232,89 @@ massimo byte privati orfani, mai byte pubblici senza una proiezione coerente.
 
 **Stato:** implementato, non distribuito; zero chiamate OpenAI reali. VE-03,
 VE-03C, VE-04 e VE-05 restano aperti; GVISUAL resta PENDING.
+
+---
+
+### 15.5 VE-03C — export binario e chiusura di VE-03
+
+**Il backend è completo; la funzione non è ancora usabile.** Non esiste UI, non
+esiste pulsante, non esiste rendering docente o studente. VE-04 e VE-05 restano
+aperti e Gate GVISUAL resta PENDING.
+
+**L'unica operazione binaria.** `aiVisualExportBatch` è owner-only e non accetta
+percorsi: input chiuso `{ programId, importId, lessonIds }`, tutto il resto
+derivato dal `LessonDoc`. Il gateway SGW-01 resta testuale e non cambia. Una
+rotta binaria del gateway avrebbe significato «leggimi questo oggetto», cioè la
+lettura arbitraria che tutta VE-03 ha evitato.
+
+**Limiti derivati, non scelti.** 8.000.000 byte binari per risposta; da lì e dal
+cap per immagine di VE-02 discende il massimo di 32 lezioni per richiesta
+(32 × 204.800 = 6.553.600 ≤ 8.000.000). Un test ricalcola la disuguaglianza. Il
+client suddivide in batch da 32 con concorrenza 2, deduplica, verifica ordine e
+duplicati per batch **e** sulla ricomposizione complessiva.
+
+**Fail-closed sull'archivio.** Una lezione senza `visual` è il caso normale e
+produce `absent`. Una lezione che *dichiara* un visual non recuperabile o non
+verificabile ferma l'export: un archivio a cui manca in silenzio una figura
+sembra completo, ed è il modo peggiore di perdere un dato. Vale anche per le
+collisioni: `JSZip.file()` sovrascrive senza dire niente, quindi due lezioni con
+lo stesso `assetId` producono un errore invece di un archivio con una figura in
+meno.
+
+**Storage chiuso anche al proprietario.** I binari sotto `**/visuals/**` non
+sono leggibili da alcun client, docente compreso: l'unico percorso è la callable,
+che verifica proprietà, manifest, hash e dimensioni. Non toglie nulla — il
+runtime web non legge Storage da SGW-02C — e chiude una lettura non verificata
+accanto a una verificata. Nota di implementazione: le regole Storage combinano i
+match in OR, quindi un `match` dedicato che negasse non vincerebbe sulla regola
+ricorsiva del repository; l'esclusione sta **dentro** la condizione che concede,
+confrontando `resource.name` perché i wildcard di tipo Path non hanno `matches()`.
+
+**Audit invariato.** Il contratto chiuso resta `lesson.visualApproved` e
+`lesson.visualRemoved`. L'export non ne emette: quello testuale che affianca non
+lo fa, e una traccia solo qui racconterebbe metà della stessa azione.
+
+#### Cost model VE-03 — misurato, non stimato
+
+Numeri prodotti eseguendo ogni operazione contro Firestore e Storage Emulator
+con handle strumentati (`aiVisualCostModel.integration.test.ts`). Provider: mock
+deterministico, costo zero, in ogni riga.
+
+| Operazione | Letture FS | Scritture FS | Read Storage | Write Storage | Delete Storage | Egress |
+|---|---|---|---|---|---|---|
+| bind | 4 | 1 | 0 | 0 | 0 | 0 |
+| promozione | 9 | 3 | 1 | 1 | 1 | 1 immagine |
+| promozione (replay) | 1 | 0 | 0 | 0 | 0 | 0 |
+| completed `true` senza visual | 5 | 4 | 0 | 0 | 0 | 0 |
+| completed `true` con visual | 5 | 4 | 1 | 0 | 0 | 1 immagine |
+| completed `false` | 5 | 4 | 0 | 0 | 0 | 0 |
+| rimozione | 7 | 6 | 0 | 0 | 1 | 0 |
+| abbandono | 4 | 2 | 0 | 0 | 1 | 0 |
+| export, 0 visual (3 lezioni) | 3 | 0 | 0 | 0 | 0 | 0 |
+| export, 1 visual | 1 | 0 | 1 | 0 | 0 | 1 immagine |
+| export, 10 visual | 10 | 0 | 10 | 0 | 0 | 10 immagini |
+| export, 40 visual (2 batch) | 40 | 0 | 40 | 0 | 0 | 40 immagini |
+| delete lezione | 7 | 5 | 0 | 0 | 1 | 0 |
+| delete UDA, 3 lezioni | 21 | 15 | 0 | 0 | 3 | 0 |
+
+Ciò che i numeri dicono, e che i test verificano:
+
+- **una lezione senza immagine non aggiunge operazioni**: l'export di sole
+  lezioni prive di `visual` non tocca Storage e non produce egress;
+- **il costo cresce con le immagini, non con le lezioni**: 0, 1, 10 e 40 visual
+  danno esattamente 0, 1, 10 e 40 letture binarie;
+- **spubblicare e cancellare non leggono byte**: nascondere o eliminare non
+  richiede di scaricare, mai;
+- **il replay è quasi gratuito**: una lettura del registro, zero scritture, zero
+  Storage;
+- **l'export non scrive nulla**: zero scritture Firestore, zero write e delete
+  Storage, nessun audit — ripeterlo è sicuro e dà byte identici;
+- **zero costo passivo**: nessun listener, nessun polling, nessuna lettura per
+  card o per riga. Il codice del gateway non contiene `onSnapshot`,
+  `setInterval` né `.watch(`, e un test lo congela.
+
+L'export è quindi un costo **esclusivamente esplicito**: si paga quando il
+docente lo chiede, in proporzione alle immagini che ha davvero approvato.
 
 ---
 

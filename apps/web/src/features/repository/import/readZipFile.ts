@@ -1,7 +1,21 @@
 import JSZip from 'jszip';
 import type { RawFile } from '../validation/types.js';
 
-const EXCLUDED_PREFIXES = ['__MACOSX/'];
+/**
+ * VE-03C — `visuals/` è escluso alla lettura, e non è una scelta estetica.
+ *
+ * L'export scrive i sidecar delle immagini in una directory di primo livello.
+ * Per `validateImport` una directory di primo livello **è** una UDA: senza
+ * questa esclusione un archivio esportato da SchoolForge, reimportato in
+ * SchoolForge, verrebbe rifiutato con `MISSING_UDA_FILE` su una UDA che non
+ * esiste. L'import deve ignorarli, non inciamparci.
+ *
+ * L'esclusione è anche la forma in cui è scritta la regola di sicurezza: i
+ * binari e i manifest visuali non vengono **mai** importati, e nessun dato
+ * visuale proveniente da un archivio è considerato autorevole. Una lezione
+ * importata nasce senza immagine e può riceverne una generandola.
+ */
+const EXCLUDED_PREFIXES = ['__MACOSX/', 'visuals/'];
 const EXCLUDED_NAMES = ['.DS_Store'];
 
 function isExcluded(rawPath: string): boolean {
@@ -60,7 +74,11 @@ export async function readZipFile(file: File): Promise<RawFile[]> {
   const results = await Promise.all(
     rawPaths.map(async (rawPath): Promise<RawFile | null> => {
       const path = prefix ? rawPath.slice(prefix.length) : rawPath;
-      if (!path || isHidden(path)) return null;
+      // Riesaminato **dopo** lo strip del wrapper: un archivio zippato come
+      // cartella ha `Corso/visuals/x.json`, che supera il filtro iniziale e
+      // diventa `visuals/x.json` solo qui. Controllarlo una volta sola
+      // lascerebbe passare esattamente il caso più comune.
+      if (!path || isHidden(path) || isExcluded(path)) return null;
       const content = await zip.files[rawPath].async('string');
       if (!content) return null;
       return { path, content };
