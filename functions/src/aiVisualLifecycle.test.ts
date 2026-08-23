@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { parseRemovalRecovery } from './aiVisualGateway.js';
 import {
   validateAbandonVisualInput,
   validateCanonicalLessonVisual,
@@ -126,5 +127,59 @@ describe('VE-03B — manifest e recovery', () => {
     expect(visualRemovalId(OWNER, input)).not.toBe(
       visualRemovalId(OWNER, { ...input, lessonId: 'altra' }),
     );
+  });
+
+  it('distingue recovery assente, valido e timestamp irrisolto o pericoloso', () => {
+    const input = { programId: 'p', importId: IMPORT, lessonId: 'l' };
+    const storageRef = canonicalVisualStorageRef({
+      ownerUid: OWNER,
+      importId: IMPORT,
+      udaDir: UDA,
+      assetId: ASSET,
+    });
+    const value = {
+      ownerUid: OWNER,
+      ...input,
+      publicLessonId: 'public-l',
+      udaDir: UDA,
+      assetId: ASSET,
+      storageRef,
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+    };
+    const base = {
+      ownerUid: OWNER,
+      input,
+      publicLessonId: 'public-l',
+      udaDir: UDA,
+    };
+
+    expect(parseRemovalRecovery({ ...base, exists: false, value: undefined })).toEqual({
+      kind: 'absent',
+    });
+    expect(parseRemovalRecovery({ ...base, exists: true, value })).toMatchObject({
+      kind: 'valid',
+      recovery: value,
+    });
+    expect(() =>
+      parseRemovalRecovery({
+        ...base,
+        exists: true,
+        value: { ...value, createdAt: FieldValue.serverTimestamp() },
+      }),
+    ).toThrow(/recovery.*non è valido/);
+
+    const throwingTimestamp = Timestamp.fromMillis(1_700_000_000_000);
+    Object.defineProperty(throwingTimestamp, 'toMillis', {
+      value: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(() =>
+      parseRemovalRecovery({
+        ...base,
+        exists: true,
+        value: { ...value, createdAt: throwingTimestamp },
+      }),
+    ).toThrow(/recovery.*non è valido/);
   });
 });

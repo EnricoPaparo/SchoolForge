@@ -1194,7 +1194,9 @@ URI **prima** della transazione. La transazione rilegge entrambe le lezioni,
 dimostra che completamento, mappa e manifest non sono cambiati e committa flag,
 `completedAt` server-side, mappa, manifest, byte pubblici e audit insieme. Il
 passaggio a `false` non legge Storage, conserva manifest/blob privati e rimuove
-mappa, manifest e byte pubblici nello stesso commit.
+mappa, manifest e byte pubblici nello stesso commit. Mappa e manifest privati
+non sono validati in questo verso: anche se malformati restano invariati, mentre
+il fingerprint del valore grezzo continua a rilevare modifiche concorrenti.
 
 `aiVisualRemove` accetta esattamente `{ programId, importId, lessonId }`;
 `aiVisualAbandon` accetta esattamente `{ requestId }`. La prima rimuove le tre
@@ -1202,6 +1204,12 @@ proiezioni Firestore atomicamente e cancella dopo il commit il solo blob
 canonico verificato. `aiVisualRemovals` conserva il path già verificato quando
 Storage fallisce, permettendo il retry anche senza manifest; il cleanup rifiuta
 di cancellare quel path se nel frattempo un manifest corrente lo usa. La
+forma chiusa è `{ ownerUid, programId, importId, lessonId, publicLessonId,
+udaDir, assetId, storageRef, createdAt }`: identità e segmenti devono coincidere
+col contesto autorevole, l'asset è UUID v4, il timestamp Firestore è risolto e
+il path è esattamente quello canonico ricostruito. Un documento presente ma
+malformato non equivale ad assenza: fallisce `corrupted_state` prima di ogni
+delete Storage, overwrite o audit. La
 seconda elimina il ticket in transazione, scrive una tombstone server-only e
 poi elimina il solo staging deterministico; bind e promozione successivi con lo
 stesso run non sono più autorizzati. `aiVisualCleanupForDelete` integra gli

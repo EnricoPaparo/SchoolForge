@@ -1187,7 +1187,10 @@ verifica fuori transazione i byte WebP canonici e compone la data URI; dentro la
 transazione rilegge identità, stato, mappa e manifest e committa in un solo punto
 lezione privata, proiezione, mappa, manifest, byte e audit. Nel verso
 `true→false` non legge Storage, conserva il lavoro privato e rimuove tutte le
-copie pubbliche. Il replay dello stesso stato non scrive e non duplica audit.
+copie pubbliche. In questo verso mappa e manifest privati non sono interpretati:
+anche se malformati vengono conservati byte per byte, mentre il loro fingerprint
+grezzo continua a proteggere dalle race. Il replay dello stesso stato non scrive
+e non duplica audit.
 
 La rimozione esplicita usa un record server-only `aiVisualRemovals` fra il
 commit Firestore e la delete Storage: un errore lascia soltanto un blob privato
@@ -1199,14 +1202,22 @@ promozione successivi non possono resuscitare il candidato. Le cancellazioni
 lezione/UDA/corso riusano un cleanup bulk; un manifest malformato consente la
 rimozione dei riferimenti Firestore ma non produce alcun path Storage.
 
+Il recovery ha forma chiusa `{ ownerUid, programId, importId, lessonId,
+publicLessonId, udaDir, assetId, storageRef, createdAt }`. Tutti i segmenti sono
+validati senza slash, traversal, spazi esterni o controlli; `assetId` è UUID v4,
+`createdAt` è un `Timestamp` risolto e finito, e `storageRef` deve coincidere
+esattamente col path canonico ricostruito da owner/import/UDA/asset. Documento
+assente, valido e malformato sono tre stati distinti: il terzo produce
+`corrupted_state` prima di delete Storage, overwrite, audit o altre scritture.
+
 | Operazione esplicita | Callable | Firestore | Storage | Provider |
 |---|---:|---:|---:|---:|
 | Marca svolta con visual | 1 | preflight: lezione + proiezione + byte doc; transazione: 2 read + 4 write; 1 audit | 1 read canonica | 0 |
 | Smarca | 1 | preflight: lezione + proiezione + byte doc; transazione: 2 read + 3 delete/update; 1 audit | 0 | 0 |
 | Replay stato già coerente | 1 | lezione + proiezione + byte doc | 0 senza visual; 1 verifica con visual | 0 |
-| Rimuovi visual | 1 | recovery + preflight + 2 read transazionali; 3 rimozioni + recovery + audit; delete recovery | 1 delete esatta | 0 |
+| Rimuovi visual | 1 | 3 read preflight + 2 transazionali + rilettura recovery risolta + safety read; 3 rimozioni + recovery + audit; delete recovery | 1 delete esatta | 0 |
 | Abbandona candidato | 1 | tombstone/ticket/run + 2 read transazionali; ticket delete + tombstone | 1 delete staging esatta | 0 |
-| Cleanup cancellazione | 1 per gruppo (≤100 lezioni) | per lezione: recovery + preflight + 2 read transazionali; rimozioni e recovery solo se necessari | 0/1 delete esatta per manifest valido | 0 |
+| Cleanup cancellazione | 1 per gruppo (≤100 lezioni) | per lezione: 3 read preflight + 2 transazionali; con visual valido anche rilettura recovery risolta + safety read; rimozioni e recovery solo se necessari | 0/1 delete esatta per manifest valido | 0 |
 
 Non esistono listener, polling, scheduler, scansioni passive o nuove chiamate
 provider. Il costo nasce esclusivamente dall'azione esplicita. Le finestre non

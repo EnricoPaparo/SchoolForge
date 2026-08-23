@@ -24,6 +24,7 @@ import {
 import { serializeVisualCandidate } from './aiVisualCandidate.js';
 import { canonicalVisualStorageRef } from './aiVisualManifest.js';
 import { serializeVisualRun, type StoredAiVisualRun } from './aiVisualRunDoc.js';
+import { visualRemovalId } from './aiVisualLifecycle.js';
 import type { BucketLike } from './repositoryGatewayCore.js';
 
 const OWNER = 'lifecycle-owner';
@@ -39,6 +40,7 @@ const PATH = canonicalVisualStorageRef({
   udaDir: UDA,
   assetId: ASSET,
 });
+const PROTECTED_PATH = 'protected/foreign-object.bin';
 
 const emulatorDescribe =
   process.env.FIRESTORE_EMULATOR_HOST && process.env.STORAGE_EMULATOR_HOST
@@ -54,6 +56,7 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
   const lessonRef = () => db.doc(`programs/${PROGRAM}/imports/${IMPORT}/lessons/${LESSON}`);
   const publicRef = () => db.doc(`publicLessons/${PUBLIC}`);
   const publicBytesRef = () => db.doc(`publicLessonVisuals/${PUBLIC}`);
+  const removalRef = () => db.doc(`aiVisualRemovals/${visualRemovalId(OWNER, input)}`);
   const input = { programId: PROGRAM, importId: IMPORT, lessonId: LESSON };
 
   beforeAll(async () => {
@@ -118,6 +121,21 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     return visual;
   }
 
+  function validRecovery(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      ownerUid: OWNER,
+      programId: PROGRAM,
+      importId: IMPORT,
+      lessonId: LESSON,
+      publicLessonId: PUBLIC,
+      udaDir: UDA,
+      assetId: ASSET,
+      storageRef: PATH,
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      ...over,
+    };
+  }
+
   afterEach(async () => {
     for (const name of [
       'auditEvents',
@@ -132,6 +150,11 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     await Promise.all([lessonRef().delete(), publicRef().delete(), publicBytesRef().delete()]);
     try {
       await bucket.file(PATH).delete();
+    } catch {
+      // idempotente
+    }
+    try {
+      await bucket.file(PROTECTED_PATH).delete();
     } catch {
       // idempotente
     }
@@ -261,6 +284,130 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     });
     expect(downloads).toEqual([PATH]);
     expect((await publicBytesRef().get()).exists).toBe(true);
+  });
+
+  it('true → false conserva una mappa privata malformata e mette in sicurezza il pubblico', async () => {
+    await seed();
+    await setLessonCompletedForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...input, completed: true },
+    });
+    const malformedMap = '   \n\t';
+    await lessonRef().update({ conceptMapMarkdown: malformedMap });
+    let storageReads = 0;
+    const guarded: BucketLike = {
+      ...bucket,
+      file() {
+        storageReads += 1;
+        throw new Error('Storage non deve essere raggiunto');
+      },
+    };
+
+    await expect(
+      setLessonCompletedForOwner({
+        db,
+        bucket: guarded,
+        ownerUid: OWNER,
+        input: { ...input, completed: false },
+      }),
+    ).resolves.toEqual({ status: 'completed' });
+
+    const privateLesson = (await lessonRef().get()).data();
+    const projection = (await publicRef().get()).data();
+    expect(privateLesson?.conceptMapMarkdown).toBe(malformedMap);
+    expect(privateLesson?.visual.assetId).toBe(ASSET);
+    expect(privateLesson?.completed).toBe(false);
+    expect(projection?.completed).toBe(false);
+    expect(projection).not.toHaveProperty('conceptMapMarkdown');
+    expect(projection).not.toHaveProperty('visual');
+    expect((await publicBytesRef().get()).exists).toBe(false);
+    expect(storageReads).toBe(0);
+  });
+
+  it('true → false ignora mappa e visual privati entrambi malformati senza usare path', async () => {
+    await seed();
+    await setLessonCompletedForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...input, completed: true },
+    });
+    const malformedMap = { unexpected: 'map' };
+    const malformedVisual = { storageRef: '../arbitrary/foreign.webp', nested: { value: 1 } };
+    await lessonRef().update({
+      conceptMapMarkdown: malformedMap,
+      visual: malformedVisual,
+    });
+    let storageReads = 0;
+    const guarded: BucketLike = {
+      ...bucket,
+      file() {
+        storageReads += 1;
+        throw new Error('Storage non deve essere raggiunto');
+      },
+    };
+
+    await expect(
+      setLessonCompletedForOwner({
+        db,
+        bucket: guarded,
+        ownerUid: OWNER,
+        input: { ...input, completed: false },
+      }),
+    ).resolves.toEqual({ status: 'completed' });
+
+    const privateLesson = (await lessonRef().get()).data();
+    const projection = (await publicRef().get()).data();
+    expect(privateLesson?.conceptMapMarkdown).toEqual(malformedMap);
+    expect(privateLesson?.visual).toEqual(malformedVisual);
+    expect(projection?.completed).toBe(false);
+    expect(projection).not.toHaveProperty('conceptMapMarkdown');
+    expect(projection).not.toHaveProperty('visual');
+    expect((await publicBytesRef().get()).exists).toBe(false);
+    expect(storageReads).toBe(0);
+  });
+
+  it('true → false confronta il fingerprint grezzo anche se la mappa è malformata', async () => {
+    await seed();
+    await setLessonCompletedForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...input, completed: true },
+    });
+    await lessonRef().update({ conceptMapMarkdown: { malformed: 1 } });
+    let storageReads = 0;
+    const guarded: BucketLike = {
+      ...bucket,
+      file() {
+        storageReads += 1;
+        throw new Error('Storage non deve essere raggiunto');
+      },
+    };
+
+    await expect(
+      setLessonCompletedForOwner({
+        db,
+        bucket: guarded,
+        ownerUid: OWNER,
+        input: { ...input, completed: false },
+        beforeTransaction: async () => {
+          await lessonRef().update({ conceptMapMarkdown: { malformed: 2 } });
+        },
+      }),
+    ).rejects.toThrow(/cambiata/);
+
+    expect(storageReads).toBe(0);
+    expect((await lessonRef().get()).data()?.conceptMapMarkdown).toEqual({ malformed: 2 });
+    expect((await publicRef().get()).data()).toMatchObject({
+      completed: true,
+      conceptMapMarkdown: '## Sintesi\n\n- rete',
+      visual: { assetId: ASSET },
+    });
+    expect((await publicBytesRef().get()).exists).toBe(true);
+    expect((await db.collection('auditEvents').get()).size).toBe(1);
   });
 
   it('manifest malformato fallisce prima di leggere un path o scrivere', async () => {
@@ -457,6 +604,120 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     expect((await lessonRef().get()).data()?.visual.assetId).toBe(nextAsset);
     expect((await db.collection('auditEvents').get()).empty).toBe(true);
   });
+
+  const malformedRecoveryCases: Array<
+    [string, (recovery: Record<string, unknown>) => Record<string, unknown>]
+  > = [
+    [
+      'path di un altro owner',
+      (recovery) => ({
+        ...recovery,
+        storageRef: canonicalVisualStorageRef({
+          ownerUid: 'other-owner',
+          importId: IMPORT,
+          udaDir: UDA,
+          assetId: ASSET,
+        }),
+      }),
+    ],
+    [
+      'path di un altro import',
+      (recovery) => ({
+        ...recovery,
+        storageRef: canonicalVisualStorageRef({
+          ownerUid: OWNER,
+          importId: 'other-import',
+          udaDir: UDA,
+          assetId: ASSET,
+        }),
+      }),
+    ],
+    [
+      'path di un altro udaDir',
+      (recovery) => ({
+        ...recovery,
+        storageRef: canonicalVisualStorageRef({
+          ownerUid: OWNER,
+          importId: IMPORT,
+          udaDir: 'uda-99-other',
+          assetId: ASSET,
+        }),
+      }),
+    ],
+    [
+      'assetId divergente dal path',
+      (recovery) => ({ ...recovery, assetId: '99999999-8888-4777-8666-555555555555' }),
+    ],
+    ['segmento traversal', (recovery) => ({ ...recovery, udaDir: '..' })],
+    [
+      'doppio slash',
+      (recovery) => ({ ...recovery, storageRef: PATH.replace(`/${IMPORT}/`, `//${IMPORT}/`) }),
+    ],
+    [
+      'estensione diversa',
+      (recovery) => ({ ...recovery, storageRef: PATH.replace('.webp', '.png') }),
+    ],
+    [
+      'createdAt assente',
+      (recovery) => {
+        const rest = { ...recovery };
+        delete rest.createdAt;
+        return rest;
+      },
+    ],
+    ['createdAt stringa', (recovery) => ({ ...recovery, createdAt: '2026-08-23' })],
+    ['chiave extra', (recovery) => ({ ...recovery, extra: true })],
+    [
+      'chiave mancante',
+      (recovery) => {
+        const rest = { ...recovery };
+        delete rest.publicLessonId;
+        return rest;
+      },
+    ],
+    ['owner divergente', (recovery) => ({ ...recovery, ownerUid: 'other-owner' })],
+    ['controllo nel segmento', (recovery) => ({ ...recovery, publicLessonId: `${PUBLIC}\n` })],
+  ];
+
+  for (const mode of ['rimozione esplicita', 'bulk cleanup'] as const) {
+    it.each(malformedRecoveryCases)(
+      `${mode}: recovery malformato (%s) non legge Storage e non modifica nulla`,
+      async (_label, mutate) => {
+        await seed();
+        const protectedBytes = Buffer.from('oggetto estraneo da non cancellare');
+        await bucket.file(PROTECTED_PATH).save(protectedBytes);
+        await removalRef().set(mutate(validRecovery()));
+        const beforeRecovery = (await removalRef().get()).data();
+        const beforeLesson = (await lessonRef().get()).data();
+        const beforePublic = (await publicRef().get()).data();
+        let storageCalls = 0;
+        const guarded: BucketLike = {
+          ...bucket,
+          file() {
+            storageCalls += 1;
+            throw new Error('Storage non deve essere raggiunto');
+          },
+        };
+        const operation =
+          mode === 'rimozione esplicita'
+            ? removeLessonVisualForOwner({ db, bucket: guarded, ownerUid: OWNER, input })
+            : cleanupVisualArtifactsForDelete({
+                db,
+                bucket: guarded,
+                ownerUid: OWNER,
+                input: { programId: PROGRAM, importId: IMPORT, lessonIds: [LESSON] },
+              });
+
+        await expect(operation).rejects.toThrow(/recovery.*non è valido/);
+        expect(storageCalls).toBe(0);
+        expect((await removalRef().get()).data()).toEqual(beforeRecovery);
+        expect((await lessonRef().get()).data()).toEqual(beforeLesson);
+        expect((await publicRef().get()).data()).toEqual(beforePublic);
+        expect((await db.collection('auditEvents').get()).empty).toBe(true);
+        expect((await bucket.file(PROTECTED_PATH).download())[0]).toEqual(protectedBytes);
+      },
+    );
+  }
 
   it('abbandona il solo staging, impedisce la promozione e gestisce la risposta persa', async () => {
     const requestId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';

@@ -48,6 +48,7 @@ import {
   type StoredVisualCandidate,
 } from './aiVisualCandidate.js';
 import {
+  canonicalVisualStorageRef,
   composePublicLessonVisual,
   projectLessonVisual,
   validateLessonVisualPublicManifest,
@@ -1098,7 +1099,9 @@ export async function setLessonCompletedForOwner(params: {
 }): Promise<{ status: 'completed' | 'replayed' }> {
   const { db, bucket, ownerUid, input } = params;
   const pair = await readLifecyclePair(db, ownerUid, input);
-  const privateMap = assertPrivateMap(pair.lesson.conceptMapMarkdown);
+  // Nascondere dati pubblici non richiede di interpretare la copia privata:
+  // una mappa corrotta blocca la pubblicazione, mai la messa in sicurezza.
+  const privateMap = input.completed ? assertPrivateMap(pair.lesson.conceptMapMarkdown) : undefined;
   const manifest =
     input.completed && pair.lesson.visual !== undefined
       ? validateCanonicalLessonVisual({
@@ -1235,15 +1238,59 @@ export const setLessonCompleted = onCall(
   handleSetLessonCompleted,
 );
 
-interface RemovalRecoveryDoc extends LessonLifecycleInput {
+export interface RemovalRecoveryDoc extends LessonLifecycleInput {
   ownerUid: string;
   publicLessonId: string;
+  udaDir: string;
   storageRef: string;
   assetId: string;
+  createdAt: Timestamp;
 }
 
-function parseRemovalRecovery(value: unknown, ownerUid: string): RemovalRecoveryDoc | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+type RemovalRecoveryDraft = Omit<RemovalRecoveryDoc, 'createdAt'>;
+
+export type RemovalRecoveryState =
+  | { kind: 'absent' }
+  | { kind: 'valid'; recovery: RemovalRecoveryDoc };
+
+function containsRecoveryControl(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) as number;
+    if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) return true;
+  }
+  return false;
+}
+
+function validRecoverySegment(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value === value.trim() &&
+    !value.includes('/') &&
+    value !== '.' &&
+    value !== '..' &&
+    !containsRecoveryControl(value) &&
+    Buffer.byteLength(value, 'utf8') <= 1_500
+  );
+}
+
+function corruptedRemovalRecovery(): never {
+  throw new AiVisualError('corrupted_state', 'Il record di recovery della rimozione non è valido.');
+}
+
+export function parseRemovalRecovery(params: {
+  exists: boolean;
+  value: unknown;
+  ownerUid: string;
+  input: LessonLifecycleInput;
+  publicLessonId: string;
+  udaDir: string;
+}): RemovalRecoveryState {
+  if (!params.exists) return { kind: 'absent' };
+  const { value } = params;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    corruptedRemovalRecovery();
+  }
   const root = value as Record<string, unknown>;
   const keys = [
     'ownerUid',
@@ -1251,25 +1298,51 @@ function parseRemovalRecovery(value: unknown, ownerUid: string): RemovalRecovery
     'importId',
     'lessonId',
     'publicLessonId',
+    'udaDir',
     'storageRef',
     'assetId',
     'createdAt',
   ].sort();
   const actual = Object.keys(root).sort();
-  if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index]))
-    return null;
-  if (root.ownerUid !== ownerUid) return null;
-  for (const key of [
-    'programId',
-    'importId',
-    'lessonId',
-    'publicLessonId',
-    'storageRef',
-    'assetId',
-  ]) {
-    if (typeof root[key] !== 'string' || root[key].length === 0) return null;
+  if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) {
+    corruptedRemovalRecovery();
   }
-  return root as unknown as RemovalRecoveryDoc;
+  for (const key of ['ownerUid', 'programId', 'importId', 'lessonId', 'publicLessonId', 'udaDir']) {
+    if (!validRecoverySegment(root[key])) corruptedRemovalRecovery();
+  }
+  if (
+    root.ownerUid !== params.ownerUid ||
+    root.programId !== params.input.programId ||
+    root.importId !== params.input.importId ||
+    root.lessonId !== params.input.lessonId ||
+    root.publicLessonId !== params.publicLessonId ||
+    root.udaDir !== params.udaDir
+  ) {
+    corruptedRemovalRecovery();
+  }
+  if (!validRecoverySegment(root.assetId) || typeof root.storageRef !== 'string') {
+    corruptedRemovalRecovery();
+  }
+  let expectedStorageRef: string;
+  try {
+    expectedStorageRef = canonicalVisualStorageRef({
+      ownerUid: root.ownerUid as string,
+      importId: root.importId as string,
+      udaDir: root.udaDir as string,
+      assetId: root.assetId as string,
+    });
+  } catch {
+    corruptedRemovalRecovery();
+  }
+  if (root.storageRef !== expectedStorageRef) corruptedRemovalRecovery();
+  if (!(root.createdAt instanceof Timestamp)) corruptedRemovalRecovery();
+  try {
+    const createdAtMs = root.createdAt.toMillis();
+    if (!Number.isFinite(createdAtMs)) corruptedRemovalRecovery();
+  } catch {
+    corruptedRemovalRecovery();
+  }
+  return { kind: 'valid', recovery: root as unknown as RemovalRecoveryDoc };
 }
 
 async function finishRemovalStorageCleanup(params: {
@@ -1309,17 +1382,25 @@ export async function removeLessonVisualForOwner(params: {
   const removalRef = params.db.doc(
     `${VISUAL_REMOVALS}/${visualRemovalId(params.ownerUid, params.input)}`,
   );
-  const existingRecovery = parseRemovalRecovery((await removalRef.get()).data(), params.ownerUid);
-  if (existingRecovery) {
+  const pair = await readLifecyclePair(params.db, params.ownerUid, params.input);
+  const existingSnap = await removalRef.get();
+  const existingRecovery = parseRemovalRecovery({
+    exists: existingSnap.exists,
+    value: existingSnap.data(),
+    ownerUid: params.ownerUid,
+    input: params.input,
+    publicLessonId: pair.publicLessonId,
+    udaDir: pair.udaDir,
+  });
+  if (existingRecovery.kind === 'valid') {
     await finishRemovalStorageCleanup({
       ...params,
       recoveryRef: removalRef,
-      recovery: existingRecovery,
+      recovery: existingRecovery.recovery,
     });
     return { status: 'replayed' };
   }
 
-  const pair = await readLifecyclePair(params.db, params.ownerUid, params.input);
   if (pair.lesson.visual === undefined) return { status: 'replayed' };
   const manifest = validateCanonicalLessonVisual({
     value: pair.lesson.visual,
@@ -1329,10 +1410,11 @@ export async function removeLessonVisualForOwner(params: {
   });
   const fingerprint = lifecycleFingerprint(pair.lesson.visual);
   await params.beforeTransaction?.();
-  const recovery: RemovalRecoveryDoc = {
+  const recovery: RemovalRecoveryDraft = {
     ownerUid: params.ownerUid,
     ...params.input,
     publicLessonId: pair.publicLessonId,
+    udaDir: pair.udaDir,
     storageRef: manifest.storageRef,
     assetId: manifest.assetId,
   };
@@ -1382,11 +1464,21 @@ export async function removeLessonVisualForOwner(params: {
     });
   });
 
+  const committedSnap = await removalRef.get();
+  const committedRecovery = parseRemovalRecovery({
+    exists: committedSnap.exists,
+    value: committedSnap.data(),
+    ownerUid: params.ownerUid,
+    input: params.input,
+    publicLessonId: pair.publicLessonId,
+    udaDir: pair.udaDir,
+  });
+  if (committedRecovery.kind !== 'valid') corruptedRemovalRecovery();
   await finishRemovalStorageCleanup({
     db: params.db,
     bucket: params.bucket,
     recoveryRef: removalRef,
-    recovery,
+    recovery: committedRecovery.recovery,
   });
   return { status: 'removed' };
 }
@@ -1423,7 +1515,8 @@ export async function cleanupVisualArtifactsForDelete(params: {
     input: LessonLifecycleInput;
     pair: Awaited<ReturnType<typeof readLifecyclePair>>;
     fingerprint: string;
-    recovery: RemovalRecoveryDoc | null;
+    recovery: RemovalRecoveryDraft | null;
+    existingRecovery: RemovalRecoveryDoc | null;
     recoveryRef: DocumentReference;
   }> = [];
 
@@ -1436,17 +1529,17 @@ export async function cleanupVisualArtifactsForDelete(params: {
     const recoveryRef = params.db.doc(
       `${VISUAL_REMOVALS}/${visualRemovalId(params.ownerUid, input)}`,
     );
-    const existing = parseRemovalRecovery((await recoveryRef.get()).data(), params.ownerUid);
-    if (existing) {
-      await finishRemovalStorageCleanup({
-        db: params.db,
-        bucket: params.bucket,
-        recoveryRef,
-        recovery: existing,
-      });
-    }
     const pair = await readLifecyclePair(params.db, params.ownerUid, input);
-    let recovery: RemovalRecoveryDoc | null = null;
+    const existingSnap = await recoveryRef.get();
+    const existing = parseRemovalRecovery({
+      exists: existingSnap.exists,
+      value: existingSnap.data(),
+      ownerUid: params.ownerUid,
+      input,
+      publicLessonId: pair.publicLessonId,
+      udaDir: pair.udaDir,
+    });
+    let recovery: RemovalRecoveryDraft | null = null;
     if (pair.lesson.visual !== undefined) {
       try {
         const manifest = validateCanonicalLessonVisual({
@@ -1459,6 +1552,7 @@ export async function cleanupVisualArtifactsForDelete(params: {
           ownerUid: params.ownerUid,
           ...input,
           publicLessonId: pair.publicLessonId,
+          udaDir: pair.udaDir,
           storageRef: manifest.storageRef,
           assetId: manifest.assetId,
         };
@@ -1472,7 +1566,20 @@ export async function cleanupVisualArtifactsForDelete(params: {
       pair,
       fingerprint: lifecycleFingerprint(pair.lesson.visual),
       recovery,
+      existingRecovery: existing.kind === 'valid' ? existing.recovery : null,
       recoveryRef,
+    });
+  }
+
+  // Prima si validano tutti i record del gruppo. Un solo documento malformato
+  // deve fermare il bulk prima di qualunque delete Storage o scrittura.
+  for (const item of prepared) {
+    if (!item.existingRecovery) continue;
+    await finishRemovalStorageCleanup({
+      db: params.db,
+      bucket: params.bucket,
+      recoveryRef: item.recoveryRef,
+      recovery: item.existingRecovery,
     });
   }
 
@@ -1531,11 +1638,21 @@ export async function cleanupVisualArtifactsForDelete(params: {
   let blobs = 0;
   for (const item of prepared) {
     if (!item.recovery) continue;
+    const committedSnap = await item.recoveryRef.get();
+    const committedRecovery = parseRemovalRecovery({
+      exists: committedSnap.exists,
+      value: committedSnap.data(),
+      ownerUid: params.ownerUid,
+      input: item.input,
+      publicLessonId: item.pair.publicLessonId,
+      udaDir: item.pair.udaDir,
+    });
+    if (committedRecovery.kind !== 'valid') corruptedRemovalRecovery();
     await finishRemovalStorageCleanup({
       db: params.db,
       bucket: params.bucket,
       recoveryRef: item.recoveryRef,
-      recovery: item.recovery,
+      recovery: committedRecovery.recovery,
     });
     blobs += 1;
   }
