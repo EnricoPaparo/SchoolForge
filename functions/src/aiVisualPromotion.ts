@@ -358,6 +358,46 @@ export function buildPromotionPlan(params: {
   };
 }
 
+// ─── Impronta del visual precedente ───────────────────────────────────────────
+
+/**
+ * Impronta stabile del valore grezzo di `LessonDoc.visual`, usata per accorgersi
+ * che **un'altra promozione** è passata nel frattempo.
+ *
+ * Serve a un caso preciso: due approvazioni concorrenti sulla stessa lezione.
+ * Senza questo confronto la seconda sovrascriverebbe il manifest della prima
+ * senza saperlo, e — peggio — calcolerebbe il blob da eliminare sul manifest
+ * *che aveva letto lei*, cancellando i byte appena approvati dall'altra.
+ *
+ * Non è un confronto di uguaglianza profonda su dati arbitrari: normalizza i
+ * `Timestamp` in millisecondi e ordina le chiavi, cosi due letture dello stesso
+ * documento producono la stessa stringa. Un valore che non si riesce a
+ * serializzare diventa `unreadable`, che è comunque diverso da `absent` e da
+ * qualunque manifest leggibile: l'unico effetto è un abort in più, mai uno in
+ * meno.
+ */
+export function visualFingerprint(raw: unknown): string {
+  if (raw === undefined || raw === null) return 'absent';
+  try {
+    return stableStringify(raw);
+  } catch {
+    return 'unreadable';
+  }
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  const maybeTimestamp = value as { toMillis?: unknown };
+  if (typeof maybeTimestamp.toMillis === 'function') {
+    return `T${(maybeTimestamp.toMillis as () => number)()}`;
+  }
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+}
+
 // ─── Idempotenza ──────────────────────────────────────────────────────────────
 
 /**
@@ -388,6 +428,74 @@ export interface StoredVisualPromotion {
   storageRef: string;
   createdAtMs: number;
   expireAtMs: number;
+}
+
+const PROMOTION_RECORD_KEYS = [
+  'contractVersion',
+  'ownerUid',
+  'inputHash',
+  'assetId',
+  'storageRef',
+  'createdAtMs',
+  'expireAtMs',
+] as const;
+
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Parser **chiuso** del record di promozione.
+ *
+ * Un cast diretto qui sarebbe la cosa più pericolosa del modulo: questo
+ * documento decide se una richiesta è un replay, e un record malformato letto
+ * come valido restituirebbe al docente un `assetId` che non esiste — oppure,
+ * peggio, verrebbe scambiato per assente e produrrebbe una **seconda**
+ * promozione dello stesso `requestId`, con un secondo asset e un secondo audit.
+ *
+ * Restituisce `null` per «malformato». Chi chiama non deve tradurlo in «fresh»:
+ * un record che c'è ma non si sa leggere è uno stato corrotto, non uno stato
+ * vuoto — ed è l'unica lettura possibile, perché il documento esiste e nessuno
+ * sa che cosa dica.
+ */
+export function parseStoredVisualPromotion(value: unknown): StoredVisualPromotion | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const root = value as Record<string, unknown>;
+
+  const keys = Object.keys(root).sort();
+  const expected = [...PROMOTION_RECORD_KEYS].sort();
+  if (keys.length !== expected.length || keys.some((k, i) => k !== expected[i])) return null;
+  if (root.contractVersion !== 1) return null;
+
+  const { ownerUid, inputHash, assetId, storageRef, createdAtMs, expireAtMs } = root;
+  if (typeof ownerUid !== 'string' || ownerUid.length === 0 || ownerUid !== ownerUid.trim()) {
+    return null;
+  }
+  if (typeof inputHash !== 'string' || !SHA256_HEX_RE.test(inputHash)) return null;
+  if (typeof assetId !== 'string' || !UUID_V4_RE.test(assetId)) return null;
+  if (typeof storageRef !== 'string' || storageRef.length === 0) return null;
+  // Lo `storageRef` non è un'etichetta libera: è la posizione canonica di
+  // **questo** asset. Se non finisce con l'`assetId` che il record dichiara,
+  // i due campi raccontano due cose diverse e nessuna delle due è affidabile.
+  if (!storageRef.endsWith(`/visuals/${assetId}.webp`)) return null;
+  if (
+    typeof createdAtMs !== 'number' ||
+    typeof expireAtMs !== 'number' ||
+    !Number.isFinite(createdAtMs) ||
+    !Number.isFinite(expireAtMs) ||
+    createdAtMs <= 0 ||
+    expireAtMs <= createdAtMs
+  ) {
+    return null;
+  }
+
+  return {
+    contractVersion: 1,
+    ownerUid,
+    inputHash,
+    assetId,
+    storageRef,
+    createdAtMs,
+    expireAtMs,
+  };
 }
 
 export type VisualPromotionReplay =

@@ -131,6 +131,11 @@ service cloud.firestore {
         );
     }
 
+    // --- publicLessonVisuals ↔ publicLessons cross-check (VE-03A) ---
+    function publicLessonOf(publicLessonId) {
+      return get(/databases/$(database)/documents/publicLessons/$(publicLessonId)).data;
+    }
+
     // --- publicLessons active-import helper (HARD-02B-1) ---
     // Cross-document read of the parent program's `activeImportId`. A projection
     // is visible to a student only when its own `importId` equals this value, so
@@ -929,6 +934,18 @@ service cloud.firestore {
     // La scrittura è negata a chiunque, docente compreso: questi documenti
     // nascono solo dalla promozione lato server, che passa dall'Admin SDK e non
     // dalle Rules. Non c'è alcun percorso client che debba poterli creare.
+    //
+    // La lettura non è gated soltanto «come» `publicLessons`: è gated **dalla**
+    // `publicLessons` corrispondente, e le due devono raccontare la stessa
+    // storia. Questi byte sono leggibili solo se la proiezione della lezione
+    // esiste, è svolta, ha un `visual`, e quel `visual` è **questo** asset,
+    // dello stesso corso e dello stesso import.
+    //
+    // Serve a un caso concreto: un documento di byte rimasto indietro — perché
+    // la lezione è stata smarcata, l'immagine sostituita o rimossa, o perché
+    // l'Admin SDK ha scritto qualcosa di sbagliato — non deve restare leggibile
+    // allo studente per il solo fatto di esistere. Le Rules non si fidano della
+    // sincronizzazione: la verificano.
     match /publicLessonVisuals/{publicLessonId} {
       allow read: if isOwner()
         || (
@@ -938,6 +955,12 @@ service cloud.firestore {
                get(/databases/$(database)/documents/programs/$(resource.data.programId))
                  .data.get('classIds', []))
           && !examModeAppliesToClass(myStudentClassId())
+          && exists(/databases/$(database)/documents/publicLessons/$(publicLessonId))
+          && publicLessonOf(publicLessonId).get('completed', false) == true
+          && publicLessonOf(publicLessonId).keys().hasAny(['visual'])
+          && publicLessonOf(publicLessonId).visual.assetId == resource.data.assetId
+          && publicLessonOf(publicLessonId).programId == resource.data.programId
+          && publicLessonOf(publicLessonId).importId == resource.data.importId
         );
       allow create, update, delete: if false;
     }

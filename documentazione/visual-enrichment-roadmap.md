@@ -1154,6 +1154,22 @@ svolta: non nascosta, proprio non scritta. Le Rules lo impongono su
 studente — è negato in scrittura a chiunque, docente compreso, e gated in lettura
 esattamente come `publicLessons`.
 
+**Le corse, e dove vengono decise.** Il preflight non è la verifica: è un
+filtro che evita di pagare copia e transazione per una richiesta già insensata.
+A decidere è la transazione, che rilegge `LessonDoc`, **rideriva** l'id pubblico
+e rilegge `PublicLessonDoc` a quell'indirizzo, ricalcola il `sourceBodyHash` dal
+corpo fresco e rifà ogni controllo di identità, import, corso, UDA e
+svolgimento — tutte le letture prima di qualunque scrittura. Una modifica
+concorrente del corpo pubblico, o una seconda approvazione arrivata nel
+frattempo, producono un errore tipizzato e **zero scritture**.
+
+**Limite dichiarato dell'Emulator.** L'Emulator Storage ignora
+`ifGenerationMatch: 0` e sovrascrive: verificato con una sonda diretta. La
+precondizione è quindi dimostrata su due fronti — un wrapper che la applica
+davvero sopra il bucket reale, e un test che congela il fatto che il call site
+la richieda — perché su GCS vero è quella precondizione a impedire che una
+collisione di percorso cancelli byte di qualcun altro.
+
 **Che cosa resta aperto.** Lifecycle di `completed`, rimozione, abbandono dello
 staging e cancellazioni sono **VE-03B**; export ZIP binario, audit e cost model
 definitivi e integrazioni Emulator end-to-end sono **VE-03C**. Nessuna chiamata

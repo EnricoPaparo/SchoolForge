@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
@@ -6,9 +7,11 @@ import {
   composePrivateManifest,
   computePromotionInputHash,
   headingSlug,
+  parseStoredVisualPromotion,
   reconcileVisualPromotion,
   resolveAnchorSlugInBody,
   validateVisualPromotionInput,
+  visualFingerprint,
   type PromotableRunImage,
   type StoredVisualPromotion,
   type VisualPromotionInput,
@@ -17,6 +20,7 @@ import { canonicalVisualStorageRef } from './aiVisualManifest.js';
 import { VISUAL_STYLE_VERSION } from './aiContentVisualProposal.js';
 import { AiVisualError, sha256Hex } from './aiVisualCore.js';
 import type { StoredVisualCandidate } from './aiVisualCandidate.js';
+import { isStoragePreconditionFailed } from './aiVisualGateway.js';
 
 /**
  * VISUAL-ENRICHMENT-03A — promozione.
@@ -576,5 +580,157 @@ describe('reconcileVisualPromotion', () => {
     expect(
       reconcileVisualPromotion({ existing: stored, ownerUid: 'altro', inputHash: 'hash-1' }),
     ).toEqual({ status: 'conflict' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseStoredVisualPromotion', () => {
+  const record = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    contractVersion: 1,
+    ownerUid: 'owner-uid',
+    inputHash: 'a'.repeat(64),
+    assetId: ASSET_ID,
+    storageRef: manifestFor().storageRef,
+    createdAtMs: 1_700_000_000_000,
+    expireAtMs: 1_700_086_400_000,
+    ...over,
+  });
+
+  it('accetta il record canonico', () => {
+    expect(parseStoredVisualPromotion(record())).toEqual({
+      contractVersion: 1,
+      ownerUid: 'owner-uid',
+      inputHash: 'a'.repeat(64),
+      assetId: ASSET_ID,
+      storageRef: manifestFor().storageRef,
+      createdAtMs: 1_700_000_000_000,
+      expireAtMs: 1_700_086_400_000,
+    });
+  });
+
+  it('rifiuta ciò che non è un oggetto', () => {
+    for (const bad of [null, undefined, 'x', 42, []]) {
+      expect(parseStoredVisualPromotion(bad)).toBeNull();
+    }
+  });
+
+  it('rifiuta chiavi in più o in meno', () => {
+    expect(parseStoredVisualPromotion(record({ extra: 'x' }))).toBeNull();
+    for (const key of Object.keys(record())) {
+      const partial = record();
+      delete partial[key];
+      expect(parseStoredVisualPromotion(partial)).toBeNull();
+    }
+  });
+
+  it('rifiuta una contractVersion diversa', () => {
+    for (const bad of [0, 2, '1', null]) {
+      expect(parseStoredVisualPromotion(record({ contractVersion: bad }))).toBeNull();
+    }
+  });
+
+  it('rifiuta ownerUid e inputHash fuori contratto', () => {
+    for (const bad of ['', ' owner', 'owner ', 42, null]) {
+      expect(parseStoredVisualPromotion(record({ ownerUid: bad }))).toBeNull();
+    }
+    for (const bad of ['', 'corto', 'A'.repeat(64), 'g'.repeat(64), 42]) {
+      expect(parseStoredVisualPromotion(record({ inputHash: bad }))).toBeNull();
+    }
+  });
+
+  it('rifiuta un assetId che non è un UUID v4', () => {
+    for (const bad of ['', 'non-un-uuid', '11111111-2222-3333-4444-555555555555', 42]) {
+      expect(parseStoredVisualPromotion(record({ assetId: bad }))).toBeNull();
+    }
+  });
+
+  /**
+   * `storageRef` e `assetId` devono raccontare la stessa cosa: se il percorso
+   * non finisce con quell'asset, i due campi si contraddicono e nessuno dei due
+   * è affidabile — il replay restituirebbe un id che non corrisponde ai byte.
+   */
+  it('rifiuta uno storageRef non canonico o incoerente con l’assetId', () => {
+    for (const bad of [
+      '',
+      42,
+      'repository/owner/imp/uda/visuals/altro.webp',
+      `repository/owner/imp/uda/${ASSET_ID}.webp`,
+      `${manifestFor().storageRef}.bak`,
+    ]) {
+      expect(parseStoredVisualPromotion(record({ storageRef: bad }))).toBeNull();
+    }
+    expect(
+      parseStoredVisualPromotion(
+        record({ storageRef: manifestFor('99999999-8888-4777-8666-555555555555').storageRef }),
+      ),
+    ).toBeNull();
+  });
+
+  it('rifiuta timestamp non finiti, non positivi o in ordine sbagliato', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, '1700000000000', null]) {
+      expect(parseStoredVisualPromotion(record({ createdAtMs: bad }))).toBeNull();
+      expect(parseStoredVisualPromotion(record({ expireAtMs: bad }))).toBeNull();
+    }
+    // Scadenza non successiva alla creazione: il record non descrive una TTL.
+    expect(parseStoredVisualPromotion(record({ expireAtMs: 1_700_000_000_000 }))).toBeNull();
+    expect(parseStoredVisualPromotion(record({ expireAtMs: 1_699_000_000_000 }))).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('visualFingerprint', () => {
+  it('distingue assente da presente', () => {
+    expect(visualFingerprint(undefined)).toBe('absent');
+    expect(visualFingerprint(null)).toBe('absent');
+    expect(visualFingerprint(manifestFor())).not.toBe('absent');
+  });
+
+  it('è stabile fra due letture dello stesso valore, comunque ordinate', () => {
+    const a = { assetId: ASSET_ID, width: 8, anchor: { placement: 'after-heading', slug: 'x' } };
+    const b = { anchor: { slug: 'x', placement: 'after-heading' }, width: 8, assetId: ASSET_ID };
+    expect(visualFingerprint(a)).toBe(visualFingerprint(b));
+  });
+
+  it('normalizza i Timestamp in millisecondi', () => {
+    const withTs = { approvedAt: { toMillis: () => 1_700_000_000_000 } };
+    const sameTs = { approvedAt: { toMillis: () => 1_700_000_000_000 } };
+    const otherTs = { approvedAt: { toMillis: () => 1_700_000_000_001 } };
+    expect(visualFingerprint(withTs)).toBe(visualFingerprint(sameTs));
+    expect(visualFingerprint(withTs)).not.toBe(visualFingerprint(otherTs));
+  });
+
+  it('cambia se cambia qualunque cosa del manifest', () => {
+    const base = visualFingerprint(manifestFor());
+    expect(visualFingerprint(manifestFor('99999999-8888-4777-8666-555555555555'))).not.toBe(base);
+    expect(visualFingerprint({ ...manifestFor(), caption: 'Altra' })).not.toBe(base);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La precondizione di creazione non è dimostrabile sull'Emulator, che la
+ * ignora: qui viene congelato il fatto che il **call site** la chieda. Senza
+ * questo test, toglierla dal gateway non farebbe fallire nulla — e in
+ * produzione, dove GCS la applica davvero, una collisione di percorso
+ * tornerebbe a sovrascrivere byte altrui in silenzio.
+ */
+describe('copia canonica — precondizione di creazione al call site', () => {
+  const gateway = readFileSync(new URL('./aiVisualGateway.ts', import.meta.url), 'utf8');
+
+  it('ogni save su Storage del gateway porta ifGenerationMatch: 0', () => {
+    const saves = gateway.match(/\.save\(/g) ?? [];
+    const preconditions = gateway.match(/preconditionOpts: \{ ifGenerationMatch: 0 \}/g) ?? [];
+    expect(saves.length).toBeGreaterThan(0);
+    expect(preconditions.length).toBe(saves.length);
+  });
+
+  it('tratta il 412 come precondizione fallita e non come errore generico', () => {
+    expect(isStoragePreconditionFailed({ code: 412 })).toBe(true);
+    for (const other of [{ code: 404 }, { code: 500 }, {}, null, undefined, 'x']) {
+      expect(isStoragePreconditionFailed(other)).toBe(false);
+    }
   });
 });

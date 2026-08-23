@@ -270,29 +270,43 @@ describe('publicLessonVisuals — server-only in scrittura', () => {
 
 describe('publicLessonVisuals — lettura gated come publicLessons', () => {
   it('lo studente della classe legge l’immagine dell’import attivo', async () => {
-    await seed({ publicLesson: projection({ completed: true }), visual: visualDoc() });
+    // La proiezione deve portare anche il manifest: dal review fix i byte sono
+    // leggibili solo se `publicLessons` dichiara che quell'asset è il suo.
+    await seed({
+      publicLesson: projection({ completed: true, visual: VISUAL }),
+      visual: visualDoc(),
+    });
     await assertSucceeds(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
   });
 
   it('il docente proprietario legge sempre', async () => {
-    await seed({ publicLesson: projection({ completed: true }), visual: visualDoc() });
+    await seed({
+      publicLesson: projection({ completed: true, visual: VISUAL }),
+      visual: visualDoc(),
+    });
     await assertSucceeds(getDoc(doc(ownerDb(), 'publicLessonVisuals/l1')));
   });
 
   it('un anonimo non legge mai', async () => {
-    await seed({ publicLesson: projection({ completed: true }), visual: visualDoc() });
+    await seed({
+      publicLesson: projection({ completed: true, visual: VISUAL }),
+      visual: visualDoc(),
+    });
     await assertFails(getDoc(doc(anonDb(), 'publicLessonVisuals/l1')));
   });
 
   it('uno studente di un’altra classe non legge', async () => {
-    await seed({ publicLesson: projection({ completed: true }), visual: visualDoc() });
+    await seed({
+      publicLesson: projection({ completed: true, visual: VISUAL }),
+      visual: visualDoc(),
+    });
     await assertFails(getDoc(doc(otherStudentDb(), 'publicLessonVisuals/l1')));
   });
 
   /** Import superato: la lezione è negata, e l'immagine deve esserlo con lei. */
   it('nega l’immagine di un import non più attivo', async () => {
     await seed({
-      publicLesson: projection({ completed: true }),
+      publicLesson: projection({ completed: true, visual: VISUAL, importId: 'i0' }),
       visual: visualDoc({ importId: 'i0' }),
       program: { activeImportId: 'i1' },
     });
@@ -301,7 +315,7 @@ describe('publicLessonVisuals — lettura gated come publicLessons', () => {
 
   it('nega l’immagine in modalità esame', async () => {
     await seed({
-      publicLesson: projection({ completed: true }),
+      publicLesson: projection({ completed: true, visual: VISUAL }),
       visual: visualDoc(),
       examMode: true,
     });
@@ -310,9 +324,69 @@ describe('publicLessonVisuals — lettura gated come publicLessons', () => {
 
   it('nega l’immagine di un corso inesistente', async () => {
     await seed({
-      publicLesson: projection({ completed: true }),
+      publicLesson: projection({ completed: true, visual: VISUAL, programId: 'p-ignoto' }),
       visual: visualDoc({ programId: 'p-ignoto' }),
     });
     await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+});
+
+/**
+ * VE-03A-REVIEW-FIX — i byte non sono leggibili «perché esistono», ma perché la
+ * proiezione della lezione dice che quell'immagine è la sua.
+ *
+ * Il caso che questo blocco difende è il documento **rimasto indietro**: la
+ * lezione smarcata, l'immagine sostituita o rimossa, o una scrittura sbagliata
+ * dell'Admin SDK. Le Rules non si fidano della sincronizzazione: la verificano.
+ */
+describe('publicLessonVisuals — relazione con PublicLessonDoc', () => {
+  const completedWithVisual = () => projection({ completed: true, visual: VISUAL });
+
+  it('il caso coerente è leggibile', async () => {
+    await seed({ publicLesson: completedWithVisual(), visual: visualDoc() });
+    await assertSucceeds(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+
+  it('nega i byte senza alcuna PublicLessonDoc', async () => {
+    await seed({ publicLesson: null, visual: visualDoc() });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+
+  /** Lezione smarcata dopo l'approvazione: i byte non devono sopravviverle. */
+  it('nega i byte se la lezione non è svolta', async () => {
+    await seed({ publicLesson: projection({ completed: false }), visual: visualDoc() });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+
+  it('nega i byte se la proiezione non ha alcun manifest pubblico', async () => {
+    await seed({ publicLesson: projection({ completed: true }), visual: visualDoc() });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+
+  /** Sostituzione: i byte vecchi non sono più «l'immagine di questa lezione». */
+  it('nega i byte se l’assetId diverge dal manifest pubblico', async () => {
+    await seed({
+      publicLesson: completedWithVisual(),
+      visual: visualDoc({ assetId: '99999999-8888-4777-8666-555555555555' }),
+    });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+
+  it('nega i byte se programId o importId divergono fra i due documenti', async () => {
+    await seed({ publicLesson: completedWithVisual(), visual: visualDoc({ programId: 'p2' }) });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+
+    await testEnv.clearFirestore();
+    await seed({
+      publicLesson: projection({ completed: true, visual: VISUAL, importId: 'i2' }),
+      visual: visualDoc({ importId: 'i1' }),
+    });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessonVisuals/l1')));
+  });
+
+  /** Il docente resta fuori da questo cancello: legge il proprio repository. */
+  it('il docente legge anche un documento rimasto indietro', async () => {
+    await seed({ publicLesson: projection({ completed: false }), visual: visualDoc() });
+    await assertSucceeds(getDoc(doc(ownerDb(), 'publicLessonVisuals/l1')));
   });
 });
