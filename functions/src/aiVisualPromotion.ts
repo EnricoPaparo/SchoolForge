@@ -45,12 +45,18 @@ import {
   type PublicLessonVisualDoc,
 } from './aiVisualManifest.js';
 import {
+  assignLessonHeadingSlugs,
+  canonicalLessonHeadingText,
+  lessonHeadingSlug,
+  type LessonHeadingRef,
+} from '@schoolforge/lesson-contract';
+import {
   MAX_VISUAL_ALT_TEXT_CHARS,
   MAX_VISUAL_ANCHOR_HEADING_CHARS,
   MAX_VISUAL_CAPTION_CHARS,
   VISUAL_STYLE_VERSION,
   codePointLength,
-  extractLessonHeadings,
+  extractAnchorableLessonHeadings,
 } from './aiContentVisualProposal.js';
 
 // ─── Input editoriale ─────────────────────────────────────────────────────────
@@ -149,60 +155,98 @@ export function validateVisualPromotionInput(value: unknown): VisualPromotionInp
 // ─── Slug dell'ancora ─────────────────────────────────────────────────────────
 
 /**
- * Slug deterministico di un heading, con le regole di LESSON-MANUAL-01:
- * normalizzazione NFKD, rimozione dei diacritici, minuscolo, tutto ciò che non è
- * alfanumerico diventa separatore.
+ * L'identità degli heading vive in `@schoolforge/lesson-contract`.
  *
- * **Duplicazione dichiarata.** L'implementazione autorevole per il *rendering*
- * vive in `apps/web`, che Functions non può importare: qui l'algoritmo è
- * riscritto. È un rischio reale — se le due divergessero, l'ancora calcolata
- * qui non troverebbe l'heading là — ed è per questo che i casi sono congelati in
- * un test e che il suffisso progressivo sui duplicati è risolto **contro il
- * corpo reale**, non inventato.
+ * VE-04A aveva allineato le due implementazioni e congelato una tabella
+ * condivisa; il review fix è andato fino in fondo e ne ha eliminata una. Una
+ * tabella dimostra che due implementazioni coincidono **oggi**; un modulo
+ * condiviso rende impossibile che divergano **domani**. Il re-export conserva
+ * l'API per i chiamanti esistenti.
  */
-export function headingSlug(text: string): string {
-  const slug = text
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug;
+export { lessonHeadingSlug as headingSlug };
+
+/**
+ * Elenco degli heading **ancorabili** del corpo, con slug e indice.
+ *
+ * Ancorabili significa livelli 2 e 3: sono gli unici a cui il renderer assegna
+ * un `id`, quindi ancorare a un `#` o a un `####` vorrebbe dire puntare a un
+ * elemento che nella pagina non ha identificatore.
+ */
+export function listAnchorableHeadings(lessonBody: string): LessonHeadingRef[] {
+  return assignLessonHeadingSlugs(
+    extractAnchorableLessonHeadings(lessonBody).map((heading) => ({
+      text: canonicalLessonHeadingText(heading.text),
+      level: heading.level as 2 | 3,
+    })),
+  );
 }
 
 /**
- * Risolve lo slug di un heading **dentro un corpo reale**, applicando il
- * suffisso progressivo dei duplicati come fa il renderer.
+ * Risolve lo slug di un heading **dentro un corpo reale**, per testo.
  *
- * Se il testo non corrisponde a nessun heading del corpo, non si indovina: è un
- * errore. Un'ancora inventata produrrebbe un'immagine che in pagina finisce in
- * coda per un difetto della proposta, non per una scelta del docente.
+ * Usato dalla promozione, dove l'ancora arriva da una proposta del modello e
+ * non da una scelta puntuale del docente: se due heading hanno lo stesso testo
+ * vince il primo, perché non c'è nulla che permetta di distinguerli. Il
+ * riancoraggio, dove la scelta è del docente, usa invece l'indice — vedi
+ * `resolveAnchorByIndex`.
  */
 export function resolveAnchorSlugInBody(
   anchorHeadingText: string,
   lessonBody: string,
 ): { headingSlug: string; headingText: string } {
-  const headings = extractLessonHeadings(lessonBody);
-  const seen = new Map<string, number>();
-  for (const heading of headings) {
-    const base = headingSlug(heading);
-    const count = seen.get(base) ?? 0;
-    seen.set(base, count + 1);
-    const slug = count === 0 ? base : `${base}-${count}`;
-    if (heading === anchorHeadingText) {
-      if (slug.length === 0) {
-        throw new AiVisualError(
-          'invalid_input',
-          'L’heading di ancoraggio non produce uno slug valido.',
-        );
-      }
-      return { headingSlug: slug, headingText: heading };
-    }
-  }
-  throw new AiVisualError(
-    'invalid_input',
-    'L’heading di ancoraggio non esiste nel corpo salvato della lezione.',
+  /*
+   * La proposta conserva il testo sorgente esatto, perché il modello lo copia
+   * dal Markdown (`**Reti**`, `` `Reti` ``, `[Reti](url)`). Il manifest deve
+   * invece contenere il testo visibile e usare lo stesso slug del renderer.
+   * Canonicalizzare qui unisce i due contratti senza riscrivere il run IA e
+   * senza rendere fuzzy il confronto: la proposta è già stata verificata contro
+   * un heading sorgente H2/H3 reale prima della persistenza.
+   */
+  const canonicalAnchorHeadingText = canonicalLessonHeadingText(anchorHeadingText);
+  const match = listAnchorableHeadings(lessonBody).find(
+    (heading) => heading.text === canonicalAnchorHeadingText,
   );
+  if (!match) {
+    throw new AiVisualError(
+      'invalid_input',
+      'L\u2019heading di ancoraggio non esiste nel corpo salvato della lezione.',
+    );
+  }
+  return { headingSlug: match.slug, headingText: match.text };
+}
+
+/**
+ * Risolve l'ancora per **indice**, con il testo come conferma.
+ *
+ * Il solo testo non basta a distinguere due heading identici — e due `## Reti`
+ * nella stessa lezione sono normali. L'indice li distingue; il testo canonico
+ * a quell'indice deve però coincidere **esattamente**, altrimenti significa che
+ * il corpo è cambiato fra la scelta del docente e il commit, e riancorare
+ * userebbe una posizione che non descrive più ciò che il docente ha visto.
+ *
+ * Lo slug non arriva mai dal client: è ricalcolato qui contando tutte le
+ * collisioni precedenti.
+ */
+export function resolveAnchorByIndex(params: {
+  lessonBody: string;
+  anchorHeadingIndex: number;
+  anchorHeadingText: string;
+}): { headingSlug: string; headingText: string } {
+  const headings = listAnchorableHeadings(params.lessonBody);
+  const match = headings[params.anchorHeadingIndex];
+  if (!match) {
+    throw new AiVisualError(
+      'invalid_input',
+      'La sezione scelta non esiste più nel corpo della lezione.',
+    );
+  }
+  if (match.text !== params.anchorHeadingText) {
+    throw new AiVisualError(
+      'invalid_input',
+      'Le sezioni della lezione sono cambiate: riapri il riancoraggio.',
+    );
+  }
+  return { headingSlug: match.slug, headingText: match.text };
 }
 
 // ─── Byte staged ↔ run completato ─────────────────────────────────────────────

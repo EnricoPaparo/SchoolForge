@@ -9,6 +9,8 @@ import {
   headingSlug,
   parseStoredVisualPromotion,
   reconcileVisualPromotion,
+  listAnchorableHeadings,
+  resolveAnchorByIndex,
   resolveAnchorSlugInBody,
   validateVisualPromotionInput,
   visualFingerprint,
@@ -17,7 +19,11 @@ import {
   type VisualPromotionInput,
 } from './aiVisualPromotion.js';
 import { canonicalVisualStorageRef } from './aiVisualManifest.js';
-import { VISUAL_STYLE_VERSION } from './aiContentVisualProposal.js';
+import {
+  VISUAL_STYLE_VERSION,
+  assertVisualProposalMatchesRequest,
+  validateVisualProposalOutput,
+} from './aiContentVisualProposal.js';
 import { AiVisualError, sha256Hex } from './aiVisualCore.js';
 import type { StoredVisualCandidate } from './aiVisualCandidate.js';
 import { isStoragePreconditionFailed } from './aiVisualGateway.js';
@@ -30,10 +36,9 @@ import { isStoragePreconditionFailed } from './aiVisualGateway.js';
  *
  * 1. **La proiezione pubblica esiste se e solo se la lezione è svolta.** Non
  *    «viene nascosta»: non esiste proprio.
- * 2. **Lo slug dell'ancora è congelato.** L'algoritmo è duplicato rispetto a
- *    `apps/web` per un vincolo di import reale; se le due implementazioni
- *    divergessero, l'immagine finirebbe nel posto sbagliato in silenzio. Questi
- *    casi sono il contratto scritto di quella duplicazione.
+ * 2. **Lo slug dell'ancora è congelato.** Web e Functions usano lo stesso
+ *    helper di `@schoolforge/lesson-contract`: questi casi difendono il confine
+ *    completo dalla proposta sorgente al manifest canonico.
  */
 
 const ASSET_ID = '11111111-2222-4333-8444-555555555555';
@@ -239,7 +244,7 @@ describe('headingSlug — casi congelati', () => {
     ['A—B', 'a-b'],
     ['CAPS LOCK', 'caps-lock'],
     ['già/però', 'gia-pero'],
-    ['---', ''],
+    ['---', 'sezione'],
     ['🌱 solo emoji', 'solo-emoji'],
   ];
   for (const [text, expected] of cases) {
@@ -296,8 +301,21 @@ describe('resolveAnchorSlugInBody', () => {
     expect(() => resolveAnchorSlugInBody('Inesistente', body)).toThrow(/non esiste nel corpo/);
   });
 
-  it('rifiuta un heading che esiste ma non produce slug', () => {
-    expect(() => resolveAnchorSlugInBody('---', '# ---\n')).toThrow(/slug valido/);
+  /**
+   * Un heading senza caratteri alfanumerici non produce più uno slug vuoto: il
+   * renderer gli assegna `sezione`, e il server fa lo stesso. Resta ancorabile
+   * solo se è di livello 2 o 3, perché sono gli unici a ricevere un `id`.
+   */
+  it('assegna il fallback «sezione» come il renderer', () => {
+    expect(resolveAnchorSlugInBody('---', '## ---\n')).toEqual({
+      headingSlug: 'sezione',
+      headingText: '---',
+    });
+  });
+
+  /** Un `#` di primo livello non riceve `id`: ancorarvisi sarebbe inventare. */
+  it('non ancora a un heading di livello 1', () => {
+    expect(() => resolveAnchorSlugInBody('Titolo', '# Titolo\n')).toThrow(/non esiste nel corpo/);
   });
 
   /** L'ancora deve venire dal testo, non da un blocco di codice. */
@@ -309,6 +327,38 @@ describe('resolveAnchorSlugInBody', () => {
 
   it('rifiuta qualunque ancora su un corpo senza heading', () => {
     expect(() => resolveAnchorSlugInBody('Qualcosa', 'solo testo')).toThrow(/non esiste/);
+  });
+
+  /**
+   * Regressione del contratto completo: la proposta conserva il Markdown
+   * sorgente esatto, la promozione produce invece testo e slug visibili. Prima
+   * di questo test la prima metà passava e la seconda falliva.
+   */
+  it.each([
+    ['## **Reti**', '**Reti**'],
+    ['## *Reti*', '*Reti*'],
+    ['## `Reti`', '`Reti`'],
+    ['## [Reti](https://esempio.it)', '[Reti](https://esempio.it)'],
+  ])('proposta → promozione converge per un H2 formattato: %s', (heading, sourceText) => {
+    const lessonBody = `${heading}\n\nTesto.\n`;
+    const proposal = assertVisualProposalMatchesRequest(
+      validateVisualProposalOutput({
+        decision: 'image',
+        subject: 'Schema semplice delle reti',
+        rationale: 'Mostra la relazione fra i nodi.',
+        anchorHeadingText: sourceText,
+        caption: 'I nodi di una rete.',
+        altText: 'Tre nodi collegati fra loro.',
+      }),
+      lessonBody,
+    );
+
+    expect(proposal.decision).toBe('image');
+    if (proposal.decision !== 'image') throw new Error('proposta inattesa');
+    expect(resolveAnchorSlugInBody(proposal.anchorHeadingText, lessonBody)).toEqual({
+      headingSlug: 'reti',
+      headingText: 'Reti',
+    });
   });
 });
 
@@ -732,5 +782,167 @@ describe('copia canonica — precondizione di creazione al call site', () => {
     for (const other of [{ code: 404 }, { code: 500 }, {}, null, undefined, 'x']) {
       expect(isStoragePreconditionFailed(other)).toBe(false);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * VE-04A — **la tabella condivisa con il renderer**.
+ *
+ * VE-03A congelava i casi di questa implementazione, ma solo di questa: nessuno
+ * aveva confrontato le due metà della duplicazione dichiarata, e non
+ * coincidevano su apostrofi e duplicati — cioè su due forme che in italiano
+ * capitano continuamente. Questa tabella è ora la **stessa** su entrambi i lati:
+ * il gemello vive in `apps/web/src/components/__tests__/lessonHeadingSlug.test.ts`
+ * e confronta gli stessi ingressi con le stesse uscite.
+ *
+ * Se qualcuno cambia uno dei due, uno dei due test fallisce.
+ */
+export const SHARED_HEADING_SLUG_CASES: Array<[string, string]> = [
+  ['La fotosintesi', 'la-fotosintesi'],
+  ["L'acqua", 'lacqua'],
+  ['L’energia', 'lenergia'],
+  ['Perché è così?', 'perche-e-cosi'],
+  ['Città e società', 'citta-e-societa'],
+  ['  Spazi   multipli  ', 'spazi-multipli'],
+  ['1. Introduzione', '1-introduzione'],
+  ['A—B', 'a-b'],
+  ['CAPS LOCK', 'caps-lock'],
+  ['---', 'sezione'],
+  ['\u{1F331} solo emoji', 'solo-emoji'],
+];
+
+describe('headingSlug — tabella condivisa con il renderer', () => {
+  for (const [text, expected] of SHARED_HEADING_SLUG_CASES) {
+    it(`«${text}» → «${expected}»`, () => {
+      expect(headingSlug(text)).toBe(expected);
+    });
+  }
+
+  /** L'apostrofo sparisce, non diventa un separatore. */
+  it('elimina gli apostrofi invece di trasformarli in trattini', () => {
+    expect(headingSlug("L'acqua")).toBe('lacqua');
+    expect(headingSlug('L\u2019acqua')).toBe('lacqua');
+    expect(headingSlug("L'acqua")).not.toContain('-');
+  });
+});
+
+describe('resolveAnchorSlugInBody — numerazione dei duplicati', () => {
+  const body = ['## Reti', 'a', '## Reti', 'b', '## Reti', 'c'].join('\n');
+
+  /**
+   * Il renderer numera dal **2**: `reti`, `reti-2`, `reti-3`. Numerare dal 1
+   * avrebbe fatto puntare l'ancora al duplicato sbagliato.
+   */
+  it('la prima occorrenza vince lo slug nudo', () => {
+    expect(resolveAnchorSlugInBody('Reti', body).headingSlug).toBe('reti');
+  });
+
+  it('numera i duplicati come il renderer, a partire da -2', () => {
+    const occurrences = ['## Uno', '## Reti', '## Reti'].join('\n');
+    expect(resolveAnchorSlugInBody('Uno', occurrences).headingSlug).toBe('uno');
+    // La risoluzione restituisce sempre la **prima** occorrenza del testo, ma
+    // il contatore avanza come nel renderer: è la numerazione a dover
+    // coincidere, non l'occorrenza scelta.
+    expect(resolveAnchorSlugInBody('Reti', occurrences).headingSlug).toBe('reti');
+  });
+
+  it('ancora a un heading di livello 3 come a uno di livello 2', () => {
+    expect(resolveAnchorSlugInBody('Dettaglio', '## Reti\n\n### Dettaglio\n').headingSlug).toBe(
+      'dettaglio',
+    );
+  });
+
+  /** Livelli 1, 4, 5 e 6 non ricevono `id`: non sono ancorabili. */
+  it('ignora i livelli che il renderer non identifica', () => {
+    for (const markup of ['# Titolo', '#### Titolo', '##### Titolo', '###### Titolo']) {
+      expect(() => resolveAnchorSlugInBody('Titolo', `${markup}\n`)).toThrow(/non esiste/);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('listAnchorableHeadings e resolveAnchorByIndex', () => {
+  const body = [
+    '# Titolo di primo livello',
+    '',
+    '## **Reti**',
+    '',
+    'a',
+    '',
+    '## Reti',
+    '',
+    'b',
+    '',
+    '### `Dettaglio`',
+    '',
+    'c',
+    '',
+    '#### Troppo profondo',
+  ].join('\n');
+
+  /** Solo H2/H3, testo canonicalizzato, slug numerati come nel DOM. */
+  it('elenca gli heading ancorabili con testo canonico e slug', () => {
+    expect(listAnchorableHeadings(body)).toEqual([
+      { index: 0, text: 'Reti', slug: 'reti', level: 2 },
+      { index: 1, text: 'Reti', slug: 'reti-2', level: 2 },
+      { index: 2, text: 'Dettaglio', slug: 'dettaglio', level: 3 },
+    ]);
+  });
+
+  it('la seconda occorrenza è realmente riancorabile a -2', () => {
+    expect(
+      resolveAnchorByIndex({ lessonBody: body, anchorHeadingIndex: 1, anchorHeadingText: 'Reti' }),
+    ).toEqual({ headingSlug: 'reti-2', headingText: 'Reti' });
+  });
+
+  it('la prima occorrenza resta lo slug nudo', () => {
+    expect(
+      resolveAnchorByIndex({ lessonBody: body, anchorHeadingIndex: 0, anchorHeadingText: 'Reti' }),
+    ).toEqual({ headingSlug: 'reti', headingText: 'Reti' });
+  });
+
+  it('rifiuta un indice fuori range', () => {
+    for (const index of [3, 99]) {
+      expect(() =>
+        resolveAnchorByIndex({
+          lessonBody: body,
+          anchorHeadingIndex: index,
+          anchorHeadingText: 'Reti',
+        }),
+      ).toThrow(/non esiste più/);
+    }
+  });
+
+  /**
+   * Indice valido ma testo divergente: il corpo è cambiato fra la scelta del
+   * docente e il commit, e quella posizione non descrive più ciò che ha visto.
+   */
+  it('rifiuta un indice valido con testo divergente', () => {
+    expect(() =>
+      resolveAnchorByIndex({
+        lessonBody: body,
+        anchorHeadingIndex: 0,
+        anchorHeadingText: 'Topologie',
+      }),
+    ).toThrow(/sono cambiate/);
+  });
+
+  it('il confronto è sul testo canonico, non sul Markdown grezzo', () => {
+    expect(() =>
+      resolveAnchorByIndex({
+        lessonBody: body,
+        anchorHeadingIndex: 0,
+        anchorHeadingText: '**Reti**',
+      }),
+    ).toThrow(/sono cambiate/);
+  });
+
+  it('ignora i livelli che il renderer non identifica', () => {
+    const texts = listAnchorableHeadings(body).map((h) => h.text);
+    expect(texts).not.toContain('Titolo di primo livello');
+    expect(texts).not.toContain('Troppo profondo');
   });
 });

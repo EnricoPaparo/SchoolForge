@@ -1177,14 +1177,57 @@ describe('controllo relazionale proposta ↔ richiesta', () => {
     ).not.toThrow();
   });
 
-  it('accetta un heading Setext se il corpo lo usa', () => {
-    const setext = 'Evaporazione\n============\n\ntesto\n';
+  it('accetta un heading Setext H2 se il corpo lo usa', () => {
+    const setext = 'Evaporazione\n------------\n\ntesto\n';
     expect(() =>
       assertVisualProposalMatchesRequest(
         validateVisualProposalOutput(imageOutput({ anchorHeadingText: 'Evaporazione' })),
         setext,
       ),
     ).not.toThrow();
+  });
+
+  /**
+   * Il prompt chiede di copiare il testo sorgente alla lettera. La sintassi
+   * inline resta quindi nel run e verrà tolta soltanto durante la promozione,
+   * quando nasce il manifest destinato al renderer.
+   */
+  it.each([
+    ['## **Reti**', '**Reti**'],
+    ['## *Reti*', '*Reti*'],
+    ['## `Reti`', '`Reti`'],
+    ['## [Reti](https://esempio.it)', '[Reti](https://esempio.it)'],
+  ])('accetta il testo sorgente esatto di un H2 formattato: %s', (heading, anchor) => {
+    expect(() =>
+      assertVisualProposalMatchesRequest(
+        validateVisualProposalOutput(imageOutput({ anchorHeadingText: anchor })),
+        `${heading}\n\nTesto.\n`,
+      ),
+    ).not.toThrow();
+  });
+
+  it('rifiuta H1 e H4 prima della persistenza: il renderer non assegna loro un id', () => {
+    const body = '# Primo livello\n\n#### Quarto livello\n';
+    for (const anchorHeadingText of ['Primo livello', 'Quarto livello']) {
+      try {
+        assertVisualProposalMatchesRequest(
+          validateVisualProposalOutput(imageOutput({ anchorHeadingText })),
+          body,
+        );
+        throw new Error('avrebbe dovuto lanciare');
+      } catch (err) {
+        expect((err as AiContentError).code).toBe('provider_invalid_output');
+      }
+    }
+  });
+
+  it('rifiuta un H2 che non ha testo visibile dopo la canonicalizzazione', () => {
+    expect(() =>
+      assertVisualProposalMatchesRequest(
+        validateVisualProposalOutput(imageOutput({ anchorHeadingText: '***' })),
+        '## ***\n',
+      ),
+    ).toThrow(/non esiste nel corpo/);
   });
 
   it('rifiuta un heading inesistente o parafrasato', () => {

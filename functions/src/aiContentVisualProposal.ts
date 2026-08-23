@@ -25,6 +25,7 @@
  */
 
 import { AiContentError, AI_CONTENT_RUN_TTL_MS, timestampToMillis } from './aiContentCore.js';
+import { canonicalLessonHeadingText } from '@schoolforge/lesson-contract';
 
 // ─── Limiti ───────────────────────────────────────────────────────────────────
 
@@ -675,8 +676,28 @@ const SETEXT_UNDERLINE_LINE_RE = /^ {0,3}(=+|-+)\s*$/;
  * resta poi rigorosamente esatto.
  */
 export function extractLessonHeadings(markdown: string): string[] {
+  return extractLessonHeadingsDetailed(markdown).map((heading) => heading.text);
+}
+
+/** Un heading del corpo, con il livello che il renderer userà davvero. */
+export interface LessonHeadingOccurrence {
+  text: string;
+  /** 1–6 per ATX; 1 per Setext `===`, 2 per Setext `---`. */
+  level: number;
+}
+
+/**
+ * Stessa estrazione, con il **livello**.
+ *
+ * Serve all'ancoraggio e non alla proposta: il renderer di LESSON-MANUAL-01
+ * assegna un `id` soltanto agli heading di livello 2 e 3, quindi ancorare a un
+ * `#` o a un `####` significherebbe puntare a un elemento che nella pagina non
+ * ha alcun identificatore. `extractLessonHeadings` resta la vista testuale di
+ * questa funzione, byte per byte come prima.
+ */
+export function extractLessonHeadingsDetailed(markdown: string): LessonHeadingOccurrence[] {
   const lines = markdown.split('\n');
-  const headings: string[] = [];
+  const headings: LessonHeadingOccurrence[] = [];
   let open: OpenFence | null = null;
 
   for (let i = 0; i < lines.length; i += 1) {
@@ -700,19 +721,39 @@ export function extractLessonHeadings(markdown: string): string[] {
     if (atx) {
       // Sequenza di chiusura opzionale: «## Titolo ##» ha per testo «Titolo».
       const text = (atx[2] ?? '').replace(/\s+#+\s*$/, '').trim();
-      if (text.length > 0) headings.push(text);
+      if (text.length > 0) headings.push({ text, level: atx[1]!.length });
       continue;
     }
 
     // Setext: la riga corrente è il testo, la successiva la sottolineatura.
     const next = lines[i + 1];
     if (next !== undefined && line.trim().length > 0 && SETEXT_UNDERLINE_LINE_RE.test(next)) {
-      headings.push(line.trim());
+      headings.push({ text: line.trim(), level: next.trim().startsWith('=') ? 1 : 2 });
       i += 1;
     }
   }
 
   return headings;
+}
+
+/**
+ * Heading che il renderer può davvero usare come ancora visuale.
+ *
+ * La proposta vede il testo sorgente esatto (compresi eventuali marcatori
+ * inline), perché il prompt chiede al provider di copiarlo alla lettera. La
+ * selezione è però la stessa del renderer: soltanto H2/H3 e mai un titolo che,
+ * tolta la sintassi, non contiene alcun testo visibile.
+ *
+ * Tenere questo filtro accanto all'estrattore evita la divergenza precedente:
+ * una proposta poteva scegliere H1/H4 e superare il controllo relazionale, per
+ * poi essere rifiutata soltanto durante la promozione.
+ */
+export function extractAnchorableLessonHeadings(markdown: string): LessonHeadingOccurrence[] {
+  return extractLessonHeadingsDetailed(markdown).filter(
+    (heading) =>
+      (heading.level === 2 || heading.level === 3) &&
+      canonicalLessonHeadingText(heading.text).length > 0,
+  );
 }
 
 /**
@@ -725,10 +766,11 @@ export function extractLessonHeadings(markdown: string): string[] {
  * coda al corpo per un difetto della proposta e non per una modifica del docente
  * — cioè il fallback di §5.3 verrebbe imboccato dalla porta sbagliata.
  *
- * Il confronto è **esatto**: nessun trim aggiuntivo, nessun case folding, nessuno
- * slug, nessun fuzzy matching. «Evaporazione» ed «evaporazione» sono due cose
- * diverse, e indovinare quale intendesse il modello è esattamente ciò che questo
- * contratto rifiuta di fare.
+ * Il confronto è **esatto sul testo sorgente**: nessun trim aggiuntivo, nessun
+ * case folding, nessuno slug, nessun fuzzy matching. Se il titolo è
+ * `## **Reti**`, il provider deve restituire `**Reti**`, come gli chiede il
+ * prompt. La canonicalizzazione avviene più tardi, al confine della promozione,
+ * quando il manifest deve conservare il testo realmente visibile (`Reti`).
  *
  * **Confine dichiarato:** vive prima della prima persistenza, non nel replay. Il
  * replay valida la sola struttura, perché la richiesta originale non è più
@@ -741,7 +783,11 @@ export function assertVisualProposalMatchesRequest(
   lessonBody: string,
 ): VisualProposalOutput {
   if (output.decision !== 'image') return output;
-  if (!extractLessonHeadings(lessonBody).includes(output.anchorHeadingText)) {
+  if (
+    !extractAnchorableLessonHeadings(lessonBody).some(
+      (heading) => heading.text === output.anchorHeadingText,
+    )
+  ) {
     invalidOutput('L’heading di ancoraggio non esiste nel corpo della lezione.');
   }
   return output;

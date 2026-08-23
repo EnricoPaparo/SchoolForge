@@ -74,33 +74,26 @@ export function parseCalloutType(text: string): CalloutType | null {
 // ── Slug degli heading ─────────────────────────────────────────────────────────
 
 /**
- * Slug **deterministico**: stesso testo ⇒ stesso slug, indipendentemente
- * dall'ordine di rendering e dalla sessione. Gli accenti sono normalizzati in
- * modo stabile (`NFKD` + rimozione dei diacritici + minuscolo con locale `it`),
- * così `Perché`, `perche` e `PERCHÉ` convergono.
+ * L'identità degli heading vive in `@schoolforge/lesson-contract`, non qui.
+ *
+ * Era duplicata fra questo modulo e le Functions, tenuta insieme da una tabella
+ * verificata dai due lati — e le due metà erano comunque divergenti. Una
+ * tabella dimostra che due implementazioni coincidono *oggi*; un modulo
+ * condiviso rende impossibile che divergano *domani*. I re-export conservano
+ * l'API di questo modulo per i chiamanti esistenti.
  */
-export function headingSlug(value: string): string {
-  const slug = value
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLocaleLowerCase('it')
-    .replace(/['’]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  // Fallback deterministico per un heading senza testo utile (solo simboli,
-  // solo un'immagine, …): mai un identificatore vuoto o casuale.
-  return slug || 'sezione';
-}
+import {
+  canonicalLessonHeadingText,
+  lessonHeadingSlug,
+  nextLessonHeadingSlug as nextHeadingId,
+} from '@schoolforge/lesson-contract';
 
-/**
- * Assegna lo slug tenendo conto dei duplicati: il primo non porta suffisso, i
- * successivi ricevono `-2`, `-3`, … nell'ordine del documento.
- */
-export function nextHeadingId(base: string, occurrences: Map<string, number>): string {
-  const count = (occurrences.get(base) ?? 0) + 1;
-  occurrences.set(base, count);
-  return count === 1 ? base : `${base}-${count}`;
-}
+export {
+  assignLessonHeadingSlugs,
+  canonicalLessonHeadingText,
+  lessonHeadingSlug as headingSlug,
+  nextLessonHeadingSlug as nextHeadingId,
+} from '@schoolforge/lesson-contract';
 
 export interface LessonHeading {
   id: string;
@@ -178,14 +171,14 @@ function createLessonMarked(): Marked {
 }
 
 /** Unica istanza della variante. Non tocca mai `marked` globale. */
-const lessonMarked = createLessonMarked();
+export const lessonMarked = createLessonMarked();
 
 /**
  * Configurazione di sanificazione della variante: agli allow-list predefiniti
  * di DOMPurify servono soltanto gli attributi già usati dal legacy più quelli
  * del nostro markup controllato. Nessun tag nuovo viene ammesso a mano.
  */
-const SANITIZE_CONFIG = { ADD_ATTR: ['target', 'rel'] };
+export const SANITIZE_CONFIG = { ADD_ATTR: ['target', 'rel'] };
 
 /**
  * Esegue l'intera pipeline e restituisce HTML sanificato + heading.
@@ -211,26 +204,38 @@ export function parseLessonMarkdown(markdown: string): LessonParseResult {
        * poi la punteggiatura Markdown. Così un `id` scritto dall'autore dentro
        * l'heading non può mai diventare l'identificatore della sezione.
        */
-      const text = heading.text
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/[#*_`[\]]/g, '')
-        .trim();
+      const text = canonicalLessonHeadingText(heading.text);
       if (!text) return;
-      const id = nextHeadingId(headingSlug(text), occurrences);
+      const id = nextHeadingId(lessonHeadingSlug(text), occurrences);
       headings.push({ id, level: heading.depth === 2 ? 2 : 3, text });
     },
   }) as string;
 
-  // Gli id vengono iniettati riscrivendo i tag di apertura degli heading
-  // **prima** della sanificazione, nello stesso ordine in cui sono stati
-  // raccolti: nessuna manipolazione DOM post-sanitize.
-  let index = 0;
+  const { html: withIds } = injectHeadingIds(html, headings, 0);
+  return { html: DOMPurify.sanitize(withIds, SANITIZE_CONFIG), headings };
+}
+
+/**
+ * Inietta gli `id` riscrivendo i tag di apertura degli heading **prima** della
+ * sanificazione, nello stesso ordine in cui sono stati raccolti: nessuna
+ * manipolazione DOM post-sanitize.
+ *
+ * `startIndex` esiste per VE-04A: quando il documento viene reso in due metà
+ * attorno alla figura, la seconda metà deve continuare la numerazione della
+ * prima invece di ricominciare da capo. Con `startIndex = 0` il comportamento è
+ * esattamente quello di sempre, ed è il solo usato dal percorso legacy.
+ */
+export function injectHeadingIds(
+  html: string,
+  headings: readonly LessonHeading[],
+  startIndex: number,
+): { html: string; nextIndex: number } {
+  let index = startIndex;
   const withIds = html.replace(/<(h2|h3)>/g, (match) => {
     const heading = headings[index];
     if (!heading) return match;
     index += 1;
     return `<${heading.level === 2 ? 'h2' : 'h3'} id="${escapeHtml(heading.id)}" tabindex="-1">`;
   });
-
-  return { html: DOMPurify.sanitize(withIds, SANITIZE_CONFIG), headings };
+  return { html: withIds, nextIndex: index };
 }

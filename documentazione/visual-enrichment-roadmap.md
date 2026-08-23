@@ -2,7 +2,8 @@
 
 > **Stato: VISUAL-ENRICHMENT-00→03 implementati, non distribuiti.**
 > VE-03A, VE-03B e VE-03C sono chiusi: **VISUAL-ENRICHMENT-03 è chiuso.**
-> VE-04 e VE-05 restano aperti. **Gate GVISUAL: PENDING.**
+> **VE-04 è suddiviso in A + B** e resta **aperto** fino al merge di entrambe.
+> VE-05 è aperto. **Gate GVISUAL: PENDING.**
 >
 > Chiudere VE-03 non rende disponibile alcuna funzionalità al docente: il
 > backend è completo, ma senza la UI di VE-04 non esiste ancora un percorso per
@@ -861,7 +862,9 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VE-03A** | **Ticket, manifest e promozione.** Ticket autorevole candidato↔lezione (`aiVisualCandidates`), binding **prima** della generazione, manifest privato e pubblico, promozione con copia canonica, sostituzione, idempotenza e Rules fondamentali (`publicLessonVisuals`, `publicLessons.visual` solo su lezione svolta). | VE-02 | **Implementato, non distribuito.** |
 | **VE-03B** | **Lifecycle.** `completed` true/false lato server, rimozione dell'immagine, abbandono dello staging, cleanup e cancellazioni lezione/UDA/corso. | VE-03A | **Implementato, non distribuito.** |
 | **VE-03C** | **Chiusura.** Export ZIP con binario, cost model e audit definitivi, integrazioni Emulator end-to-end, chiusura documentale della fase. | VE-03B | **Implementato, non distribuito.** |
-| **VISUAL-ENRICHMENT-04** | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; avviso e azione di riancoraggio; vista studente condizionale; responsive e accessibilità verificate sui componenti reali. | VE-03 | **Aperto.** |
+| **VISUAL-ENRICHMENT-04** | **UI e renderer.** Suddiviso in **A + B** (vedi sotto). | VE-03 | **Aperto** finché A e B non sono entrambe chiuse. |
+| **VE-04A** | **Renderer, lettura e riancoraggio.** Split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; lettura dei byte solo in presenza di manifest; fallback e avviso quando l'ancora non esiste più; riancoraggio server-side senza rigenerare; vista studente condizionale; responsive e accessibilità sui componenti reali. | VE-03 | **Implementato, non distribuito.** |
+| **VE-04B** | **Workflow di generazione.** `DialogShell` a dieci stati secondo il prototipo; pulsante «Arricchisci visivamente»; proposta, anteprima, approvazione e sostituzione dal dialog; stati di errore e di costo. | VE-04A | **Aperto.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
 
@@ -1315,6 +1318,96 @@ Ciò che i numeri dicono, e che i test verificano:
 
 L'export è quindi un costo **esclusivamente esplicito**: si paga quando il
 docente lo chiede, in proporzione alle immagini che ha davvero approvato.
+
+---
+
+### 15.6 VE-04A — renderer, lettura e riancoraggio
+
+**Nessun pulsante di generazione.** Questa fase non introduce alcun modo di
+*creare* un'immagine: mostra quelle che esistono, le legge quando servono e ne
+sposta l'ancora quando il docente riscrive la lezione. Il dialog a dieci stati e
+il pulsante «Arricchisci visivamente» sono **VE-04B**.
+
+**Il difetto che questa fase ha scoperto.** VE-03A dichiarava la duplicazione
+dello slug fra `apps/web` e Functions come rischio noto e ne congelava i casi —
+ma congelava solo la metà lato Functions. Nessuno aveva confrontato le due
+implementazioni, e non coincidevano su due forme che in italiano capitano di
+continuo:
+
+| Heading | Renderer (DOM) | Server (VE-03A) |
+|---|---|---|
+| `L'acqua` | `lacqua` | `l-acqua` |
+| `Reti`, `Reti` | `reti`, `reti-2` | `reti`, `reti-1` |
+| `---` | `sezione` | *(vuoto)* |
+
+In più il server considerava ancorabili gli heading di **tutti** i livelli,
+mentre il renderer assegna un `id` soltanto a `h2` e `h3`: un'ancora su un `#`
+avrebbe puntato a un elemento senza identificatore.
+
+La conseguenza sarebbe stata silenziosa e permanente: la figura di ogni lezione
+con un titolo apostrofato sarebbe finita in fondo, per sempre, con l'avviso
+«l'ancora non esiste più» su un'ancora perfettamente esistente. Il verso della
+correzione non è arbitrario — gli `id` li produce il renderer, in produzione da
+LESSON-MANUAL-01, mentre VE-03 non è mai stato distribuito e non esiste alcun
+manifest salvato da migrare — quindi **è il server ad allinearsi al renderer**.
+La soluzione finale non mantiene due algoritmi sincronizzati da una tabella:
+canonicalizzazione, slug e numerazione dei duplicati vivono una volta sola in
+`@schoolforge/lesson-contract`, importato sia dal web sia dalle Functions.
+
+Anche il passaggio proposta → promozione è chiuso: il provider copia il testo
+Markdown sorgente esatto di un H2/H3 (`**Reti**`, se il titolo è formattato),
+mentre la promozione usa lo stesso helper condiviso per memorizzare nel manifest
+il testo visibile canonico (`Reti`) e lo slug del DOM. H1, H4–H6 e titoli senza
+testo visibile sono rifiutati già nel controllo relazionale della proposta,
+prima della persistenza del successo.
+
+**La pipeline del renderer**, che è il contratto di VE-04A:
+
+    Markdown
+      → istanza Marked isolata già esistente (mai marked.use() globale)
+      → token stream
+      → individuazione dell'heading tramite lo slug canonico
+      → split dei token in due gruppi
+      → HTML A e HTML B
+      → DOMPurify.sanitize(A) e DOMPurify.sanitize(B)
+      → React: frammento A + <figure> + frammento B
+
+Il Markdown non viene mai toccato: la figura non entra nel testo, entra
+nell'albero React. `caption` e `altText` sono testo React e non markup, quindi
+non esiste alcun punto in cui un contenuto del docente possa diventare HTML.
+Senza manifest il modulo non viene nemmeno chiamato e il DOM è quello di sempre
+— verificato confrontando l'HTML byte per byte con il renderer legacy.
+
+**Ancora mancante.** La figura va in fondo. Il docente vede un avviso — «non è
+più ancorata a «…» ed è mostrata in fondo alla lezione» — e può riancorare
+scegliendo fra le sezioni che nella lezione **esistono davvero**: nessun campo
+di testo libero, perché un heading digitato a mano verrebbe rifiutato dal
+server. Lo studente non vede nulla di tecnico.
+
+**Riancoraggio.** Callable owner-only senza secret, senza provider e senza un
+solo accesso a Storage. Input chiuso di cinque chiavi (`programId`, `importId`,
+`lessonId`, `anchorHeadingText`, `anchorHeadingIndex`); lo slug lo calcola il
+server dal corpo autorevole, e accettarlo dal client sarebbe il modo esatto per
+ancorare a un identificatore inesistente. L'indice zero-based distingue heading
+omonimi, mentre il testo canonico conferma che il corpo non è cambiato fra
+scelta e commit. Tutte le letture transazionali
+precedono tutte le scritture; su lezione svolta privato e pubblico cambiano nel
+medesimo commit. `publicLessonVisuals` **non** viene toccato: i byte sono
+identici, riscriverli sarebbe pagare per non cambiare nulla. Riancorare dove già
+si è è un replay a zero scritture e zero audit.
+
+**Letture, e letture che non avvengono.** Il docente riusa `aiVisualExportBatch`
+per la sola lezione aperta, e solo con la scheda «Contenuto» attiva; lo studente
+fa una `getDoc` puntuale su `publicLessonVisuals`. In entrambi i casi **solo se
+un manifest esiste**: una lezione senza immagine non produce nemmeno
+un'operazione, ed è ciò che rende la funzione gratuita per la stragrande
+maggioranza delle lezioni. Nessun listener, nessun polling, nessuna lettura per
+card o per riga.
+
+**Smoke responsive** (Chromium, markup e CSS reali dei componenti): 1440, 1024,
+390 e 320 px — zero overflow orizzontale, figura e didascalia entro la colonna,
+rapporto d'aspetto conservato, dialog dentro il viewport, target touch a 44 px,
+console pulita.
 
 ---
 

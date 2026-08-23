@@ -914,6 +914,39 @@ scritture Firestore, zero write/delete Storage, nessuna traccia di audit — que
 testuale che affianca non ne emette, e una traccia solo qui racconterebbe metà
 della stessa azione. Nessun listener, nessun polling, nessuna lettura per card.
 
+### VISUAL-ENRICHMENT-04A — renderer e riancoraggio
+
+**La figura non è HTML.** Il corpo della lezione è diviso in **token**, non in
+stringhe: le due metà attorno alla figura sono sanificate separatamente e per
+intero, e fra loro sta un componente React. Nessun markup nasce dopo
+`DOMPurify.sanitize`, nessuna concatenazione tocca l'HTML sanificato, e
+`caption`/`altText` sono testo React — quindi non esiste un percorso in cui un
+contenuto scritto dal docente diventi markup. Il Markdown della lezione non
+viene mai modificato.
+
+**Le letture avvengono solo in presenza di un manifest.** Il docente riusa
+`aiVisualExportBatch` per la sola lezione aperta; lo studente fa una `getDoc`
+puntuale su `publicLessonVisuals`, con il documento validato **contro il
+manifest che lo ha annunciato** — `assetId`, `publicLessonId` e dimensioni
+divergenti producono `null`, mai la figura sbagliata. L'invariante di visibilità
+è riapplicato in lettura: su lezione non svolta il manifest legge `null` anche
+se il documento lo contenesse.
+
+**Il riancoraggio non tocca byte.** Nessun accesso a Storage, nessun provider,
+nessun secret; `publicLessonVisuals` resta invariato. Il client non può mandare
+lo slug: manda l'indice zero-based dell'H2/H3 scelto e il suo testo canonico di
+conferma; il server li riverifica sul corpo autorevole fresco e calcola lo slug.
+Così due heading omonimi restano distinguibili e una corsa sull'ordine non può
+spostare la figura sotto una sezione diversa.
+
+**Difetto corretto in questa fase.** Lo slug del server e quello del renderer
+divergevano su apostrofi, duplicati e livelli di heading: la figura di ogni
+lezione con un titolo apostrofato sarebbe finita in fondo per sempre. Non
+esistono più due implementazioni: canonicalizzazione, slug e duplicati vivono
+in `@schoolforge/lesson-contract`. Il controllo proposta accetta soltanto H2/H3
+realmente ancorabili; la promozione converte il testo Markdown sorgente nel
+testo visibile canonico prima di comporre il manifest.
+
 ## 10. Checklist ai gate
 
 | Gate | Controlli minimi |

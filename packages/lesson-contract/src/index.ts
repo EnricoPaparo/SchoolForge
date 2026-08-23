@@ -21,3 +21,15 @@ export {
   normalizeMaxCharacters,
   effectiveMaxCharacters,
 } from './maxCharacters.js';
+
+/**
+ * LESSON-MANUAL-01 / VE-04A — identità degli heading, condivisa fra il
+ * renderer web e le Functions. Una sola implementazione: vedi `headingSlug.ts`.
+ */
+export {
+  assignLessonHeadingSlugs,
+  canonicalLessonHeadingText,
+  lessonHeadingSlug,
+  nextLessonHeadingSlug,
+  type LessonHeadingRef,
+} from './headingSlug.js';

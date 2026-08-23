@@ -51,21 +51,28 @@ describe('variante opt-in del renderer', () => {
 });
 
 describe('superfici', () => {
+  /**
+   * VE-04A ha aggiunto delle prop al call site, quindi il confronto non può più
+   * essere sulla stringa esatta. La garanzia però è la stessa e resta
+   * verificata: **ogni** occorrenza del renderer in questa vista usa la
+   * variante lezione, e ce n'è una sola.
+   */
   it('la vista lezione del docente usa la variante', () => {
     const code = src('features/teacher/CourseWorkspace.tsx');
-    expect(code).toMatch(/<MarkdownRenderer markdown=\{content\} variant="lesson" \/>/);
-    // Una sola occorrenza del renderer in questa vista.
-    expect(code.match(/<MarkdownRenderer/g)).toHaveLength(1);
+    const occurrences = code.match(/<MarkdownRenderer[\s\S]*?\/>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0]).toContain('markdown={content}');
+    expect(occurrences[0]).toContain('variant="lesson"');
   });
 
   it('la vista lezione dello studente usa la variante', () => {
     const code = src('features/student/StudentDidatticaView.tsx');
-    expect(code).toMatch(/<MarkdownRenderer markdown=\{lesson\.content\} variant="lesson" \/>/);
+    expect(code).toMatch(/<MarkdownRenderer\s+markdown=\{lesson\.content\}/);
     // CONCEPT-MAP-04 — la vista rende due Markdown, uno per scheda: il corpo e
     // la mappa concettuale. Ciò che il test difende non è il conteggio in sé,
     // ma che **ogni** occorrenza usi la variante lezione: una superficie legacy
     // accanto a una manuale renderebbe la stessa pagina in due linguaggi.
-    const occurrences = code.match(/<MarkdownRenderer[^/]*\/>/g) ?? [];
+    const occurrences = code.match(/<MarkdownRenderer[\s\S]*?\/>/g) ?? [];
     expect(occurrences).toHaveLength(2);
     for (const occurrence of occurrences) {
       expect(occurrence).toContain('variant="lesson"');

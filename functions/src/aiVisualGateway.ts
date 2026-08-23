@@ -74,6 +74,7 @@ import {
   computePromotionInputHash,
   parseStoredVisualPromotion,
   reconcileVisualPromotion,
+  resolveAnchorByIndex,
   resolveAnchorSlugInBody,
   validateVisualPromotionInput,
   visualFingerprint,
@@ -89,6 +90,11 @@ import {
   type VisualExportItem,
   type VisualExportResult,
 } from './aiVisualExport.js';
+import {
+  composeReanchoredManifest,
+  isSameAnchor,
+  validateVisualReanchorInput,
+} from './aiVisualReanchor.js';
 import {
   checkLessonForVisual,
   checkProjectionForVisual,
@@ -1987,4 +1993,153 @@ async function handleExportLessonVisuals(request: CallableRequest<unknown>): Pro
 export const aiVisualExportBatch = onCall(
   { region: SCHOOLFORGE_FUNCTION_REGION },
   handleExportLessonVisuals,
+);
+
+// ─── VE-04A — riancoraggio ────────────────────────────────────────────────────
+
+/**
+ * Sposta l'ancora dell'immagine già approvata, e **nient'altro**.
+ *
+ * Il docente riscrive una lezione e la sezione a cui l'immagine era ancorata
+ * sparisce: l'immagine resta valida, ma finisce in fondo. Rigenerarla per
+ * rimetterla al posto giusto significherebbe pagare un provider per riprodurre
+ * qualcosa che si ha già — quindi qui non c'è provider, non c'è secret e non si
+ * tocca un solo byte.
+ *
+ * **`publicLessonVisuals` non viene toccato.** I byte sono identici: riscriverli
+ * sarebbe una scrittura pagata per non cambiare nulla. Cambia il manifest, cioè
+ * dove la figura va messa, non che cosa mostra.
+ *
+ * Tutte le letture transazionali precedono tutte le scritture, come in
+ * promozione e lifecycle: ciò che è stato dimostrato fuori dalla transazione
+ * non è ancora garantito dentro.
+ */
+export async function reanchorLessonVisualForOwner(params: {
+  db: Firestore;
+  ownerUid: string;
+  input: unknown;
+  beforeTransaction?: () => Promise<void>;
+}): Promise<{ status: 'reanchored' | 'replayed'; headingSlug: string }> {
+  const { db, ownerUid } = params;
+  // Validazione all'ingresso della funzione di servizio, non dell'handler: la
+  // callable è un chiamante come un altro e non può aggirarla.
+  const input = validateVisualReanchorInput(params.input);
+
+  // ── Preflight: filtro, non verifica. ────────────────────────────────────────
+  const preflight = await readLifecyclePair(db, ownerUid, input);
+  if (preflight.lesson.visual === undefined || preflight.lesson.visual === null) {
+    throw new AiVisualError('invalid_input', 'La lezione non ha un’immagine da riancorare.');
+  }
+  validateCanonicalLessonVisual({
+    value: preflight.lesson.visual,
+    ownerUid,
+    importId: input.importId,
+    udaDir: preflight.udaDir,
+  });
+
+  await params.beforeTransaction?.();
+
+  const lessonRef = db.doc(lessonPath(input.programId, input.importId, input.lessonId));
+  const auditRef = db.collection('auditEvents').doc();
+
+  return db.runTransaction(async (tx) => {
+    // (1) documento tecnico.
+    const lessonSnap = await tx.get(lessonRef);
+    const lesson = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
+    const lessonGate = checkLessonForVisual({
+      lesson,
+      lessonId: input.lessonId,
+      ownerUid,
+      importId: input.importId,
+    });
+    if (!lessonGate.ok) {
+      throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
+    }
+
+    // (2) proiezione, all'id **riderivato** dal documento appena letto.
+    const publicRef = db.doc(`publicLessons/${lessonGate.publicLessonId}`);
+    const publicSnap = await tx.get(publicRef);
+    const projectionGate = checkProjectionForVisual({
+      lesson: lesson as Record<string, unknown>,
+      publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
+      programId: input.programId,
+      importId: input.importId,
+      ownerUid,
+    });
+    if (!projectionGate.ok) {
+      throw new AiVisualError(
+        'invalid_input',
+        describeVisualBindingFailure(projectionGate.failure),
+      );
+    }
+
+    // Letture finite. Da qui in poi solo verifiche pure e scritture.
+    const raw = lesson?.visual;
+    if (raw === undefined || raw === null) {
+      throw new AiVisualError('invalid_input', 'La lezione non ha un’immagine da riancorare.');
+    }
+    const current = validateCanonicalLessonVisual({
+      value: raw,
+      ownerUid,
+      importId: input.importId,
+      udaDir: lessonGate.udaDir,
+    });
+
+    // L'ancora si risolve sul corpo **fresco**: è il punto di tutta
+    // l'operazione, e usare quello del preflight vorrebbe dire riancorare a una
+    // sezione che nel frattempo poteva essere sparita di nuovo.
+    // Per **indice**, non per testo: due `## Reti` sono indistinguibili se si
+    // guarda solo il titolo, e il docente ha scelto una posizione precisa.
+    const anchor = resolveAnchorByIndex({
+      lessonBody: projectionGate.body,
+      anchorHeadingIndex: input.anchorHeadingIndex,
+      anchorHeadingText: input.anchorHeadingText,
+    });
+
+    if (isSameAnchor(current, anchor)) {
+      // Replay: l'ancora è già quella. Zero scritture e zero audit — una
+      // traccia qui racconterebbe un'operazione che non è avvenuta.
+      return { status: 'replayed' as const, headingSlug: anchor.headingSlug };
+    }
+
+    const next = composeReanchoredManifest({ current, anchor });
+
+    tx.update(lessonRef, { visual: next });
+    if (projectionGate.completed) {
+      // Stesso commit: la proiezione non può restare indietro rispetto al
+      // manifest privato nemmeno per un istante.
+      tx.update(publicRef, { visual: projectLessonVisual(next) });
+    }
+    tx.set(auditRef, {
+      actorUid: ownerUid,
+      action: 'lesson.visualReanchored',
+      targetId: input.lessonId,
+      outcome: 'success',
+      // Nessun testo editoriale nell'audit: lo slug è un identificatore, la
+      // didascalia sarebbe contenuto.
+      reason: projectionGate.completed
+        ? `reanchored to ${anchor.headingSlug} and projected`
+        : `reanchored to ${anchor.headingSlug} (lesson not completed)`,
+      timestamp: FieldValue.serverTimestamp(),
+    });
+    return { status: 'reanchored' as const, headingSlug: anchor.headingSlug };
+  });
+}
+
+async function handleReanchorLessonVisual(request: CallableRequest<unknown>): Promise<unknown> {
+  const db = database();
+  try {
+    const ownerUid = await requireOwner(request, db);
+    return await reanchorLessonVisualForOwner({ db, ownerUid, input: request.data });
+  } catch (error) {
+    if (error instanceof AiVisualError) throw toHttpsError(error);
+    logger.error('aiVisualReanchor internal error', { name: (error as Error)?.name });
+    throw new HttpsError('internal', 'Errore interno del riancoraggio.');
+  }
+}
+
+/** Riancoraggio: owner-only, nessun secret, nessun provider, nessuno Storage. */
+export const aiVisualReanchor = onCall(
+  { region: SCHOOLFORGE_FUNCTION_REGION },
+  handleReanchorLessonVisual,
 );
