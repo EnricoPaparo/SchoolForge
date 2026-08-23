@@ -56,7 +56,7 @@ import {
   MAX_VISUAL_CAPTION_CHARS,
   VISUAL_STYLE_VERSION,
   codePointLength,
-  extractLessonHeadingsDetailed,
+  extractAnchorableLessonHeadings,
 } from './aiContentVisualProposal.js';
 
 // ─── Input editoriale ─────────────────────────────────────────────────────────
@@ -174,12 +174,10 @@ export { lessonHeadingSlug as headingSlug };
  */
 export function listAnchorableHeadings(lessonBody: string): LessonHeadingRef[] {
   return assignLessonHeadingSlugs(
-    extractLessonHeadingsDetailed(lessonBody)
-      .filter((heading) => heading.level === 2 || heading.level === 3)
-      .map((heading) => ({
-        text: canonicalLessonHeadingText(heading.text),
-        level: heading.level as 2 | 3,
-      })),
+    extractAnchorableLessonHeadings(lessonBody).map((heading) => ({
+      text: canonicalLessonHeadingText(heading.text),
+      level: heading.level as 2 | 3,
+    })),
   );
 }
 
@@ -196,8 +194,17 @@ export function resolveAnchorSlugInBody(
   anchorHeadingText: string,
   lessonBody: string,
 ): { headingSlug: string; headingText: string } {
+  /*
+   * La proposta conserva il testo sorgente esatto, perché il modello lo copia
+   * dal Markdown (`**Reti**`, `` `Reti` ``, `[Reti](url)`). Il manifest deve
+   * invece contenere il testo visibile e usare lo stesso slug del renderer.
+   * Canonicalizzare qui unisce i due contratti senza riscrivere il run IA e
+   * senza rendere fuzzy il confronto: la proposta è già stata verificata contro
+   * un heading sorgente H2/H3 reale prima della persistenza.
+   */
+  const canonicalAnchorHeadingText = canonicalLessonHeadingText(anchorHeadingText);
   const match = listAnchorableHeadings(lessonBody).find(
-    (heading) => heading.text === anchorHeadingText,
+    (heading) => heading.text === canonicalAnchorHeadingText,
   );
   if (!match) {
     throw new AiVisualError(

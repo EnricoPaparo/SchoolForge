@@ -1223,11 +1223,15 @@ provider. I documenti `aiVisualCandidates`, `aiVisualPromotions`,
 ### `aiVisualReanchor` — spostare l'ancora, non rigenerare (VE-04A)
 
 Owner-only, senza secret binding, senza provider e senza un solo accesso a
-Storage. Input chiuso: `{ programId, importId, lessonId, anchorHeadingText }`.
+Storage. Input chiuso:
+`{ programId, importId, lessonId, anchorHeadingText, anchorHeadingIndex }`.
 Il client **non** manda `ownerUid`, `publicLessonId`, `assetId`, `storageRef`,
 il manifest né lo slug — quest'ultimo è il caso più insidioso, perché
 sembrerebbe un dettaglio tecnico e invece permetterebbe di ancorare a un
 identificatore che nel corpo non esiste, aggirando l'unico controllo che conta.
+`anchorHeadingIndex` è zero-based nell'elenco degli H2/H3 ancorabili e distingue
+due sezioni omonime; `anchorHeadingText` è il testo canonico di conferma. Il
+server ricalcola entrambi sul corpo fresco e rifiuta una corsa sull'ordine.
 
 Il server autentica l'owner, legge il `LessonDoc`, **rideriva** `publicLessonId`,
 legge la proiezione a quell'indirizzo, valida identità/import/programma/UDA e il

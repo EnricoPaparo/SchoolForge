@@ -25,6 +25,7 @@
  */
 
 import { AiContentError, AI_CONTENT_RUN_TTL_MS, timestampToMillis } from './aiContentCore.js';
+import { canonicalLessonHeadingText } from '@schoolforge/lesson-contract';
 
 // ─── Limiti ───────────────────────────────────────────────────────────────────
 
@@ -736,6 +737,26 @@ export function extractLessonHeadingsDetailed(markdown: string): LessonHeadingOc
 }
 
 /**
+ * Heading che il renderer può davvero usare come ancora visuale.
+ *
+ * La proposta vede il testo sorgente esatto (compresi eventuali marcatori
+ * inline), perché il prompt chiede al provider di copiarlo alla lettera. La
+ * selezione è però la stessa del renderer: soltanto H2/H3 e mai un titolo che,
+ * tolta la sintassi, non contiene alcun testo visibile.
+ *
+ * Tenere questo filtro accanto all'estrattore evita la divergenza precedente:
+ * una proposta poteva scegliere H1/H4 e superare il controllo relazionale, per
+ * poi essere rifiutata soltanto durante la promozione.
+ */
+export function extractAnchorableLessonHeadings(markdown: string): LessonHeadingOccurrence[] {
+  return extractLessonHeadingsDetailed(markdown).filter(
+    (heading) =>
+      (heading.level === 2 || heading.level === 3) &&
+      canonicalLessonHeadingText(heading.text).length > 0,
+  );
+}
+
+/**
  * Controllo **relazionale** fra la risposta del provider e la richiesta.
  *
  * È deliberatamente separato dalla validazione strutturale: quella dice se
@@ -745,10 +766,11 @@ export function extractLessonHeadingsDetailed(markdown: string): LessonHeadingOc
  * coda al corpo per un difetto della proposta e non per una modifica del docente
  * — cioè il fallback di §5.3 verrebbe imboccato dalla porta sbagliata.
  *
- * Il confronto è **esatto**: nessun trim aggiuntivo, nessun case folding, nessuno
- * slug, nessun fuzzy matching. «Evaporazione» ed «evaporazione» sono due cose
- * diverse, e indovinare quale intendesse il modello è esattamente ciò che questo
- * contratto rifiuta di fare.
+ * Il confronto è **esatto sul testo sorgente**: nessun trim aggiuntivo, nessun
+ * case folding, nessuno slug, nessun fuzzy matching. Se il titolo è
+ * `## **Reti**`, il provider deve restituire `**Reti**`, come gli chiede il
+ * prompt. La canonicalizzazione avviene più tardi, al confine della promozione,
+ * quando il manifest deve conservare il testo realmente visibile (`Reti`).
  *
  * **Confine dichiarato:** vive prima della prima persistenza, non nel replay. Il
  * replay valida la sola struttura, perché la richiesta originale non è più
@@ -761,7 +783,11 @@ export function assertVisualProposalMatchesRequest(
   lessonBody: string,
 ): VisualProposalOutput {
   if (output.decision !== 'image') return output;
-  if (!extractLessonHeadings(lessonBody).includes(output.anchorHeadingText)) {
+  if (
+    !extractAnchorableLessonHeadings(lessonBody).some(
+      (heading) => heading.text === output.anchorHeadingText,
+    )
+  ) {
     invalidOutput('L’heading di ancoraggio non esiste nel corpo della lezione.');
   }
   return output;

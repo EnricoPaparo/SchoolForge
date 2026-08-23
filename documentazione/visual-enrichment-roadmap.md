@@ -1350,8 +1350,16 @@ con un titolo apostrofato sarebbe finita in fondo, per sempre, con l'avviso
 correzione non è arbitrario — gli `id` li produce il renderer, in produzione da
 LESSON-MANUAL-01, mentre VE-03 non è mai stato distribuito e non esiste alcun
 manifest salvato da migrare — quindi **è il server ad allinearsi al renderer**.
-La tabella è ora verificata da entrambi i lati: se qualcuno tocca uno dei due
-algoritmi, uno dei due test fallisce.
+La soluzione finale non mantiene due algoritmi sincronizzati da una tabella:
+canonicalizzazione, slug e numerazione dei duplicati vivono una volta sola in
+`@schoolforge/lesson-contract`, importato sia dal web sia dalle Functions.
+
+Anche il passaggio proposta → promozione è chiuso: il provider copia il testo
+Markdown sorgente esatto di un H2/H3 (`**Reti**`, se il titolo è formattato),
+mentre la promozione usa lo stesso helper condiviso per memorizzare nel manifest
+il testo visibile canonico (`Reti`) e lo slug del DOM. H1, H4–H6 e titoli senza
+testo visibile sono rifiutati già nel controllo relazionale della proposta,
+prima della persistenza del successo.
 
 **La pipeline del renderer**, che è il contratto di VE-04A:
 
@@ -1377,9 +1385,12 @@ di testo libero, perché un heading digitato a mano verrebbe rifiutato dal
 server. Lo studente non vede nulla di tecnico.
 
 **Riancoraggio.** Callable owner-only senza secret, senza provider e senza un
-solo accesso a Storage. Input chiuso di quattro chiavi; lo slug lo calcola il
+solo accesso a Storage. Input chiuso di cinque chiavi (`programId`, `importId`,
+`lessonId`, `anchorHeadingText`, `anchorHeadingIndex`); lo slug lo calcola il
 server dal corpo autorevole, e accettarlo dal client sarebbe il modo esatto per
-ancorare a un identificatore inesistente. Tutte le letture transazionali
+ancorare a un identificatore inesistente. L'indice zero-based distingue heading
+omonimi, mentre il testo canonico conferma che il corpo non è cambiato fra
+scelta e commit. Tutte le letture transazionali
 precedono tutte le scritture; su lezione svolta privato e pubblico cambiano nel
 medesimo commit. `publicLessonVisuals` **non** viene toccato: i byte sono
 identici, riscriverli sarebbe pagare per non cambiare nulla. Riancorare dove già

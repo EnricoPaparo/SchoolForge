@@ -19,7 +19,11 @@ import {
   type VisualPromotionInput,
 } from './aiVisualPromotion.js';
 import { canonicalVisualStorageRef } from './aiVisualManifest.js';
-import { VISUAL_STYLE_VERSION } from './aiContentVisualProposal.js';
+import {
+  VISUAL_STYLE_VERSION,
+  assertVisualProposalMatchesRequest,
+  validateVisualProposalOutput,
+} from './aiContentVisualProposal.js';
 import { AiVisualError, sha256Hex } from './aiVisualCore.js';
 import type { StoredVisualCandidate } from './aiVisualCandidate.js';
 import { isStoragePreconditionFailed } from './aiVisualGateway.js';
@@ -32,10 +36,9 @@ import { isStoragePreconditionFailed } from './aiVisualGateway.js';
  *
  * 1. **La proiezione pubblica esiste se e solo se la lezione è svolta.** Non
  *    «viene nascosta»: non esiste proprio.
- * 2. **Lo slug dell'ancora è congelato.** L'algoritmo è duplicato rispetto a
- *    `apps/web` per un vincolo di import reale; se le due implementazioni
- *    divergessero, l'immagine finirebbe nel posto sbagliato in silenzio. Questi
- *    casi sono il contratto scritto di quella duplicazione.
+ * 2. **Lo slug dell'ancora è congelato.** Web e Functions usano lo stesso
+ *    helper di `@schoolforge/lesson-contract`: questi casi difendono il confine
+ *    completo dalla proposta sorgente al manifest canonico.
  */
 
 const ASSET_ID = '11111111-2222-4333-8444-555555555555';
@@ -324,6 +327,38 @@ describe('resolveAnchorSlugInBody', () => {
 
   it('rifiuta qualunque ancora su un corpo senza heading', () => {
     expect(() => resolveAnchorSlugInBody('Qualcosa', 'solo testo')).toThrow(/non esiste/);
+  });
+
+  /**
+   * Regressione del contratto completo: la proposta conserva il Markdown
+   * sorgente esatto, la promozione produce invece testo e slug visibili. Prima
+   * di questo test la prima metà passava e la seconda falliva.
+   */
+  it.each([
+    ['## **Reti**', '**Reti**'],
+    ['## *Reti*', '*Reti*'],
+    ['## `Reti`', '`Reti`'],
+    ['## [Reti](https://esempio.it)', '[Reti](https://esempio.it)'],
+  ])('proposta → promozione converge per un H2 formattato: %s', (heading, sourceText) => {
+    const lessonBody = `${heading}\n\nTesto.\n`;
+    const proposal = assertVisualProposalMatchesRequest(
+      validateVisualProposalOutput({
+        decision: 'image',
+        subject: 'Schema semplice delle reti',
+        rationale: 'Mostra la relazione fra i nodi.',
+        anchorHeadingText: sourceText,
+        caption: 'I nodi di una rete.',
+        altText: 'Tre nodi collegati fra loro.',
+      }),
+      lessonBody,
+    );
+
+    expect(proposal.decision).toBe('image');
+    if (proposal.decision !== 'image') throw new Error('proposta inattesa');
+    expect(resolveAnchorSlugInBody(proposal.anchorHeadingText, lessonBody)).toEqual({
+      headingSlug: 'reti',
+      headingText: 'Reti',
+    });
   });
 });
 

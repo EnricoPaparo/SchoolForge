@@ -934,14 +934,18 @@ se il documento lo contenesse.
 
 **Il riancoraggio non tocca byte.** Nessun accesso a Storage, nessun provider,
 nessun secret; `publicLessonVisuals` resta invariato. Il client non può mandare
-lo slug: lo calcola il server dal corpo autorevole fresco, ed è l'unico modo per
-impedire un'ancora a un identificatore inesistente.
+lo slug: manda l'indice zero-based dell'H2/H3 scelto e il suo testo canonico di
+conferma; il server li riverifica sul corpo autorevole fresco e calcola lo slug.
+Così due heading omonimi restano distinguibili e una corsa sull'ordine non può
+spostare la figura sotto una sezione diversa.
 
 **Difetto corretto in questa fase.** Lo slug del server e quello del renderer
 divergevano su apostrofi, duplicati e livelli di heading: la figura di ogni
-lezione con un titolo apostrofato sarebbe finita in fondo per sempre. Le due
-implementazioni sono ora allineate e verificate da una tabella condivisa su
-entrambi i lati.
+lezione con un titolo apostrofato sarebbe finita in fondo per sempre. Non
+esistono più due implementazioni: canonicalizzazione, slug e duplicati vivono
+in `@schoolforge/lesson-contract`. Il controllo proposta accetta soltanto H2/H3
+realmente ancorabili; la promozione converte il testo Markdown sorgente nel
+testo visibile canonico prima di comporre il manifest.
 
 ## 10. Checklist ai gate
 
