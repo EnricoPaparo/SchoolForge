@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { db, functions, storage } from '../../lib/firebase.js';
 import { createProgramNotesCleanupCallable } from '../repository/programs/programNotesCleanupClient.js';
+import { createVisualLifecycleClient } from '../repository/programs/visualLifecycleClient.js';
 import { loadCourseLibrary, type CourseCard } from '../repository/programs/courseLibrary.js';
 import {
   createInitializedProgram,
@@ -294,7 +295,13 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
     setBusy(true);
     setDialogError(null);
     try {
-      await deleteProgram(programId, ownerUid, db, createProgramNotesCleanupCallable(functions));
+      await deleteProgram(
+        programId,
+        ownerUid,
+        db,
+        createProgramNotesCleanupCallable(functions),
+        createVisualLifecycleClient(functions).cleanupForDelete,
+      );
       setDialog({ kind: 'none' });
       await load();
     } catch (err) {

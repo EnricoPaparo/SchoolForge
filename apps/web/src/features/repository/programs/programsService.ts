@@ -1,13 +1,11 @@
 import {
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDoc,
   getDocs,
   limit,
   query,
-  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -20,15 +18,8 @@ import type {
   LessonDoc,
   ProgramDoc,
   ProgrammaMeta,
-  PublicLessonDoc,
   UdaDoc,
 } from '../../../types/firestore.js';
-import { isValidConceptMap } from './conceptMapContract.js';
-import {
-  checkLessonBeforeProjection,
-  checkProjectionMatchesLesson,
-  identityFailureMessage,
-} from './lessonProjectionIdentity.js';
 import { composeMarkdownWithFrontMatter } from '../validation/frontMatter.js';
 import { deleteFile, deleteImportPrefix, writeText } from '../gateway/repositoryGatewayClient.js';
 
@@ -313,34 +304,9 @@ export async function getImportMeta(
 }
 
 /**
- * CONCEPT-MAP-02 — errore del cambio svolta/non svolta. Tipizzato perché la UI
- * possa distinguerlo da un errore di rete e mostrare il motivo reale.
- */
-export class LessonCompletionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'LessonCompletionError';
-  }
-}
-
-/**
- * Marca (o smarca) una lezione come svolta, sincronizzando la proiezione
- * studente e registrando l'audit in un **unico commit**.
- *
- * **Perché una transazione e non più un `writeBatch`.** Da CONCEPT-MAP-02 il
- * flag `completed` governa anche la visibilità della mappa concettuale, e
- * decidere se copiarla o rimuoverla richiede di **leggere** la mappa privata
- * corrente. Un batch scrive senza leggere: quella lettura vivrebbe fuori
- * dall'atomicità, e una mappa salvata fra la lettura e il commit lascerebbe una
- * lezione svolta senza mappa — o, nel verso pericoloso, una proiezione non
- * svolta che conserva la mappa. La transazione ritenta finché le due letture e
- * le scritture non sono coerenti fra loro.
- *
- * L'invariante difeso, identico a quello delle Rules: **una proiezione con
- * `completed != true` non contiene mai `conceptMapMarkdown`**, né durante una
- * race né dopo un errore.
- *
- * Firma e comportamento pubblico invariati: `CourseWorkspace` non cambia.
+ * Mantiene la firma usata dal workspace, ma non possiede più alcuna scrittura:
+ * da VE-03B l'unica autorità è la callable server-side. `publicLessonId`, uid e
+ * db restano parametri di compatibilità del service e non entrano nel payload.
  */
 export async function setLessonCompleted(
   programId: string,
@@ -348,81 +314,26 @@ export async function setLessonCompleted(
   lessonId: string,
   publicLessonId: string,
   completed: boolean,
-  ownerUid: string,
-  db: Firestore,
+  _ownerUid: string,
+  _db: Firestore,
+  invoke?: (input: {
+    programId: string;
+    importId: string;
+    lessonId: string;
+    completed: boolean;
+  }) => Promise<void>,
 ): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    // 1. documento tecnico: esistenza, appartenenza, id pubblico atteso. Le due
-    // letture sono **sequenziali** perché l'indirizzo della proiezione è una
-    // conseguenza del `LessonDoc`, non un dato del chiamante: leggerle in
-    // parallelo significherebbe fidarsi del `publicLessonId` ricevuto.
-    const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
-    const lessonSnap = await tx.get(lessonRef);
-    const lesson = lessonSnap.exists() ? (lessonSnap.data() as LessonDoc) : null;
-    const gate = checkLessonBeforeProjection({
-      lesson,
-      lessonId,
-      requestedPublicLessonId: publicLessonId,
-      ownerUid,
-      importId,
+  void publicLessonId;
+  const call =
+    invoke ??
+    (async (input) => {
+      const [{ functions }, { createVisualLifecycleClient }] = await Promise.all([
+        import('../../../lib/firebase.js'),
+        import('./visualLifecycleClient.js'),
+      ]);
+      await createVisualLifecycleClient(functions).setLessonCompleted(input);
     });
-    if (!gate.ok) throw new LessonCompletionError(identityFailureMessage(gate.failure));
-    const technicalLesson = lesson as LessonDoc;
-
-    // 2. proiezione all'indirizzo **derivato**, mai a quello ricevuto.
-    const publicRef = doc(db, 'publicLessons', gate.publicLessonId);
-    const publicSnap = await tx.get(publicRef);
-    const projectionGate = checkProjectionMatchesLesson({
-      lesson: technicalLesson,
-      publicLesson: publicSnap.exists() ? (publicSnap.data() as PublicLessonDoc) : null,
-      programId,
-      importId,
-      ownerUid,
-    });
-    if (!projectionGate.ok) {
-      throw new LessonCompletionError(identityFailureMessage(projectionGate.failure));
-    }
-
-    // L'aggiornamento pubblico è calcolato **prima** di qualunque scrittura: se
-    // la mappa privata è corrotta la transazione deve fallire senza aver
-    // accodato nemmeno una `tx.update`. In una transazione reale nulla verrebbe
-    // comunque committato, ma «zero write» deve essere vero a ogni livello, non
-    // solo al commit.
-    const publicUpdate: Record<string, unknown> = { completed };
-    if (completed) {
-      // Una mappa privata **presente ma malformata** ferma tutto: copiarla
-      // violerebbe il contratto della proiezione, ignorarla silenziosamente
-      // nasconderebbe un dato corrotto. Assente è invece normale, e significa
-      // soltanto che non c'è nulla da proiettare.
-      const rawMap = technicalLesson.conceptMapMarkdown;
-      if (rawMap !== undefined && !isValidConceptMap(rawMap)) {
-        throw new LessonCompletionError(
-          'La mappa concettuale salvata non è valida: correggila prima di marcare la lezione come svolta.',
-        );
-      }
-      publicUpdate.conceptMapMarkdown = rawMap === undefined ? deleteField() : rawMap;
-    } else {
-      // Smarcare rimuove **sempre** la mappa dalla proiezione, anche se non
-      // risultava presente: è l'unico modo per garantire l'invariante pure a
-      // fronte di un documento scritto male in passato.
-      publicUpdate.conceptMapMarkdown = deleteField();
-    }
-
-    tx.update(lessonRef, {
-      completed,
-      completedAt: completed ? serverTimestamp() : null,
-    });
-    tx.update(publicRef, publicUpdate);
-
-    tx.set(doc(collection(db, 'auditEvents')), {
-      actorUid: ownerUid,
-      action: 'lesson.completed',
-      targetId: lessonId,
-      outcome: 'success',
-      reason: completed ? 'marked as completed' : 'marked as not completed',
-      timestamp: serverTimestamp(),
-    });
-  });
+  await call({ programId, importId, lessonId, completed });
 }
 
 export const PROGRAM_DELETE_BLOCKED_MESSAGE =
@@ -459,6 +370,11 @@ export async function deleteProgram(
   ownerUid: string,
   db: Firestore,
   cleanupLessonNotes: (programId: string) => Promise<unknown>,
+  cleanupVisuals?: (input: {
+    programId: string;
+    importId: string;
+    lessonIds: string[];
+  }) => Promise<void>,
 ): Promise<void> {
   // A targeted, server-side existence check (PERF-SEC-01B-3): only asks
   // "does at least one verification reference this program?" via
@@ -501,13 +417,38 @@ export async function deleteProgram(
     }),
   );
 
+  for (const item of imports) {
+    const lessonIds = item.lessonsSnap.docs
+      .filter(
+        (lesson) =>
+          cleanupVisuals !== undefined ||
+          (typeof lesson.data === 'function' && (lesson.data() as LessonDoc).visual !== undefined),
+      )
+      .map((lesson) => lesson.id);
+    if (lessonIds.length === 0) continue;
+    const cleanup =
+      cleanupVisuals ??
+      (async (input: { programId: string; importId: string; lessonIds: string[] }) => {
+        const [{ functions }, { createVisualLifecycleClient }] = await Promise.all([
+          import('../../../lib/firebase.js'),
+          import('./visualLifecycleClient.js'),
+        ]);
+        await createVisualLifecycleClient(functions).cleanupForDelete(input);
+      });
+    await cleanup({ programId, importId: item.importId, lessonIds });
+  }
+
   // Una sola richiesta gateway per import: niente listAll/deleteObject ricorsivi
   // dal browser e nessun retry Storage SDK di ~120 s su Brave.
   for (let i = 0; i < imports.length; i += PREFIX_DELETE_CONCURRENCY) {
     await Promise.all(
-      imports
-        .slice(i, i + PREFIX_DELETE_CONCURRENCY)
-        .map(({ importId }) => deleteImportPrefix(`repository/${ownerUid}/imports/${importId}`)),
+      imports.slice(i, i + PREFIX_DELETE_CONCURRENCY).flatMap(({ importId }) => [
+        deleteImportPrefix(`repository/${ownerUid}/imports/${importId}`),
+        // I canonici VE-03A precedono la cartella `imports`: questa seconda
+        // cancellazione rende il cleanup del corso completo anche se un
+        // recovery puntuale è rimasto interrotto.
+        deleteImportPrefix(`repository/${ownerUid}/${importId}`),
+      ]),
     );
   }
 

@@ -40,6 +40,7 @@ import {
 } from '../repository/programs/programsService.js';
 import { saveLessonConceptMap } from '../repository/programs/conceptMapService.js';
 import { readPrivateConceptMap } from '../repository/programs/conceptMapContract.js';
+import { createVisualLifecycleClient } from '../repository/programs/visualLifecycleClient.js';
 import {
   createAiConceptMapCallables,
   type AiConceptMapCallables,
@@ -1040,6 +1041,7 @@ export function CourseWorkspace({
           ownerUid,
           db,
           createProgramNotesCleanupCallable(functions),
+          createVisualLifecycleClient(functions).cleanupForDelete,
         );
         if (!mountedRef.current) return;
         onCourseDeleted?.(card.programId);
@@ -1175,7 +1177,15 @@ export function CourseWorkspace({
     const uda = tree?.udas.find((u) => u.id === udaId);
     void withBusy(async () => {
       try {
-        await deleteUda({ programId: card.programId, importId, udaId, ownerUid, db, storage });
+        await deleteUda({
+          programId: card.programId,
+          importId,
+          udaId,
+          ownerUid,
+          db,
+          storage,
+          cleanupVisuals: createVisualLifecycleClient(functions).cleanupForDelete,
+        });
         if (!mountedRef.current) return;
         // Deterministic next tree + pure setTree; patch the card once, outside
         // the updater, so Strict Mode can't duplicate the card callback.
@@ -1450,6 +1460,7 @@ export function CourseWorkspace({
           ownerUid,
           db,
           storage,
+          cleanupVisuals: createVisualLifecycleClient(functions).cleanupForDelete,
         });
         if (!mountedRef.current) return;
         if (tree) {

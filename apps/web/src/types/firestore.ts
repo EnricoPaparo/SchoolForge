@@ -28,6 +28,8 @@ export type AuditAction =
    * coerenza del registro vale più di una sfumatura di leggibilità.
    */
   | 'lesson.conceptMapSaved'
+  | 'lesson.visualApproved'
+  | 'lesson.visualRemoved'
   | 'lesson.updated'
   | 'lesson.deleted'
   | 'lesson.reordered'
@@ -186,6 +188,8 @@ export interface LessonDoc {
    * come mappa vuota.
    */
   conceptMapMarkdown?: string;
+  /** VE-03A/03B — manifest autorevole; mai proiettato integralmente. */
+  visual?: LessonVisualPrivateManifest;
   /**
    * Parsed from the lesson's own optional YAML front matter at import time
    * (never required — see LessonMetadata). Absent on lessons imported
@@ -282,6 +286,33 @@ export interface PublicLessonDoc {
    * Proiezioni legacy prive del campo restano valide, senza migrazione.
    */
   conceptMapMarkdown?: string;
+  /** VE-03A/03B — soli metadati di presentazione, presenti solo se svolta. */
+  visual?: LessonVisualPublicManifest;
+}
+
+export interface LessonVisualAnchor {
+  headingSlug: string;
+  headingText: string;
+  placement: 'after-heading';
+}
+
+export interface LessonVisualPublicManifest {
+  assetId: string;
+  anchor: LessonVisualAnchor;
+  caption: string;
+  altText: string;
+  width: number;
+  height: number;
+}
+
+export interface LessonVisualPrivateManifest extends LessonVisualPublicManifest {
+  storageRef: string;
+  byteLength: number;
+  sha256: string;
+  mimeType: 'image/webp';
+  styleVersion: 'schoolforge-sketch/v1';
+  sourceBodyHash: string;
+  approvedAt: Timestamp;
 }
 
 /**

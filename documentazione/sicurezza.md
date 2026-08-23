@@ -853,6 +853,26 @@ resta e viene riusato dalla task.
 
 ---
 
+### VISUAL-ENRICHMENT-03B — visibilità e cleanup
+
+Il completamento non è più una scrittura client: una callable owner-only
+controlla la coppia `LessonDoc`/`PublicLessonDoc`, e nessun id pubblico o path
+Storage è accettato dal chiamante. Le letture binarie avvengono fuori
+transazione ma soltanto dopo aver validato il manifest privato closed-world e
+aver ricostruito lo stesso riferimento canonico; la transazione confronta i
+fingerprint riletti prima di pubblicare. Un manifest malformato fallisce prima
+di ogni accesso Storage e prima di ogni scrittura.
+
+Smarcare elimina nello stesso commit tutti i dati visuali leggibili dallo
+studente. La rimozione esplicita elimina prima i riferimenti Firestore e solo
+dopo il blob privato: l'unica finestra di crash ammessa è quindi un orfano
+owner-only. Il record `aiVisualRemovals` consente un retry esatto e impedisce a
+un cleanup vecchio di cancellare un rimpiazzo. L'abbandono elimina il ticket e
+registra una tombstone prima dello staging, così una risposta persa è
+ripetibile e il run non torna promuovibile. Tutti i documenti tecnici del
+lifecycle sono negati a owner, studenti e anonimi dalle Rules; l'Admin SDK è
+l'unico writer.
+
 ## 10. Checklist ai gate
 
 | Gate | Controlli minimi |
