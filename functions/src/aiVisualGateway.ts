@@ -83,6 +83,14 @@ import {
   type VisualPromotionPlan,
 } from './aiVisualPromotion.js';
 import {
+  MAX_VISUAL_EXPORT_TOTAL_BYTES,
+  serializeVisualManifestForExport,
+  validateVisualExportInput,
+  type VisualExportInput,
+  type VisualExportItem,
+  type VisualExportResult,
+} from './aiVisualExport.js';
+import {
   checkLessonForVisual,
   checkProjectionForVisual,
   describeVisualBindingFailure,
@@ -581,6 +589,59 @@ async function readAuthoritativeLesson(
   };
 }
 
+/**
+ * Lega un `requestId` alla lezione da cui la proposta nasce.
+ *
+ * Estratta dall'handler come le altre operazioni di VE-03 — promozione,
+ * lifecycle, export — così l'intero ciclo di vita è pilotabile da una suite
+ * end-to-end senza passare da `onCall`, e la callable resta un guscio di
+ * autenticazione e traduzione degli errori.
+ */
+export async function bindVisualCandidateForOwner(params: {
+  db: Firestore;
+  ownerUid: string;
+  input: ReturnType<typeof validateVisualCandidateBindInput>;
+  nowMs: number;
+}): Promise<{ requestId: string; status: 'created' | 'replayed' }> {
+  const { db, ownerUid, input, nowMs } = params;
+  const lesson = await readAuthoritativeLesson(db, { ownerUid, ...input });
+
+  const opaqueRunId = computeVisualRunId(ownerUid, input.requestId);
+  const next: StoredVisualCandidate = {
+    contractVersion: 1,
+    ownerUid,
+    programId: input.programId,
+    importId: input.importId,
+    lessonId: input.lessonId,
+    publicLessonId: lesson.publicLessonId,
+    udaDir: lesson.udaDir,
+    // Il corpo non viene conservato: solo la sua impronta, che serve a
+    // confrontare e non a leggere.
+    sourceBodyHash: computeSourceBodyHash(lesson.body),
+    createdAtMs: nowMs,
+    expireAtMs: nowMs + VISUAL_CANDIDATE_TTL_MS,
+  };
+
+  const ref = db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`);
+  const abandonmentRef = db.doc(`${VISUAL_ABANDONMENTS}/${opaqueRunId}`);
+  const outcome = await db.runTransaction(async (tx) => {
+    const [abandonmentSnap, snap] = await Promise.all([tx.get(abandonmentRef), tx.get(ref)]);
+    if (abandonmentSnap.exists) {
+      throw new AiVisualError('run_conflict', 'Il candidato visuale è stato abbandonato.');
+    }
+    const existing = parseStoredVisualCandidate(snap.exists ? snap.data() : null);
+    const result = reconcileVisualCandidateBind({ existing, next });
+    if (result.status === 'created') tx.set(ref, serializeVisualCandidate(result.candidate));
+    return result;
+  });
+  if (outcome.status === 'conflict') {
+    throw new AiVisualError('run_conflict', describeCandidateConflict(outcome.reason));
+  }
+  // Nient'altro esce di qui: né l'impronta del corpo, né l'id pubblico, né il
+  // run id opaco. Il client sa soltanto che può procedere.
+  return { requestId: input.requestId, status: outcome.status };
+}
+
 async function handleBindCandidate(request: CallableRequest<unknown>): Promise<unknown> {
   const db = database();
   try {
@@ -588,44 +649,12 @@ async function handleBindCandidate(request: CallableRequest<unknown>): Promise<u
     if (visualMode() === 'disabled') {
       throw new AiVisualError('feature_disabled', 'La generazione visuale è disattivata.');
     }
-    const input = validateVisualCandidateBindInput(request.data);
-    const lesson = await readAuthoritativeLesson(db, { ownerUid, ...input });
-
-    const nowMs = Date.now();
-    const opaqueRunId = computeVisualRunId(ownerUid, input.requestId);
-    const next: StoredVisualCandidate = {
-      contractVersion: 1,
+    return await bindVisualCandidateForOwner({
+      db,
       ownerUid,
-      programId: input.programId,
-      importId: input.importId,
-      lessonId: input.lessonId,
-      publicLessonId: lesson.publicLessonId,
-      udaDir: lesson.udaDir,
-      // Il corpo non viene conservato: solo la sua impronta, che serve a
-      // confrontare e non a leggere.
-      sourceBodyHash: computeSourceBodyHash(lesson.body),
-      createdAtMs: nowMs,
-      expireAtMs: nowMs + VISUAL_CANDIDATE_TTL_MS,
-    };
-
-    const ref = db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`);
-    const abandonmentRef = db.doc(`${VISUAL_ABANDONMENTS}/${opaqueRunId}`);
-    const outcome = await db.runTransaction(async (tx) => {
-      const [abandonmentSnap, snap] = await Promise.all([tx.get(abandonmentRef), tx.get(ref)]);
-      if (abandonmentSnap.exists) {
-        throw new AiVisualError('run_conflict', 'Il candidato visuale è stato abbandonato.');
-      }
-      const existing = parseStoredVisualCandidate(snap.exists ? snap.data() : null);
-      const result = reconcileVisualCandidateBind({ existing, next });
-      if (result.status === 'created') tx.set(ref, serializeVisualCandidate(result.candidate));
-      return result;
+      input: validateVisualCandidateBindInput(request.data),
+      nowMs: Date.now(),
     });
-    if (outcome.status === 'conflict') {
-      throw new AiVisualError('run_conflict', describeCandidateConflict(outcome.reason));
-    }
-    // Nient'altro esce di qui: né l'impronta del corpo, né l'id pubblico, né il
-    // run id opaco. Il client sa soltanto che può procedere.
-    return { requestId: input.requestId, status: outcome.status };
   } catch (error) {
     if (error instanceof AiVisualError) throw toHttpsError(error);
     logger.error('aiVisualBindCandidate internal error', { name: (error as Error)?.name });
@@ -1808,4 +1837,142 @@ export const visualRunCleanup = onDocumentDeleted(
     });
     logger.info('visual_run_cleanup', { result });
   },
+);
+
+// ─── VE-03C — export binario, l'unica operazione non testuale ────────────────
+
+/**
+ * Legge i byte canonici delle lezioni richieste, per l'export ZIP.
+ *
+ * **Perché una callable e non una rotta del gateway testuale.** Il gateway
+ * SGW-01 parla di percorsi: chi chiama dice *quale file* vuole. Qui il
+ * chiamante non deve poter nominare alcun percorso — direbbe di fatto «leggimi
+ * questo oggetto dello Storage», che è la lettura arbitraria che tutta VE-03 ha
+ * evitato. L'input porta solo identificatori di dominio; `ownerUid`, `udaDir`,
+ * `assetId` e `storageRef` li deriva il server dal `LessonDoc`.
+ *
+ * **Fail-closed.** Una lezione senza `visual` risponde `absent` ed è il caso
+ * normale. Una lezione che **dichiara** un visual e non lo consegna verificato
+ * fa fallire l'intera richiesta: nessun risultato parziale dentro un batch,
+ * perché un batch a metà diventerebbe un archivio a metà che sembra intero.
+ */
+export async function exportLessonVisualsForOwner(params: {
+  db: Firestore;
+  bucket: BucketLike;
+  ownerUid: string;
+  input: VisualExportInput;
+}): Promise<VisualExportResult> {
+  const { db, bucket, ownerUid, input } = params;
+
+  // Letture sequenziali per lezione: l'`udaDir` da cui dipende il percorso
+  // canonico vive sul `LessonDoc`, quindi non esiste un modo di sapere che cosa
+  // leggere prima di averlo letto. La concorrenza sta nei batch lato client.
+  const items: VisualExportItem[] = [];
+  let totalBytes = 0;
+
+  for (const lessonId of input.lessonIds) {
+    const snap = await db.doc(lessonPath(input.programId, input.importId, lessonId)).get();
+    const lesson = snap.exists ? (snap.data() as Record<string, unknown>) : null;
+    const gate = checkLessonForVisual({
+      lesson,
+      lessonId,
+      ownerUid,
+      importId: input.importId,
+    });
+    if (!gate.ok) {
+      throw new AiVisualError('invalid_input', describeVisualBindingFailure(gate.failure));
+    }
+
+    const raw = lesson?.visual;
+    if (raw === undefined || raw === null) {
+      items.push({ lessonId, status: 'absent' });
+      continue;
+    }
+
+    // Manifest valido **e** percorso canonico ricalcolato: il path memorizzato
+    // viene confrontato, mai usato come istruzione di lettura.
+    const manifest = validateCanonicalLessonVisual({
+      value: raw,
+      ownerUid,
+      importId: input.importId,
+      udaDir: gate.udaDir,
+    });
+
+    let bytes: Uint8Array;
+    try {
+      [bytes] = await bucket.file(manifest.storageRef).download();
+    } catch (error) {
+      if (isStorageNotFound(error)) {
+        throw new AiVisualError(
+          'corrupted_state',
+          `L’immagine della lezione ${lessonId} non è più presente nell’archivio.`,
+        );
+      }
+      throw error;
+    }
+
+    // Gli stessi controlli della promozione, rifatti sui byte appena letti: fra
+    // approvazione ed export può essere passato tutto il tempo del mondo, e un
+    // archivio è esattamente il posto in cui un byte sbagliato sopravvive.
+    assertStagedBytesMatchRun({
+      bytes,
+      image: {
+        sha256: manifest.sha256,
+        byteLength: manifest.byteLength,
+        width: manifest.width,
+        height: manifest.height,
+        mimeType: manifest.mimeType,
+        styleVersion: manifest.styleVersion,
+      },
+      inspect: inspectWebp,
+    });
+
+    totalBytes += bytes.byteLength;
+    if (totalBytes > MAX_VISUAL_EXPORT_TOTAL_BYTES) {
+      throw new AiVisualError(
+        'visual_too_large',
+        `La risposta supera il limite di ${MAX_VISUAL_EXPORT_TOTAL_BYTES} byte.`,
+      );
+    }
+
+    items.push({
+      lessonId,
+      status: 'present',
+      assetId: manifest.assetId,
+      manifestJson: serializeVisualManifestForExport(manifest),
+      base64: Buffer.from(bytes).toString('base64'),
+      byteLength: bytes.byteLength,
+    });
+  }
+
+  return { items };
+}
+
+async function handleExportLessonVisuals(request: CallableRequest<unknown>): Promise<unknown> {
+  const db = database();
+  try {
+    const ownerUid = await requireOwner(request, db);
+    return await exportLessonVisualsForOwner({
+      db,
+      bucket: getStorage().bucket() as unknown as BucketLike,
+      ownerUid,
+      input: validateVisualExportInput(request.data),
+    });
+  } catch (error) {
+    if (error instanceof AiVisualError) throw toHttpsError(error);
+    logger.error('aiVisualExportBatch internal error', { name: (error as Error)?.name });
+    throw new HttpsError('internal', 'Errore interno dell’export visuale.');
+  }
+}
+
+/**
+ * Export binario: owner-only, nessun secret, nessun provider, nessuna spesa IA.
+ *
+ * Non emette audit — e non per dimenticanza: l'export testuale che affianca non
+ * ne emette, e introdurne uno solo qui creerebbe una traccia asimmetrica che
+ * racconta metà della stessa azione.
+ */
+export const aiVisualExportBatch = onCall(
+  { region: SCHOOLFORGE_FUNCTION_REGION },
+  handleExportLessonVisuals,
 );

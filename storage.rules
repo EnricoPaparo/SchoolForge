@@ -18,9 +18,32 @@ service firebase.storage {
     // reads Firestore at all, it simply stops granting a second, unguarded
     // path to the same content.
 
+    // VISUAL-ENRICHMENT-03C: i binari visuali non sono raggiungibili da alcun
+    // client, **nemmeno dal docente proprietario**.
+    //
+    // Non toglie nulla a nessuno: il runtime web non legge Storage direttamente
+    // da SGW-02C, e l'unico percorso previsto verso questi byte è la callable
+    // `aiVisualExportBatch`, che passa dall'Admin SDK — il quale bypassa queste
+    // regole — dopo aver verificato proprietà, manifest, hash e dimensioni.
+    // Lasciare aperta una seconda porta significava avere una lettura non
+    // verificata accanto a una verificata.
+    //
+    // **Perché una condizione e non un `match` più specifico.** Le regole
+    // Storage combinano i match in OR: un `match` dedicato che negasse non
+    // vincerebbe sulla regola ricorsiva del repository, che continuerebbe a
+    // concedere. L'esclusione deve quindi stare *dentro* la condizione che
+    // concede. Il confronto è su `resource.name`/`request.resource.name` perché
+    // i wildcard di tipo Path non espongono `matches()`.
+    function isVisualObject() {
+      return (resource != null && resource.name.matches('.*/visuals/.*'))
+        || (request.resource != null && request.resource.name.matches('.*/visuals/.*'));
+    }
+
     // Owner keeps full control over repository files and pools.
     match /repository/{ownerUid}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == ownerUid;
+      allow read, write: if request.auth != null
+        && request.auth.uid == ownerUid
+        && !isVisualObject();
     }
 
     // VISUAL-ENRICHMENT-02: staging accessibile esclusivamente via Admin SDK.

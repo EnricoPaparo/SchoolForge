@@ -877,6 +877,43 @@ ripetibile e il run non torna promuovibile. Tutti i documenti tecnici del
 lifecycle sono negati a owner, studenti e anonimi dalle Rules; l'Admin SDK è
 l'unico writer.
 
+### VISUAL-ENRICHMENT-03C — l'unica operazione binaria
+
+`aiVisualExportBatch` è owner-only e **non accetta percorsi**: input chiuso
+`{ programId, importId, lessonIds }`, al massimo 32 lezioni senza duplicati.
+`ownerUid`, `udaDir`, `assetId`, `storageRef`, `sha256`, `byteLength`,
+dimensioni e MIME sono derivati dal `LessonDoc`; nessuno dei nove è accettato dal
+client, nemmeno se inviato. Il gateway repository resta testuale: aggiungere lì
+una rotta binaria avrebbe significato offrire una lettura arbitraria dello
+Storage con un altro nome.
+
+**I byte visuali non hanno una seconda porta.** Gli oggetti sotto
+`repository/**/visuals/**` sono negati a ogni client — studente, anonimo, altro
+docente **e docente proprietario**. Non toglie nulla: il runtime web non legge
+Storage da SGW-02C, e l'unico percorso è la callable, che verifica proprietà,
+manifest canonico, WebP, hash, lunghezza, dimensioni e MIME prima di restituire
+qualunque byte. Lasciare aperta la lettura diretta significava avere un accesso
+non verificato accanto a uno verificato. Lo studente continua a leggere le
+immagini soltanto da `publicLessonVisuals`, che non espone alcun path da cui
+risalire ai byte.
+
+**Fail-closed, mai parziale.** Una lezione che dichiara un visual non
+recuperabile o non verificabile fa fallire l'intera richiesta: nessun risultato
+parziale in un batch, perché un archivio incompleto che sembra completo è il modo
+peggiore di perdere un dato. Il sidecar JSON è la serializzazione deterministica
+del manifest privato validato e non contiene URL, download token, dati provider,
+prompt, subject, costi, API key o dati studente.
+
+**L'import non si fida dell'archivio.** `visuals/*.json` e `visuals/*.webp` sono
+esclusi alla lettura dello ZIP, prima e dopo lo strip dell'eventuale cartella
+wrapper: nessun binario, manifest, path o hash proveniente da un archivio viene
+importato o considerato autorevole. Una lezione importata nasce senza immagine.
+
+**Nessun nuovo audit e nessun costo passivo.** L'export è una lettura pura: zero
+scritture Firestore, zero write/delete Storage, nessuna traccia di audit — quello
+testuale che affianca non ne emette, e una traccia solo qui racconterebbe metà
+della stessa azione. Nessun listener, nessun polling, nessuna lettura per card.
+
 ## 10. Checklist ai gate
 
 | Gate | Controlli minimi |

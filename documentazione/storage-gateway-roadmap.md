@@ -128,6 +128,17 @@ string né nei log). `Content-Type: application/json`; contenuti file sempre
 **stringhe UTF-8** nel JSON (nessun base64, nessun binario). Ogni risposta di
 errore usa `{ "error": { "code": "...", "message": "..." } }`.
 
+> **Il gateway resta testuale, e VE-03C non lo cambia.** L'export delle immagini
+> didattiche ha bisogno di byte, ma **non** passa da qui: è la callable
+> `aiVisualExportBatch` (VISUAL-ENRICHMENT-03C), che non accetta percorsi. La
+> differenza è sostanziale e non organizzativa: il gateway è path-addressed —
+> chi chiama dice *quale file* vuole — mentre l'operazione binaria accetta solo
+> `{ programId, importId, lessonIds }` e deriva dal `LessonDoc` `ownerUid`,
+> `udaDir`, `assetId` e `storageRef`. Aggiungere una rotta binaria qui avrebbe
+> significato offrire una lettura arbitraria dello Storage con un altro nome.
+> L'allowlist di estensioni, i limiti e il contratto di questa API restano
+> invariati.
+
 ### Limiti globali (documentati)
 
 | Limite | Valore iniziale | Note |

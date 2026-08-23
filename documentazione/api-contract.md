@@ -1219,3 +1219,43 @@ manifest malformati.
 Tutte queste callable sono owner-only, idempotenti, senza secret e senza
 provider. I documenti `aiVisualCandidates`, `aiVisualPromotions`,
 `aiVisualAbandonments`, `aiVisualRemovals` e `visualRuns` sono client-unreadable.
+
+### `aiVisualExportBatch` — l'unica operazione binaria (VE-03C)
+
+Il gateway repository è testuale: legge `.md` e `.pool.md` per percorso. Questa
+callable è l'unica eccezione, ed è deliberatamente **non** una rotta del
+gateway: il chiamante non nomina alcun percorso, perché farlo equivarrebbe a una
+lettura arbitraria dello Storage con un altro nome.
+
+Input chiuso: `{ programId, importId, lessonIds }`, al massimo **32** lezioni,
+senza duplicati, ogni id un segmento (né `/`, né `.`, né `..`). `ownerUid`,
+`udaDir`, `assetId`, `storageRef`, `sha256`, `byteLength`, dimensioni e MIME
+sono **derivati dal server** leggendo il `LessonDoc`; nessuno dei nove è
+accettato dal client nemmeno se inviato.
+
+Output: un elemento per lezione, **nello stesso ordine della richiesta**.
+`{ lessonId, status: 'absent' }` per una lezione senza campo `visual` — il caso
+normale — oppure `{ lessonId, status: 'present', assetId, manifestJson, base64,
+byteLength }`. Il `manifestJson` è la serializzazione deterministica del
+manifest privato validato: chiavi in ordine congelato, `approvedAt` in ISO 8601
+UTC, nessuna URL, token, dato provider, prompt, subject, costo o dato studente.
+
+**Fail-closed.** Una lezione che dichiara un visual e non lo consegna verificato
+— manifest malformato, `storageRef` non canonico, blob assente, WebP invalido,
+hash/lunghezza/dimensioni/MIME divergenti — fa fallire l'intera richiesta. Non
+esiste risultato parziale dentro un batch: un batch a metà diventerebbe un
+archivio a metà che sembra intero.
+
+**Limiti, e da dove vengono.** Una callable risponde in JSON, quindi i byte
+viaggiano in base64 (+33%). Il tetto binario è 8.000.000 byte per risposta; il
+massimo di lezioni discende da quello e dal cap per immagine già congelato in
+VE-02: 32 × 204.800 = 6.553.600 ≤ 8.000.000. Un test ricalcola la disuguaglianza,
+così alzare il numero di lezioni senza alzare il tetto fallisce invece di
+produrre risposte troncate. Il client suddivide in batch da 32 con concorrenza 2,
+deduplica conservando la prima posizione, verifica ordine e assenza di duplicati
+a ogni batch e sulla ricomposizione complessiva.
+
+La callable **non emette audit**: l'export testuale che affianca non ne emette, e
+una traccia solo qui racconterebbe metà della stessa azione. È una lettura pura —
+zero scritture Firestore, zero scritture o delete Storage — quindi ripeterla è
+sicuro e produce byte identici.
