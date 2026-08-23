@@ -15,6 +15,11 @@ export interface VisualReanchorRequest {
   importId: string;
   lessonId: string;
   anchorHeadingText: string;
+  /**
+   * Indice zero-based fra gli heading ancorabili. Il testo da solo non
+   * distingue due `## Reti`, e il server ancorerebbe sempre al primo.
+   */
+  anchorHeadingIndex: number;
 }
 
 export interface VisualReanchorResult {

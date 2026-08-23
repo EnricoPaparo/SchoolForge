@@ -9,6 +9,8 @@ import {
   headingSlug,
   parseStoredVisualPromotion,
   reconcileVisualPromotion,
+  listAnchorableHeadings,
+  resolveAnchorByIndex,
   resolveAnchorSlugInBody,
   validateVisualPromotionInput,
   visualFingerprint,
@@ -822,5 +824,90 @@ describe('resolveAnchorSlugInBody — numerazione dei duplicati', () => {
     for (const markup of ['# Titolo', '#### Titolo', '##### Titolo', '###### Titolo']) {
       expect(() => resolveAnchorSlugInBody('Titolo', `${markup}\n`)).toThrow(/non esiste/);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('listAnchorableHeadings e resolveAnchorByIndex', () => {
+  const body = [
+    '# Titolo di primo livello',
+    '',
+    '## **Reti**',
+    '',
+    'a',
+    '',
+    '## Reti',
+    '',
+    'b',
+    '',
+    '### `Dettaglio`',
+    '',
+    'c',
+    '',
+    '#### Troppo profondo',
+  ].join('\n');
+
+  /** Solo H2/H3, testo canonicalizzato, slug numerati come nel DOM. */
+  it('elenca gli heading ancorabili con testo canonico e slug', () => {
+    expect(listAnchorableHeadings(body)).toEqual([
+      { index: 0, text: 'Reti', slug: 'reti', level: 2 },
+      { index: 1, text: 'Reti', slug: 'reti-2', level: 2 },
+      { index: 2, text: 'Dettaglio', slug: 'dettaglio', level: 3 },
+    ]);
+  });
+
+  it('la seconda occorrenza è realmente riancorabile a -2', () => {
+    expect(
+      resolveAnchorByIndex({ lessonBody: body, anchorHeadingIndex: 1, anchorHeadingText: 'Reti' }),
+    ).toEqual({ headingSlug: 'reti-2', headingText: 'Reti' });
+  });
+
+  it('la prima occorrenza resta lo slug nudo', () => {
+    expect(
+      resolveAnchorByIndex({ lessonBody: body, anchorHeadingIndex: 0, anchorHeadingText: 'Reti' }),
+    ).toEqual({ headingSlug: 'reti', headingText: 'Reti' });
+  });
+
+  it('rifiuta un indice fuori range', () => {
+    for (const index of [3, 99]) {
+      expect(() =>
+        resolveAnchorByIndex({
+          lessonBody: body,
+          anchorHeadingIndex: index,
+          anchorHeadingText: 'Reti',
+        }),
+      ).toThrow(/non esiste più/);
+    }
+  });
+
+  /**
+   * Indice valido ma testo divergente: il corpo è cambiato fra la scelta del
+   * docente e il commit, e quella posizione non descrive più ciò che ha visto.
+   */
+  it('rifiuta un indice valido con testo divergente', () => {
+    expect(() =>
+      resolveAnchorByIndex({
+        lessonBody: body,
+        anchorHeadingIndex: 0,
+        anchorHeadingText: 'Topologie',
+      }),
+    ).toThrow(/sono cambiate/);
+  });
+
+  it('il confronto è sul testo canonico, non sul Markdown grezzo', () => {
+    expect(() =>
+      resolveAnchorByIndex({
+        lessonBody: body,
+        anchorHeadingIndex: 0,
+        anchorHeadingText: '**Reti**',
+      }),
+    ).toThrow(/sono cambiate/);
+  });
+
+  it('ignora i livelli che il renderer non identifica', () => {
+    const texts = listAnchorableHeadings(body).map((h) => h.text);
+    expect(texts).not.toContain('Titolo di primo livello');
+    expect(texts).not.toContain('Troppo profondo');
   });
 });

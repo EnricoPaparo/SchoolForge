@@ -74,6 +74,7 @@ import {
   computePromotionInputHash,
   parseStoredVisualPromotion,
   reconcileVisualPromotion,
+  resolveAnchorByIndex,
   resolveAnchorSlugInBody,
   validateVisualPromotionInput,
   visualFingerprint,
@@ -2087,7 +2088,13 @@ export async function reanchorLessonVisualForOwner(params: {
     // L'ancora si risolve sul corpo **fresco**: è il punto di tutta
     // l'operazione, e usare quello del preflight vorrebbe dire riancorare a una
     // sezione che nel frattempo poteva essere sparita di nuovo.
-    const anchor = resolveAnchorSlugInBody(input.anchorHeadingText, projectionGate.body);
+    // Per **indice**, non per testo: due `## Reti` sono indistinguibili se si
+    // guarda solo il titolo, e il docente ha scelto una posizione precisa.
+    const anchor = resolveAnchorByIndex({
+      lessonBody: projectionGate.body,
+      anchorHeadingIndex: input.anchorHeadingIndex,
+      anchorHeadingText: input.anchorHeadingText,
+    });
 
     if (isSameAnchor(current, anchor)) {
       // Replay: l'ancora è già quella. Zero scritture e zero audit — una

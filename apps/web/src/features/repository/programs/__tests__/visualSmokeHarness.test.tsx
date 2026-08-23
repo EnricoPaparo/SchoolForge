@@ -53,6 +53,22 @@ const TINY_WEBP =
 
 describe('harness dello smoke responsive', () => {
   it('produce markup e CSS reali dei componenti VE-04A', () => {
+    const lessonPending = render(
+      <LessonManualBody
+        markdown={BODY}
+        visual={{
+          anchorSlug: 'la-fotosintesi',
+          headingText: 'La fotosintesi',
+          altText: 'Diagramma della fotosintesi',
+          caption: LONG_CAPTION,
+          width: 1024,
+          height: 768,
+          dataUri: null,
+          status: 'loading',
+        }}
+      />,
+    ).container.innerHTML;
+
     const lesson = render(
       <LessonManualBody
         markdown={BODY}
@@ -64,6 +80,7 @@ describe('harness dello smoke responsive', () => {
           width: 1024,
           height: 768,
           dataUri: TINY_WEBP,
+          status: 'ready',
         }}
       />,
     ).container.innerHTML;
@@ -78,14 +95,16 @@ describe('harness dello smoke responsive', () => {
     const { baseElement } = render(
       <LessonVisualReanchorDialog
         headings={[
-          { text: 'La fotosintesi', level: 2 },
+          { index: 0, text: 'La fotosintesi', slug: 'la-fotosintesi', level: 2 },
           {
+            index: 1,
             text: 'Un titolo di sezione molto lungo che deve mandare a capo senza uscire dal dialog',
+            slug: 'un-titolo-lungo',
             level: 2,
           },
-          { text: 'Dettaglio', level: 3 },
+          { index: 2, text: 'Dettaglio', slug: 'dettaglio', level: 3 },
         ]}
-        currentHeadingText="La fotosintesi"
+        currentAnchorSlug="la-fotosintesi"
         onCancel={() => {}}
         onConfirm={async () => {}}
       />,
@@ -94,6 +113,10 @@ describe('harness dello smoke responsive', () => {
 
     // Il markup deve contenere davvero i tre pezzi da misurare.
     expect(lesson).toContain('<figure');
+    // La variante pending deve avere la figura **senza** img: è ciò che lo
+    // smoke confronta per dimostrare che la geometria non cambia.
+    expect(lessonPending).toContain('<figure');
+    expect(lessonPending).not.toContain('<img');
     expect(notice).toContain('Riancora');
     expect(dialog).toContain('radiogroup');
 
@@ -130,6 +153,7 @@ describe('harness dello smoke responsive', () => {
 </style>
 </head><body>
 <div class="harness-column" id="lesson">${lesson}</div>
+<div class="harness-column" id="lesson-pending">${lessonPending}</div>
 <div class="harness-column" id="notice">${notice}</div>
 <div id="dialog">${dialog}</div>
 </body></html>`,

@@ -74,33 +74,26 @@ export function parseCalloutType(text: string): CalloutType | null {
 // ── Slug degli heading ─────────────────────────────────────────────────────────
 
 /**
- * Slug **deterministico**: stesso testo ⇒ stesso slug, indipendentemente
- * dall'ordine di rendering e dalla sessione. Gli accenti sono normalizzati in
- * modo stabile (`NFKD` + rimozione dei diacritici + minuscolo con locale `it`),
- * così `Perché`, `perche` e `PERCHÉ` convergono.
+ * L'identità degli heading vive in `@schoolforge/lesson-contract`, non qui.
+ *
+ * Era duplicata fra questo modulo e le Functions, tenuta insieme da una tabella
+ * verificata dai due lati — e le due metà erano comunque divergenti. Una
+ * tabella dimostra che due implementazioni coincidono *oggi*; un modulo
+ * condiviso rende impossibile che divergano *domani*. I re-export conservano
+ * l'API di questo modulo per i chiamanti esistenti.
  */
-export function headingSlug(value: string): string {
-  const slug = value
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLocaleLowerCase('it')
-    .replace(/['’]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  // Fallback deterministico per un heading senza testo utile (solo simboli,
-  // solo un'immagine, …): mai un identificatore vuoto o casuale.
-  return slug || 'sezione';
-}
+import {
+  canonicalLessonHeadingText,
+  lessonHeadingSlug,
+  nextLessonHeadingSlug as nextHeadingId,
+} from '@schoolforge/lesson-contract';
 
-/**
- * Assegna lo slug tenendo conto dei duplicati: il primo non porta suffisso, i
- * successivi ricevono `-2`, `-3`, … nell'ordine del documento.
- */
-export function nextHeadingId(base: string, occurrences: Map<string, number>): string {
-  const count = (occurrences.get(base) ?? 0) + 1;
-  occurrences.set(base, count);
-  return count === 1 ? base : `${base}-${count}`;
-}
+export {
+  assignLessonHeadingSlugs,
+  canonicalLessonHeadingText,
+  lessonHeadingSlug as headingSlug,
+  nextLessonHeadingSlug as nextHeadingId,
+} from '@schoolforge/lesson-contract';
 
 export interface LessonHeading {
   id: string;
@@ -211,12 +204,9 @@ export function parseLessonMarkdown(markdown: string): LessonParseResult {
        * poi la punteggiatura Markdown. Così un `id` scritto dall'autore dentro
        * l'heading non può mai diventare l'identificatore della sezione.
        */
-      const text = heading.text
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/[#*_`[\]]/g, '')
-        .trim();
+      const text = canonicalLessonHeadingText(heading.text);
       if (!text) return;
-      const id = nextHeadingId(headingSlug(text), occurrences);
+      const id = nextHeadingId(lessonHeadingSlug(text), occurrences);
       headings.push({ id, level: heading.depth === 2 ? 2 : 3, text });
     },
   }) as string;

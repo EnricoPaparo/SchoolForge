@@ -30,18 +30,41 @@ export interface VisualReanchorInput {
   programId: string;
   importId: string;
   lessonId: string;
-  /** Testo dell'heading scelto dal docente. Lo slug lo calcola il server. */
+  /** Testo canonico dell'heading scelto. Lo slug lo calcola il server. */
   anchorHeadingText: string;
+  /**
+   * Indice **zero-based** nell'elenco degli heading ancorabili (H2/H3).
+   *
+   * Esiste perché il solo testo non distingue due heading identici, e due
+   * `## Reti` nella stessa lezione sono normali: senza indice il docente non
+   * potrebbe scegliere il secondo, e il server ancorerebbe sempre al primo. Il
+   * testo resta nel payload come **conferma**: se all'indice indicato non c'è
+   * più quel titolo, il corpo è cambiato e si abortisce.
+   */
+  anchorHeadingIndex: number;
 }
 
-const REANCHOR_KEYS = ['programId', 'importId', 'lessonId', 'anchorHeadingText'] as const;
+const REANCHOR_KEYS = [
+  'programId',
+  'importId',
+  'lessonId',
+  'anchorHeadingText',
+  'anchorHeadingIndex',
+] as const;
+
+/**
+ * Tetto sull'indice: un corpo con più di mille heading ancorabili non è una
+ * lezione, e accettare un intero arbitrario significherebbe permettere di
+ * sondare la lunghezza del documento con richieste ripetute.
+ */
+const MAX_ANCHORABLE_HEADINGS = 1_000;
 
 function invalidInput(message: string): never {
   throw new AiVisualError('invalid_input', message);
 }
 
 /**
- * Input **chiuso**: quattro chiavi, nessuna in più.
+ * Input **chiuso**: cinque chiavi, nessuna in più.
  *
  * Ciò che è deliberatamente assente è più importante di ciò che c'è. Il client
  * non manda `ownerUid`, `publicLessonId`, `assetId`, `storageRef`, lo slug né
@@ -75,11 +98,22 @@ export function validateVisualReanchorInput(value: unknown): VisualReanchorInput
     invalidInput('Heading di ancoraggio non valido.');
   }
 
+  const anchorHeadingIndex = root.anchorHeadingIndex;
+  if (
+    typeof anchorHeadingIndex !== 'number' ||
+    !Number.isInteger(anchorHeadingIndex) ||
+    anchorHeadingIndex < 0 ||
+    anchorHeadingIndex > MAX_ANCHORABLE_HEADINGS
+  ) {
+    invalidInput('Indice della sezione non valido.');
+  }
+
   return {
     programId: root.programId as string,
     importId: root.importId as string,
     lessonId: root.lessonId as string,
     anchorHeadingText,
+    anchorHeadingIndex,
   };
 }
 

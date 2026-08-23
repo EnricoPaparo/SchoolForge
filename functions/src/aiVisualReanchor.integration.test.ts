@@ -137,11 +137,15 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     });
   }
 
-  const reanchor = (anchorHeadingText: string, beforeTransaction?: () => Promise<void>) =>
+  const reanchor = (
+    anchorHeadingText: string,
+    anchorHeadingIndex: number,
+    beforeTransaction?: () => Promise<void>,
+  ) =>
     reanchorLessonVisualForOwner({
       db,
       ownerUid: OWNER,
-      input: { ...identity, anchorHeadingText },
+      input: { ...identity, anchorHeadingText, anchorHeadingIndex },
       beforeTransaction,
     });
 
@@ -155,7 +159,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
   it('lezione non svolta: aggiorna solo il privato e scrive l’audit', async () => {
     await seed({ completed: false });
 
-    const result = await reanchor('Topologie');
+    const result = await reanchor('Topologie', 1);
     expect(result).toEqual({ status: 'reanchored', headingSlug: 'topologie' });
 
     const visual = (await lessonRef().get()).get('visual');
@@ -172,7 +176,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
   it('lezione svolta: privato e pubblico nello stesso commit', async () => {
     await seed({ completed: true });
 
-    await reanchor('Topologie');
+    await reanchor('Topologie', 1);
 
     expect((await lessonRef().get()).get('visual').anchor.headingSlug).toBe('topologie');
     const projected = (await publicRef().get()).get('visual');
@@ -189,7 +193,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
     const before = (await publicBytesRef().get()).data();
 
-    await reanchor('Topologie');
+    await reanchor('Topologie', 1);
 
     expect((await publicBytesRef().get()).data()).toEqual(before);
   });
@@ -198,7 +202,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
     const before = (await lessonRef().get()).get('visual');
 
-    await reanchor('Topologie');
+    await reanchor('Topologie', 1);
     const after = (await lessonRef().get()).get('visual');
 
     for (const key of [
@@ -230,7 +234,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
     const before = (await lessonRef().get()).updateTime;
 
-    const result = await reanchor('Reti');
+    const result = await reanchor('Reti', 0);
 
     expect(result).toEqual({ status: 'replayed', headingSlug: 'reti' });
     expect((await lessonRef().get()).updateTime.isEqual(before)).toBe(true);
@@ -241,20 +245,22 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
 
   it('rifiuta se l’heading non esiste nel corpo', async () => {
     await seed({ completed: true });
-    await expect(reanchor('Sezione inesistente')).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(reanchor('Sezione inesistente', 5)).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
     expect((await lessonRef().get()).get('visual').anchor.headingSlug).toBe('reti');
     expect(await auditActions()).toEqual([]);
   });
 
   it('rifiuta se la lezione non ha alcuna immagine', async () => {
     await seed({ visual: null });
-    await expect(reanchor('Topologie')).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(reanchor('Topologie', 1)).rejects.toMatchObject({ code: 'invalid_input' });
     expect(await auditActions()).toEqual([]);
   });
 
   it('rifiuta un manifest malformato invece di ripararlo', async () => {
     await seed({ visual: { assetId: 'non-un-uuid' } });
-    await expect(reanchor('Topologie')).rejects.toMatchObject({ code: 'corrupted_state' });
+    await expect(reanchor('Topologie', 1)).rejects.toMatchObject({ code: 'corrupted_state' });
     expect(await auditActions()).toEqual([]);
   });
 
@@ -264,15 +270,15 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
       reanchorLessonVisualForOwner({
         db,
         ownerUid: 'altro-docente',
-        input: { ...identity, anchorHeadingText: 'Topologie' },
+        input: { ...identity, anchorHeadingText: 'Topologie', anchorHeadingIndex: 1 },
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
-  /** Un heading di livello 1 non riceve `id`: non è ancorabile. */
+  /** Un heading di livello 1 non riceve `id`: non compare fra gli ancorabili. */
   it('rifiuta un heading che il renderer non identifica', async () => {
     await seed({ completed: true });
-    await expect(reanchor('Lezione')).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(reanchor('Lezione', 0)).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
   // ── Corse ───────────────────────────────────────────────────────────────────
@@ -285,7 +291,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
 
     await expect(
-      reanchor('Topologie', async () => {
+      reanchor('Topologie', 1, async () => {
         await publicRef().update({ content: '# Lezione\n\n## Reti\n\ntesto\n' });
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
@@ -299,7 +305,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
 
     await expect(
-      reanchor('Topologie', async () => {
+      reanchor('Topologie', 1, async () => {
         await lessonRef().update({ visual: { assetId: 'non-un-uuid' } });
       }),
     ).rejects.toMatchObject({ code: 'corrupted_state' });
@@ -315,7 +321,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
 
     await expect(
-      reanchor('Topologie', async () => {
+      reanchor('Topologie', 1, async () => {
         await lessonRef().update({ completed: false });
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
@@ -328,7 +334,7 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
 
     await expect(
-      reanchor('Topologie', async () => {
+      reanchor('Topologie', 1, async () => {
         await publicRef().update({ filename: 'lezione-002.md' });
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
@@ -341,11 +347,171 @@ emulatorDescribe('VE-04A riancoraggio — Firestore Emulator', () => {
     await seed({ completed: true });
 
     await expect(
-      reanchor('Topologie', async () => {
+      reanchor('Topologie', 1, async () => {
         await lessonRef().update({ visual: null });
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
 
     expect(await auditActions()).toEqual([]);
+  });
+});
+
+emulatorDescribe('VE-04A riancoraggio — heading omonimi', () => {
+  let app: App;
+  let db: Firestore;
+
+  const lessonRef = () => db.doc(`programs/${PROGRAM}/imports/${IMPORT}/lessons/${LESSON}`);
+  const publicRef = () => db.doc(`publicLessons/${PUBLIC_LESSON}`);
+  const identity = { programId: PROGRAM, importId: IMPORT, lessonId: LESSON };
+
+  /** Due `## Reti`: senza indice il secondo sarebbe irraggiungibile. */
+  const DUPLICATE_BODY = [
+    '# Lezione',
+    '',
+    '## Reti',
+    '',
+    'prima',
+    '',
+    '## Reti',
+    '',
+    'seconda',
+  ].join('\n');
+
+  beforeAll(() => {
+    const projectId = process.env.GCLOUD_PROJECT ?? 'demo-schoolforge';
+    app = initializeApp({ projectId }, `ai-visual-reanchor-dup-${randomUUID()}`);
+    db = getFirestore(app);
+  });
+
+  afterEach(async () => {
+    const audit = await db.collection('auditEvents').get();
+    await Promise.all(audit.docs.map((d) => d.ref.delete()));
+    await Promise.all([lessonRef().delete(), publicRef().delete()]);
+  });
+
+  afterAll(async () => {
+    await deleteApp(app);
+  });
+
+  async function seedDuplicates(body = DUPLICATE_BODY) {
+    await lessonRef().set({
+      ownerUid: OWNER,
+      importId: IMPORT,
+      udaDir: UDA,
+      path: `${UDA}/lezione-001.md`,
+      filename: 'lezione-001.md',
+      publicLessonId: PUBLIC_LESSON,
+      completed: true,
+      visual: {
+        assetId: ASSET,
+        storageRef: STORAGE_REF,
+        anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after-heading' },
+        caption: 'Schema dei nodi',
+        altText: 'Tre nodi collegati',
+        width: 1024,
+        height: 768,
+        byteLength: 1234,
+        sha256: 'a'.repeat(64),
+        mimeType: 'image/webp',
+        styleVersion: 'schoolforge-sketch/v1',
+        sourceBodyHash: 'b'.repeat(64),
+        approvedAt: Timestamp.fromMillis(1_700_000_000_000),
+      },
+    });
+    await publicRef().set({
+      ownerUid: OWNER,
+      programId: PROGRAM,
+      importId: IMPORT,
+      udaId: UDA,
+      udaDir: UDA,
+      path: `${UDA}/lezione-001.md`,
+      filename: 'lezione-001.md',
+      contentPath: `${UDA}/lezione-001.md`,
+      content: body,
+      completed: true,
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      visual: {
+        assetId: ASSET,
+        anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after-heading' },
+        caption: 'Schema dei nodi',
+        altText: 'Tre nodi collegati',
+        width: 1024,
+        height: 768,
+      },
+    });
+  }
+
+  const reanchorAt = (index: number, text = 'Reti') =>
+    reanchorLessonVisualForOwner({
+      db,
+      ownerUid: OWNER,
+      input: { ...identity, anchorHeadingText: text, anchorHeadingIndex: index },
+    });
+
+  it('la seconda occorrenza è riancorabile a reti-2', async () => {
+    await seedDuplicates();
+
+    const result = await reanchorAt(1);
+
+    expect(result).toEqual({ status: 'reanchored', headingSlug: 'reti-2' });
+    expect((await lessonRef().get()).get('visual').anchor.headingSlug).toBe('reti-2');
+    expect((await publicRef().get()).get('visual').anchor.headingSlug).toBe('reti-2');
+  });
+
+  it('la prima occorrenza resta lo slug nudo', async () => {
+    await seedDuplicates();
+    // Riancora prima altrove, così tornare alla prima non è un replay.
+    await reanchorAt(1);
+    const result = await reanchorAt(0);
+    expect(result).toEqual({ status: 'reanchored', headingSlug: 'reti' });
+  });
+
+  it('rifiuta un indice fuori range', async () => {
+    await seedDuplicates();
+    await expect(reanchorAt(9)).rejects.toMatchObject({ code: 'invalid_input' });
+    expect((await db.collection('auditEvents').get()).empty).toBe(true);
+  });
+
+  it('rifiuta un indice valido con testo divergente', async () => {
+    await seedDuplicates();
+    await expect(reanchorAt(1, 'Topologie')).rejects.toMatchObject({ code: 'invalid_input' });
+    expect((await db.collection('auditEvents').get()).empty).toBe(true);
+  });
+
+  /**
+   * L'ordine degli heading cambia fra la scelta del docente e il commit: la
+   * posizione 1 non descrive più «la seconda occorrenza di Reti».
+   */
+  it('corsa sull’ordine: gli heading cambiano prima del commit', async () => {
+    await seedDuplicates();
+
+    await expect(
+      reanchorLessonVisualForOwner({
+        db,
+        ownerUid: OWNER,
+        input: { ...identity, anchorHeadingText: 'Reti', anchorHeadingIndex: 1 },
+        beforeTransaction: async () => {
+          await publicRef().update({
+            content: ['# Lezione', '', '## Reti', '', 'prima', '', '## Topologie', '', 'x'].join(
+              '\n',
+            ),
+          });
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+
+    expect((await lessonRef().get()).get('visual').anchor.headingSlug).toBe('reti');
+    expect((await db.collection('auditEvents').get()).empty).toBe(true);
+  });
+
+  it('replay sulla stessa occorrenza: zero scritture e zero audit', async () => {
+    await seedDuplicates();
+    const before = (await lessonRef().get()).updateTime;
+
+    const result = await reanchorAt(0);
+
+    expect(result).toEqual({ status: 'replayed', headingSlug: 'reti' });
+    expect((await lessonRef().get()).updateTime.isEqual(before)).toBe(true);
+    expect((await db.collection('auditEvents').get()).empty).toBe(true);
   });
 });

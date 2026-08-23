@@ -18,9 +18,16 @@ import { LessonVisualAnchorNotice } from '../LessonVisualAnchorNotice.js';
 afterEach(cleanup);
 
 const HEADINGS = [
-  { text: 'Reti', level: 2 as const },
-  { text: 'Topologie', level: 2 as const },
-  { text: 'Dettaglio', level: 3 as const },
+  { index: 0, text: 'Reti', slug: 'reti', level: 2 as const },
+  { index: 1, text: 'Topologie', slug: 'topologie', level: 2 as const },
+  { index: 2, text: 'Dettaglio', slug: 'dettaglio', level: 3 as const },
+];
+
+/** Due sezioni omonime: senza indice sarebbero indistinguibili. */
+const DUPLICATE_HEADINGS = [
+  { index: 0, text: 'Reti', slug: 'reti', level: 2 as const },
+  { index: 1, text: 'Reti', slug: 'reti-2', level: 2 as const },
+  { index: 2, text: 'Reti', slug: 'reti-3', level: 2 as const },
 ];
 
 function renderDialog(over: Partial<Parameters<typeof LessonVisualReanchorDialog>[0]> = {}) {
@@ -29,7 +36,7 @@ function renderDialog(over: Partial<Parameters<typeof LessonVisualReanchorDialog
   const utils = render(
     <LessonVisualReanchorDialog
       headings={HEADINGS}
-      currentHeadingText="Reti"
+      currentAnchorSlug="reti"
       onCancel={onCancel}
       onConfirm={onConfirm}
       {...over}
@@ -79,10 +86,11 @@ describe('LessonVisualReanchorDialog', () => {
 
   it('segnala qual è l’ancora attuale', () => {
     const { baseElement } = renderDialog();
-    const current = Array.from(baseElement.querySelectorAll('label')).find((l) =>
+    const current = Array.from(baseElement.querySelectorAll('label')).filter((l) =>
       l.textContent?.includes('ancora attuale'),
     );
-    expect(current?.textContent).toContain('Reti');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.textContent).toContain('Reti');
   });
 
   /** La selezione è obbligatoria: senza, l'azione non è disponibile. */
@@ -97,13 +105,13 @@ describe('LessonVisualReanchorDialog', () => {
     expect(confirm.disabled).toBe(false);
   });
 
-  it('conferma con il testo esatto dell’heading scelto', async () => {
+  it('conferma con l’opzione scelta, indice compreso', async () => {
     const { baseElement, onConfirm } = renderDialog();
     fireEvent.click(baseElement.querySelectorAll('input[type="radio"]')[1]!);
     fireEvent.click(
       Array.from(baseElement.querySelectorAll('button')).find((b) => b.textContent === 'Riancora')!,
     );
-    expect(onConfirm).toHaveBeenCalledWith('Topologie');
+    expect(onConfirm).toHaveBeenCalledWith(HEADINGS[1]);
   });
 
   it('«Annulla» chiude senza riancorare', () => {
@@ -187,5 +195,73 @@ describe('accessibilità del dialog', () => {
     expect(baseElement.querySelector(`[id="${labelledBy}"]`)?.textContent).toBe(
       'Riancora l’immagine',
     );
+  });
+});
+
+describe('heading omonimi — identità per indice, non per testo', () => {
+  /**
+   * Il difetto che questo blocco impedisce: con il testo come chiave, cliccare
+   * la seconda «Reti» selezionerebbe **tutte e tre** le radio, e il docente non
+   * potrebbe scegliere quale sezione ancorare.
+   */
+  it('le radio omonime sono indipendenti', () => {
+    const { baseElement } = renderDialog({
+      headings: DUPLICATE_HEADINGS,
+      currentAnchorSlug: 'reti',
+    });
+    const radios = Array.from(
+      baseElement.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    );
+
+    fireEvent.click(radios[1]!);
+
+    expect(radios.map((r) => r.checked)).toEqual([false, true, false]);
+  });
+
+  it('conferma la seconda occorrenza con il suo indice e il suo slug', () => {
+    const { baseElement, onConfirm } = renderDialog({
+      headings: DUPLICATE_HEADINGS,
+      currentAnchorSlug: 'reti',
+    });
+    fireEvent.click(baseElement.querySelectorAll('input[type="radio"]')[1]!);
+    fireEvent.click(
+      Array.from(baseElement.querySelectorAll('button')).find((b) => b.textContent === 'Riancora')!,
+    );
+    expect(onConfirm).toHaveBeenCalledWith(DUPLICATE_HEADINGS[1]);
+  });
+
+  it('distingue le occorrenze in modo leggibile', () => {
+    const { baseElement } = renderDialog({
+      headings: DUPLICATE_HEADINGS,
+      currentAnchorSlug: 'reti',
+    });
+    const labels = Array.from(baseElement.querySelectorAll('label')).map((l) => l.textContent);
+    expect(labels[0]).toContain('prima occorrenza');
+    expect(labels[1]).toContain('seconda occorrenza');
+    expect(labels[2]).toContain('terza occorrenza');
+  });
+
+  /** Un titolo unico non riceve la nota: sarebbe rumore. */
+  it('non annota le occorrenze quando il titolo è unico', () => {
+    const { baseElement } = renderDialog();
+    for (const label of Array.from(baseElement.querySelectorAll('label'))) {
+      expect(label.textContent).not.toContain('occorrenza');
+    }
+  });
+
+  /**
+   * `currentAnchorSlug` e non il testo: con due «Reti» il testo indicherebbe
+   * entrambe le righe come ancora attuale.
+   */
+  it('l’ancora attuale è indicata su una sola riga', () => {
+    const { baseElement } = renderDialog({
+      headings: DUPLICATE_HEADINGS,
+      currentAnchorSlug: 'reti-2',
+    });
+    const marked = Array.from(baseElement.querySelectorAll('label')).filter((l) =>
+      l.textContent?.includes('ancora attuale'),
+    );
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.textContent).toContain('seconda occorrenza');
   });
 });

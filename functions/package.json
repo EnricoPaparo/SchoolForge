@@ -17,6 +17,7 @@
     "test:firestore-integration": "vitest run --no-file-parallelism src/aiVisualFirestore.integration.test.ts src/aiVisualPromotion.integration.test.ts src/aiVisualLifecycle.integration.test.ts src/aiVisualExport.integration.test.ts src/aiVisualEndToEnd.integration.test.ts src/aiVisualCostModel.integration.test.ts src/aiVisualReanchor.integration.test.ts"
   },
   "dependencies": {
+    "@schoolforge/lesson-contract": "workspace:*",
     "firebase-admin": "^14.1.0",
     "firebase-functions": "^7.3.0",
     "openai": "^6.47.0",

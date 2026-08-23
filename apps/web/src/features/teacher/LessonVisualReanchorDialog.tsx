@@ -17,34 +17,68 @@ import styles from './LessonVisualReanchorDialog.module.css';
  */
 
 export interface ReanchorHeadingOption {
-  /** Testo esatto dell'heading: è ciò che il server risolverà. */
+  /** Indice zero-based fra gli heading ancorabili: **è** l'identità dell'opzione. */
+  index: number;
+  /** Testo canonico dell'heading: conferma, non identificatore. */
   text: string;
+  /** Slug che quell'heading avrà nel DOM, suffisso dei duplicati compreso. */
+  slug: string;
   level: 2 | 3;
+}
+
+const ORDINALS = ['prima', 'seconda', 'terza', 'quarta', 'quinta'];
+
+/**
+ * Etichetta di disambiguazione per gli heading omonimi.
+ *
+ * `null` quando il titolo è unico: aggiungere «prima occorrenza» a una sezione
+ * che non ha gemelle sarebbe rumore, e il docente si chiederebbe dove sia la
+ * seconda.
+ */
+function occurrenceLabel(
+  headings: ReanchorHeadingOption[],
+  heading: ReanchorHeadingOption,
+): string | null {
+  const sameText = headings.filter((other) => other.text === heading.text);
+  if (sameText.length < 2) return null;
+  const position = sameText.findIndex((other) => other.index === heading.index);
+  const ordinal = ORDINALS[position] ?? `${position + 1}ª`;
+  return `${ordinal} occorrenza`;
 }
 
 export function LessonVisualReanchorDialog({
   headings,
-  currentHeadingText,
+  currentAnchorSlug,
   onCancel,
   onConfirm,
 }: {
   headings: ReanchorHeadingOption[];
-  /** Heading a cui l'immagine era ancorata, se ancora presente. */
-  currentHeadingText: string;
+  /**
+   * **Slug** dell'ancora attuale, non il testo.
+   *
+   * Con due `## Reti` il testo indicherebbe entrambe le righe come «ancora
+   * attuale»; lo slug ne indica una sola, che è quella vera.
+   */
+  currentAnchorSlug: string;
   onCancel: () => void;
-  onConfirm: (headingText: string) => Promise<void>;
+  onConfirm: (choice: ReanchorHeadingOption) => Promise<void>;
 }) {
   const groupId = useId();
-  const [selected, setSelected] = useState<string | null>(null);
+  // La selezione è l'**indice**: due heading omonimi devono essere scegliibili
+  // separatamente, e con il testo come chiave risulterebbero selezionati
+  // entrambi.
+  const [selected, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const choice = headings.find((heading) => heading.index === selected) ?? null;
+
   async function confirm() {
-    if (selected === null || busy) return;
+    if (choice === null || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await onConfirm(selected);
+      await onConfirm(choice);
     } catch (err) {
       // L'errore resta **dentro** il dialog: il docente non deve cercare
       // altrove perché la sua azione non è andata a buon fine.
@@ -71,8 +105,8 @@ export function LessonVisualReanchorDialog({
             <li className={styles.legend} id={groupId}>
               Sezioni della lezione
             </li>
-            {headings.map((heading, index) => {
-              const id = `${groupId}-${index}`;
+            {headings.map((heading) => {
+              const id = `${groupId}-${heading.index}`;
               return (
                 <li key={id}>
                   <label className={styles.option} htmlFor={id}>
@@ -80,15 +114,26 @@ export function LessonVisualReanchorDialog({
                       id={id}
                       type="radio"
                       name={groupId}
-                      value={heading.text}
-                      checked={selected === heading.text}
-                      onChange={() => setSelected(heading.text)}
+                      value={String(heading.index)}
+                      checked={selected === heading.index}
+                      onChange={() => setSelected(heading.index)}
                       disabled={busy}
                     />
                     <span className={heading.level === 3 ? styles.nested : undefined}>
                       {heading.text}
+                      {/*
+                       * Due sezioni con lo stesso titolo sono indistinguibili a
+                       * occhio: senza questa nota il docente sceglierebbe a
+                       * caso fra due righe identiche.
+                       */}
+                      {occurrenceLabel(headings, heading) && (
+                        <span className={styles.occurrence}>
+                          {' '}
+                          — {occurrenceLabel(headings, heading)}
+                        </span>
+                      )}
                     </span>
-                    {heading.text === currentHeadingText && (
+                    {heading.slug === currentAnchorSlug && (
                       <span className={styles.badge}>ancora attuale</span>
                     )}
                   </label>
@@ -113,7 +158,7 @@ export function LessonVisualReanchorDialog({
           type="button"
           className={`${styles.action} ${styles.primary}`}
           onClick={confirm}
-          disabled={busy || selected === null}
+          disabled={busy || choice === null}
         >
           {busy ? 'Riancoraggio…' : 'Riancora'}
         </button>

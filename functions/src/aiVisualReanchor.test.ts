@@ -51,18 +51,42 @@ function input(over: Record<string, unknown> = {}): unknown {
     importId: 'imp-1',
     lessonId: 'lesson-1',
     anchorHeadingText: 'Nuova sezione',
+    anchorHeadingIndex: 0,
     ...over,
   };
 }
 
 describe('validateVisualReanchorInput', () => {
-  it('accetta il payload chiuso di quattro chiavi', () => {
+  it('accetta il payload chiuso di cinque chiavi', () => {
     expect(validateVisualReanchorInput(input())).toEqual({
       programId: 'prog-1',
       importId: 'imp-1',
       lessonId: 'lesson-1',
       anchorHeadingText: 'Nuova sezione',
+      anchorHeadingIndex: 0,
     });
+  });
+
+  /**
+   * L'indice esiste perché il solo testo non distingue due `## Reti`. Senza,
+   * il docente non potrebbe scegliere il secondo e il server ancorerebbe
+   * sempre al primo.
+   */
+  it('rifiuta un indice non intero, negativo o assurdo', () => {
+    for (const bad of [-1, 1.5, '0', null, undefined, Number.NaN, 1001]) {
+      expect(() => validateVisualReanchorInput(input({ anchorHeadingIndex: bad }))).toThrow(
+        AiVisualError,
+      );
+    }
+  });
+
+  it('accetta l’indice zero e uno grande ma plausibile', () => {
+    expect(validateVisualReanchorInput(input({ anchorHeadingIndex: 0 })).anchorHeadingIndex).toBe(
+      0,
+    );
+    expect(validateVisualReanchorInput(input({ anchorHeadingIndex: 999 })).anchorHeadingIndex).toBe(
+      999,
+    );
   });
 
   it('rifiuta ciò che non è un oggetto', () => {

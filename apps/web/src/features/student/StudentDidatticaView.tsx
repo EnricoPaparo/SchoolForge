@@ -606,18 +606,29 @@ function LessonContent({
 
   const visualState = useLessonVisual(visualRequest, loadVisual);
 
-  const visual =
-    lesson.visual && visualState.status === 'ready'
-      ? {
-          anchorSlug: lesson.visual.anchor.headingSlug,
-          headingText: lesson.visual.anchor.headingText,
-          altText: lesson.visual.altText,
-          caption: lesson.visual.caption,
-          width: lesson.visual.width,
-          height: lesson.visual.height,
-          dataUri: visualState.bytes.dataUri,
-        }
-      : null;
+  /**
+   * Il manifest basta: posizione e spazio riservato non aspettano i byte, che
+   * cambiano solo il contenuto del frame. `idle` non capita quando il manifest
+   * c'è — la lettura parte subito — ma è trattato come `loading` perché è
+   * comunque uno stato in cui i byte non ci sono ancora.
+   */
+  const visual = lesson.visual
+    ? {
+        anchorSlug: lesson.visual.anchor.headingSlug,
+        headingText: lesson.visual.anchor.headingText,
+        altText: lesson.visual.altText,
+        caption: lesson.visual.caption,
+        width: lesson.visual.width,
+        height: lesson.visual.height,
+        dataUri: visualState.status === 'ready' ? visualState.bytes.dataUri : null,
+        status:
+          visualState.status === 'ready'
+            ? ('ready' as const)
+            : visualState.status === 'unavailable'
+              ? ('unavailable' as const)
+              : ('loading' as const),
+      }
+    : null;
 
   const body =
     lesson.content === null ? (

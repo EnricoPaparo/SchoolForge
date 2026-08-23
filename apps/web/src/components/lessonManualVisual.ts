@@ -1,11 +1,14 @@
 import DOMPurify from 'dompurify';
 import type { Tokens, TokensList } from 'marked';
 import {
+  canonicalLessonHeadingText,
+  lessonHeadingSlug,
+  nextLessonHeadingSlug,
+} from '@schoolforge/lesson-contract';
+import {
   SANITIZE_CONFIG,
-  headingSlug,
   injectHeadingIds,
   lessonMarked,
-  nextHeadingId,
   type LessonHeading,
 } from './lessonManualMarkdown.js';
 
@@ -80,13 +83,10 @@ function collectHeadings(tokens: TokensList): LessonHeading[] {
     if (token.type !== 'heading') continue;
     const heading = token as Tokens.Heading;
     if (heading.depth !== 2 && heading.depth !== 3) continue;
-    const text = heading.text
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/[#*_`[\]]/g, '')
-      .trim();
+    const text = canonicalLessonHeadingText(heading.text);
     if (!text) continue;
     headings.push({
-      id: nextHeadingId(headingSlug(text), occurrences),
+      id: nextLessonHeadingSlug(lessonHeadingSlug(text), occurrences),
       level: heading.depth === 2 ? 2 : 3,
       text,
     });
@@ -108,12 +108,9 @@ function findAnchorTokenIndex(tokens: TokensList, slug: string): number {
     if (token.type !== 'heading') continue;
     const heading = token as Tokens.Heading;
     if (heading.depth !== 2 && heading.depth !== 3) continue;
-    const text = heading.text
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/[#*_`[\]]/g, '')
-      .trim();
+    const text = canonicalLessonHeadingText(heading.text);
     if (!text) continue;
-    if (nextHeadingId(headingSlug(text), occurrences) === slug) return i;
+    if (nextLessonHeadingSlug(lessonHeadingSlug(text), occurrences) === slug) return i;
   }
   return -1;
 }

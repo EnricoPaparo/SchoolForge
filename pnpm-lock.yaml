@@ -90,6 +90,9 @@ importers:
 
   functions:
     dependencies:
+      '@schoolforge/lesson-contract':
+        specifier: workspace:*
+        version: link:../packages/lesson-contract
       firebase-admin:
         specifier: ^14.1.0
         version: 14.2.0

@@ -91,6 +91,7 @@ import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { LessonVisualAnchorNotice } from './LessonVisualAnchorNotice.js';
 import { LessonVisualReanchorDialog } from './LessonVisualReanchorDialog.js';
 import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
+import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import {
@@ -2839,18 +2840,29 @@ function LessonDetail({
 
   const visualState = useLessonVisual(visualRequest, loadVisual);
 
-  const lessonVisual =
-    manifest && visualState.status === 'ready'
-      ? {
-          anchorSlug: manifest.anchor.headingSlug,
-          headingText: manifest.anchor.headingText,
-          altText: manifest.altText,
-          caption: manifest.caption,
-          width: manifest.width,
-          height: manifest.height,
-          dataUri: visualState.bytes.dataUri,
-        }
-      : null;
+  /**
+   * Il manifest basta: la figura è montata subito, con lo spazio già riservato,
+   * e l'avviso dell'ancora mancante compare senza aspettare i byte — è
+   * un'informazione che si ha già, e farla arrivare in ritardo insieme
+   * all'immagine sposterebbe il testo sotto gli occhi del docente.
+   */
+  const lessonVisual = manifest
+    ? {
+        anchorSlug: manifest.anchor.headingSlug,
+        headingText: manifest.anchor.headingText,
+        altText: manifest.altText,
+        caption: manifest.caption,
+        width: manifest.width,
+        height: manifest.height,
+        dataUri: visualState.status === 'ready' ? visualState.bytes.dataUri : null,
+        status:
+          visualState.status === 'ready'
+            ? ('ready' as const)
+            : visualState.status === 'unavailable'
+              ? ('unavailable' as const)
+              : ('loading' as const),
+      }
+    : null;
 
   /**
    * Gli heading realmente presenti nel corpo corrente: l'elenco del dialog
@@ -2860,15 +2872,20 @@ function LessonDetail({
   const reanchorHeadings = useMemo(
     () =>
       content
-        ? parseLessonMarkdown(content).headings.map((heading) => ({
-            text: heading.text,
-            level: heading.level,
-          }))
+        ? // Gli slug arrivano dal package condiviso, gli stessi che il server
+          // ricalcolerà: l'elenco mostra ciò che il server accetterà, non una
+          // approssimazione.
+          assignLessonHeadingSlugs(
+            parseLessonMarkdown(content).headings.map((heading) => ({
+              text: heading.text,
+              level: heading.level,
+            })),
+          )
         : [],
     [content],
   );
 
-  async function confirmReanchor(headingText: string) {
+  async function confirmReanchor(choice: { index: number; text: string }) {
     if (!importId || !manifest) return;
     const { createVisualReanchorClient } =
       await import('../repository/programs/visualReanchorClient.js');
@@ -2876,7 +2893,8 @@ function LessonDetail({
       programId,
       importId,
       lessonId: lesson.id,
-      anchorHeadingText: headingText,
+      anchorHeadingText: choice.text,
+      anchorHeadingIndex: choice.index,
     });
     // Aggiornamento locale: il manifest è cambiato solo nell'ancora, e i byte
     // sono gli stessi. Rileggere l'intero corso per una stringa sarebbe
@@ -2885,7 +2903,7 @@ function LessonDetail({
       ...manifest,
       anchor: {
         headingSlug: result.headingSlug,
-        headingText,
+        headingText: choice.text,
         placement: 'after-heading',
       },
     });
@@ -3026,7 +3044,7 @@ function LessonDetail({
               {reanchoring && manifest && (
                 <LessonVisualReanchorDialog
                   headings={reanchorHeadings}
-                  currentHeadingText={manifest.anchor.headingText}
+                  currentAnchorSlug={manifest.anchor.headingSlug}
                   onCancel={() => setReanchoring(false)}
                   onConfirm={confirmReanchor}
                 />

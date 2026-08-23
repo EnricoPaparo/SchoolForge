@@ -27,6 +27,12 @@ export interface LessonVisualRender {
   height: number;
   /** Data URI **già verificato**. `null` mentre i byte non sono disponibili. */
   dataUri: string | null;
+  /**
+   * Stato della lettura dei byte. La figura viene montata **con il solo
+   * manifest**: posizione, avviso e spazio riservato non dipendono dall'arrivo
+   * dei byte, che cambiano soltanto il contenuto del frame.
+   */
+  status: 'ready' | 'loading' | 'unavailable';
 }
 
 export function LessonManualBody({
@@ -48,23 +54,24 @@ export function LessonManualBody({
     // Il percorso legacy resta l'unico attivo finché non c'è davvero una
     // figura da mostrare: `dataUri` nullo significa «byte non ancora letti» o
     // «byte rifiutati», e in entrambi i casi la lezione si legge com'era.
-    () => (visual?.dataUri ? null : parseLessonMarkdown(markdown)),
-    [markdown, visual?.dataUri],
+    () => (visual ? null : parseLessonMarkdown(markdown)),
+    [markdown, visual],
   );
 
   const placement: LessonVisualPlacement | null = useMemo(
-    () => (visual?.dataUri ? placeLessonVisual({ markdown, anchorSlug: visual.anchorSlug }) : null),
-    [markdown, visual?.anchorSlug, visual?.dataUri],
+    () => (visual ? placeLessonVisual({ markdown, anchorSlug: visual.anchorSlug }) : null),
+    [markdown, visual],
   );
 
   const figure =
-    visual?.dataUri && placement && placement.status !== 'absent' ? (
+    visual && placement && placement.status !== 'absent' ? (
       <LessonVisualFigure
         src={visual.dataUri}
         altText={visual.altText}
         caption={visual.caption}
         width={visual.width}
         height={visual.height}
+        status={visual.status}
       />
     ) : null;
 

@@ -23,6 +23,7 @@ const VISUAL: LessonVisualRender = {
   width: 1024,
   height: 768,
   dataUri: DATA_URI,
+  status: 'ready' as const,
 };
 
 const BODY = ['# Lezione', '', 'intro', '', '## La fotosintesi', '', 'corpo'].join('\n');
@@ -36,6 +37,7 @@ describe('LessonVisualFigure — struttura e attributi', () => {
         caption="Didascalia"
         width={1024}
         height={768}
+        status="ready"
       />,
     );
 
@@ -53,7 +55,14 @@ describe('LessonVisualFigure — struttura e attributi', () => {
   /** Niente lightbox, zoom o carosello: nessun handler di apertura. */
   it('non è interattiva', () => {
     const { container } = render(
-      <LessonVisualFigure src={DATA_URI} altText="a" caption="c" width={10} height={10} />,
+      <LessonVisualFigure
+        src={DATA_URI}
+        altText="a"
+        caption="c"
+        width={10}
+        height={10}
+        status="ready"
+      />,
     );
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('a')).toBeNull();
@@ -69,6 +78,7 @@ describe('LessonVisualFigure — struttura e attributi', () => {
         caption={hostile}
         width={10}
         height={10}
+        status="ready"
       />,
     );
 
@@ -109,15 +119,72 @@ describe('LessonManualBody — la figura entra nel corpo', () => {
   });
 
   /**
-   * Byte non ancora disponibili: si legge la lezione com'era, non uno spazio
-   * vuoto o un'immagine rotta.
+   * **Il difetto corretto nel review fix.** Prima la figura compariva solo a
+   * lettura conclusa, spostando tutto ciò che le stava sotto. Ora il manifest
+   * basta: il frame è montato subito con lo spazio già riservato, e i byte
+   * cambiano solo il contenuto.
    */
-  it('con manifest ma senza byte resta il percorso legacy', () => {
+  it('con manifest ma senza byte la figura è già montata e lo spazio riservato', () => {
     const { container } = render(
-      <LessonManualBody markdown={BODY} visual={{ ...VISUAL, dataUri: null }} />,
+      <LessonManualBody markdown={BODY} visual={{ ...VISUAL, dataUri: null, status: 'loading' }} />,
     );
-    expect(container.querySelector('figure')).toBeNull();
+    const figure = container.querySelector('figure')!;
+    expect(figure).not.toBeNull();
+    // Nessuna <img> con src vuoto: sarebbe un'immagine rotta.
+    expect(figure.querySelector('img')).toBeNull();
+    const frame = figure.querySelector('div')!;
+    expect(frame.getAttribute('style')).toContain('aspect-ratio: 1024 / 768');
     expect(container.querySelector('#la-fotosintesi')).not.toBeNull();
+  });
+
+  /** La geometria non cambia fra pending e ready: solo il contenuto. */
+  it('pending → ready non cambia la geometria del frame', () => {
+    const pending = render(
+      <LessonManualBody markdown={BODY} visual={{ ...VISUAL, dataUri: null, status: 'loading' }} />,
+    ).container;
+    const pendingStyle = pending.querySelector('figure > div')!.getAttribute('style');
+
+    const ready = render(<LessonManualBody markdown={BODY} visual={VISUAL} />).container;
+    const readyStyle = ready.querySelector('figure > div')!.getAttribute('style');
+
+    expect(readyStyle).toBe(pendingStyle);
+    expect(ready.querySelector('figure img')).not.toBeNull();
+  });
+
+  /** Byte indisponibili: fail-closed, spazio riservato, nessuna immagine rotta. */
+  it('byte indisponibili: nessuna img, spazio comunque riservato', () => {
+    const { container } = render(
+      <LessonManualBody
+        markdown={BODY}
+        visual={{ ...VISUAL, dataUri: null, status: 'unavailable' }}
+      />,
+    );
+    expect(container.querySelector('figure img')).toBeNull();
+    expect(container.querySelectorAll('img[src=""]')).toHaveLength(0);
+    expect(container.querySelector('figure > div')!.getAttribute('style')).toContain(
+      'aspect-ratio',
+    );
+  });
+
+  /**
+   * L'avviso dell'ancora mancante è un'informazione che si ha con il solo
+   * manifest: farla arrivare insieme ai byte la ritarderebbe senza motivo.
+   */
+  it('l’avviso dell’ancora mancante compare durante pending e unavailable', () => {
+    for (const status of ['loading', 'unavailable'] as const) {
+      const { container } = render(
+        <LessonManualBody
+          markdown={BODY}
+          visual={{ ...VISUAL, anchorSlug: 'sparita', dataUri: null, status }}
+          onMissingAnchor={<p role="status">avviso docente</p>}
+        />,
+      );
+      expect(
+        Array.from(container.querySelectorAll('[role="status"]')).some(
+          (el) => el.textContent === 'avviso docente',
+        ),
+      ).toBe(true);
+    }
   });
 
   it('ancora mancante: figura in fondo e avviso mostrato', () => {
