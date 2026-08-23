@@ -1220,6 +1220,32 @@ Tutte queste callable sono owner-only, idempotenti, senza secret e senza
 provider. I documenti `aiVisualCandidates`, `aiVisualPromotions`,
 `aiVisualAbandonments`, `aiVisualRemovals` e `visualRuns` sono client-unreadable.
 
+### `aiVisualReanchor` — spostare l'ancora, non rigenerare (VE-04A)
+
+Owner-only, senza secret binding, senza provider e senza un solo accesso a
+Storage. Input chiuso: `{ programId, importId, lessonId, anchorHeadingText }`.
+Il client **non** manda `ownerUid`, `publicLessonId`, `assetId`, `storageRef`,
+il manifest né lo slug — quest'ultimo è il caso più insidioso, perché
+sembrerebbe un dettaglio tecnico e invece permetterebbe di ancorare a un
+identificatore che nel corpo non esiste, aggirando l'unico controllo che conta.
+
+Il server autentica l'owner, legge il `LessonDoc`, **rideriva** `publicLessonId`,
+legge la proiezione a quell'indirizzo, valida identità/import/programma/UDA e il
+manifest privato corrente, poi risolve `anchorHeadingText` sul corpo autorevole
+**fresco** con lo stesso risolutore canonico della promozione. Tutte le letture
+transazionali precedono tutte le scritture.
+
+Cambia **solo** `anchor`. `assetId`, `storageRef`, `caption`, `altText`,
+dimensioni, `byteLength`, `sha256`, `mimeType`, `styleVersion`, `sourceBodyHash`
+e `approvedAt` restano identici — `approvedAt` in particolare, perché spostare
+un'immagine non è approvarne una nuova. Se `completed === true` la proiezione
+pubblica è aggiornata nello **stesso commit**; `publicLessonVisuals` non è
+toccato, perché i byte sono gli stessi. Audit: `lesson.visualReanchored`.
+
+Riancorare dove già si è è un **replay**: zero scritture e zero audit. Corpo
+modificato, manifest sostituito, lezione smarcata, proiezione divergente o
+heading eliminato producono un errore tipizzato e **zero scritture parziali**.
+
 ### `aiVisualExportBatch` — l'unica operazione binaria (VE-03C)
 
 Il gateway repository è testuale: legge `.md` e `.pool.md` per percorso. Questa

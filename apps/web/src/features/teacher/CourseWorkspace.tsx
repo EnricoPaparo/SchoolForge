@@ -1,5 +1,6 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -79,6 +80,7 @@ import {
   parseLessonMetadata,
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
+import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
 import { fetchLessonContent, fetchPublicLessonContent } from './lessonContent.js';
 import {
   describeStorageError,
@@ -86,6 +88,10 @@ import {
   type StorageErrorDetails,
 } from './storageErrorDetails.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { LessonVisualAnchorNotice } from './LessonVisualAnchorNotice.js';
+import { LessonVisualReanchorDialog } from './LessonVisualReanchorDialog.js';
+import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
+import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import {
   MarkdownBodyEditor,
@@ -2790,6 +2796,102 @@ function LessonDetail({
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
+  /**
+   * VE-04A — l'immagine della lezione, letta **solo** quando serve davvero.
+   *
+   * Due condizioni, entrambe necessarie: il `LessonDoc` dichiara un manifest, e
+   * la scheda «Contenuto» è aperta. Una lezione senza immagine non produce
+   * nessuna chiamata, e nemmeno una lezione con immagine di cui il docente stia
+   * guardando le domande — i byte servono per mostrarli, non per averli.
+   *
+   * Nessuna lettura parte da una card, dall'albero laterale o da una lista:
+   * quelle superfici hanno già il manifest e non mostrano figure.
+   */
+  const [reanchoring, setReanchoring] = useState(false);
+  const [localVisual, setLocalVisual] = useState<LessonVisualPrivateManifest | null>(null);
+
+  // Cambio lezione: l'override locale del riancoraggio non deve sopravvivere
+  // alla lezione su cui è stato applicato.
+  useEffect(() => {
+    setLocalVisual(null);
+    setReanchoring(false);
+  }, [lesson.id]);
+
+  const manifest = localVisual ?? lesson.visual ?? null;
+  const contentOpen = activeTab === 'contenuto' && !editingContent;
+
+  const visualRequest =
+    manifest && contentOpen && importId
+      ? { assetId: manifest.assetId, lessonKey: lesson.id }
+      : null;
+
+  const loadVisual = useCallback(async () => {
+    if (!manifest || !importId) return null;
+    const { createTeacherVisualReader } =
+      await import('../repository/programs/visualReadClients.js');
+    return createTeacherVisualReader(functions)({
+      programId,
+      importId,
+      lessonId: lesson.id,
+      manifest: { assetId: manifest.assetId, width: manifest.width, height: manifest.height },
+    });
+  }, [manifest, programId, importId, lesson.id]);
+
+  const visualState = useLessonVisual(visualRequest, loadVisual);
+
+  const lessonVisual =
+    manifest && visualState.status === 'ready'
+      ? {
+          anchorSlug: manifest.anchor.headingSlug,
+          headingText: manifest.anchor.headingText,
+          altText: manifest.altText,
+          caption: manifest.caption,
+          width: manifest.width,
+          height: manifest.height,
+          dataUri: visualState.bytes.dataUri,
+        }
+      : null;
+
+  /**
+   * Gli heading realmente presenti nel corpo corrente: l'elenco del dialog
+   * viene da qui e da nessun altro posto, così non può proporre una sezione
+   * che il server rifiuterebbe.
+   */
+  const reanchorHeadings = useMemo(
+    () =>
+      content
+        ? parseLessonMarkdown(content).headings.map((heading) => ({
+            text: heading.text,
+            level: heading.level,
+          }))
+        : [],
+    [content],
+  );
+
+  async function confirmReanchor(headingText: string) {
+    if (!importId || !manifest) return;
+    const { createVisualReanchorClient } =
+      await import('../repository/programs/visualReanchorClient.js');
+    const result = await createVisualReanchorClient(functions)({
+      programId,
+      importId,
+      lessonId: lesson.id,
+      anchorHeadingText: headingText,
+    });
+    // Aggiornamento locale: il manifest è cambiato solo nell'ancora, e i byte
+    // sono gli stessi. Rileggere l'intero corso per una stringa sarebbe
+    // sproporzionato — e farebbe sparire e riapparire la figura sotto gli occhi.
+    setLocalVisual({
+      ...manifest,
+      anchor: {
+        headingSlug: result.headingSlug,
+        headingText,
+        placement: 'after-heading',
+      },
+    });
+    setReanchoring(false);
+  }
+
   // Local refs to the tab buttons so keyboard navigation can move real focus
   // (roving tabindex) without fragile global DOM queries.
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -2907,7 +3009,27 @@ function LessonDetail({
                 testata della vista: il renderer non li ripete.
               */}
               {!loading && !error && content !== null && content.trim() !== '' && (
-                <MarkdownRenderer markdown={content} variant="lesson" />
+                <MarkdownRenderer
+                  markdown={content}
+                  variant="lesson"
+                  visual={lessonVisual}
+                  onMissingAnchor={
+                    manifest ? (
+                      <LessonVisualAnchorNotice
+                        headingText={manifest.anchor.headingText}
+                        onReanchor={() => setReanchoring(true)}
+                      />
+                    ) : null
+                  }
+                />
+              )}
+              {reanchoring && manifest && (
+                <LessonVisualReanchorDialog
+                  headings={reanchorHeadings}
+                  currentHeadingText={manifest.anchor.headingText}
+                  onCancel={() => setReanchoring(false)}
+                  onConfirm={confirmReanchor}
+                />
               )}
             </>
           )

@@ -30,6 +30,7 @@ export type AuditAction =
   | 'lesson.conceptMapSaved'
   | 'lesson.visualApproved'
   | 'lesson.visualRemoved'
+  | 'lesson.visualReanchored'
   | 'lesson.updated'
   | 'lesson.deleted'
   | 'lesson.reordered'

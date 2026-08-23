@@ -1,0 +1,31 @@
+/*
+ * VE-04A — la figura sta dentro la colonna della lezione e non la allarga mai.
+ *
+ * `max-width: 100%` con `height: auto` è la coppia che tiene: la prima impedisce
+ * l'overflow orizzontale a 320 px, la seconda conserva il rapporto d'aspetto
+ * dichiarato da width/height senza deformare l'immagine. Gli attributi restano
+ * comunque nel markup — servono al browser per riservare lo spazio prima del
+ * download, che è ciò che evita il layout shift.
+ */
+.figure {
+  margin: 1.5rem 0;
+  /* La figura non ha margini laterali propri: eredita la colonna del corpo. */
+  max-width: 100%;
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: var(--color-surface-raised);
+}
+
+.caption {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  /* Una didascalia lunga va a capo invece di allargare la colonna. */
+  overflow-wrap: anywhere;
+}

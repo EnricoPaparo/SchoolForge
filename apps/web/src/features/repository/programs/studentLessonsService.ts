@@ -1,9 +1,14 @@
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { PublicLessonDoc, ProgramDoc } from '../../../types/firestore.js';
+import type {
+  LessonVisualPublicManifest,
+  PublicLessonDoc,
+  ProgramDoc,
+} from '../../../types/firestore.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeLessonContent } from './lessonContentSize.js';
 import { readPublicConceptMap } from './conceptMapContract.js';
+import { readStudentVisualManifest } from './lessonVisualContract.js';
 
 export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
   id: string;
@@ -17,7 +22,7 @@ export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
  */
 export type StudentLesson = { id: string } & Omit<
   PublicLessonDoc,
-  'content' | 'conceptMapMarkdown'
+  'content' | 'conceptMapMarkdown' | 'visual'
 > & {
     content: string | null;
     /**
@@ -27,6 +32,14 @@ export type StudentLesson = { id: string } & Omit<
      * può dimenticarsene.
      */
     conceptMapMarkdown: string | null;
+    /**
+     * VE-04A — manifest visuale già normalizzato fail-closed: `null` quando
+     * assente, malformato **o** quando la lezione non è marcata svolta. È il
+     * solo discriminante della lettura dei byte: senza manifest lo studente non
+     * fa alcuna richiesta, ed è ciò che rende la funzione gratuita per le
+     * lezioni che non hanno immagini.
+     */
+    visual: LessonVisualPublicManifest | null;
   };
 
 /**
@@ -114,6 +127,8 @@ export async function loadStudentLessons(
             // L'invariante di visibilità è riapplicato in lettura: una
             // proiezione non svolta legge `null` anche se contenesse il campo.
             conceptMapMarkdown: readPublicConceptMap(raw),
+            // Stesso invariante della mappa, riapplicato in lettura.
+            visual: readStudentVisualManifest(raw),
           } as StudentLesson;
         })
         // STRUCTURE-IMPORT-02B: una lezione importata come scheletro ha corpo

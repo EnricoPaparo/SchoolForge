@@ -239,7 +239,7 @@ describe('headingSlug — casi congelati', () => {
     ['A—B', 'a-b'],
     ['CAPS LOCK', 'caps-lock'],
     ['già/però', 'gia-pero'],
-    ['---', ''],
+    ['---', 'sezione'],
     ['🌱 solo emoji', 'solo-emoji'],
   ];
   for (const [text, expected] of cases) {
@@ -296,8 +296,21 @@ describe('resolveAnchorSlugInBody', () => {
     expect(() => resolveAnchorSlugInBody('Inesistente', body)).toThrow(/non esiste nel corpo/);
   });
 
-  it('rifiuta un heading che esiste ma non produce slug', () => {
-    expect(() => resolveAnchorSlugInBody('---', '# ---\n')).toThrow(/slug valido/);
+  /**
+   * Un heading senza caratteri alfanumerici non produce più uno slug vuoto: il
+   * renderer gli assegna `sezione`, e il server fa lo stesso. Resta ancorabile
+   * solo se è di livello 2 o 3, perché sono gli unici a ricevere un `id`.
+   */
+  it('assegna il fallback «sezione» come il renderer', () => {
+    expect(resolveAnchorSlugInBody('---', '## ---\n')).toEqual({
+      headingSlug: 'sezione',
+      headingText: '---',
+    });
+  });
+
+  /** Un `#` di primo livello non riceve `id`: ancorarvisi sarebbe inventare. */
+  it('non ancora a un heading di livello 1', () => {
+    expect(() => resolveAnchorSlugInBody('Titolo', '# Titolo\n')).toThrow(/non esiste nel corpo/);
   });
 
   /** L'ancora deve venire dal testo, non da un blocco di codice. */
@@ -731,6 +744,83 @@ describe('copia canonica — precondizione di creazione al call site', () => {
     expect(isStoragePreconditionFailed({ code: 412 })).toBe(true);
     for (const other of [{ code: 404 }, { code: 500 }, {}, null, undefined, 'x']) {
       expect(isStoragePreconditionFailed(other)).toBe(false);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * VE-04A — **la tabella condivisa con il renderer**.
+ *
+ * VE-03A congelava i casi di questa implementazione, ma solo di questa: nessuno
+ * aveva confrontato le due metà della duplicazione dichiarata, e non
+ * coincidevano su apostrofi e duplicati — cioè su due forme che in italiano
+ * capitano continuamente. Questa tabella è ora la **stessa** su entrambi i lati:
+ * il gemello vive in `apps/web/src/components/__tests__/lessonHeadingSlug.test.ts`
+ * e confronta gli stessi ingressi con le stesse uscite.
+ *
+ * Se qualcuno cambia uno dei due, uno dei due test fallisce.
+ */
+export const SHARED_HEADING_SLUG_CASES: Array<[string, string]> = [
+  ['La fotosintesi', 'la-fotosintesi'],
+  ["L'acqua", 'lacqua'],
+  ['L’energia', 'lenergia'],
+  ['Perché è così?', 'perche-e-cosi'],
+  ['Città e società', 'citta-e-societa'],
+  ['  Spazi   multipli  ', 'spazi-multipli'],
+  ['1. Introduzione', '1-introduzione'],
+  ['A—B', 'a-b'],
+  ['CAPS LOCK', 'caps-lock'],
+  ['---', 'sezione'],
+  ['\u{1F331} solo emoji', 'solo-emoji'],
+];
+
+describe('headingSlug — tabella condivisa con il renderer', () => {
+  for (const [text, expected] of SHARED_HEADING_SLUG_CASES) {
+    it(`«${text}» → «${expected}»`, () => {
+      expect(headingSlug(text)).toBe(expected);
+    });
+  }
+
+  /** L'apostrofo sparisce, non diventa un separatore. */
+  it('elimina gli apostrofi invece di trasformarli in trattini', () => {
+    expect(headingSlug("L'acqua")).toBe('lacqua');
+    expect(headingSlug('L\u2019acqua')).toBe('lacqua');
+    expect(headingSlug("L'acqua")).not.toContain('-');
+  });
+});
+
+describe('resolveAnchorSlugInBody — numerazione dei duplicati', () => {
+  const body = ['## Reti', 'a', '## Reti', 'b', '## Reti', 'c'].join('\n');
+
+  /**
+   * Il renderer numera dal **2**: `reti`, `reti-2`, `reti-3`. Numerare dal 1
+   * avrebbe fatto puntare l'ancora al duplicato sbagliato.
+   */
+  it('la prima occorrenza vince lo slug nudo', () => {
+    expect(resolveAnchorSlugInBody('Reti', body).headingSlug).toBe('reti');
+  });
+
+  it('numera i duplicati come il renderer, a partire da -2', () => {
+    const occurrences = ['## Uno', '## Reti', '## Reti'].join('\n');
+    expect(resolveAnchorSlugInBody('Uno', occurrences).headingSlug).toBe('uno');
+    // La risoluzione restituisce sempre la **prima** occorrenza del testo, ma
+    // il contatore avanza come nel renderer: è la numerazione a dover
+    // coincidere, non l'occorrenza scelta.
+    expect(resolveAnchorSlugInBody('Reti', occurrences).headingSlug).toBe('reti');
+  });
+
+  it('ancora a un heading di livello 3 come a uno di livello 2', () => {
+    expect(resolveAnchorSlugInBody('Dettaglio', '## Reti\n\n### Dettaglio\n').headingSlug).toBe(
+      'dettaglio',
+    );
+  });
+
+  /** Livelli 1, 4, 5 e 6 non ricevono `id`: non sono ancorabili. */
+  it('ignora i livelli che il renderer non identifica', () => {
+    for (const markup of ['# Titolo', '#### Titolo', '##### Titolo', '###### Titolo']) {
+      expect(() => resolveAnchorSlugInBody('Titolo', `${markup}\n`)).toThrow(/non esiste/);
     }
   });
 });

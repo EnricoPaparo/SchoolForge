@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import type { Tokens } from 'marked';
-import { LessonManualBody } from './LessonManualBody.js';
+import { LessonManualBody, type LessonVisualRender } from './LessonManualBody.js';
 
 marked.use({
   renderer: {
@@ -23,11 +24,20 @@ export type MarkdownRendererVariant = 'lesson';
 export function MarkdownRenderer({
   markdown,
   variant,
+  visual,
+  onMissingAnchor,
 }: {
   markdown: string;
   variant?: MarkdownRendererVariant;
+  /** VE-04A — solo per `variant="lesson"`; assente ⇒ resa identica a prima. */
+  visual?: LessonVisualRender | null;
+  onMissingAnchor?: ReactNode;
 }) {
-  if (variant === 'lesson') return <LessonManualBody markdown={markdown} />;
+  if (variant === 'lesson') {
+    return (
+      <LessonManualBody markdown={markdown} visual={visual} onMissingAnchor={onMissingAnchor} />
+    );
+  }
 
   const rawHtml = marked.parse(markdown) as string;
   const safeHtml = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });

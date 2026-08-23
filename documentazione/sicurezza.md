@@ -914,6 +914,35 @@ scritture Firestore, zero write/delete Storage, nessuna traccia di audit — que
 testuale che affianca non ne emette, e una traccia solo qui racconterebbe metà
 della stessa azione. Nessun listener, nessun polling, nessuna lettura per card.
 
+### VISUAL-ENRICHMENT-04A — renderer e riancoraggio
+
+**La figura non è HTML.** Il corpo della lezione è diviso in **token**, non in
+stringhe: le due metà attorno alla figura sono sanificate separatamente e per
+intero, e fra loro sta un componente React. Nessun markup nasce dopo
+`DOMPurify.sanitize`, nessuna concatenazione tocca l'HTML sanificato, e
+`caption`/`altText` sono testo React — quindi non esiste un percorso in cui un
+contenuto scritto dal docente diventi markup. Il Markdown della lezione non
+viene mai modificato.
+
+**Le letture avvengono solo in presenza di un manifest.** Il docente riusa
+`aiVisualExportBatch` per la sola lezione aperta; lo studente fa una `getDoc`
+puntuale su `publicLessonVisuals`, con il documento validato **contro il
+manifest che lo ha annunciato** — `assetId`, `publicLessonId` e dimensioni
+divergenti producono `null`, mai la figura sbagliata. L'invariante di visibilità
+è riapplicato in lettura: su lezione non svolta il manifest legge `null` anche
+se il documento lo contenesse.
+
+**Il riancoraggio non tocca byte.** Nessun accesso a Storage, nessun provider,
+nessun secret; `publicLessonVisuals` resta invariato. Il client non può mandare
+lo slug: lo calcola il server dal corpo autorevole fresco, ed è l'unico modo per
+impedire un'ancora a un identificatore inesistente.
+
+**Difetto corretto in questa fase.** Lo slug del server e quello del renderer
+divergevano su apostrofi, duplicati e livelli di heading: la figura di ogni
+lezione con un titolo apostrofato sarebbe finita in fondo per sempre. Le due
+implementazioni sono ora allineate e verificate da una tabella condivisa su
+entrambi i lati.
+
 ## 10. Checklist ai gate
 
 | Gate | Controlli minimi |

@@ -50,7 +50,7 @@ import {
   MAX_VISUAL_CAPTION_CHARS,
   VISUAL_STYLE_VERSION,
   codePointLength,
-  extractLessonHeadings,
+  extractLessonHeadingsDetailed,
 } from './aiContentVisualProposal.js';
 
 // ─── Input editoriale ─────────────────────────────────────────────────────────
@@ -149,59 +149,69 @@ export function validateVisualPromotionInput(value: unknown): VisualPromotionInp
 // ─── Slug dell'ancora ─────────────────────────────────────────────────────────
 
 /**
- * Slug deterministico di un heading, con le regole di LESSON-MANUAL-01:
- * normalizzazione NFKD, rimozione dei diacritici, minuscolo, tutto ciò che non è
- * alfanumerico diventa separatore.
+ * Slug di un heading, **identico** a quello del renderer di LESSON-MANUAL-01.
  *
- * **Duplicazione dichiarata.** L'implementazione autorevole per il *rendering*
- * vive in `apps/web`, che Functions non può importare: qui l'algoritmo è
- * riscritto. È un rischio reale — se le due divergessero, l'ancora calcolata
- * qui non troverebbe l'heading là — ed è per questo che i casi sono congelati in
- * un test e che il suffisso progressivo sui duplicati è risolto **contro il
- * corpo reale**, non inventato.
+ * **Divergenza trovata e corretta in VE-04A.** VE-03A dichiarava questa
+ * duplicazione come rischio e ne congelava i casi, ma congelava solo *questa*
+ * metà: nessuno aveva confrontato le due implementazioni. Non coincidevano su
+ * due punti che in italiano capitano di continuo:
+ *
+ * - **apostrofi.** Il renderer li *elimina* (`L'acqua` → `lacqua`); qui
+ *   diventavano separatori (`l-acqua`). Un'immagine ancorata a un titolo con
+ *   apostrofo non avrebbe mai ritrovato il proprio heading.
+ * - **duplicati.** Il renderer numera dal **2** (`reti`, `reti-2`); qui si
+ *   numerava dal 1 (`reti`, `reti-1`).
+ *
+ * Il verso della correzione non è arbitrario: gli `id` nel DOM li produce il
+ * renderer, che è in produzione da LESSON-MANUAL-01, mentre VE-03 non è mai
+ * stato distribuito e non esiste alcun manifest salvato da migrare. È quindi il
+ * server ad allinearsi al renderer, non il contrario.
+ *
+ * Un test congela la tabella condivisa da entrambi i lati; il gemello vive in
+ * `apps/web/src/components/lessonManualMarkdown.ts`.
  */
 export function headingSlug(text: string): string {
   const slug = text
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
+    .toLocaleLowerCase('it')
+    .replace(/['\u2019]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return slug;
+  // Stesso fallback deterministico del renderer: mai un id vuoto.
+  return slug || 'sezione';
 }
 
 /**
- * Risolve lo slug di un heading **dentro un corpo reale**, applicando il
- * suffisso progressivo dei duplicati come fa il renderer.
+ * Risolve lo slug di un heading **dentro un corpo reale**, esattamente come fa
+ * il renderer: solo i livelli 2 e 3, che sono gli unici a ricevere un `id`, e
+ * suffisso progressivo a partire da `-2`.
  *
- * Se il testo non corrisponde a nessun heading del corpo, non si indovina: è un
- * errore. Un'ancora inventata produrrebbe un'immagine che in pagina finisce in
- * coda per un difetto della proposta, non per una scelta del docente.
+ * Se il testo non corrisponde a nessun heading ancorabile del corpo, non si
+ * indovina: è un errore. Un'ancora inventata produrrebbe un'immagine che in
+ * pagina finisce in coda per un difetto della proposta, non per una scelta del
+ * docente.
  */
 export function resolveAnchorSlugInBody(
   anchorHeadingText: string,
   lessonBody: string,
 ): { headingSlug: string; headingText: string } {
-  const headings = extractLessonHeadings(lessonBody);
-  const seen = new Map<string, number>();
+  const headings = extractLessonHeadingsDetailed(lessonBody).filter(
+    (heading) => heading.level === 2 || heading.level === 3,
+  );
+  const occurrences = new Map<string, number>();
   for (const heading of headings) {
-    const base = headingSlug(heading);
-    const count = seen.get(base) ?? 0;
-    seen.set(base, count + 1);
-    const slug = count === 0 ? base : `${base}-${count}`;
-    if (heading === anchorHeadingText) {
-      if (slug.length === 0) {
-        throw new AiVisualError(
-          'invalid_input',
-          'L’heading di ancoraggio non produce uno slug valido.',
-        );
-      }
-      return { headingSlug: slug, headingText: heading };
+    const base = headingSlug(heading.text);
+    const count = (occurrences.get(base) ?? 0) + 1;
+    occurrences.set(base, count);
+    const slug = count === 1 ? base : `${base}-${count}`;
+    if (heading.text === anchorHeadingText) {
+      return { headingSlug: slug, headingText: heading.text };
     }
   }
   throw new AiVisualError(
     'invalid_input',
-    'L’heading di ancoraggio non esiste nel corpo salvato della lezione.',
+    'L\u2019heading di ancoraggio non esiste nel corpo salvato della lezione.',
   );
 }
 

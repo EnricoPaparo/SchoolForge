@@ -1,0 +1,193 @@
+import type { LessonVisualPublicManifest } from '../../../types/firestore.js';
+
+/**
+ * VISUAL-ENRICHMENT-04A — lettura **fail-closed** dei dati visuali lato client.
+ *
+ * Stesso ruolo di `conceptMapContract.ts` per la mappa: un solo posto in cui si
+ * decide se ciò che è arrivato è utilizzabile, così nessuna vista deve rifare
+ * quel ragionamento e nessuna può dimenticarsene.
+ *
+ * Il criterio è sempre lo stesso: **niente figura è meglio di una figura
+ * sbagliata**. Un manifest incompleto, un `assetId` che non combacia, un data
+ * URI che non è WebP producono `null` — la lezione si legge senza immagine, che
+ * è esattamente com'era prima che la funzione esistesse.
+ */
+
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HEADING_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const WEBP_DATA_URI_PREFIX = 'data:image/webp;base64,';
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * Tetto sul data URI, non sui byte: 204.800 byte di WebP diventano ~273.070
+ * caratteri base64. Il margine copre l'arrotondamento del padding.
+ */
+export const MAX_VISUAL_DATA_URI_LENGTH = WEBP_DATA_URI_PREFIX.length + 280_000;
+
+/** Le sei chiavi di presentazione, e nient'altro. */
+const PUBLIC_MANIFEST_KEYS = [
+  'assetId',
+  'anchor',
+  'caption',
+  'altText',
+  'width',
+  'height',
+] as const;
+
+const ANCHOR_KEYS = ['headingSlug', 'headingText', 'placement'] as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, i) => key === expected[i]);
+}
+
+function isPositiveInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+/**
+ * Valida il manifest **pubblico** di una lezione.
+ *
+ * La forma è chiusa in entrambi i versi: mancano chiavi ⇒ `null`, ce ne sono in
+ * più ⇒ `null`. Una chiave in più non è un dettaglio: significherebbe che la
+ * proiezione ha guadagnato un campo che nessuno ha progettato — magari uno di
+ * quelli privati che VE-03A ha lavorato per tenere fuori.
+ */
+export function readPublicVisualManifest(value: unknown): LessonVisualPublicManifest | null {
+  if (!isPlainObject(value)) return null;
+  if (!hasExactKeys(value, PUBLIC_MANIFEST_KEYS)) return null;
+
+  const { assetId, anchor, caption, altText, width, height } = value;
+  if (typeof assetId !== 'string' || !UUID_V4_RE.test(assetId)) return null;
+  if (!isNonEmptyString(caption) || !isNonEmptyString(altText)) return null;
+  if (!isPositiveInt(width) || !isPositiveInt(height)) return null;
+
+  if (!isPlainObject(anchor) || !hasExactKeys(anchor, ANCHOR_KEYS)) return null;
+  if (typeof anchor.headingSlug !== 'string' || !HEADING_SLUG_RE.test(anchor.headingSlug)) {
+    return null;
+  }
+  if (!isNonEmptyString(anchor.headingText)) return null;
+  if (anchor.placement !== 'after-heading') return null;
+
+  return {
+    assetId,
+    anchor: {
+      headingSlug: anchor.headingSlug,
+      headingText: anchor.headingText,
+      placement: 'after-heading',
+    },
+    caption,
+    altText,
+    width,
+    height,
+  };
+}
+
+/**
+ * Il manifest esiste per lo studente **solo** se la lezione è svolta.
+ *
+ * L'invariante è già imposto dalle Rules e dal server, ma viene riapplicato in
+ * lettura come per la mappa concettuale: un documento scritto male o rimasto
+ * indietro non deve poter mostrare un'immagine su una lezione che il docente
+ * non ha ancora svolto.
+ */
+export function readStudentVisualManifest(data: unknown): LessonVisualPublicManifest | null {
+  if (!isPlainObject(data)) return null;
+  if (data.completed !== true) return null;
+  return readPublicVisualManifest(data.visual);
+}
+
+/** Byte pubblici di una lezione, come li scrive `publicLessonVisuals`. */
+export interface PublicLessonVisualBytes {
+  publicLessonId: string;
+  programId: string;
+  importId: string;
+  assetId: string;
+  dataUri: string;
+  width: number;
+  height: number;
+}
+
+const BYTES_DOC_KEYS = [
+  'publicLessonId',
+  'programId',
+  'importId',
+  'assetId',
+  'dataUri',
+  'width',
+  'height',
+] as const;
+
+/**
+ * Valida un data URI WebP **senza decodificarlo**.
+ *
+ * Decodificare per validare significherebbe allocare 200 KB per scoprire che
+ * sono spazzatura; il prefisso e l'alfabeto base64 bastano a escludere tutto
+ * ciò che non è un'immagine WebP. Il contenuto vero l'ha già verificato il
+ * server — hash, dimensioni e struttura RIFF — prima di scriverlo.
+ */
+export function isWebpDataUri(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (!value.startsWith(WEBP_DATA_URI_PREFIX)) return false;
+  if (value.length > MAX_VISUAL_DATA_URI_LENGTH) return false;
+  const payload = value.slice(WEBP_DATA_URI_PREFIX.length);
+  if (payload.length === 0 || payload.length % 4 !== 0) return false;
+  return BASE64_RE.test(payload);
+}
+
+/**
+ * Valida il documento dei byte **contro il manifest che lo ha annunciato**.
+ *
+ * I due documenti sono scritti nello stesso commit, ma sono comunque due: il
+ * confronto di `assetId`, `publicLessonId` e dimensioni è ciò che impedisce a
+ * un documento rimasto indietro — lezione smarcata, immagine sostituita — di
+ * essere mostrato al posto di quello giusto. Divergenza ⇒ `null`, mai la
+ * figura sbagliata.
+ */
+export function readPublicLessonVisualBytes(params: {
+  data: unknown;
+  publicLessonId: string;
+  manifest: LessonVisualPublicManifest;
+}): PublicLessonVisualBytes | null {
+  const { data, publicLessonId, manifest } = params;
+  if (!isPlainObject(data)) return null;
+  if (!hasExactKeys(data, BYTES_DOC_KEYS)) return null;
+
+  if (data.publicLessonId !== publicLessonId) return null;
+  if (data.assetId !== manifest.assetId) return null;
+  if (data.width !== manifest.width || data.height !== manifest.height) return null;
+  if (!isNonEmptyString(data.programId) || !isNonEmptyString(data.importId)) return null;
+  if (!isWebpDataUri(data.dataUri)) return null;
+
+  return {
+    publicLessonId,
+    programId: data.programId,
+    importId: data.importId,
+    assetId: manifest.assetId,
+    dataUri: data.dataUri,
+    width: manifest.width,
+    height: manifest.height,
+  };
+}
+
+/**
+ * Compone il data URI dai byte base64 restituiti dall'export docente.
+ *
+ * `null` se il base64 non è utilizzabile: il docente vede la lezione senza
+ * figura, non un'immagine rotta con l'icona del browser.
+ */
+export function composeVisualDataUri(base64: unknown): string | null {
+  if (typeof base64 !== 'string' || base64.length === 0) return null;
+  if (base64.length % 4 !== 0 || !BASE64_RE.test(base64)) return null;
+  const dataUri = `${WEBP_DATA_URI_PREFIX}${base64}`;
+  return dataUri.length > MAX_VISUAL_DATA_URI_LENGTH ? null : dataUri;
+}

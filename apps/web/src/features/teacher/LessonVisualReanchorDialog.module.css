@@ -1,0 +1,134 @@
+/*
+ * VE-04A — dialog compatto del riancoraggio.
+ *
+ * Nessuna linea separatrice sul footer: il contratto di stile dei dialog di
+ * SchoolForge la esclude, ed è verificato da `DialogFooterStyle.test.ts`.
+ */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.intro {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.legend {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  padding-bottom: 0.25rem;
+}
+
+/*
+ * 44 px di altezza minima: è il target touch sotto il quale una riga di elenco
+ * diventa difficile da centrare col pollice. Vale su ogni larghezza — non è una
+ * regola «mobile», è la dimensione di un dito.
+ */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.option:hover {
+  background: var(--color-surface-raised);
+}
+
+.nested {
+  padding-left: 1rem;
+  color: var(--color-text-muted);
+}
+
+.badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-error);
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.action {
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--color-brand-interactive);
+  border-color: var(--color-brand-interactive-border);
+  color: #10151c;
+  font-weight: 600;
+}
+
+/*
+ * Avviso in linea nel corpo della lezione. Non invade il contenuto: sta nella
+ * stessa colonna, si manda a capo e non ha larghezza propria.
+ */
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  padding: 0.75rem 1rem;
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-raised);
+}
+
+.noticeText {
+  margin: 0;
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}

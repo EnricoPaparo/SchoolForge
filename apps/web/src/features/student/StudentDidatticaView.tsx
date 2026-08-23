@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IconBookOpen,
   IconCircleCheck,
@@ -19,6 +19,8 @@ import {
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import { readStudentVisualBytes } from '../repository/programs/visualReadClients.js';
+import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonNotesPanel } from './LessonNotesPanel.js';
 import { useLessonNotes, type LessonNotesController } from './useLessonNotes.js';
 import styles from './StudentDidatticaView.module.css';
@@ -582,6 +584,41 @@ function LessonContent({
     tabRefs.current[next]?.focus();
   }
 
+  /**
+   * VE-04A — i byte dell'immagine, letti **solo** se il manifest esiste.
+   *
+   * `lesson.visual` è già normalizzato fail-closed al confine
+   * (`readStudentVisualManifest`): assente, malformato o su lezione non svolta
+   * vale `null`, e in quel caso non parte alcuna lettura. È la garanzia che
+   * rende la funzione gratuita per la stragrande maggioranza delle lezioni.
+   */
+  const visualRequest = lesson.visual
+    ? { assetId: lesson.visual.assetId, lessonKey: lesson.id }
+    : null;
+
+  const loadVisual = useCallback(
+    async () =>
+      lesson.visual
+        ? readStudentVisualBytes({ db, publicLessonId: lesson.id, manifest: lesson.visual })
+        : null,
+    [db, lesson.id, lesson.visual],
+  );
+
+  const visualState = useLessonVisual(visualRequest, loadVisual);
+
+  const visual =
+    lesson.visual && visualState.status === 'ready'
+      ? {
+          anchorSlug: lesson.visual.anchor.headingSlug,
+          headingText: lesson.visual.anchor.headingText,
+          altText: lesson.visual.altText,
+          caption: lesson.visual.caption,
+          width: lesson.visual.width,
+          height: lesson.visual.height,
+          dataUri: visualState.bytes.dataUri,
+        }
+      : null;
+
   const body =
     lesson.content === null ? (
       <p role="alert" className="text-error">
@@ -591,7 +628,11 @@ function LessonContent({
       // LESSON-MANUAL-01 — vista lezione studente: stessa variante del docente,
       // quindi resa equivalente fra i due ruoli. Titolo, sottotitolo e metadati
       // restano nella testata esistente, senza duplicazioni.
-      <MarkdownRenderer markdown={lesson.content} variant="lesson" />
+      //
+      // VE-04A: nessun `onMissingAnchor`. Se l'ancora non si risolve lo studente
+      // vede semplicemente la figura in fondo — un avviso tecnico su una
+      // decisione editoriale del docente non gli riguarda.
+      <MarkdownRenderer markdown={lesson.content} variant="lesson" visual={visual} />
     );
 
   return (

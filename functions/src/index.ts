@@ -22,6 +22,7 @@ export {
   aiVisualAbandon,
   aiVisualCleanupForDelete,
   aiVisualExportBatch,
+  aiVisualReanchor,
   visualRunCleanup,
 } from './aiVisualGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes

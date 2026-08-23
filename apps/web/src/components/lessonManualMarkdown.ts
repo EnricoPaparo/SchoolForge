@@ -178,14 +178,14 @@ function createLessonMarked(): Marked {
 }
 
 /** Unica istanza della variante. Non tocca mai `marked` globale. */
-const lessonMarked = createLessonMarked();
+export const lessonMarked = createLessonMarked();
 
 /**
  * Configurazione di sanificazione della variante: agli allow-list predefiniti
  * di DOMPurify servono soltanto gli attributi già usati dal legacy più quelli
  * del nostro markup controllato. Nessun tag nuovo viene ammesso a mano.
  */
-const SANITIZE_CONFIG = { ADD_ATTR: ['target', 'rel'] };
+export const SANITIZE_CONFIG = { ADD_ATTR: ['target', 'rel'] };
 
 /**
  * Esegue l'intera pipeline e restituisce HTML sanificato + heading.
@@ -221,16 +221,31 @@ export function parseLessonMarkdown(markdown: string): LessonParseResult {
     },
   }) as string;
 
-  // Gli id vengono iniettati riscrivendo i tag di apertura degli heading
-  // **prima** della sanificazione, nello stesso ordine in cui sono stati
-  // raccolti: nessuna manipolazione DOM post-sanitize.
-  let index = 0;
+  const { html: withIds } = injectHeadingIds(html, headings, 0);
+  return { html: DOMPurify.sanitize(withIds, SANITIZE_CONFIG), headings };
+}
+
+/**
+ * Inietta gli `id` riscrivendo i tag di apertura degli heading **prima** della
+ * sanificazione, nello stesso ordine in cui sono stati raccolti: nessuna
+ * manipolazione DOM post-sanitize.
+ *
+ * `startIndex` esiste per VE-04A: quando il documento viene reso in due metà
+ * attorno alla figura, la seconda metà deve continuare la numerazione della
+ * prima invece di ricominciare da capo. Con `startIndex = 0` il comportamento è
+ * esattamente quello di sempre, ed è il solo usato dal percorso legacy.
+ */
+export function injectHeadingIds(
+  html: string,
+  headings: readonly LessonHeading[],
+  startIndex: number,
+): { html: string; nextIndex: number } {
+  let index = startIndex;
   const withIds = html.replace(/<(h2|h3)>/g, (match) => {
     const heading = headings[index];
     if (!heading) return match;
     index += 1;
     return `<${heading.level === 2 ? 'h2' : 'h3'} id="${escapeHtml(heading.id)}" tabindex="-1">`;
   });
-
-  return { html: DOMPurify.sanitize(withIds, SANITIZE_CONFIG), headings };
+  return { html: withIds, nextIndex: index };
 }
