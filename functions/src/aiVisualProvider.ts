@@ -53,7 +53,11 @@ export type ImageProviderOutcome =
       priorBillingRisk: boolean;
       metered: boolean;
     }
-  | { status: 'billed_unusable'; usage: ImageProviderUsage | null }
+  | {
+      status: 'billed_unusable';
+      usage: ImageProviderUsage | null;
+      priorBillingRisk: boolean;
+    }
   | { status: 'pre_invocation' }
   | { status: 'invocation_unknown' };
 
@@ -119,13 +123,13 @@ export function createImageProvider(
           });
           const usage = normalizeUsage(response.usage);
           if (!Array.isArray(response.data) || response.data.length !== 1) {
-            return { status: 'billed_unusable', usage };
+            return { status: 'billed_unusable', usage, priorBillingRisk };
           }
           try {
             const bytes = decodeStrictBase64(response.data[0]?.b64_json);
             return { status: 'success', bytes, usage, priorBillingRisk, metered: true };
           } catch {
-            return { status: 'billed_unusable', usage };
+            return { status: 'billed_unusable', usage, priorBillingRisk };
           }
         } catch (error) {
           const classified = normalizeTransportError(error);

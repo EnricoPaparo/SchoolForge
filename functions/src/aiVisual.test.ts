@@ -31,6 +31,8 @@ import {
   type ImageApiTransport,
 } from './aiVisualProvider.js';
 import {
+  hasExactRecursiveValue,
+  isExactAiVisualServerConfig,
   parseVisualRunDocument,
   serializeVisualRun,
   type StoredAiVisualImage,
@@ -174,6 +176,7 @@ describe('aiVisualProvider — confine iniettato, nessuna rete reale', () => {
       });
       await expect(provider.generate(REQUEST.subject)).resolves.toMatchObject({
         status: 'billed_unusable',
+        priorBillingRisk: false,
       });
     },
   );
@@ -217,6 +220,35 @@ describe('aiVisualProvider — confine iniettato, nessuna rete reale', () => {
     expect(result.status).toBe('success');
     expect(generate).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['missing image', []],
+    ['malformed base64', [{ b64_json: 'not-base64!' }]],
+  ] as const)('preserves prior billing risk when the retry returns %s', async (_label, data) => {
+    const generate = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new OpenAiTransportError('timeout', { transient: true, billingRisk: true }),
+      )
+      .mockResolvedValueOnce({
+        data,
+        usage: { input_tokens: 20, output_tokens: 196 },
+      });
+    const result = await createImageProvider(
+      { generate },
+      {
+        policy: { ...DEFAULT_POLICY, maxRetries: 1 },
+        random: () => 0,
+        sleep: async () => undefined,
+      },
+    ).generate(REQUEST.subject);
+    expect(result).toEqual({
+      status: 'billed_unusable',
+      usage: { inputTokens: 20, outputTokens: 196 },
+      priorBillingRisk: true,
+    });
+    expect(generate).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -360,6 +392,51 @@ describe('visualRuns — parser chiuso e replay byte-identico', () => {
       parseVisualRunDocument({ ...raw, image }, computeVisualRunId(OWNER, REQUEST_ID)),
     ).toBeNull();
   });
+
+  it('accepts the exact server config in its declared key order', () => {
+    expect(isExactAiVisualServerConfig(AI_VISUAL_SERVER_CONFIG)).toBe(true);
+  });
+
+  it('accepts semantically identical key order changes, including nested maps', async () => {
+    const reorderedConfig = Object.fromEntries(Object.entries(AI_VISUAL_SERVER_CONFIG).reverse());
+    expect(isExactAiVisualServerConfig(reorderedConfig)).toBe(true);
+    const run = await completedRun();
+    expect(
+      parseVisualRunDocument(
+        { ...serializeVisualRun(run), config: reorderedConfig },
+        computeVisualRunId(OWNER, REQUEST_ID),
+      ),
+    ).toEqual(run);
+    expect(
+      hasExactRecursiveValue(
+        { outer: { beta: [1, { right: true, left: 'x' }], alpha: 2 } },
+        { outer: { alpha: 2, beta: [1, { left: 'x', right: true }] } },
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['missing property', Object.fromEntries(Object.entries(AI_VISUAL_SERVER_CONFIG).slice(1))],
+    ['extra property', { ...AI_VISUAL_SERVER_CONFIG, unexpected: true }],
+    ['different value', { ...AI_VISUAL_SERVER_CONFIG, maxLongEdge: 1_199 }],
+  ])('rejects config with a %s', async (_label, config) => {
+    expect(isExactAiVisualServerConfig(config)).toBe(false);
+    const run = await completedRun();
+    expect(
+      parseVisualRunDocument(
+        { ...serializeVisualRun(run), config },
+        computeVisualRunId(OWNER, REQUEST_ID),
+      ),
+    ).toBeNull();
+  });
+
+  it('compares recursively without coercion and rejects array or nested extras', () => {
+    expect(hasExactRecursiveValue({ value: '1' }, { value: 1 })).toBe(false);
+    expect(hasExactRecursiveValue({ values: [1, 2, 3] }, { values: [1, 2] })).toBe(false);
+    expect(
+      hasExactRecursiveValue({ nested: { value: 1, extra: 2 } }, { nested: { value: 1 } }),
+    ).toBe(false);
+  });
 });
 
 function basePorts(overrides: Partial<AiVisualPorts> = {}): AiVisualPorts {
@@ -495,6 +572,99 @@ describe('aiVisualEngine — ordering, budget, replay e crash windows', () => {
     expect(
       (unknown.failRun as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].settledCostMicroUsd,
     ).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['no image', []],
+    ['malformed base64', [{ b64_json: 'not-base64!' }]],
+  ] as const)(
+    'fails at the reservation cap after a billing-risk timeout followed by %s',
+    async (_label, data) => {
+      const transportGenerate = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new OpenAiTransportError('timeout', { transient: true, billingRisk: true }),
+        )
+        .mockResolvedValueOnce({
+          data,
+          usage: { input_tokens: 20, output_tokens: 196 },
+        });
+      const provider = createImageProvider(
+        { generate: transportGenerate },
+        {
+          policy: { ...DEFAULT_POLICY, maxRetries: 1 },
+          random: () => 0,
+          sleep: async () => undefined,
+        },
+      );
+      const callProvider = vi.fn(async () => provider.generate(REQUEST.subject));
+      const ports = basePorts({ callProvider });
+      const cap = estimateVisualCost(REQUEST.subject, 'openai').reservationCostMicroUsd;
+
+      await expect(
+        generateVisual(REQUEST, { ...CONTEXT, mode: 'openai' }, ports),
+      ).rejects.toMatchObject({ code: 'provider_billed_unusable' });
+      expect(ports.failRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actualInputTokens: null,
+          actualOutputTokens: null,
+          actualCostMicroUsd: null,
+          settledCostMicroUsd: cap,
+        }),
+      );
+      expect(callProvider).toHaveBeenCalledTimes(1);
+      expect(transportGenerate).toHaveBeenCalledTimes(2);
+      expect(ports.normalize).not.toHaveBeenCalled();
+      expect(ports.uploadStaging).not.toHaveBeenCalled();
+      expect(ports.finalizeRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses measured usage for billed_unusable when there was no prior billing risk', async () => {
+    const callProvider = vi.fn(async () => ({
+      status: 'billed_unusable' as const,
+      usage: { inputTokens: 20, outputTokens: 196 },
+      priorBillingRisk: false,
+    }));
+    const ports = basePorts({ callProvider });
+    await expect(
+      generateVisual(REQUEST, { ...CONTEXT, mode: 'openai' }, ports),
+    ).rejects.toMatchObject({ code: 'provider_billed_unusable' });
+    expect(ports.failRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actualInputTokens: 20,
+        actualOutputTokens: 196,
+        actualCostMicroUsd: 5_980,
+        settledCostMicroUsd: 5_980,
+      }),
+    );
+    expect(callProvider).toHaveBeenCalledTimes(1);
+    expect(ports.normalize).not.toHaveBeenCalled();
+    expect(ports.uploadStaging).not.toHaveBeenCalled();
+    expect(ports.finalizeRun).not.toHaveBeenCalled();
+  });
+
+  it('keeps success after prior billing risk at the cap with unknown actual usage', async () => {
+    const ports = basePorts({
+      callProvider: vi.fn(async () => ({
+        status: 'success',
+        bytes: await fixtureWebp(),
+        usage: { inputTokens: 20, outputTokens: 196 },
+        priorBillingRisk: true,
+        metered: true,
+      })),
+    });
+    const cap = estimateVisualCost(REQUEST.subject, 'openai').reservationCostMicroUsd;
+    const result = await generateVisual(REQUEST, { ...CONTEXT, mode: 'openai' }, ports);
+    expect(result).toMatchObject({ actualCostMicroUsd: null, settledCostMicroUsd: cap });
+    expect(ports.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actualInputTokens: null,
+        actualOutputTokens: null,
+        actualCostMicroUsd: null,
+        settledCostMicroUsd: cap,
+      }),
+    );
   });
 
   it('never calls provider after a lost pending transition', async () => {

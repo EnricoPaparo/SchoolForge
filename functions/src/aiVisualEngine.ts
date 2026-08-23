@@ -194,20 +194,20 @@ function usageSettlement(
   actualCostMicroUsd: number | null;
   settledCostMicroUsd: number;
 } {
+  if (outcome.priorBillingRisk) {
+    return {
+      actualInputTokens: null,
+      actualOutputTokens: null,
+      actualCostMicroUsd: null,
+      settledCostMicroUsd: reservationCap,
+    };
+  }
   if (outcome.status === 'success' && !outcome.metered) {
     return {
       actualInputTokens: 0,
       actualOutputTokens: 0,
       actualCostMicroUsd: 0,
       settledCostMicroUsd: 0,
-    };
-  }
-  if (outcome.status === 'success' && outcome.priorBillingRisk) {
-    return {
-      actualInputTokens: null,
-      actualOutputTokens: null,
-      actualCostMicroUsd: null,
-      settledCostMicroUsd: reservationCap,
     };
   }
   const actualCost = outcome.usage ? actualVisualCostMicroUsd(outcome.usage) : null;

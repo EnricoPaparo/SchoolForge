@@ -103,6 +103,31 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, i) => key === expected[i]);
 }
+
+export function hasExactRecursiveValue(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected)) {
+    return (
+      Array.isArray(actual) &&
+      actual.length === expected.length &&
+      expected.every((value, index) => hasExactRecursiveValue(actual[index], value))
+    );
+  }
+  if (isObject(expected)) {
+    if (!isObject(actual)) return false;
+    const expectedKeys = Object.keys(expected);
+    return (
+      hasExactKeys(actual, expectedKeys) &&
+      expectedKeys.every((key) => hasExactRecursiveValue(actual[key], expected[key]))
+    );
+  }
+  return typeof actual === typeof expected && Object.is(actual, expected);
+}
+
+export function isExactAiVisualServerConfig(
+  value: unknown,
+): value is typeof AI_VISUAL_SERVER_CONFIG {
+  return hasExactRecursiveValue(value, AI_VISUAL_SERVER_CONFIG);
+}
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
@@ -210,7 +235,7 @@ export function parseVisualRunDocument(
   if (data.contractVersion !== AI_VISUAL_CONTRACT_VERSION) return null;
   if (!['reserved', 'pending', 'completed', 'failed'].includes(String(data.status))) return null;
   if (typeof data.inputHash !== 'string' || !/^[a-f0-9]{64}$/.test(data.inputHash)) return null;
-  if (JSON.stringify(data.config) !== JSON.stringify(AI_VISUAL_SERVER_CONFIG)) return null;
+  if (!isExactAiVisualServerConfig(data.config)) return null;
   if (typeof data.leaseExecutionId !== 'string' || data.leaseExecutionId.length === 0) return null;
   if (!isCanonicalVisualStagingRef(data.stagingRef, opaqueRunId)) return null;
 

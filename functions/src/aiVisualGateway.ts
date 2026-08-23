@@ -176,7 +176,7 @@ function writeLedgerState(
   });
 }
 
-function createPorts(
+export function createVisualPorts(
   db: Firestore,
   mode: AiVisualMode,
   sharedConfig: AiRuntimeConfig | null,
@@ -429,7 +429,7 @@ async function handleVisualRequest(
     }
     const validated = validateAiVisualRequest(request.data);
     const sharedConfig = await loadSharedRuntimeConfig(db);
-    const ports = createPorts(db, mode, sharedConfig);
+    const ports = createVisualPorts(db, mode, sharedConfig);
     const context = {
       authenticatedOwnerUid: ownerUid,
       mode,
