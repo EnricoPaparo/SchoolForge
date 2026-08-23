@@ -13,12 +13,14 @@
     "benchmark:lesson-tune-quality": "node lib/lessonTuneQualityCli.js",
     "benchmark:pool-tune": "node lib/poolTuneCli.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:firestore-integration": "vitest run src/aiVisualFirestore.integration.test.ts"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0",
     "firebase-functions": "^7.3.0",
-    "openai": "^6.47.0"
+    "openai": "^6.47.0",
+    "sharp": "^0.34.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -358,6 +358,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- visualRuns/{opaqueRunId} (VISUAL-ENRICHMENT-02) ---
+    // Byte WebP inline, riferimenti staging, lease e contabilità sono tecnici e
+    // server-only. Il replay passa soltanto dalla callable owner-only.
+    match /visualRuns/{document=**} {
+      allow read, write: if false;
+    }
+
     // --- teacherAiPreferences/{ownerUid} (TWU-02) ---
     // Preferenze predefinite della correzione IA del docente: un solo documento,
     // id == ownerUid. Leggibile e scrivibile SOLO dall'owner (mai da uno studente

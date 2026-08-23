@@ -114,6 +114,31 @@ describe('Storage — owner reads/writes own path', () => {
   });
 });
 
+describe('Storage — VISUAL-ENRICHMENT-02 staging is server-only', () => {
+  const path = `staging/${OWNER_UID}/${'a'.repeat(64)}.webp`;
+
+  it.each([
+    ['owner', OWNER_UID],
+    ['other authenticated user', OTHER_UID],
+  ] as const)('denies client upload and read to %s', async (_label, uid) => {
+    const st = testEnv.authenticatedContext(uid).storage();
+    await assertFails(uploadBytes(ref(st, path), PAYLOAD));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), PAYLOAD);
+    });
+    await assertFails(getBytes(ref(st, path)));
+  });
+
+  it('denies anonymous upload and read', async () => {
+    const st = testEnv.unauthenticatedContext().storage();
+    await assertFails(uploadBytes(ref(st, path), PAYLOAD));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), path), PAYLOAD);
+    });
+    await assertFails(getBytes(ref(st, path)));
+  });
+});
+
 // ─── repository/{ownerUid}/ — other authenticated user denied ────────────────
 
 describe('Storage — other authenticated user denied on owner path', () => {
