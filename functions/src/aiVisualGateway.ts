@@ -86,7 +86,6 @@ import {
   MAX_VISUAL_EXPORT_TOTAL_BYTES,
   serializeVisualManifestForExport,
   validateVisualExportInput,
-  type VisualExportInput,
   type VisualExportItem,
   type VisualExportResult,
 } from './aiVisualExport.js';
@@ -1860,9 +1859,20 @@ export async function exportLessonVisualsForOwner(params: {
   db: Firestore;
   bucket: BucketLike;
   ownerUid: string;
-  input: VisualExportInput;
+  /**
+   * **`unknown` di proposito.** Finché il tipo era `VisualExportInput` il
+   * validator si poteva saltare semplicemente costruendo un oggetto già
+   * tipizzato — ed è esattamente ciò che faceva un test, che passava per il
+   * motivo sbagliato. Ora la validazione è all'ingresso della funzione di
+   * servizio, non dell'handler: la callable è un chiamante come un altro, e
+   * nessun percorso può raggiungere Firestore o Storage senza attraversarla.
+   */
+  input: unknown;
 }): Promise<VisualExportResult> {
-  const { db, bucket, ownerUid, input } = params;
+  const { db, bucket, ownerUid } = params;
+  // Prima riga del corpo, prima di qualunque `db.doc()`, `get()` o
+  // `bucket.file()`: un payload malformato non deve costare nemmeno una lettura.
+  const input = validateVisualExportInput(params.input);
 
   // Letture sequenziali per lezione: l'`udaDir` da cui dipende il percorso
   // canonico vive sul `LessonDoc`, quindi non esiste un modo di sapere che cosa
@@ -1956,7 +1966,9 @@ async function handleExportLessonVisuals(request: CallableRequest<unknown>): Pro
       db,
       bucket: getStorage().bucket() as unknown as BucketLike,
       ownerUid,
-      input: validateVisualExportInput(request.data),
+      // Non validato qui: lo fa la funzione di servizio, che è l'unico punto
+      // in cui la validazione non può essere aggirata.
+      input: request.data,
     });
   } catch (error) {
     if (error instanceof AiVisualError) throw toHttpsError(error);

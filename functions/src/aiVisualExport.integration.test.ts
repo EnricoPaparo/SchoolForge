@@ -362,21 +362,115 @@ emulatorDescribe('VE-03C export binario — Firestore + Storage Emulator', () =>
     expect((await db.collection('aiVisualPromotions').get()).empty).toBe(true);
   });
 
-  it('accetta esattamente il numero massimo di lezioni per richiesta', async () => {
-    const ids = Array.from({ length: MAX_VISUAL_EXPORT_LESSONS_PER_BATCH }, (_, i) => `l-max-${i}`);
-    for (const id of ids) await seedLesson({ lessonId: id });
+  /**
+   * **Perché con porte finte e non contro gli Emulator veri.**
+   *
+   * La versione precedente di questo test passava per il motivo sbagliato: gli
+   * id erano validi ma le lezioni non esistevano, quindi l'errore
+   * `invalid_input` arrivava da «lezione assente» e non dal limite. Un test
+   * verde che non prova ciò che dice è peggio di un test mancante.
+   *
+   * Con `db` e `bucket` finti la prova diventa esatta: se una sola lettura
+   * partisse, il contatore lo direbbe. Gli id sono 33, tutti validi e distinti,
+   * così l'unico motivo possibile di rifiuto è il limite.
+   */
+  it('rifiuta oltre il massimo senza toccare Firestore né Storage', async () => {
+    let firestoreCalls = 0;
+    let storageCalls = 0;
+    const spyDb = {
+      doc() {
+        firestoreCalls += 1;
+        throw new Error('nessuna lettura Firestore deve partire');
+      },
+    } as unknown as Firestore;
+    const spyBucket = {
+      file() {
+        storageCalls += 1;
+        throw new Error('nessun accesso Storage deve partire');
+      },
+    } as unknown as BucketLike;
 
-    const { items } = await exportFor(ids);
-    expect(items).toHaveLength(MAX_VISUAL_EXPORT_LESSONS_PER_BATCH);
-    expect(items.every((i) => i.status === 'absent')).toBe(true);
-  });
-
-  it('rifiuta una richiesta oltre il numero massimo prima di leggere', async () => {
     const troppe = Array.from(
       { length: MAX_VISUAL_EXPORT_LESSONS_PER_BATCH + 1 },
       (_, i) => `l-troppe-${i}`,
     );
-    await expect(exportFor(troppe)).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(new Set(troppe).size).toBe(MAX_VISUAL_EXPORT_LESSONS_PER_BATCH + 1);
+
+    await expect(
+      exportLessonVisualsForOwner({
+        db: spyDb,
+        bucket: spyBucket,
+        ownerUid: OWNER,
+        input: { programId: PROGRAM, importId: IMPORT, lessonIds: troppe },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+
+    expect(firestoreCalls).toBe(0);
+    expect(storageCalls).toBe(0);
+  });
+
+  /**
+   * Il limite esatto resta accettato: un test che prova solo il rifiuto
+   * lascerebbe passare un off-by-one che rende inutilizzabile l'ultimo slot.
+   */
+  it('accetta esattamente il limite anche attraverso il validator d’ingresso', async () => {
+    const ids = Array.from(
+      { length: MAX_VISUAL_EXPORT_LESSONS_PER_BATCH },
+      (_, i) => `l-limite-${i}`,
+    );
+    for (const id of ids) await seedLesson({ lessonId: id });
+
+    const { items } = await exportLessonVisualsForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { programId: PROGRAM, importId: IMPORT, lessonIds: ids },
+    });
+    expect(items).toHaveLength(MAX_VISUAL_EXPORT_LESSONS_PER_BATCH);
+  });
+
+  /**
+   * Ogni forma di payload invalido si ferma prima di qualunque I/O. Il
+   * contratto è uno solo, quindi la prova è una sola tabella.
+   */
+  it('ogni payload invalido fallisce con zero I/O', async () => {
+    const spyDb = {
+      doc() {
+        throw new Error('nessuna lettura Firestore deve partire');
+      },
+    } as unknown as Firestore;
+    const spyBucket = {
+      file() {
+        throw new Error('nessun accesso Storage deve partire');
+      },
+    } as unknown as BucketLike;
+
+    const invalidPayloads: unknown[] = [
+      null,
+      undefined,
+      'stringa',
+      42,
+      [],
+      {},
+      { programId: PROGRAM, importId: IMPORT },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: [] },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: ['a', 'a'] },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: ['a'], ownerUid: OWNER },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: ['a'], storageRef: 'x' },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: ['a/b'] },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: ['..'] },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: ['__riservato__'] },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: [' spazio'] },
+      { programId: PROGRAM, importId: IMPORT, lessonIds: [42] },
+      { programId: '__riservato__', importId: IMPORT, lessonIds: ['a'] },
+      { programId: PROGRAM, importId: 'x'.repeat(1501), lessonIds: ['a'] },
+    ];
+
+    for (const input of invalidPayloads) {
+      await expect(
+        exportLessonVisualsForOwner({ db: spyDb, bucket: spyBucket, ownerUid: OWNER, input }),
+      ).rejects.toMatchObject({ code: 'invalid_input' });
+    }
   });
 
   /** Il serializzatore usato dal server è lo stesso testato in isolamento. */

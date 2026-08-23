@@ -23,6 +23,7 @@
 
 import { MAX_VISUAL_BYTES } from './aiContentVisualProposal.js';
 import { AiVisualError } from './aiVisualCore.js';
+import { isValidDocumentIdInput } from './firestoreDocumentId.js';
 import type { LessonVisualPrivateManifest } from './aiVisualManifest.js';
 
 // ─── Limiti del trasporto ─────────────────────────────────────────────────────
@@ -72,16 +73,16 @@ function invalidInput(message: string): never {
   throw new AiVisualError('invalid_input', message);
 }
 
+/**
+ * Un identificatore che diventerà un segmento di `DocumentReference`.
+ *
+ * La semantica non è riscritta qui: è quella canonica di
+ * `firestoreDocumentId.ts`, la stessa che FORCE-SUBMIT applica da sempre. Una
+ * seconda versione scritta a mano sarebbe stata inevitabilmente più debole —
+ * mancava già la forma riservata `__…__` e i caratteri di controllo.
+ */
 function assertSegment(value: unknown, label: string): string {
-  if (
-    typeof value !== 'string' ||
-    value.length === 0 ||
-    value !== value.trim() ||
-    value.includes('/') ||
-    value === '.' ||
-    value === '..' ||
-    Buffer.byteLength(value, 'utf8') > 1_500
-  ) {
+  if (!isValidDocumentIdInput(value)) {
     invalidInput(`${label} non valido.`);
   }
   return value;

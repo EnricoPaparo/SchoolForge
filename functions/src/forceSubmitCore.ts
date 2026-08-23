@@ -15,6 +15,8 @@
  * versione acquisita.
  */
 
+import { MAX_DOCUMENT_ID_BYTES, isValidDocumentId, utf8ByteLength } from './firestoreDocumentId.js';
+
 export type ForceSubmitErrorCode =
   | 'unauthenticated'
   | 'invalid_input'
@@ -39,41 +41,14 @@ export interface ForceSubmitInput {
 }
 
 /**
- * Dimensione **reale in byte UTF-8**. Il limite Firestore sugli id documento è
- * espresso in byte, non in caratteri: `'é'` occupa 2 byte e un'emoji ne occupa
- * 4, quindi contare i caratteri (o le UTF-16 code unit) sottostima il limite e
- * lascerebbe passare id che Firestore rifiuta.
+ * Semantica dell'id documento: **una sola** definizione, in un modulo neutro.
+ *
+ * Viveva qui, ma non appartiene a questo dominio — la consegna forzata di una
+ * verifica non ha niente a che vedere con l'export di un'immagine, e ora
+ * entrambi hanno bisogno delle stesse regole. Il re-export conserva l'API
+ * pubblica di questo modulo, così i chiamanti esistenti non cambiano.
  */
-export function utf8ByteLength(value: string): number {
-  let bytes = 0;
-  for (const codePoint of value) {
-    const cp = codePoint.codePointAt(0)!;
-    if (cp < 0x80) bytes += 1;
-    else if (cp < 0x800) bytes += 2;
-    else if (cp < 0x10000) bytes += 3;
-    else bytes += 4;
-  }
-  return bytes;
-}
-
-/** Limite Firestore per un id documento, in byte UTF-8. */
-export const MAX_DOCUMENT_ID_BYTES = 1500;
-
-/**
- * Un id documento Firestore valido: non vuoto, senza '/', diverso da '.'/'..',
- * non nella forma riservata `__…__`, senza caratteri di controllo, e — verificato
- * sui **byte UTF-8** — entro il limite di 1500 byte.
- */
-export function isValidDocumentId(value: string): boolean {
-  if (value.length === 0) return false;
-  if (utf8ByteLength(value) > MAX_DOCUMENT_ID_BYTES) return false;
-  if (value.includes('/')) return false;
-  if (value === '.' || value === '..') return false;
-  if (value.startsWith('__') && value.endsWith('__')) return false;
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(value)) return false;
-  return true;
-}
+export { MAX_DOCUMENT_ID_BYTES, isValidDocumentId, utf8ByteLength };
 
 /**
  * Parsing **chiuso**: plain-object con esattamente `verificationId` e

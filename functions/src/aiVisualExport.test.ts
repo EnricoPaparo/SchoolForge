@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
@@ -18,6 +19,7 @@ import { MAX_VISUAL_BYTES } from './aiContentVisualProposal.js';
 import { canonicalVisualStorageRef } from './aiVisualManifest.js';
 import { validateLessonVisualPrivateManifest } from './aiVisualManifest.js';
 import { AiVisualError } from './aiVisualCore.js';
+import { isValidDocumentIdInput } from './firestoreDocumentId.js';
 
 /**
  * VISUAL-ENRICHMENT-03C — i contratti puri dell'export binario.
@@ -431,5 +433,94 @@ describe('reconcileVisualExportBatch', () => {
     expect(() => reconcileVisualExportBatch({ requested: ['a'], items: [item('z')] })).toThrow(
       /ordine/,
     );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * VE-03C-REVIEW-FIX — un solo validator, e non aggirabile.
+ *
+ * Il difetto corretto era esattamente questo: la funzione di servizio accettava
+ * un input **già tipizzato**, quindi bastava costruirlo per saltare il
+ * validator. Un test ci era già cascato, passando per il motivo sbagliato.
+ */
+describe('il validator è all’ingresso della funzione di servizio', () => {
+  const gateway = readFileSync(new URL('./aiVisualGateway.ts', import.meta.url), 'utf8');
+  /**
+   * I commenti vengono rimossi prima di cercare: questa stessa funzione
+   * *documenta* di validare prima di `db.doc()`, e cercare nel sorgente grezzo
+   * troverebbe la frase invece della chiamata.
+   */
+  const service = gateway
+    .slice(gateway.indexOf('export async function exportLessonVisualsForOwner'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+
+  it('la funzione di servizio accetta unknown, non un tipo già validato', () => {
+    expect(service).toMatch(/input:\s*unknown;/);
+  });
+
+  it('valida prima di qualunque accesso a Firestore o Storage', () => {
+    const validation = service.indexOf('validateVisualExportInput(params.input)');
+    expect(validation).toBeGreaterThan(-1);
+    for (const io of ['db.doc(', '.get()', 'bucket.file(']) {
+      expect(service.indexOf(io)).toBeGreaterThan(validation);
+    }
+  });
+
+  /** L'handler non rivalida: delega, così esiste un solo punto di verità. */
+  it('la callable passa il payload grezzo allo stesso validator', () => {
+    const handler = gateway.slice(
+      gateway.indexOf('async function handleExportLessonVisuals'),
+      gateway.indexOf('export const aiVisualExportBatch'),
+    );
+    expect(handler).toContain('input: request.data');
+    expect(handler).not.toContain('validateVisualExportInput');
+  });
+});
+
+describe('gli identificatori usano la semantica canonica, non una copia', () => {
+  /**
+   * La versione precedente era riscritta a mano e più debole: mancavano la
+   * forma riservata `__…__` e i caratteri di controllo. Questi casi lo
+   * congelano.
+   */
+  it('rifiuta le forme che una validazione debole lascerebbe passare', () => {
+    expect(() => validateVisualExportInput(input({ lessonIds: ['__riservato__'] }))).toThrow(
+      AiVisualError,
+    );
+    expect(() => validateVisualExportInput(input({ programId: '__riservato__' }))).toThrow(
+      AiVisualError,
+    );
+    expect(() => validateVisualExportInput(input({ lessonIds: ['a\u0007b'] }))).toThrow(
+      AiVisualError,
+    );
+    expect(() => validateVisualExportInput(input({ importId: 'a\u0009b' }))).toThrow(AiVisualError);
+  });
+
+  it('applica il limite di 1500 byte sui byte, non sui caratteri', () => {
+    expect(() => validateVisualExportInput(input({ lessonIds: ['a'.repeat(1500)] }))).not.toThrow();
+    expect(() => validateVisualExportInput(input({ lessonIds: ['a'.repeat(1501)] }))).toThrow(
+      AiVisualError,
+    );
+    // 375 emoji = 1500 byte: accettate. 376 = 1504: rifiutate.
+    expect(() =>
+      validateVisualExportInput(input({ lessonIds: ['\u{1F331}'.repeat(375)] })),
+    ).not.toThrow();
+    expect(() =>
+      validateVisualExportInput(input({ lessonIds: ['\u{1F331}'.repeat(376)] })),
+    ).toThrow(AiVisualError);
+  });
+
+  it('usa lo stesso predicato del modulo neutro', () => {
+    for (const bad of ['', ' x', 'x ', 'a/b', '.', '..', '__x__']) {
+      expect(isValidDocumentIdInput(bad)).toBe(false);
+      expect(() => validateVisualExportInput(input({ lessonIds: [bad] }))).toThrow(AiVisualError);
+    }
+    for (const good of ['lesson-1', '...', 'a__b', 'Città']) {
+      expect(isValidDocumentIdInput(good)).toBe(true);
+      expect(() => validateVisualExportInput(input({ lessonIds: [good] }))).not.toThrow();
+    }
   });
 });
