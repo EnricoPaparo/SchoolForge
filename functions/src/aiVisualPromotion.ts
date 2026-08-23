@@ -27,7 +27,7 @@
  * Puro rispetto all'infrastruttura: ogni accesso passa da `VisualPromotionPorts`.
  */
 
-import { Timestamp } from 'firebase-admin/firestore';
+import type { Timestamp } from 'firebase-admin/firestore';
 import { AiVisualError, sha256Hex } from './aiVisualCore.js';
 import {
   checkVisualCandidate,

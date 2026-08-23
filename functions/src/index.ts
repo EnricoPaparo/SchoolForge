@@ -12,7 +12,13 @@ export { aiCorrectionPreview, aiCorrectionRun } from './aiCorrectionGateway.js';
 export { aiContentPreview, aiContentGenerate } from './aiContentGateway.js';
 // VISUAL-ENRICHMENT-02 — preview read-only, generazione binaria WebP e cleanup
 // idempotente dello staging alla cancellazione TTL dei run tecnici server-only.
-export { aiVisualPreview, aiVisualGenerate, visualRunCleanup } from './aiVisualGateway.js';
+export {
+  aiVisualPreview,
+  aiVisualGenerate,
+  aiVisualBindCandidate,
+  aiVisualPromote,
+  visualRunCleanup,
+} from './aiVisualGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.

@@ -29,10 +29,41 @@ import {
 } from './aiCorrectionRuntimeConfig.js';
 import {
   AiVisualError,
+  computeVisualRunId,
+  inspectWebp,
   resolveAiVisualMode,
   validateAiVisualRequest,
   type AiVisualMode,
 } from './aiVisualCore.js';
+import {
+  VISUAL_CANDIDATE_TTL_MS,
+  checkVisualCandidate,
+  computeSourceBodyHash,
+  describeCandidateCheckFailure,
+  describeCandidateConflict,
+  parseStoredVisualCandidate,
+  reconcileVisualCandidateBind,
+  serializeVisualCandidate,
+  validateVisualCandidateBindInput,
+  type StoredVisualCandidate,
+} from './aiVisualCandidate.js';
+import { validateLessonVisualPrivateManifest } from './aiVisualManifest.js';
+import {
+  assertStagedBytesMatchRun,
+  buildPromotionPlan,
+  composePrivateManifest,
+  computePromotionInputHash,
+  reconcileVisualPromotion,
+  resolveAnchorSlugInBody,
+  validateVisualPromotionInput,
+  type PromotableRunImage,
+  type StoredVisualPromotion,
+} from './aiVisualPromotion.js';
+import {
+  checkLessonForVisual,
+  checkProjectionForVisual,
+  describeVisualBindingFailure,
+} from './aiVisualLessonBinding.js';
 import {
   generateVisual,
   previewVisual,
@@ -53,6 +84,15 @@ import { isStorageNotFound } from './repositoryGatewayCore.js';
 
 /** Secret Firebase esistente. Il binding è presente solo su `aiVisualGenerate`. */
 export const AI_VISUAL_OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
+
+/** Collezioni server-only: nessuna regola le apre in scrittura al client. */
+const VISUAL_CANDIDATES = 'aiVisualCandidates';
+const VISUAL_PROMOTIONS = 'aiVisualPromotions';
+const PUBLIC_LESSON_VISUALS = 'publicLessonVisuals';
+
+function lessonPath(programId: string, importId: string, lessonId: string): string {
+  return `programs/${programId}/imports/${importId}/lessons/${lessonId}`;
+}
 
 function database(): Firestore {
   if (getApps().length === 0) initializeApp();
@@ -239,6 +279,14 @@ export function createVisualPorts(
   return {
     async loadRuntimeConfig() {
       return config;
+    },
+    async requireCandidateTicket({ opaqueRunId, ownerUid, nowMs }) {
+      const snap = await db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`).get();
+      const candidate = parseStoredVisualCandidate(snap.exists ? snap.data() : null);
+      const check = checkVisualCandidate({ candidate, ownerUid, nowMs });
+      if (!check.ok) {
+        throw new AiVisualError('invalid_input', describeCandidateCheckFailure(check.reason));
+      }
     },
     async readAvailableBudgetMicroUsd(runtimeConfig) {
       const nowMs = Date.now();
@@ -458,6 +506,339 @@ export const aiVisualGenerate = onCall(
   { region: SCHOOLFORGE_FUNCTION_REGION, secrets: [AI_VISUAL_OPENAI_API_KEY] },
   (request) => handleVisualRequest(request, 'generate'),
 );
+
+// ─── VE-03A — bind del candidato alla lezione ────────────────────────────────
+
+/**
+ * Legge la lezione e la sua proiezione, verifica che siano coerenti fra loro, e
+ * restituisce i soli valori **autorevoli**: id pubblico, UDA, corpo salvato e
+ * stato di svolgimento.
+ *
+ * Le due letture sono sequenziali di proposito. L'indirizzo della proiezione non
+ * è quello ricevuto dal chiamante ma quello **derivato** dal documento tecnico,
+ * quindi non può essere calcolato prima di aver letto il primo documento: un
+ * `getAll` parallelo richiederebbe di fidarsi di un id che è esattamente ciò che
+ * questo cancello rifiuta di considerare autorevole.
+ */
+async function readAuthoritativeLesson(
+  db: Firestore,
+  params: { ownerUid: string; programId: string; importId: string; lessonId: string },
+): Promise<{
+  publicLessonId: string;
+  udaDir: string;
+  body: string;
+  completed: boolean;
+}> {
+  const { ownerUid, programId, importId, lessonId } = params;
+  const lessonSnap = await db.doc(lessonPath(programId, importId, lessonId)).get();
+  const lesson = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
+  const gate = checkLessonForVisual({ lesson, lessonId, ownerUid, importId });
+  if (!gate.ok) {
+    throw new AiVisualError('invalid_input', describeVisualBindingFailure(gate.failure));
+  }
+
+  const publicSnap = await db.doc(`publicLessons/${gate.publicLessonId}`).get();
+  const projectionGate = checkProjectionForVisual({
+    lesson: lesson as Record<string, unknown>,
+    publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
+    programId,
+    importId,
+    ownerUid,
+  });
+  if (!projectionGate.ok) {
+    throw new AiVisualError('invalid_input', describeVisualBindingFailure(projectionGate.failure));
+  }
+  return {
+    publicLessonId: gate.publicLessonId,
+    udaDir: gate.udaDir,
+    body: projectionGate.body,
+    completed: projectionGate.completed,
+  };
+}
+
+async function handleBindCandidate(request: CallableRequest<unknown>): Promise<unknown> {
+  const db = database();
+  try {
+    const ownerUid = await requireOwner(request, db);
+    if (visualMode() === 'disabled') {
+      throw new AiVisualError('feature_disabled', 'La generazione visuale è disattivata.');
+    }
+    const input = validateVisualCandidateBindInput(request.data);
+    const lesson = await readAuthoritativeLesson(db, { ownerUid, ...input });
+
+    const nowMs = Date.now();
+    const opaqueRunId = computeVisualRunId(ownerUid, input.requestId);
+    const next: StoredVisualCandidate = {
+      contractVersion: 1,
+      ownerUid,
+      programId: input.programId,
+      importId: input.importId,
+      lessonId: input.lessonId,
+      publicLessonId: lesson.publicLessonId,
+      udaDir: lesson.udaDir,
+      // Il corpo non viene conservato: solo la sua impronta, che serve a
+      // confrontare e non a leggere.
+      sourceBodyHash: computeSourceBodyHash(lesson.body),
+      createdAtMs: nowMs,
+      expireAtMs: nowMs + VISUAL_CANDIDATE_TTL_MS,
+    };
+
+    const ref = db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`);
+    const outcome = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const existing = parseStoredVisualCandidate(snap.exists ? snap.data() : null);
+      const result = reconcileVisualCandidateBind({ existing, next });
+      if (result.status === 'created') tx.set(ref, serializeVisualCandidate(result.candidate));
+      return result;
+    });
+    if (outcome.status === 'conflict') {
+      throw new AiVisualError('run_conflict', describeCandidateConflict(outcome.reason));
+    }
+    // Nient'altro esce di qui: né l'impronta del corpo, né l'id pubblico, né il
+    // run id opaco. Il client sa soltanto che può procedere.
+    return { requestId: input.requestId, status: outcome.status };
+  } catch (error) {
+    if (error instanceof AiVisualError) throw toHttpsError(error);
+    logger.error('aiVisualBindCandidate internal error', { name: (error as Error)?.name });
+    throw new HttpsError('internal', 'Errore interno della preparazione visuale.');
+  }
+}
+
+/**
+ * Prepara un candidato: lega `requestId` a una lezione **prima** che l'immagine
+ * esista. Nessun secret, nessun provider, nessuna spesa.
+ */
+export const aiVisualBindCandidate = onCall(
+  { region: SCHOOLFORGE_FUNCTION_REGION },
+  handleBindCandidate,
+);
+
+// ─── VE-03A — promozione del candidato approvato ─────────────────────────────
+
+/**
+ * L'ordine delle operazioni è la garanzia, e vale la pena dirlo dove il codice
+ * lo esegue:
+ *
+ * 1. **verifiche** — ticket, lezione, proiezione, corpo invariato, run
+ *    completato, byte staged identici a quelli del run;
+ * 2. **copia** in Storage nella posizione canonica;
+ * 3. **transazione** Firestore: manifest privato, proiezione pubblica, byte
+ *    pubblici, record di promozione e audit, tutti insieme o nessuno;
+ * 4. **pulizia** — staging e blob superato, solo dopo il commit.
+ *
+ * Fra 2 e 3 un crash lascia un blob orfano che nessuno referenzia: recuperabile.
+ * L'ordine inverso lascerebbe una proiezione che punta a byte inesistenti, cioè
+ * un'immagine rotta in faccia allo studente. Fra 3 e 4 un crash lascia uno
+ * staging che il TTL cleanup rimuove da sé.
+ */
+async function handlePromoteVisual(request: CallableRequest<unknown>): Promise<unknown> {
+  const db = database();
+  try {
+    const ownerUid = await requireOwner(request, db);
+    if (visualMode() === 'disabled') {
+      throw new AiVisualError('feature_disabled', 'La generazione visuale è disattivata.');
+    }
+    const input = validateVisualPromotionInput(request.data);
+    const nowMs = Date.now();
+    const opaqueRunId = computeVisualRunId(ownerUid, input.requestId);
+    const inputHash = computePromotionInputHash(input);
+
+    // Replay prima di tutto: una risposta persa dopo il commit non deve
+    // produrre un secondo asset, un secondo audit e una seconda copia.
+    const promotionRef = db.doc(`${VISUAL_PROMOTIONS}/${opaqueRunId}`);
+    const promotionSnap = await promotionRef.get();
+    const storedPromotion = promotionSnap.exists
+      ? (promotionSnap.data() as StoredVisualPromotion)
+      : null;
+    const replay = reconcileVisualPromotion({ existing: storedPromotion, ownerUid, inputHash });
+    if (replay.status === 'replayed') {
+      return { requestId: input.requestId, replayed: true, assetId: replay.assetId };
+    }
+    if (replay.status === 'conflict') {
+      throw new AiVisualError(
+        'run_conflict',
+        'Lo stesso identificativo è già stato approvato con dati diversi.',
+      );
+    }
+
+    const candidateSnap = await db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`).get();
+    const candidateCheck = checkVisualCandidate({
+      candidate: parseStoredVisualCandidate(candidateSnap.exists ? candidateSnap.data() : null),
+      ownerUid,
+      nowMs,
+      expectedTarget: {
+        programId: input.programId,
+        importId: input.importId,
+        lessonId: input.lessonId,
+      },
+    });
+    if (!candidateCheck.ok) {
+      throw new AiVisualError(
+        'invalid_input',
+        describeCandidateCheckFailure(candidateCheck.reason),
+      );
+    }
+    const candidate = candidateCheck.candidate;
+
+    const lesson = await readAuthoritativeLesson(db, {
+      ownerUid,
+      programId: input.programId,
+      importId: input.importId,
+      lessonId: input.lessonId,
+    });
+    if (lesson.publicLessonId !== candidate.publicLessonId || lesson.udaDir !== candidate.udaDir) {
+      throw new AiVisualError('invalid_input', describeCandidateCheckFailure('target'));
+    }
+    // Il corpo è cambiato dopo la preparazione: errore tipizzato, zero
+    // scritture persistenti, staging intatto fino al TTL cleanup.
+    if (computeSourceBodyHash(lesson.body) !== candidate.sourceBodyHash) {
+      throw new AiVisualError('invalid_input', describeCandidateCheckFailure('source_body'));
+    }
+
+    const runSnap = await db.doc(`visualRuns/${opaqueRunId}`).get();
+    const run = parseVisualRunDocument(runSnap.exists ? runSnap.data() : null, opaqueRunId);
+    if (!run || run.status !== 'completed' || !run.image) {
+      throw new AiVisualError('invalid_input', 'Il candidato non è stato generato con successo.');
+    }
+
+    const bucket = getStorage().bucket();
+    let staged: Buffer;
+    try {
+      [staged] = await bucket.file(run.stagingRef).download();
+    } catch (error) {
+      if (isStorageNotFound(error)) {
+        throw new AiVisualError('invalid_input', 'Il candidato non è più disponibile: rigeneralo.');
+      }
+      throw error;
+    }
+    assertStagedBytesMatchRun({
+      bytes: staged,
+      image: {
+        sha256: run.image.sha256,
+        byteLength: run.image.byteLength,
+        width: run.image.width,
+        height: run.image.height,
+        mimeType: run.image.mimeType,
+        styleVersion: run.image.styleVersion as PromotableRunImage['styleVersion'],
+      },
+      inspect: inspectWebp,
+    });
+
+    const anchor = resolveAnchorSlugInBody(input.anchorHeadingText, lesson.body);
+    const assetId = randomUUID();
+    const manifest = composePrivateManifest({
+      assetId,
+      candidate,
+      image: {
+        sha256: run.image.sha256,
+        byteLength: run.image.byteLength,
+        width: run.image.width,
+        height: run.image.height,
+        mimeType: run.image.mimeType,
+        styleVersion: run.image.styleVersion as PromotableRunImage['styleVersion'],
+      },
+      anchor,
+      caption: input.caption,
+      altText: input.altText,
+      approvedAt: Timestamp.fromMillis(nowMs),
+    });
+
+    const lessonRef = db.doc(lessonPath(input.programId, input.importId, input.lessonId));
+    const previousSnap = await lessonRef.get();
+    const previousRaw = previousSnap.data()?.visual;
+    let previousManifest: ReturnType<typeof composePrivateManifest> | null = null;
+    if (previousRaw !== undefined && previousRaw !== null) {
+      try {
+        previousManifest = validateLessonVisualPrivateManifest(previousRaw);
+      } catch {
+        // Un manifest precedente illeggibile non blocca la sostituzione, ma il
+        // suo blob non viene toccato: cancellare in base a un dato che non si
+        // sa interpretare è peggio che lasciare un orfano.
+        previousManifest = null;
+      }
+    }
+
+    const plan = buildPromotionPlan({
+      manifest,
+      bytes: staged,
+      completed: lesson.completed,
+      publicLessonId: lesson.publicLessonId,
+      programId: input.programId,
+      importId: input.importId,
+      previousManifest,
+    });
+
+    // Copia **prima** del commit: una proiezione pubblica non deve mai poter
+    // puntare a byte che non esistono.
+    await bucket.file(manifest.storageRef).save(staged, {
+      resumable: false,
+      metadata: {
+        contentType: 'image/webp',
+        cacheControl: 'private,no-store',
+        metadata: { sha256: manifest.sha256 },
+      },
+    });
+
+    const publicRef = db.doc(`publicLessons/${lesson.publicLessonId}`);
+    const publicVisualRef = db.doc(`${PUBLIC_LESSON_VISUALS}/${lesson.publicLessonId}`);
+    await db.runTransaction(async (tx) => {
+      // Rilettura dentro la transazione: fra le verifiche e il commit la
+      // lezione potrebbe essere cambiata, e ciò che è stato dimostrato fuori
+      // non è ancora garantito dentro.
+      const freshPromotion = await tx.get(promotionRef);
+      if (freshPromotion.exists) throw new AiVisualError('running', 'Approvazione già in corso.');
+      const freshLesson = await tx.get(lessonRef);
+      const freshData = freshLesson.exists ? (freshLesson.data() as Record<string, unknown>) : null;
+      if (!freshData || freshData.ownerUid !== ownerUid) {
+        throw new AiVisualError('invalid_input', describeVisualBindingFailure('lesson_missing'));
+      }
+      if ((freshData.completed === true) !== lesson.completed) {
+        throw new AiVisualError(
+          'uncertain_state',
+          'Lo stato di svolgimento della lezione è cambiato: riprova.',
+        );
+      }
+
+      tx.update(lessonRef, { visual: plan.privateManifest });
+      if (plan.publicManifest && plan.publicBytes) {
+        tx.update(publicRef, { visual: plan.publicManifest });
+        tx.set(publicVisualRef, plan.publicBytes);
+      }
+      tx.set(promotionRef, {
+        contractVersion: 1,
+        ownerUid,
+        inputHash,
+        assetId,
+        storageRef: manifest.storageRef,
+        createdAtMs: nowMs,
+        expireAtMs: nowMs + VISUAL_CANDIDATE_TTL_MS,
+      } satisfies StoredVisualPromotion);
+      tx.set(db.collection('auditEvents').doc(), {
+        actorUid: ownerUid,
+        action: 'lesson.visualApproved',
+        targetId: input.lessonId,
+        outcome: 'success',
+        reason: lesson.completed ? 'approved and projected' : 'approved (lesson not completed)',
+        timestamp: FieldValue.serverTimestamp(),
+      });
+    });
+
+    // Solo dopo il commit: prima significherebbe non poter più riprovare.
+    await Promise.allSettled([
+      bucket.file(run.stagingRef).delete(),
+      ...(plan.supersededStorageRef ? [bucket.file(plan.supersededStorageRef).delete()] : []),
+    ]);
+
+    return { requestId: input.requestId, replayed: false, assetId };
+  } catch (error) {
+    if (error instanceof AiVisualError) throw toHttpsError(error);
+    logger.error('aiVisualPromote internal error', { name: (error as Error)?.name });
+    throw new HttpsError('internal', 'Errore interno dell’approvazione visuale.');
+  }
+}
+
+/** Approvazione: nessun secret, nessun provider, nessuna spesa. */
+export const aiVisualPromote = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, handlePromoteVisual);
 
 export async function cleanupDeletedVisualRun(params: {
   opaqueRunId: string;

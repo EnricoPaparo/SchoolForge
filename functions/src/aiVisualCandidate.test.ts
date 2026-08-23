@@ -370,3 +370,21 @@ describe('VE-02 non è stato toccato', () => {
     expect(serialized).not.toContain('publicLessonId');
   });
 });
+
+/**
+ * Forma chiusa del ticket persistito. Il commento del modulo lo prometteva da
+ * subito; questo test è ciò che lo rende vero.
+ */
+describe('ticket persistito — forma chiusa', () => {
+  it('rifiuta un documento che ha accumulato una chiave non prevista', () => {
+    for (const key of ['lessonBody', 'subject', 'storageRef', 'assetId', 'ownerEmail']) {
+      const doc = serializeVisualCandidate(candidate()) as Record<string, unknown>;
+      doc[key] = 'x';
+      expect(parseStoredVisualCandidate(doc)).toBeNull();
+    }
+  });
+
+  it('accetta il documento canonico, che di chiavi in più non ne ha', () => {
+    expect(parseStoredVisualCandidate(serializeVisualCandidate(candidate()))).not.toBeNull();
+  });
+});

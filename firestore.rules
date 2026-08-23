@@ -879,8 +879,67 @@ service cloud.firestore {
             && request.resource.data.conceptMapMarkdown.size() > 0
             && request.resource.data.conceptMapMarkdown.size() <= 32000
           )
+        )
+        // VISUAL-ENRICHMENT-03A: stessa invariante, stesso motivo. La
+        // proiezione dell'immagine può esistere SOLO su una lezione svolta, e
+        // la sua forma è chiusa: esattamente le sei chiavi di presentazione,
+        // nessuna delle quali privata. `storageRef`, `sha256`, `byteLength`,
+        // `sourceBodyHash` e `approvedAt` non descrivono come mostrare
+        // un'immagine — descrivono dove sta, che cosa contiene e di quale testo
+        // parlava — e non hanno alcuna ragione di raggiungere uno studente.
+        //
+        // I byte NON stanno qui: vivono in `publicLessonVisuals`, così un
+        // documento da ~200 KB non finisce dentro la query più frequente dello
+        // studente. Vedi aiVisualManifest.ts.
+        && (
+          !('visual' in request.resource.data)
+          || (
+            request.resource.data.get('completed', false) == true
+            && request.resource.data.visual.keys().hasOnly(
+                 ['assetId', 'anchor', 'caption', 'altText', 'width', 'height'])
+            && request.resource.data.visual.keys().hasAll(
+                 ['assetId', 'anchor', 'caption', 'altText', 'width', 'height'])
+            && request.resource.data.visual.assetId is string
+            && request.resource.data.visual.caption is string
+            && request.resource.data.visual.altText is string
+            && request.resource.data.visual.width is int
+            && request.resource.data.visual.height is int
+            && request.resource.data.visual.anchor.keys().hasOnly(
+                 ['headingSlug', 'headingText', 'placement'])
+            && request.resource.data.visual.anchor.placement == 'after-heading'
+          )
         );
       allow delete: if isOwner();
+    }
+
+    // VISUAL-ENRICHMENT-03A — i byte dell'immagine approvata, in un documento
+    // separato dalla proiezione della lezione.
+    //
+    // Lo studente NON accede a Firebase Storage: l'immagine gli arriva come
+    // data URI dentro questo documento, esattamente come il corpo della lezione
+    // gli arriva dentro `publicLessons` e non da `contentPath` (M3F-08).
+    //
+    // La lettura è gated **identicamente** a `publicLessons`, e non per
+    // simmetria estetica: qualunque condizione più debole qui renderebbe
+    // visibile attraverso l'immagine ciò che la lezione nega — import superato,
+    // classe non propria, modalità esame. Il documento esiste solo per una
+    // lezione svolta, quindi «non svolta» è negato dall'assenza e non da una
+    // condizione.
+    //
+    // La scrittura è negata a chiunque, docente compreso: questi documenti
+    // nascono solo dalla promozione lato server, che passa dall'Admin SDK e non
+    // dalle Rules. Non c'è alcun percorso client che debba poterli creare.
+    match /publicLessonVisuals/{publicLessonId} {
+      allow read: if isOwner()
+        || (
+          exists(/databases/$(database)/documents/programs/$(resource.data.programId))
+          && resource.data.importId == programActiveImportId(resource.data.programId)
+          && isClassmateOf(
+               get(/databases/$(database)/documents/programs/$(resource.data.programId))
+                 .data.get('classIds', []))
+          && !examModeAppliesToClass(myStudentClassId())
+        );
+      allow create, update, delete: if false;
     }
 
     match /verifications/{docId} {

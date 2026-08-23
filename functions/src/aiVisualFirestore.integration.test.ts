@@ -16,6 +16,11 @@ import {
   type AiVisualRequest,
 } from './aiVisualCore.js';
 import { generateVisual } from './aiVisualEngine.js';
+import {
+  VISUAL_CANDIDATE_TTL_MS,
+  computeSourceBodyHash,
+  serializeVisualCandidate,
+} from './aiVisualCandidate.js';
 import { createVisualPorts, cleanupDeletedVisualRun } from './aiVisualGateway.js';
 import { normalizeVisualWebp } from './aiVisualNormalizer.js';
 import {
@@ -159,6 +164,24 @@ emulatorDescribe('visualRuns — round-trip Firestore Emulator reale', () => {
     await ref.set(serializeVisualRun(run));
     const persisted = parseVisualRunDocument((await ref.get()).data(), ref.id);
     expect(persisted?.status).toBe('completed');
+
+    // VE-03A: la generazione pretende un ticket coerente anche quando l'esito è
+    // un replay. Il ticket viene scritto davvero sull'Emulator, così il round
+    // trip verifica la porta reale e non uno stub.
+    await db.doc(`aiVisualCandidates/${ref.id}`).set(
+      serializeVisualCandidate({
+        contractVersion: 1,
+        ownerUid: OWNER,
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        publicLessonId: 'imp-1_lesson-1',
+        udaDir: 'uda-01',
+        sourceBodyHash: computeSourceBodyHash('# Lezione\n'),
+        createdAtMs: NOW,
+        expireAtMs: NOW + VISUAL_CANDIDATE_TTL_MS,
+      }),
+    );
 
     const runtimePorts = createVisualPorts(db, 'mock', null);
     const ports = {

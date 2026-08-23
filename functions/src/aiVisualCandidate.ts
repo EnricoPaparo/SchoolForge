@@ -66,9 +66,15 @@ const CANDIDATE_KEYS = [
   'publicLessonId',
   'udaDir',
   'sourceBodyHash',
-  'createdAt',
-  'expireAt',
 ] as const;
+
+/**
+ * Le due rappresentazioni ammesse del tempo. Il serializzatore scrive sempre i
+ * millisecondi; `createdAt`/`expireAt` restano leggibili perché un `Timestamp`
+ * server-side può arrivare in quella forma, e rifiutarlo significherebbe
+ * dichiarare corrotto un ticket perfettamente valido.
+ */
+const CANDIDATE_TIME_KEYS = ['createdAtMs', 'expireAtMs', 'createdAt', 'expireAt'] as const;
 
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 
@@ -174,6 +180,17 @@ export function parseStoredVisualCandidate(
 ): StoredVisualCandidate | null {
   if (!isObject(data)) return null;
   if (data.contractVersion !== AI_VISUAL_CANDIDATE_CONTRACT_VERSION) return null;
+  // Forma chiusa: né chiavi in più né in meno. Un ticket che ha accumulato
+  // campi non previsti non è più il documento che questo contratto descrive, e
+  // interpretarlo lo stesso significherebbe fidarsi di qualcosa che nessuno ha
+  // scritto di proposito.
+  const allowed = new Set<string>([...CANDIDATE_KEYS, ...CANDIDATE_TIME_KEYS]);
+  if (
+    Object.keys(data).some((key) => !allowed.has(key)) ||
+    CANDIDATE_KEYS.some((key) => !Object.prototype.hasOwnProperty.call(data, key))
+  ) {
+    return null;
+  }
 
   const createdAtMs =
     typeof data.createdAtMs === 'number' ? data.createdAtMs : toMillis(data.createdAt);

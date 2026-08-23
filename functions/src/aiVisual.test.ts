@@ -448,6 +448,7 @@ function basePorts(overrides: Partial<AiVisualPorts> = {}): AiVisualPorts {
       monthlyBudgetMicroUsd: 5_000_000,
     })),
     readAvailableBudgetMicroUsd: vi.fn(async () => 5_000_000),
+    requireCandidateTicket: vi.fn(async () => undefined),
     reserveRunAndBudget: vi.fn(async () => ({ kind: 'reserved' })),
     markProviderPending: vi.fn(async () => true),
     callProvider: vi.fn(async () => ({
@@ -730,15 +731,42 @@ describe('gateway structure — secret boundary and privacy', () => {
     const secretRead = source.indexOf('AI_VISUAL_OPENAI_API_KEY.value()');
     const pendingPort = source.indexOf('async callProvider');
     expect(secretRead).toBeGreaterThan(pendingPort);
-    expect(indexSource).toContain('aiVisualPreview, aiVisualGenerate, visualRunCleanup');
+    for (const fn of [
+      'aiVisualPreview',
+      'aiVisualGenerate',
+      'aiVisualBindCandidate',
+      'aiVisualPromote',
+      'visualRunCleanup',
+    ]) {
+      expect(indexSource).toContain(fn);
+    }
   });
 
-  it('contains no env file, local key read, lesson ids, or publicLesson writes', () => {
+  /**
+   * VE-03A ha **spostato** questo confine, e vale la pena dire come.
+   *
+   * Fino a VE-02 il gateway non nominava affatto le lezioni, e il test lo
+   * verificava alla lettera. Ora bind e promozione le leggono per forza: il
+   * ticket serve proprio a legare un candidato a una lezione. Il confine che
+   * resta — e che è quello che contava — è che l'identità della lezione non
+   * entri mai nel **run** né raggiunga il provider: la richiesta di generazione
+   * resta `{ requestId, subject }` e il run continua a non sapere di quale
+   * lezione si parli.
+   */
+  it('contains no env file or local key read, and keeps lesson identity out of the run', () => {
     expect(source).not.toContain('process.env.OPENAI_API_KEY');
-    expect(source).not.toContain('publicLessons');
-    expect(source).not.toContain('lessonId');
     expect(source).not.toContain('deleteFiles');
     expect(AI_VISUAL_MODEL).toBe('gpt-image-2-2026-04-21');
+
+    // Il payload passato al provider è composto dal solo subject validato.
+    const engine = readFileSync(new URL('./aiVisualEngine.ts', import.meta.url), 'utf8');
+    expect(engine).toContain('callProvider({ mode, subject: request.subject })');
+    // E il documento del run non guadagna alcun campo identitario: la sua forma
+    // è decisa altrove e questo test ne congela l'assenza qui.
+    const serialized = readFileSync(new URL('./aiVisualRunDoc.ts', import.meta.url), 'utf8');
+    for (const forbidden of ['lessonId', 'publicLessonId', 'programId', 'sourceBodyHash']) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 
   it('authorizes only the authenticated owner', async () => {
@@ -806,5 +834,47 @@ describe('TTL cleanup — exact path, 404 idempotente, infra retryable', () => {
       }),
     ).resolves.toBe('skipped');
     expect(remove).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * VE-03A — il ticket è una precondizione della generazione, non un controllo
+ * successivo.
+ *
+ * Un candidato che non è legato ad alcuna lezione non potrà mai essere
+ * promosso: generarlo lo stesso significherebbe pagare il provider per
+ * un'immagine che nessuno potrà usare. Perciò il rifiuto deve arrivare prima
+ * della prenotazione del budget, non dopo.
+ */
+describe('aiVisualEngine — ticket obbligatorio prima della generazione', () => {
+  it('rifiuta prima di prenotare budget e prima del provider', async () => {
+    const ports = basePorts({
+      requireCandidateTicket: vi.fn(async () => {
+        throw new AiVisualError('invalid_input', 'Nessun candidato legato a questa lezione.');
+      }),
+    });
+    await expect(generateVisual(REQUEST, CONTEXT, ports)).rejects.toThrow(/Nessun candidato/);
+    expect(ports.reserveRunAndBudget).not.toHaveBeenCalled();
+    expect(ports.markProviderPending).not.toHaveBeenCalled();
+    expect(ports.callProvider).not.toHaveBeenCalled();
+    expect(ports.uploadStaging).not.toHaveBeenCalled();
+    expect(ports.failRun).not.toHaveBeenCalled();
+  });
+
+  it('verifica il ticket sul run id derivato dal server, non su un id ricevuto', async () => {
+    const ports = basePorts();
+    await generateVisual(REQUEST, CONTEXT, ports);
+    expect(ports.requireCandidateTicket).toHaveBeenCalledWith({
+      opaqueRunId: computeVisualRunId(OWNER, REQUEST.requestId),
+      ownerUid: OWNER,
+      nowMs: NOW,
+    });
+  });
+
+  /** La preview non genera nulla: non deve pretendere un ticket. */
+  it('non richiede alcun ticket in preview', async () => {
+    const ports = basePorts();
+    await previewVisual(REQUEST, CONTEXT, ports);
+    expect(ports.requireCandidateTicket).not.toHaveBeenCalled();
   });
 });
