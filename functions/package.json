@@ -14,7 +14,7 @@
     "benchmark:pool-tune": "node lib/poolTuneCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:firestore-integration": "vitest run src/aiVisualFirestore.integration.test.ts"
+    "test:firestore-integration": "vitest run src/aiVisualFirestore.integration.test.ts src/aiVisualPromotion.integration.test.ts"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0",

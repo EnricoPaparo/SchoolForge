@@ -29,10 +29,48 @@ import {
 } from './aiCorrectionRuntimeConfig.js';
 import {
   AiVisualError,
+  computeVisualRunId,
+  inspectWebp,
   resolveAiVisualMode,
   validateAiVisualRequest,
   type AiVisualMode,
 } from './aiVisualCore.js';
+import {
+  VISUAL_CANDIDATE_TTL_MS,
+  checkVisualCandidate,
+  computeSourceBodyHash,
+  describeCandidateCheckFailure,
+  describeCandidateConflict,
+  parseStoredVisualCandidate,
+  reconcileVisualCandidateBind,
+  serializeVisualCandidate,
+  validateVisualCandidateBindInput,
+  type StoredVisualCandidate,
+} from './aiVisualCandidate.js';
+import {
+  validateLessonVisualPrivateManifest,
+  type LessonVisualPrivateManifest,
+} from './aiVisualManifest.js';
+import {
+  assertStagedBytesMatchRun,
+  buildPromotionPlan,
+  composePrivateManifest,
+  computePromotionInputHash,
+  parseStoredVisualPromotion,
+  reconcileVisualPromotion,
+  resolveAnchorSlugInBody,
+  validateVisualPromotionInput,
+  visualFingerprint,
+  type PromotableRunImage,
+  type StoredVisualPromotion,
+  type VisualPromotionInput,
+  type VisualPromotionPlan,
+} from './aiVisualPromotion.js';
+import {
+  checkLessonForVisual,
+  checkProjectionForVisual,
+  describeVisualBindingFailure,
+} from './aiVisualLessonBinding.js';
 import {
   generateVisual,
   previewVisual,
@@ -49,10 +87,19 @@ import {
 import { parseVisualRunDocument, serializeVisualRun } from './aiVisualRunDoc.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
-import { isStorageNotFound } from './repositoryGatewayCore.js';
+import { isStorageNotFound, type BucketLike } from './repositoryGatewayCore.js';
 
 /** Secret Firebase esistente. Il binding è presente solo su `aiVisualGenerate`. */
 export const AI_VISUAL_OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
+
+/** Collezioni server-only: nessuna regola le apre in scrittura al client. */
+const VISUAL_CANDIDATES = 'aiVisualCandidates';
+const VISUAL_PROMOTIONS = 'aiVisualPromotions';
+const PUBLIC_LESSON_VISUALS = 'publicLessonVisuals';
+
+function lessonPath(programId: string, importId: string, lessonId: string): string {
+  return `programs/${programId}/imports/${importId}/lessons/${lessonId}`;
+}
 
 function database(): Firestore {
   if (getApps().length === 0) initializeApp();
@@ -239,6 +286,14 @@ export function createVisualPorts(
   return {
     async loadRuntimeConfig() {
       return config;
+    },
+    async requireCandidateTicket({ opaqueRunId, ownerUid, nowMs }) {
+      const snap = await db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`).get();
+      const candidate = parseStoredVisualCandidate(snap.exists ? snap.data() : null);
+      const check = checkVisualCandidate({ candidate, ownerUid, nowMs });
+      if (!check.ok) {
+        throw new AiVisualError('invalid_input', describeCandidateCheckFailure(check.reason));
+      }
     },
     async readAvailableBudgetMicroUsd(runtimeConfig) {
       const nowMs = Date.now();
@@ -458,6 +513,468 @@ export const aiVisualGenerate = onCall(
   { region: SCHOOLFORGE_FUNCTION_REGION, secrets: [AI_VISUAL_OPENAI_API_KEY] },
   (request) => handleVisualRequest(request, 'generate'),
 );
+
+// ─── VE-03A — bind del candidato alla lezione ────────────────────────────────
+
+/**
+ * Legge la lezione e la sua proiezione, verifica che siano coerenti fra loro, e
+ * restituisce i soli valori **autorevoli**: id pubblico, UDA, corpo salvato e
+ * stato di svolgimento.
+ *
+ * Le due letture sono sequenziali di proposito. L'indirizzo della proiezione non
+ * è quello ricevuto dal chiamante ma quello **derivato** dal documento tecnico,
+ * quindi non può essere calcolato prima di aver letto il primo documento: un
+ * `getAll` parallelo richiederebbe di fidarsi di un id che è esattamente ciò che
+ * questo cancello rifiuta di considerare autorevole.
+ */
+async function readAuthoritativeLesson(
+  db: Firestore,
+  params: { ownerUid: string; programId: string; importId: string; lessonId: string },
+): Promise<{
+  publicLessonId: string;
+  udaDir: string;
+  body: string;
+  completed: boolean;
+}> {
+  const { ownerUid, programId, importId, lessonId } = params;
+  const lessonSnap = await db.doc(lessonPath(programId, importId, lessonId)).get();
+  const lesson = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
+  const gate = checkLessonForVisual({ lesson, lessonId, ownerUid, importId });
+  if (!gate.ok) {
+    throw new AiVisualError('invalid_input', describeVisualBindingFailure(gate.failure));
+  }
+
+  const publicSnap = await db.doc(`publicLessons/${gate.publicLessonId}`).get();
+  const projectionGate = checkProjectionForVisual({
+    lesson: lesson as Record<string, unknown>,
+    publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
+    programId,
+    importId,
+    ownerUid,
+  });
+  if (!projectionGate.ok) {
+    throw new AiVisualError('invalid_input', describeVisualBindingFailure(projectionGate.failure));
+  }
+  return {
+    publicLessonId: gate.publicLessonId,
+    udaDir: gate.udaDir,
+    body: projectionGate.body,
+    completed: projectionGate.completed,
+  };
+}
+
+async function handleBindCandidate(request: CallableRequest<unknown>): Promise<unknown> {
+  const db = database();
+  try {
+    const ownerUid = await requireOwner(request, db);
+    if (visualMode() === 'disabled') {
+      throw new AiVisualError('feature_disabled', 'La generazione visuale è disattivata.');
+    }
+    const input = validateVisualCandidateBindInput(request.data);
+    const lesson = await readAuthoritativeLesson(db, { ownerUid, ...input });
+
+    const nowMs = Date.now();
+    const opaqueRunId = computeVisualRunId(ownerUid, input.requestId);
+    const next: StoredVisualCandidate = {
+      contractVersion: 1,
+      ownerUid,
+      programId: input.programId,
+      importId: input.importId,
+      lessonId: input.lessonId,
+      publicLessonId: lesson.publicLessonId,
+      udaDir: lesson.udaDir,
+      // Il corpo non viene conservato: solo la sua impronta, che serve a
+      // confrontare e non a leggere.
+      sourceBodyHash: computeSourceBodyHash(lesson.body),
+      createdAtMs: nowMs,
+      expireAtMs: nowMs + VISUAL_CANDIDATE_TTL_MS,
+    };
+
+    const ref = db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`);
+    const outcome = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const existing = parseStoredVisualCandidate(snap.exists ? snap.data() : null);
+      const result = reconcileVisualCandidateBind({ existing, next });
+      if (result.status === 'created') tx.set(ref, serializeVisualCandidate(result.candidate));
+      return result;
+    });
+    if (outcome.status === 'conflict') {
+      throw new AiVisualError('run_conflict', describeCandidateConflict(outcome.reason));
+    }
+    // Nient'altro esce di qui: né l'impronta del corpo, né l'id pubblico, né il
+    // run id opaco. Il client sa soltanto che può procedere.
+    return { requestId: input.requestId, status: outcome.status };
+  } catch (error) {
+    if (error instanceof AiVisualError) throw toHttpsError(error);
+    logger.error('aiVisualBindCandidate internal error', { name: (error as Error)?.name });
+    throw new HttpsError('internal', 'Errore interno della preparazione visuale.');
+  }
+}
+
+/**
+ * Prepara un candidato: lega `requestId` a una lezione **prima** che l'immagine
+ * esista. Nessun secret, nessun provider, nessuna spesa.
+ */
+export const aiVisualBindCandidate = onCall(
+  { region: SCHOOLFORGE_FUNCTION_REGION },
+  handleBindCandidate,
+);
+
+// ─── VE-03A — promozione del candidato approvato ─────────────────────────────
+
+/** 412: la precondizione «solo se non esiste» non è stata soddisfatta. */
+export function isStoragePreconditionFailed(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 412;
+}
+
+/**
+ * Le verifiche che legano lo stato **osservato** della lezione al ticket.
+ *
+ * Vive in un solo posto perché viene eseguita due volte — nel preflight e
+ * dentro la transazione — e due copie divergerebbero: è esattamente il tipo di
+ * controllo che si indebolisce per distrazione nella copia che conta.
+ */
+function assertPromotableAgainstCandidate(params: {
+  observed: { publicLessonId: string; udaDir: string; body: string; completed: boolean };
+  candidate: StoredVisualCandidate;
+}): void {
+  const { observed, candidate } = params;
+  if (
+    observed.publicLessonId !== candidate.publicLessonId ||
+    observed.udaDir !== candidate.udaDir
+  ) {
+    throw new AiVisualError('invalid_input', describeCandidateCheckFailure('target'));
+  }
+  // Il corpo è cambiato dopo la preparazione: errore tipizzato, zero scritture
+  // persistenti, staging intatto fino al TTL cleanup.
+  if (computeSourceBodyHash(observed.body) !== candidate.sourceBodyHash) {
+    throw new AiVisualError('invalid_input', describeCandidateCheckFailure('source_body'));
+  }
+}
+
+/**
+ * L'ordine delle operazioni è la garanzia, e vale la pena dirlo dove il codice
+ * lo esegue:
+ *
+ * 1. **preflight** — ticket, lezione, proiezione, corpo invariato, run
+ *    completato, byte staged identici a quelli del run;
+ * 2. **copia** in Storage nella posizione canonica, con precondizione di
+ *    creazione: se quel percorso esiste già la copia fallisce invece di
+ *    sovrascrivere;
+ * 3. **transazione** Firestore: **tutte le letture prima di ogni scrittura**,
+ *    e ogni verifica del preflight rifatta sullo stato fresco;
+ * 4. **pulizia** — staging e blob superato, solo dopo il commit.
+ *
+ * **Il preflight non è la verifica: è un filtro.** Serve a non pagare copia e
+ * transazione per una richiesta già insensata. Ciò che *decide* è la
+ * transazione, dove lo stato viene riletto e ricontrollato da capo — corpo
+ * pubblico compreso, che è il punto in cui una modifica concorrente
+ * assocerebbe altrimenti l'immagine a un testo diverso da quello che il
+ * docente ha visto.
+ *
+ * Fra 2 e 3 un crash lascia un blob orfano che nessuno referenzia: recuperabile.
+ * L'ordine inverso lascerebbe una proiezione che punta a byte inesistenti, cioè
+ * un'immagine rotta in faccia allo studente. Fra 3 e 4 un crash lascia uno
+ * staging che il TTL cleanup rimuove da sé.
+ */
+export async function promoteVisualForOwner(params: {
+  db: Firestore;
+  bucket: BucketLike;
+  ownerUid: string;
+  input: VisualPromotionInput;
+  nowMs: number;
+  /** Iniettabile per determinismo nei test; in produzione è `randomUUID`. */
+  generateAssetId?: () => string;
+  /**
+   * Punto di iniezione fra preflight e transazione. Esiste per una ragione
+   * sola: una corsa non si dimostra sperando che due scritture si incrocino,
+   * si dimostra provocandola in quel punto esatto. In produzione è assente.
+   */
+  beforeTransaction?: () => Promise<void>;
+}): Promise<{ requestId: string; replayed: boolean; assetId: string }> {
+  const { db, bucket, ownerUid, input, nowMs } = params;
+  const generateAssetId = params.generateAssetId ?? randomUUID;
+  const opaqueRunId = computeVisualRunId(ownerUid, input.requestId);
+  const inputHash = computePromotionInputHash(input);
+
+  // Replay prima di tutto: una risposta persa dopo il commit non deve
+  // produrre un secondo asset, un secondo audit e una seconda copia.
+  const promotionRef = db.doc(`${VISUAL_PROMOTIONS}/${opaqueRunId}`);
+  const promotionSnap = await promotionRef.get();
+  if (promotionSnap.exists) {
+    const storedPromotion = parseStoredVisualPromotion(promotionSnap.data());
+    if (!storedPromotion) {
+      // Il documento c'è ma non si sa che cosa dica: non è «fresh» e non è un
+      // replay. Trattarlo come assente creerebbe un secondo asset per un
+      // requestId già promosso.
+      throw new AiVisualError('corrupted_state', 'Registro di approvazione non leggibile.');
+    }
+    const replay = reconcileVisualPromotion({ existing: storedPromotion, ownerUid, inputHash });
+    if (replay.status === 'replayed') {
+      return { requestId: input.requestId, replayed: true, assetId: replay.assetId };
+    }
+    if (replay.status === 'conflict') {
+      throw new AiVisualError(
+        'run_conflict',
+        'Lo stesso identificativo è già stato approvato con dati diversi.',
+      );
+    }
+  }
+
+  const candidateSnap = await db.doc(`${VISUAL_CANDIDATES}/${opaqueRunId}`).get();
+  const candidateCheck = checkVisualCandidate({
+    candidate: parseStoredVisualCandidate(candidateSnap.exists ? candidateSnap.data() : null),
+    ownerUid,
+    nowMs,
+    expectedTarget: {
+      programId: input.programId,
+      importId: input.importId,
+      lessonId: input.lessonId,
+    },
+  });
+  if (!candidateCheck.ok) {
+    throw new AiVisualError('invalid_input', describeCandidateCheckFailure(candidateCheck.reason));
+  }
+  const candidate = candidateCheck.candidate;
+
+  const lessonRef = db.doc(lessonPath(input.programId, input.importId, input.lessonId));
+
+  // ── Preflight: filtro, non verifica. ────────────────────────────────────────
+  const preflight = await readAuthoritativeLesson(db, {
+    ownerUid,
+    programId: input.programId,
+    importId: input.importId,
+    lessonId: input.lessonId,
+  });
+  assertPromotableAgainstCandidate({ observed: preflight, candidate });
+
+  const preflightVisual = visualFingerprint((await lessonRef.get()).data()?.visual);
+
+  const runSnap = await db.doc(`visualRuns/${opaqueRunId}`).get();
+  const run = parseVisualRunDocument(runSnap.exists ? runSnap.data() : null, opaqueRunId);
+  if (!run || run.status !== 'completed' || !run.image) {
+    throw new AiVisualError('invalid_input', 'Il candidato non è stato generato con successo.');
+  }
+  const image: PromotableRunImage = {
+    sha256: run.image.sha256,
+    byteLength: run.image.byteLength,
+    width: run.image.width,
+    height: run.image.height,
+    mimeType: run.image.mimeType,
+    styleVersion: run.image.styleVersion as PromotableRunImage['styleVersion'],
+  };
+
+  let staged: Uint8Array;
+  try {
+    [staged] = await bucket.file(run.stagingRef).download();
+  } catch (error) {
+    if (isStorageNotFound(error)) {
+      throw new AiVisualError('invalid_input', 'Il candidato non è più disponibile: rigeneralo.');
+    }
+    throw error;
+  }
+  assertStagedBytesMatchRun({ bytes: staged, image, inspect: inspectWebp });
+
+  const assetId = generateAssetId();
+  const approvedAt = Timestamp.fromMillis(nowMs);
+  // Composto qui solo per conoscere il percorso canonico da occupare: il
+  // manifest che verrà scritto è quello ricomposto sullo stato fresco.
+  const plannedStorageRef = composePrivateManifest({
+    assetId,
+    candidate,
+    image,
+    anchor: resolveAnchorSlugInBody(input.anchorHeadingText, preflight.body),
+    caption: input.caption,
+    altText: input.altText,
+    approvedAt,
+  }).storageRef;
+
+  // ── Copia, prima del commit e senza mai sovrascrivere. ──────────────────────
+  //
+  // `ifGenerationMatch: 0` significa «solo se non esiste». Una collisione di
+  // percorso non deve poter cancellare byte di qualcun altro, e poiché la copia
+  // precede la transazione un suo fallimento lascia Firestore intatto per
+  // costruzione: zero scritture, e l'oggetto preesistente resta dov'era.
+  try {
+    await bucket.file(plannedStorageRef).save(Buffer.from(staged), {
+      resumable: false,
+      preconditionOpts: { ifGenerationMatch: 0 },
+      metadata: {
+        contentType: 'image/webp',
+        cacheControl: 'private,no-store',
+        metadata: { sha256: image.sha256 },
+      },
+    });
+  } catch (error) {
+    if (isStoragePreconditionFailed(error)) {
+      throw new AiVisualError(
+        'corrupted_state',
+        'La posizione dell’immagine è già occupata: riprova l’approvazione.',
+      );
+    }
+    throw error;
+  }
+
+  if (params.beforeTransaction) await params.beforeTransaction();
+
+  // ── Transazione: rileggere tutto, poi — e solo poi — scrivere. ──────────────
+  const auditRef = db.collection('auditEvents').doc();
+  const plan = await db.runTransaction(async (tx): Promise<VisualPromotionPlan> => {
+    // (1) registro di approvazione.
+    const freshPromotion = await tx.get(promotionRef);
+    if (freshPromotion.exists) throw new AiVisualError('running', 'Approvazione già in corso.');
+
+    // (2) documento tecnico.
+    const freshLessonSnap = await tx.get(lessonRef);
+    const freshLesson = freshLessonSnap.exists
+      ? (freshLessonSnap.data() as Record<string, unknown>)
+      : null;
+    const lessonGate = checkLessonForVisual({
+      lesson: freshLesson,
+      lessonId: input.lessonId,
+      ownerUid,
+      importId: input.importId,
+    });
+    if (!lessonGate.ok) {
+      throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
+    }
+
+    // (3) proiezione, all'id **riderivato** dal documento appena letto: mai
+    //     quello osservato nel preflight, che nel frattempo poteva cambiare.
+    const freshPublicRef = db.doc(`publicLessons/${lessonGate.publicLessonId}`);
+    const freshPublicSnap = await tx.get(freshPublicRef);
+    const projectionGate = checkProjectionForVisual({
+      lesson: freshLesson as Record<string, unknown>,
+      publicLesson: freshPublicSnap.exists
+        ? (freshPublicSnap.data() as Record<string, unknown>)
+        : null,
+      programId: input.programId,
+      importId: input.importId,
+      ownerUid,
+    });
+    if (!projectionGate.ok) {
+      throw new AiVisualError(
+        'invalid_input',
+        describeVisualBindingFailure(projectionGate.failure),
+      );
+    }
+
+    // Letture finite. Da qui in poi solo verifiche pure e scritture.
+    const fresh = {
+      publicLessonId: lessonGate.publicLessonId,
+      udaDir: lessonGate.udaDir,
+      body: projectionGate.body,
+      completed: projectionGate.completed,
+    };
+    assertPromotableAgainstCandidate({ observed: fresh, candidate });
+
+    // Un'altra promozione è passata fra il preflight e adesso: fermarsi. Il
+    // manifest appena approvato dall'altra non va sovrascritto, e il blob che
+    // *questa* operazione credeva di sostituire non è più quello vero — quindi
+    // non si cancella niente. Resta al massimo un blob nuovo non referenziato.
+    if (visualFingerprint(freshLesson?.visual) !== preflightVisual) {
+      throw new AiVisualError(
+        'uncertain_state',
+        'Un’altra approvazione è avvenuta nel frattempo: riprova.',
+      );
+    }
+
+    let previousManifest: LessonVisualPrivateManifest | null = null;
+    if (freshLesson?.visual !== undefined && freshLesson?.visual !== null) {
+      try {
+        previousManifest = validateLessonVisualPrivateManifest(freshLesson.visual);
+      } catch {
+        // Un manifest precedente illeggibile non blocca la sostituzione, ma il
+        // suo blob non viene toccato: cancellare in base a un dato che non si
+        // sa interpretare è peggio che lasciare un orfano.
+        previousManifest = null;
+      }
+    }
+
+    // Manifest e piano ricomposti sullo stato **fresco**: l'ancora si risolve
+    // contro il corpo appena riletto, non contro quello del preflight.
+    const manifest = composePrivateManifest({
+      assetId,
+      candidate,
+      image,
+      anchor: resolveAnchorSlugInBody(input.anchorHeadingText, fresh.body),
+      caption: input.caption,
+      altText: input.altText,
+      approvedAt,
+    });
+    if (manifest.storageRef !== plannedStorageRef) {
+      // Irraggiungibile finché il ticket è immutabile e l'assetId è fissato
+      // prima della copia; se accadesse, i byte copiati starebbero altrove.
+      throw new AiVisualError('corrupted_state', 'Percorso canonico incoerente.');
+    }
+
+    const nextPlan = buildPromotionPlan({
+      manifest,
+      bytes: staged,
+      completed: fresh.completed,
+      publicLessonId: fresh.publicLessonId,
+      programId: input.programId,
+      importId: input.importId,
+      previousManifest,
+    });
+
+    tx.update(lessonRef, { visual: nextPlan.privateManifest });
+    if (nextPlan.publicManifest && nextPlan.publicBytes) {
+      tx.update(freshPublicRef, { visual: nextPlan.publicManifest });
+      tx.set(db.doc(`${PUBLIC_LESSON_VISUALS}/${fresh.publicLessonId}`), nextPlan.publicBytes);
+    }
+    tx.set(promotionRef, {
+      contractVersion: 1,
+      ownerUid,
+      inputHash,
+      assetId,
+      storageRef: manifest.storageRef,
+      createdAtMs: nowMs,
+      expireAtMs: nowMs + VISUAL_CANDIDATE_TTL_MS,
+    } satisfies StoredVisualPromotion);
+    tx.set(auditRef, {
+      actorUid: ownerUid,
+      action: 'lesson.visualApproved',
+      targetId: input.lessonId,
+      outcome: 'success',
+      reason: fresh.completed ? 'approved and projected' : 'approved (lesson not completed)',
+      timestamp: FieldValue.serverTimestamp(),
+    });
+    return nextPlan;
+  });
+
+  // Solo dopo il commit: prima significherebbe non poter più riprovare.
+  await Promise.allSettled([
+    bucket.file(run.stagingRef).delete(),
+    ...(plan.supersededStorageRef ? [bucket.file(plan.supersededStorageRef).delete()] : []),
+  ]);
+
+  return { requestId: input.requestId, replayed: false, assetId };
+}
+
+async function handlePromoteVisual(request: CallableRequest<unknown>): Promise<unknown> {
+  const db = database();
+  try {
+    const ownerUid = await requireOwner(request, db);
+    if (visualMode() === 'disabled') {
+      throw new AiVisualError('feature_disabled', 'La generazione visuale è disattivata.');
+    }
+    return await promoteVisualForOwner({
+      db,
+      bucket: getStorage().bucket() as unknown as BucketLike,
+      ownerUid,
+      input: validateVisualPromotionInput(request.data),
+      nowMs: Date.now(),
+    });
+  } catch (error) {
+    if (error instanceof AiVisualError) throw toHttpsError(error);
+    logger.error('aiVisualPromote internal error', { name: (error as Error)?.name });
+    throw new HttpsError('internal', 'Errore interno dell’approvazione visuale.');
+  }
+}
+
+/** Approvazione: nessun secret, nessun provider, nessuna spesa. */
+export const aiVisualPromote = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, handlePromoteVisual);
 
 export async function cleanupDeletedVisualRun(params: {
   opaqueRunId: string;

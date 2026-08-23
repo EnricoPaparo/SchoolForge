@@ -53,6 +53,20 @@ export type VisualReserveOutcome =
 
 export interface AiVisualPorts {
   loadRuntimeConfig(mode: AiVisualMode): Promise<AiVisualRuntimeConfig | null>;
+  /**
+   * VE-03A — verifica che esista un ticket coerente e non scaduto per questo
+   * run. Deve lanciare (mai restituire un esito «morbido») se non c'è.
+   *
+   * È una porta **obbligatoria** e non opzionale di proposito: un candidato
+   * senza binding alla lezione non è promuovibile, quindi generarlo sarebbe
+   * spendere soldi veri per un'immagine inutilizzabile. Renderla opzionale
+   * significherebbe permettere a un chiamante futuro di dimenticarla.
+   */
+  requireCandidateTicket(params: {
+    opaqueRunId: string;
+    ownerUid: string;
+    nowMs: number;
+  }): Promise<void>;
   readAvailableBudgetMicroUsd(config: AiVisualRuntimeConfig): Promise<number | null>;
   reserveRunAndBudget(params: {
     opaqueRunId: string;
@@ -242,6 +256,16 @@ export async function generateVisual(
     ctx.authenticatedOwnerUid,
     request.requestId,
   );
+  // Il ticket si verifica **prima** della prenotazione e quindi molto prima del
+  // provider: un candidato non legato a nessuna lezione non potrà mai essere
+  // promosso, e generarlo comunque sarebbe spesa reale per un risultato che
+  // nessuno potrà usare. Il rifiuto qui non prenota budget e non scrive nulla.
+  await ports.requireCandidateTicket({
+    opaqueRunId,
+    ownerUid: ctx.authenticatedOwnerUid,
+    nowMs: ctx.nowMs,
+  });
+
   const stagingRef = visualStagingRef(ctx.authenticatedOwnerUid, opaqueRunId);
   const budget: StoredAiVisualBudget = {
     monthKey: new Date(ctx.nowMs).toISOString().slice(0, 7),

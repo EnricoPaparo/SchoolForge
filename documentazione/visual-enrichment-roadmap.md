@@ -852,10 +852,26 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VISUAL-ENRICHMENT-00** | **Contratto e prototipo.** Decisione architetturale sulla proiezione studente, forma chiusa del manifest, politica di ancoraggio e di perdita dell'ancora, ciclo di vita completo, modello di autorizzazione, idempotenza e cleanup, cost model, confine illustrativo/tecnico, principi di sicurezza congelati, e prototipo statico responsive a dieci stati. | CONCEPT-MAP-02, LESSON-MANUAL-01, SGW-02C, ANNOT-03B | **Implementato come contratto/prototipo.** Nessun runtime. |
 | **VISUAL-ENRICHMENT-01** | **Proposta testuale e contratti.** Nuovo `kind: 'visual_proposal'` in `AiContentRequest`; payload chiuso; prompt dedicato con versione propria; Structured Output a campi chiusi incluso l'esito «nessuna immagine utile»; validazione del `subject`; tipi del manifest e validatore puro fail-closed; risolutore d'ancora puro; test di **non-regressione byte-identica** di pool, lezione e mappa. Nessuna immagine, nessuna UI, nessuna persistenza, nessun deploy. | VE-00 | **Implementato.** Vedi §15.1. Nessuna immagine, UI, persistenza o deploy. |
 | **VISUAL-ENRICHMENT-02** | **Catena binaria completa.** Provider immagini; operazione binaria del gateway; normalizzazione server-side (sniffing MIME, resize, WebP, strip metadati, cap 200 KB, sha256); staging con TTL, replay e cleanup; cost model reale del provider. Nessuna UI, nessuna proiezione studente. | VE-01 | **Implementato, non distribuito.** Vedi §15.2. |
-| **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Manifest privato sul `LessonDoc`; promozione atomica; proiezione pubblica in due pezzi; `publicLessonVisuals` e relative Rules; estensione della transazione `setLessonCompleted`; rimozione e cleanup ordinato; export ZIP con binario; eliminazioni lezione/UDA/corso; audit. | VE-02 | **Aperto.** |
+| **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Suddiviso in **A + B + C** (vedi sotto). | VE-02 | **Aperto** finché A, B e C non sono tutti chiusi. |
+| **VE-03A** | **Ticket, manifest e promozione.** Ticket autorevole candidato↔lezione (`aiVisualCandidates`), binding **prima** della generazione, manifest privato e pubblico, promozione con copia canonica, sostituzione, idempotenza e Rules fondamentali (`publicLessonVisuals`, `publicLessons.visual` solo su lezione svolta). | VE-02 | **Implementato, non distribuito.** |
+| **VE-03B** | **Lifecycle.** `completed` true/false lato server, rimozione dell'immagine, abbandono dello staging, cleanup e cancellazioni lezione/UDA/corso. | VE-03A | **Aperto.** |
+| **VE-03C** | **Chiusura.** Export ZIP con binario, cost model e audit definitivi, integrazioni Emulator end-to-end, chiusura documentale della fase. | VE-03B | **Aperto.** |
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; avviso e azione di riancoraggio; vista studente condizionale; responsive e accessibilità verificate sui componenti reali. | VE-03 | **Aperto.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
+
+> **Suddivisione di VE-03 (decisa in corso d'opera).** VE-03 era un pacchetto
+> unico che copriva persistenza, lifecycle, export e cancellazioni: una
+> superficie troppo larga per essere rivista in un solo passaggio, dove un
+> difetto in una parte avrebbe tenuto in ostaggio le altre. È stato suddiviso in
+> tre passaggi sequenziali — **A** (ticket, manifest, promozione), **B**
+> (lifecycle e cancellazioni), **C** (export binario, audit, integrazioni) — che
+> si consegnano e si rivedono uno alla volta.
+>
+> La suddivisione **non anticipa** nulla: `VISUAL-ENRICHMENT-03` resta **aperto**
+> finché A, B e C non sono chiusi tutti e tre, e **Gate GVISUAL resta PENDING**.
+> Chiudere VE-03A non rende disponibile alcuna funzionalità al docente: senza la
+> UI di VE-04 non esiste ancora alcun percorso per approvare un'immagine.
 
 ### 15.1 VISUAL-ENRICHMENT-01 — che cosa è operativo
 
@@ -1089,6 +1105,77 @@ non in questa PR.
 proiezione studente: restano VE-03/04. Questa implementazione non ha effettuato
 chiamate OpenAI reali, non ha letto secret locali e non è stata distribuita.
 
+
+---
+
+### 15.3 VE-03A — ticket, manifest e promozione
+
+**Nessuna funzionalità è disponibile al docente.** Non esiste UI, non esiste
+pulsante, non esiste vista studente dell'immagine: senza VE-04 non c'è alcun
+percorso per approvare alcunché. Questa fase mette in piedi il **server**.
+
+**Il ticket, e perché esiste.** VE-02 genera da un `subject` e basta: la sua
+richiesta è `{ requestId, subject }`, il suo `inputHash` copre il solo soggetto,
+e il run non sa a quale lezione appartenga. Senza un legame esterno, un
+`sourceBodyHash` calcolato al momento dell'approvazione descriverebbe il corpo di
+**adesso** e non quello da cui la proposta è nata: proteggerebbe da nulla,
+giurando il contrario. `aiVisualCandidates/{opaqueRunId}` è quel legame —
+documento server-only, chiuso, con lo stesso TTL del run.
+
+**Perché un documento separato e non un campo della richiesta.** Infilare
+l'identità della lezione dentro `AiVisualRequest` o `computeVisualInputHash`
+cambierebbe la **chiave di replay** dei run già memorizzati, invalidandoli in
+silenzio. I contratti di VE-02 restano byte per byte come sono, e un test di non
+regressione congela il fatto che l'`inputHash` copra ancora il solo soggetto.
+
+**Il corpo non raggiunge il provider.** Nel ticket finisce soltanto lo SHA-256
+del corpo salvato: serve a confrontare, non a leggere. Il provider continua a
+vedere il solo `subject` validato.
+
+**Il ticket è una precondizione, non un controllo successivo.**
+`aiVisualGenerate` lo verifica **prima** di prenotare budget e molto prima del
+provider: un candidato non legato ad alcuna lezione non sarà mai promuovibile, e
+generarlo comunque sarebbe spesa reale per un risultato inutilizzabile. La porta
+è obbligatoria nell'interfaccia, non opzionale, così un chiamante futuro non può
+dimenticarla.
+
+**Ordine della promozione, che è la garanzia.** Firestore e Storage non sono
+transazionali fra loro e il codice non finge il contrario: verifiche → copia in
+Storage → transazione Firestore (manifest privato, proiezione pubblica, byte
+pubblici, record di promozione e audit, tutti insieme o nessuno) → pulizia di
+staging e blob superato **dopo** il commit. Il fallimento peggiore lascia un blob
+orfano, che è recuperabile; l'ordine inverso lascerebbe una proiezione che punta
+a byte inesistenti, che non lo è.
+
+**Il confine dati.** La proiezione pubblica esiste **se e solo se** la lezione è
+svolta: non nascosta, proprio non scritta. Le Rules lo impongono su
+`publicLessons.visual` con la stessa forma già usata per la mappa concettuale, e
+`publicLessonVisuals` — dove vivono i byte, fuori dalla query più frequente dello
+studente — è negato in scrittura a chiunque, docente compreso, e gated in lettura
+esattamente come `publicLessons`.
+
+**Le corse, e dove vengono decise.** Il preflight non è la verifica: è un
+filtro che evita di pagare copia e transazione per una richiesta già insensata.
+A decidere è la transazione, che rilegge `LessonDoc`, **rideriva** l'id pubblico
+e rilegge `PublicLessonDoc` a quell'indirizzo, ricalcola il `sourceBodyHash` dal
+corpo fresco e rifà ogni controllo di identità, import, corso, UDA e
+svolgimento — tutte le letture prima di qualunque scrittura. Una modifica
+concorrente del corpo pubblico, o una seconda approvazione arrivata nel
+frattempo, producono un errore tipizzato e **zero scritture**.
+
+**Limite dichiarato dell'Emulator.** L'Emulator Storage ignora
+`ifGenerationMatch: 0` e sovrascrive: verificato con una sonda diretta. La
+precondizione è quindi dimostrata su due fronti — un wrapper che la applica
+davvero sopra il bucket reale, e un test che congela il fatto che il call site
+la richieda — perché su GCS vero è quella precondizione a impedire che una
+collisione di percorso cancelli byte di qualcun altro.
+
+**Che cosa resta aperto.** Lifecycle di `completed`, rimozione, abbandono dello
+staging e cancellazioni sono **VE-03B**; export ZIP binario, audit e cost model
+definitivi e integrazioni Emulator end-to-end sono **VE-03C**. Nessuna chiamata
+OpenAI reale, nessun deploy, nessuna URL pubblica o download token: lo studente
+non accede a Firebase Storage, l'immagine gli arriverebbe come data URI, come già
+accade per il corpo della lezione.
 
 ---
 
