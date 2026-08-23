@@ -1182,3 +1182,40 @@ Le condizioni seguenti appartengono al modello gateway (link pubblico, tentativi
 ## 8. Versionamento
 
 Gli endpoint Cloud Function sono sotto `/v1`. Cambi incompatibili richiedono nuova versione. I payload pubblici non espongono mai soluzioni, correzioni o configurazioni interne.
+
+## 8.1 VISUAL-ENRICHMENT-03B — lifecycle server-side
+
+`setLessonCompleted` è l'unica autorità per il flag svolta e accetta esattamente
+`{ programId, importId, lessonId, completed }`. Il client conserva la precedente
+esperienza del service ma non scrive più Firestore. Sul passaggio a `true` la
+Function valida identità, mappa e manifest, legge esclusivamente il riferimento
+Storage canonico, verifica WebP/hash/lunghezza/dimensioni/MIME e prepara la data
+URI **prima** della transazione. La transazione rilegge entrambe le lezioni,
+dimostra che completamento, mappa e manifest non sono cambiati e committa flag,
+`completedAt` server-side, mappa, manifest, byte pubblici e audit insieme. Il
+passaggio a `false` non legge Storage, conserva manifest/blob privati e rimuove
+mappa, manifest e byte pubblici nello stesso commit. Mappa e manifest privati
+non sono validati in questo verso: anche se malformati restano invariati, mentre
+il fingerprint del valore grezzo continua a rilevare modifiche concorrenti.
+
+`aiVisualRemove` accetta esattamente `{ programId, importId, lessonId }`;
+`aiVisualAbandon` accetta esattamente `{ requestId }`. La prima rimuove le tre
+proiezioni Firestore atomicamente e cancella dopo il commit il solo blob
+canonico verificato. `aiVisualRemovals` conserva il path già verificato quando
+Storage fallisce, permettendo il retry anche senza manifest; il cleanup rifiuta
+di cancellare quel path se nel frattempo un manifest corrente lo usa. La
+forma chiusa è `{ ownerUid, programId, importId, lessonId, publicLessonId,
+udaDir, assetId, storageRef, createdAt }`: identità e segmenti devono coincidere
+col contesto autorevole, l'asset è UUID v4, il timestamp Firestore è risolto e
+il path è esattamente quello canonico ricostruito. Un documento presente ma
+malformato non equivale ad assenza: fallisce `corrupted_state` prima di ogni
+delete Storage, overwrite o audit. La
+seconda elimina il ticket in transazione, scrive una tombstone server-only e
+poi elimina il solo staging deterministico; bind e promozione successivi con lo
+stesso run non sono più autorizzati. `aiVisualCleanupForDelete` integra gli
+stessi invarianti nelle cancellazioni lezione/UDA/corso e non costruisce path da
+manifest malformati.
+
+Tutte queste callable sono owner-only, idempotenti, senza secret e senza
+provider. I documenti `aiVisualCandidates`, `aiVisualPromotions`,
+`aiVisualAbandonments`, `aiVisualRemovals` e `visualRuns` sono client-unreadable.

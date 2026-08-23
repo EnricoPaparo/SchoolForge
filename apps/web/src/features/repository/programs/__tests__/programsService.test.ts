@@ -101,11 +101,6 @@ beforeEach(() => {
   );
 });
 
-/** Snapshot finto con il minimo che il servizio usa. */
-function snap(data: Record<string, unknown> | null) {
-  return { exists: () => data !== null, data: () => data };
-}
-
 describe('listPrograms — legacy classIds normalization', () => {
   it('defaults classIds to [] when absent on the raw Firestore doc', async () => {
     mockGetDocs.mockResolvedValue({
@@ -131,200 +126,44 @@ describe('listPrograms — legacy classIds normalization', () => {
   });
 });
 
-describe('setLessonCompleted (CONCEPT-MAP-02: transazione, non batch)', () => {
-  const LESSON = {
-    ownerUid: 'owner-1',
-    importId: 'import-1',
-    completed: false,
-    udaDir: 'uda-01-reti',
-    path: 'uda-01-reti/lezione-001.md',
-    filename: 'lezione-001.md',
-    publicLessonId: 'import-1_lesson-1',
-  } as Record<string, unknown>;
-  const PUBLIC = {
-    ownerUid: 'owner-1',
-    importId: 'import-1',
-    programId: 'program-1',
-    udaDir: 'uda-01-reti',
-    path: 'uda-01-reti/lezione-001.md',
-    filename: 'lezione-001.md',
-  } as Record<string, unknown>;
-
-  function run(
-    completed: boolean,
-    over: { lesson?: unknown; publicLesson?: unknown; publicLessonId?: string } = {},
-  ) {
-    // `??` non basta: `null` è un valore voluto («documento mancante») e
-    // verrebbe scambiato per «non specificato».
-    const lesson = 'lesson' in over ? over.lesson : LESSON;
-    const publicLesson = 'publicLesson' in over ? over.publicLesson : PUBLIC;
-    mockTxGet
-      .mockResolvedValueOnce(snap(lesson as Record<string, unknown> | null))
-      .mockResolvedValueOnce(snap(publicLesson as Record<string, unknown> | null));
-    return setLessonCompleted(
+describe('setLessonCompleted (VE-03B: solo callable autorevole)', () => {
+  it('invia il payload chiuso senza uid, publicLessonId o Firestore', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await setLessonCompleted(
       'program-1',
       'import-1',
       'lesson-1',
-      'publicLessonId' in over ? (over.publicLessonId as string) : 'import-1_lesson-1',
-      completed,
+      'import-1_lesson-1',
+      true,
       'owner-1',
       fakeDb,
+      invoke,
     );
-  }
-
-  it('aggiorna lezione, proiezione e audit in una sola transazione', async () => {
-    await run(true);
-
-    expect(mockRunTransaction).toHaveBeenCalledOnce();
-    expect(mockWriteBatch).not.toHaveBeenCalled();
-    expect(mockTxUpdate).toHaveBeenCalledWith(
-      { __path: 'programs/program-1/imports/import-1/lessons/lesson-1' },
-      expect.objectContaining({ completed: true }),
-    );
-    expect(mockTxUpdate).toHaveBeenCalledWith(
-      { __path: 'publicLessons/import-1_lesson-1' },
-      expect.objectContaining({ completed: true }),
-    );
-    expect(mockTxSet).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({ action: 'lesson.completed', targetId: 'lesson-1' }),
-    );
-  });
-
-  it('copia la mappa privata nella proiezione quando la lezione diventa svolta', async () => {
-    await run(true, { lesson: { ...LESSON, conceptMapMarkdown: '## Ossatura\n\n- voce' } });
-
-    expect(mockTxUpdate).toHaveBeenCalledWith(
-      { __path: 'publicLessons/import-1_lesson-1' },
-      { completed: true, conceptMapMarkdown: '## Ossatura\n\n- voce' },
-    );
-  });
-
-  it('non proietta nulla se la mappa privata non esiste', async () => {
-    await run(true);
-
-    expect(mockTxUpdate).toHaveBeenCalledWith(
-      { __path: 'publicLessons/import-1_lesson-1' },
-      { completed: true, conceptMapMarkdown: { __delete: true } },
-    );
-  });
-
-  it('rimuove sempre la mappa dalla proiezione quando la lezione viene smarcata', async () => {
-    await run(false, {
-      lesson: { ...LESSON, completed: true, conceptMapMarkdown: '## Ossatura\n\n- voce' },
-      publicLesson: { ...PUBLIC, completed: true, conceptMapMarkdown: '## Ossatura\n\n- voce' },
+    expect(invoke).toHaveBeenCalledWith({
+      programId: 'program-1',
+      importId: 'import-1',
+      lessonId: 'lesson-1',
+      completed: true,
     });
-
-    expect(mockTxUpdate).toHaveBeenCalledWith(
-      { __path: 'publicLessons/import-1_lesson-1' },
-      { completed: false, conceptMapMarkdown: { __delete: true } },
-    );
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
-  it('fallisce senza scrivere se la mappa privata è malformata', async () => {
-    // Presente ma non valida: copiarla violerebbe il contratto della
-    // proiezione, ignorarla nasconderebbe un dato corrotto.
-    await expect(run(true, { lesson: { ...LESSON, conceptMapMarkdown: '   ' } })).rejects.toThrow(
-      /non è valida/,
-    );
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-    expect(mockTxSet).not.toHaveBeenCalled();
-  });
-
-  it('fallisce fail-closed su lezione mancante', async () => {
-    await expect(run(true, { lesson: null })).rejects.toThrow(/lezione non esiste/);
-    // Primo cancello: la proiezione non viene nemmeno letta.
-    expect(mockTxGet).toHaveBeenCalledTimes(1);
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-  });
-
-  it('fallisce fail-closed su proiezione mancante', async () => {
-    await expect(run(true, { publicLesson: null })).rejects.toThrow(/proiezione .* non esiste/);
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-  });
-
-  it('rifiuta un owner incoerente sul documento tecnico', async () => {
-    await expect(run(true, { lesson: { ...LESSON, ownerUid: 'altro' } })).rejects.toThrow(
-      /La lezione non appartiene a questo utente/,
-    );
-    expect(mockTxGet).toHaveBeenCalledTimes(1);
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-  });
-
-  it('rifiuta una proiezione di un altro import', async () => {
-    await expect(run(true, { publicLesson: { ...PUBLIC, importId: 'import-2' } })).rejects.toThrow(
-      /La proiezione non appartiene a questa importazione/,
-    );
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-  });
-
-  it('rifiuta il publicLessonId di un’altra lezione dello stesso owner/import/corso', async () => {
-    // Stesso blocker del salvataggio: senza derivare l'id dal `LessonDoc`, il
-    // flag finirebbe su una lezione e la mappa sulla proiezione di un'altra.
-    await expect(run(true, { publicLessonId: 'import-1_lesson-2' })).rejects.toThrow(
-      /non corrisponde a questa lezione/,
-    );
-    expect(mockTxGet).toHaveBeenCalledTimes(1);
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-    expect(mockTxSet).not.toHaveBeenCalled();
-  });
-
-  it('legacy senza publicLessonId: usa l’id uguale al lessonId', async () => {
+  it('propaga un errore della callable senza fallback client', async () => {
+    const invoke = vi.fn().mockRejectedValue(new Error('stato corrotto'));
     await expect(
-      run(true, { lesson: { ...LESSON, publicLessonId: undefined }, publicLessonId: 'lesson-1' }),
-    ).resolves.toBeUndefined();
-    expect(mockDoc).toHaveBeenCalledWith(fakeDb, 'publicLessons', 'lesson-1');
-  });
-
-  it('legacy + id import-scoped inventato: rifiutato', async () => {
-    await expect(
-      run(true, {
-        lesson: { ...LESSON, publicLessonId: undefined },
-        publicLessonId: 'import-1_lesson-1',
-      }),
-    ).rejects.toThrow(/non corrisponde a questa lezione/);
-    expect(mockTxGet).toHaveBeenCalledTimes(1);
-  });
-
-  it('rifiuta una proiezione di un altro corso', async () => {
-    await expect(
-      run(true, { publicLesson: { ...PUBLIC, programId: 'program-2' } }),
-    ).rejects.toThrow(/non appartiene a questo corso/);
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['udaDir', { udaDir: 'uda-02-altro' }],
-    ['path', { path: 'uda-01-reti/lezione-009.md' }],
-    ['filename', { filename: 'lezione-009.md' }],
-  ])('rifiuta una proiezione con %s divergente', async (_label, over) => {
-    await expect(run(true, { publicLesson: { ...PUBLIC, ...over } })).rejects.toThrow(
-      /non corrisponde a questa lezione/,
-    );
-    expect(mockTxUpdate).not.toHaveBeenCalled();
-    expect(mockTxSet).not.toHaveBeenCalled();
-  });
-});
-
-describe('setLessonCompleted — difesa statica contro il ritorno al writeBatch', () => {
-  it('il sorgente usa runTransaction e non writeBatch', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { resolve } = await import('node:path');
-    // Percorso relativo alla radice del pacchetto: sotto vitest/jsdom
-    // `import.meta.url` non è garantito essere un URL `file:`.
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/features/repository/programs/programsService.ts'),
-      'utf8',
-    );
-    const start = source.indexOf('export async function setLessonCompleted');
-    expect(start).toBeGreaterThan(-1);
-    const end = source.indexOf('\nexport ', start + 1);
-    const body = source.slice(start, end === -1 ? undefined : end);
-    // Il batch scrive senza leggere: qui la decisione dipende dalla mappa
-    // privata letta, quindi tornare a `writeBatch` romperebbe l'invariante di
-    // visibilità senza che nulla lo segnali.
-    expect(body).toContain('runTransaction');
-    expect(body).not.toContain('writeBatch');
+      setLessonCompleted(
+        'program-1',
+        'import-1',
+        'lesson-1',
+        'ignorato',
+        false,
+        'owner-1',
+        fakeDb,
+        invoke,
+      ),
+    ).rejects.toThrow('stato corrotto');
+    expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 });
 
@@ -643,7 +482,7 @@ describe('deleteProgram', () => {
     verifications?: { data: () => { config: { programId: string } } }[];
     imports?: { id: string }[];
     udas?: { ref: unknown }[];
-    lessons?: { ref: unknown }[];
+    lessons?: { id?: string; ref: unknown; data?: () => Record<string, unknown> }[];
     questionIndex?: { ref: unknown }[];
     publicLessons?: { ref: unknown }[];
   }) {
@@ -728,9 +567,10 @@ describe('deleteProgram', () => {
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'programs/prog-1/imports/imp-1' });
     expect(mockBatchCommit).toHaveBeenCalled();
 
-    // One gateway request removes the exact import prefix server-side.
-    expect(mockDeleteImportPrefix).toHaveBeenCalledTimes(1);
+    // Prefisso testuale storico + prefisso canonico VE-03A dei WebP.
+    expect(mockDeleteImportPrefix).toHaveBeenCalledTimes(2);
     expect(mockDeleteImportPrefix).toHaveBeenCalledWith('repository/owner-uid/imports/imp-1');
+    expect(mockDeleteImportPrefix).toHaveBeenCalledWith('repository/owner-uid/imp-1');
 
     // The program doc itself is deleted.
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
@@ -756,6 +596,27 @@ describe('deleteProgram', () => {
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockDeleteImportPrefix).not.toHaveBeenCalled();
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
+  });
+
+  it('ripulisce in gruppo i visual prima dei prefissi e dei documenti del corso', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    setupGetDocs({
+      verifications: [],
+      imports: [{ id: 'imp-1' }],
+      lessons: [
+        { id: 'l1', ref: { id: 'l1' }, data: () => ({ visual: { assetId: 'a' } }) },
+        { id: 'l2', ref: { id: 'l2' }, data: () => ({}) },
+      ],
+    });
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes, cleanupVisuals);
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['l1', 'l2'],
+    });
+    expect(cleanupVisuals.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteImportPrefix.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('deletes publicLessons projections associated with the program (M3-lite cleanup)', async () => {

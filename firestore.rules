@@ -370,6 +370,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // VE-03A/03B — ticket, replay di promozione, tombstone di abbandono e
+    // record di recovery della rimozione contengono identità e path tecnici.
+    // Sono leggibili soltanto dall'Admin SDK attraverso callable owner-only.
+    match /aiVisualCandidates/{document=**} {
+      allow read, write: if false;
+    }
+    match /aiVisualPromotions/{document=**} {
+      allow read, write: if false;
+    }
+    match /aiVisualAbandonments/{document=**} {
+      allow read, write: if false;
+    }
+    match /aiVisualRemovals/{document=**} {
+      allow read, write: if false;
+    }
+
     // --- teacherAiPreferences/{ownerUid} (TWU-02) ---
     // Preferenze predefinite della correzione IA del docente: un solo documento,
     // id == ownerUid. Leggibile e scrivibile SOLO dall'owner (mai da uno studente

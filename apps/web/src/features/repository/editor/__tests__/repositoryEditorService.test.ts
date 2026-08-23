@@ -1620,6 +1620,33 @@ describe('deleteLesson', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('invoca il cleanup visuale server-side prima della cancellazione', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ ...LESSON_DOC, visual: { malformed: true } }),
+    });
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
+    await deleteLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      lessonId: 'lesson-1',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+      cleanupVisuals,
+    });
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1'],
+    });
+    expect(cleanupVisuals.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteFile.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
@@ -1754,6 +1781,38 @@ describe('deleteUda', () => {
       { __path: 'auditEvents/auto-id' },
       expect.objectContaining({ action: 'uda.deleted', targetId: 'uda-01' }),
     );
+  });
+
+  it('raggruppa in una sola callable tutte le lezioni della UDA', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'lesson-1',
+            ref: { __path: 'lessons/lesson-1' },
+            data: () => ({ ...LESSON_1, visual: {} }),
+          },
+          { id: 'lesson-2', ref: { __path: 'lessons/lesson-2' }, data: () => LESSON_2 },
+        ],
+      })
+      .mockResolvedValueOnce({ docs: [] });
+    await deleteUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+      cleanupVisuals,
+    });
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1', 'lesson-2'],
+    });
   });
 
   it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {

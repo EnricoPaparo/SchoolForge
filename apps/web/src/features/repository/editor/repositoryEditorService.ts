@@ -903,6 +903,11 @@ export async function deleteLesson(params: {
   ownerUid: string;
   db: Firestore;
   storage: FirebaseStorage;
+  cleanupVisuals?: (input: {
+    programId: string;
+    importId: string;
+    lessonIds: string[];
+  }) => Promise<void>;
 }): Promise<void> {
   const { programId, importId, udaId, lessonId, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
@@ -928,6 +933,19 @@ export async function deleteLesson(params: {
       where('lessonFilename', '==', lesson.filename),
     ),
   );
+
+  if (params.cleanupVisuals || lesson.visual !== undefined) {
+    const cleanup =
+      params.cleanupVisuals ??
+      (async (input: { programId: string; importId: string; lessonIds: string[] }) => {
+        const [{ functions }, { createVisualLifecycleClient }] = await Promise.all([
+          import('../../../lib/firebase.js'),
+          import('../programs/visualLifecycleClient.js'),
+        ]);
+        await createVisualLifecycleClient(functions).cleanupForDelete(input);
+      });
+    await cleanup({ programId, importId, lessonIds: [lessonId] });
+  }
 
   try {
     await deleteStorageObjectIfExists(lesson.storageRef);
@@ -971,6 +989,11 @@ export async function deleteUda(params: {
   ownerUid: string;
   db: Firestore;
   storage: FirebaseStorage;
+  cleanupVisuals?: (input: {
+    programId: string;
+    importId: string;
+    lessonIds: string[];
+  }) => Promise<void>;
 }): Promise<void> {
   const { programId, importId, udaId, ownerUid, db } = params;
   const udaRef = doc(db, 'programs', programId, 'imports', importId, 'udas', udaId);
@@ -994,6 +1017,26 @@ export async function deleteUda(params: {
     ),
   ]);
   const lessons = lessonsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
+
+  const lessonsForVisualCleanup = params.cleanupVisuals
+    ? lessons
+    : lessons.filter((lesson) => lesson.visual !== undefined);
+  if (lessonsForVisualCleanup.length > 0) {
+    const cleanup =
+      params.cleanupVisuals ??
+      (async (input: { programId: string; importId: string; lessonIds: string[] }) => {
+        const [{ functions }, { createVisualLifecycleClient }] = await Promise.all([
+          import('../../../lib/firebase.js'),
+          import('../programs/visualLifecycleClient.js'),
+        ]);
+        await createVisualLifecycleClient(functions).cleanupForDelete(input);
+      });
+    await cleanup({
+      programId,
+      importId,
+      lessonIds: lessonsForVisualCleanup.map((lesson) => lesson.id),
+    });
+  }
 
   try {
     const storagePaths = [

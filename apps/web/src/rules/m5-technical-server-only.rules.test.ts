@@ -23,6 +23,10 @@ const TECHNICAL_DOCUMENTS = [
   'aiContentRuns/opaque-run-1',
   // VISUAL-ENRICHMENT-02 — byte inline, lease e costi visuali server-only.
   'visualRuns/opaque-visual-run-1',
+  'aiVisualCandidates/opaque-visual-run-1',
+  'aiVisualPromotions/opaque-visual-run-1',
+  'aiVisualAbandonments/opaque-visual-run-1',
+  'aiVisualRemovals/opaque-removal-1',
 ] as const;
 
 let testEnv: RulesTestEnvironment;

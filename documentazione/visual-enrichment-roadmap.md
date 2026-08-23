@@ -1,7 +1,8 @@
 # VISUAL-ENRICHMENT — Arricchimento visivo delle lezioni (contratto e roadmap)
 
 > **Stato: VISUAL-ENRICHMENT-00→02 implementati.**
-> VISUAL-ENRICHMENT-03 e successivi sono **aperti**. **Gate GVISUAL: PENDING.**
+> VE-03A e VE-03B sono implementati, non distribuiti; VISUAL-ENRICHMENT-03
+> resta **aperto** fino a VE-03C. VE-04/05 sono aperti. **Gate GVISUAL: PENDING.**
 >
 > VE-02 introduce la catena binaria server-side e i relativi contratti, ma resta
 > **non distribuita**: nessuna UI, proiezione studente, chiamata OpenAI reale o
@@ -854,7 +855,7 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VISUAL-ENRICHMENT-02** | **Catena binaria completa.** Provider immagini; operazione binaria del gateway; normalizzazione server-side (sniffing MIME, resize, WebP, strip metadati, cap 200 KB, sha256); staging con TTL, replay e cleanup; cost model reale del provider. Nessuna UI, nessuna proiezione studente. | VE-01 | **Implementato, non distribuito.** Vedi §15.2. |
 | **VISUAL-ENRICHMENT-03** | **Persistenza, proiezione e lifecycle.** Suddiviso in **A + B + C** (vedi sotto). | VE-02 | **Aperto** finché A, B e C non sono tutti chiusi. |
 | **VE-03A** | **Ticket, manifest e promozione.** Ticket autorevole candidato↔lezione (`aiVisualCandidates`), binding **prima** della generazione, manifest privato e pubblico, promozione con copia canonica, sostituzione, idempotenza e Rules fondamentali (`publicLessonVisuals`, `publicLessons.visual` solo su lezione svolta). | VE-02 | **Implementato, non distribuito.** |
-| **VE-03B** | **Lifecycle.** `completed` true/false lato server, rimozione dell'immagine, abbandono dello staging, cleanup e cancellazioni lezione/UDA/corso. | VE-03A | **Aperto.** |
+| **VE-03B** | **Lifecycle.** `completed` true/false lato server, rimozione dell'immagine, abbandono dello staging, cleanup e cancellazioni lezione/UDA/corso. | VE-03A | **Implementato, non distribuito.** |
 | **VE-03C** | **Chiusura.** Export ZIP con binario, cost model e audit definitivi, integrazioni Emulator end-to-end, chiusura documentale della fase. | VE-03B | **Aperto.** |
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** `DialogShell` a dieci stati secondo il prototipo; split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; avviso e azione di riancoraggio; vista studente condizionale; responsive e accessibilità verificate sui componenti reali. | VE-03 | **Aperto.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
@@ -1170,12 +1171,63 @@ davvero sopra il bucket reale, e un test che congela il fatto che il call site
 la richieda — perché su GCS vero è quella precondizione a impedire che una
 collisione di percorso cancelli byte di qualcun altro.
 
-**Che cosa resta aperto.** Lifecycle di `completed`, rimozione, abbandono dello
-staging e cancellazioni sono **VE-03B**; export ZIP binario, audit e cost model
+**Che cosa resta aperto.** Export ZIP binario, audit e cost model
 definitivi e integrazioni Emulator end-to-end sono **VE-03C**. Nessuna chiamata
 OpenAI reale, nessun deploy, nessuna URL pubblica o download token: lo studente
 non accede a Firebase Storage, l'immagine gli arriverebbe come data URI, come già
 accade per il corpo della lezione.
+
+---
+
+### 15.3 VE-03B implementato — lifecycle e cancellazioni
+
+`setLessonCompleted` è ora una callable owner-only con payload chiuso e il
+service web non esegue più la vecchia transazione client. Nel verso `false→true`
+verifica fuori transazione i byte WebP canonici e compone la data URI; dentro la
+transazione rilegge identità, stato, mappa e manifest e committa in un solo punto
+lezione privata, proiezione, mappa, manifest, byte e audit. Nel verso
+`true→false` non legge Storage, conserva il lavoro privato e rimuove tutte le
+copie pubbliche. In questo verso mappa e manifest privati non sono interpretati:
+anche se malformati vengono conservati byte per byte, mentre il loro fingerprint
+grezzo continua a proteggere dalle race. Il replay dello stesso stato non scrive
+e non duplica audit.
+
+La rimozione esplicita usa un record server-only `aiVisualRemovals` fra il
+commit Firestore e la delete Storage: un errore lascia soltanto un blob privato
+orfano e il retry conserva il path già validato anche se il manifest non esiste
+più. Prima della delete il cleanup verifica che un nuovo manifest non abbia
+riusato quel path. L'abbandono elimina il ticket, registra
+`aiVisualAbandonments/{opaqueRunId}` e soltanto dopo cancella lo staging; bind e
+promozione successivi non possono resuscitare il candidato. Le cancellazioni
+lezione/UDA/corso riusano un cleanup bulk; un manifest malformato consente la
+rimozione dei riferimenti Firestore ma non produce alcun path Storage.
+
+Il recovery ha forma chiusa `{ ownerUid, programId, importId, lessonId,
+publicLessonId, udaDir, assetId, storageRef, createdAt }`. Tutti i segmenti sono
+validati senza slash, traversal, spazi esterni o controlli; `assetId` è UUID v4,
+`createdAt` è un `Timestamp` risolto e finito, e `storageRef` deve coincidere
+esattamente col path canonico ricostruito da owner/import/UDA/asset. Documento
+assente, valido e malformato sono tre stati distinti: il terzo produce
+`corrupted_state` prima di delete Storage, overwrite, audit o altre scritture.
+
+| Operazione esplicita | Callable | Firestore | Storage | Provider |
+|---|---:|---:|---:|---:|
+| Marca svolta con visual | 1 | preflight: lezione + proiezione + byte doc; transazione: 2 read + 4 write; 1 audit | 1 read canonica | 0 |
+| Smarca | 1 | preflight: lezione + proiezione + byte doc; transazione: 2 read + 3 delete/update; 1 audit | 0 | 0 |
+| Replay stato già coerente | 1 | lezione + proiezione + byte doc | 0 senza visual; 1 verifica con visual | 0 |
+| Rimuovi visual | 1 | 3 read preflight + 2 transazionali + rilettura recovery risolta + safety read; 3 rimozioni + recovery + audit; delete recovery | 1 delete esatta | 0 |
+| Abbandona candidato | 1 | tombstone/ticket/run + 2 read transazionali; ticket delete + tombstone | 1 delete staging esatta | 0 |
+| Cleanup cancellazione | 1 per gruppo (≤100 lezioni) | per lezione: 3 read preflight + 2 transazionali; con visual valido anche rilettura recovery risolta + safety read; rimozioni e recovery solo se necessari | 0/1 delete esatta per manifest valido | 0 |
+
+Non esistono listener, polling, scheduler, scansioni passive o nuove chiamate
+provider. Il costo nasce esclusivamente dall'azione esplicita. Le finestre non
+atomiche sono due: dopo il commit di rimozione e prima della delete Storage
+(recovery tramite `aiVisualRemovals`), e dopo la tombstone di abbandono e prima
+della delete staging (replay della callable o TTL del run). Entrambe lasciano al
+massimo byte privati orfani, mai byte pubblici senza una proiezione coerente.
+
+**Stato:** implementato, non distribuito; zero chiamate OpenAI reali. VE-03,
+VE-03C, VE-04 e VE-05 restano aperti; GVISUAL resta PENDING.
 
 ---
 
