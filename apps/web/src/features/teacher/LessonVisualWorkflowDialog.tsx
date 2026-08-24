@@ -3,6 +3,8 @@ import { DialogShell } from '../../components/DialogShell.js';
 import { formatMicroUsd } from '../repository/pools/aiContentClient.js';
 import {
   describeVisualWorkflowError,
+  visualErrorDisposition,
+  type VisualErrorDisposition,
   type VisualIdentity,
   type VisualImageGenerate,
   type VisualImagePreview,
@@ -15,18 +17,43 @@ import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
 import styles from './LessonVisualWorkflowDialog.module.css';
 
 type Phase =
+  | 'current'
   | 'proposal-previewing'
   | 'proposal-confirm'
   | 'proposal-generating'
   | 'proposal'
   | 'none'
   | 'image-previewing'
+  | 'image-preview-error'
   | 'image-confirm'
   | 'image-generating'
+  | 'image-generate-error'
   | 'image-review'
   | 'promoting'
   | 'error'
   | 'removing';
+
+type Attempt =
+  | { status: 'none' }
+  | { status: 'bound'; requestId: string; subject: string }
+  | { status: 'previewed'; requestId: string; subject: string; preview: VisualImagePreview }
+  | {
+      status: 'generated';
+      requestId: string;
+      subject: string;
+      preview: VisualImagePreview;
+      image: VisualImageGenerate;
+    };
+
+type Confirmation =
+  | { kind: 'abandon'; returnPhase: Phase }
+  | { kind: 'remove'; returnPhase: Phase }
+  | null;
+
+export type CurrentVisualBytesState =
+  | { status: 'ready'; dataUri: string }
+  | { status: 'loading' }
+  | { status: 'unavailable' };
 
 export interface VisualHeading {
   text: string;
@@ -38,7 +65,7 @@ export function LessonVisualWorkflowDialog({
   identity,
   headings,
   currentManifest,
-  currentDataUri,
+  currentBytes,
   ports,
   onRefresh,
   onClose,
@@ -47,32 +74,40 @@ export function LessonVisualWorkflowDialog({
   identity: VisualIdentity;
   headings: VisualHeading[];
   currentManifest: LessonVisualPrivateManifest | null;
-  currentDataUri: string | null;
+  currentBytes: CurrentVisualBytesState | null;
   ports: VisualWorkflowPorts;
   onRefresh: () => Promise<void>;
   onClose: () => void;
 }) {
-  const [phase, setPhase] = useState<Phase>('proposal-previewing');
+  const [phase, setPhase] = useState<Phase>(currentManifest ? 'current' : 'proposal-previewing');
   const [proposalPreview, setProposalPreview] = useState<VisualProposalPreview | null>(null);
   const [proposal, setProposal] = useState<VisualProposal | null>(null);
+  const [proposalActualCost, setProposalActualCost] = useState<number | null | undefined>(
+    undefined,
+  );
   const [subject, setSubject] = useState('');
-  const [heading, setHeading] = useState(headings[0]?.text ?? '');
+  const [headingIndex, setHeadingIndex] = useState(headings[0]?.index ?? 0);
   const [caption, setCaption] = useState('');
   const [altText, setAltText] = useState('');
-  const [requestId, setRequestId] = useState<string | null>(null);
-  const [candidateBound, setCandidateBound] = useState(false);
-  const [imagePreview, setImagePreview] = useState<VisualImagePreview | null>(null);
-  const [image, setImage] = useState<VisualImageGenerate | null>(null);
+  const [attempt, setAttempt] = useState<Attempt>({ status: 'none' });
   const [error, setError] = useState<string | null>(null);
-  const [showAbandon, setShowAbandon] = useState(false);
-  const [showRemove, setShowRemove] = useState(false);
+  const [generateDisposition, setGenerateDisposition] = useState<VisualErrorDisposition | null>(
+    null,
+  );
+  const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const mounted = useRef(true);
   const action = useRef(false);
   const proposalRequestRef = useRef(proposalRequest);
   const proposalPreviewPromise = useRef<ReturnType<VisualWorkflowPorts['previewProposal']> | null>(
     null,
   );
-  const staged = candidateBound;
+  const confirmBackRef = useRef<HTMLButtonElement>(null);
+
+  const selectedHeading = headings.find((item) => item.index === headingIndex) ?? headings[0];
+  const candidateBound = attempt.status !== 'none';
+  const imagePreview =
+    attempt.status === 'previewed' || attempt.status === 'generated' ? attempt.preview : null;
+  const image = attempt.status === 'generated' ? attempt.image : null;
 
   useEffect(() => {
     mounted.current = true;
@@ -80,7 +115,9 @@ export function LessonVisualWorkflowDialog({
       mounted.current = false;
     };
   }, []);
+
   useEffect(() => {
+    if (currentManifest) return;
     let active = true;
     proposalPreviewPromise.current ??= ports.previewProposal(proposalRequestRef.current);
     void proposalPreviewPromise.current
@@ -97,7 +134,11 @@ export function LessonVisualWorkflowDialog({
     return () => {
       active = false;
     };
-  }, [ports]);
+  }, [currentManifest, ports]);
+
+  useEffect(() => {
+    if (confirmation) confirmBackRef.current?.focus({ preventScroll: true });
+  }, [confirmation]);
 
   async function once(run: () => Promise<void>) {
     if (action.current) return;
@@ -109,6 +150,24 @@ export function LessonVisualWorkflowDialog({
     }
   }
 
+  function consumeProposalPreview() {
+    setPhase('proposal-previewing');
+    setError(null);
+    proposalPreviewPromise.current ??= ports.previewProposal(proposalRequestRef.current);
+    void proposalPreviewPromise.current
+      .then((result) => {
+        if (!mounted.current) return;
+        setProposalPreview(result);
+        setPhase('proposal-confirm');
+      })
+      .catch((cause) => {
+        if (!mounted.current) return;
+        proposalPreviewPromise.current = null;
+        setError(describeVisualWorkflowError(cause));
+        setPhase('error');
+      });
+  }
+
   async function generateProposal() {
     await once(async () => {
       setPhase('proposal-generating');
@@ -118,6 +177,7 @@ export function LessonVisualWorkflowDialog({
         if (!mounted.current) return;
         const nextProposal = result.output;
         setProposal(nextProposal);
+        setProposalActualCost(result.actualCostMicroUsd);
         if (nextProposal.decision === 'none') {
           setPhase('none');
           return;
@@ -125,10 +185,10 @@ export function LessonVisualWorkflowDialog({
         setSubject(nextProposal.subject);
         setCaption(nextProposal.caption);
         setAltText(nextProposal.altText);
-        setHeading(
-          headings.some((h) => h.text === nextProposal.anchorHeadingText)
-            ? nextProposal.anchorHeadingText
-            : (headings[0]?.text ?? ''),
+        setHeadingIndex(
+          headings.find((heading) => heading.text === nextProposal.anchorHeadingText)?.index ??
+            headings[0]?.index ??
+            0,
         );
         setPhase('proposal');
       } catch (cause) {
@@ -140,60 +200,68 @@ export function LessonVisualWorkflowDialog({
     });
   }
 
-  async function previewImage(newAttempt = false) {
+  async function previewImage() {
     await once(async () => {
-      const id = newAttempt || !requestId ? crypto.randomUUID() : requestId;
-      setRequestId(id);
+      const live = attempt.status === 'bound' ? attempt : null;
+      let bound = live !== null;
+      const requestId = live?.requestId ?? crypto.randomUUID();
+      const attemptSubject = live?.subject ?? subject;
       setPhase('image-previewing');
       setError(null);
       try {
-        await ports.bind({ ...identity, requestId: id });
+        if (!live) {
+          await ports.bind({ ...identity, requestId });
+          if (!mounted.current) return;
+          setAttempt({ status: 'bound', requestId, subject: attemptSubject });
+          bound = true;
+        }
+        const result = await ports.previewImage({ requestId, subject: attemptSubject });
         if (!mounted.current) return;
-        setCandidateBound(true);
-        const result = await ports.previewImage({ requestId: id, subject });
-        if (!mounted.current) return;
-        setImagePreview(result);
+        setAttempt({ status: 'previewed', requestId, subject: attemptSubject, preview: result });
         setPhase('image-confirm');
       } catch (cause) {
-        if (mounted.current) {
-          setError(describeVisualWorkflowError(cause));
-          setPhase('proposal');
-        }
+        if (!mounted.current) return;
+        setError(describeVisualWorkflowError(cause));
+        setPhase(bound ? 'image-preview-error' : 'proposal');
       }
     });
   }
 
   async function generateImage() {
-    if (!requestId) return;
+    if (attempt.status !== 'previewed') return;
+    const live = attempt;
     await once(async () => {
       setPhase('image-generating');
       setError(null);
+      setGenerateDisposition(null);
       try {
-        const result = await ports.generateImage({ requestId, subject });
+        const result = await ports.generateImage({
+          requestId: live.requestId,
+          subject: live.subject,
+        });
         if (!mounted.current) return;
-        setImage(result);
+        setAttempt({ ...live, status: 'generated', image: result });
         setPhase('image-review');
       } catch (cause) {
-        if (mounted.current) {
-          setError(describeVisualWorkflowError(cause));
-          // Una risposta persa può nascondere un run completato: il pulsante
-          // resta disponibile e il retry usa lo stesso requestId (replay server).
-          setPhase('image-confirm');
-        }
+        if (!mounted.current) return;
+        setError(describeVisualWorkflowError(cause));
+        setGenerateDisposition(visualErrorDisposition(cause));
+        setPhase('image-generate-error');
       }
     });
   }
 
   async function promote() {
-    if (!requestId) return;
+    if (attempt.status !== 'generated' || !selectedHeading) return;
     await once(async () => {
       setPhase('promoting');
       setError(null);
       try {
         await ports.promote({
           ...identity,
-          requestId,
-          anchorHeadingText: heading,
+          requestId: attempt.requestId,
+          anchorHeadingText: selectedHeading.text,
+          anchorHeadingIndex: selectedHeading.index,
           caption,
           altText,
         });
@@ -208,43 +276,32 @@ export function LessonVisualWorkflowDialog({
     });
   }
 
-  async function abandon() {
-    if (!requestId) return onClose();
-    await once(async () => {
-      try {
-        await ports.abandon(requestId);
-        if (mounted.current) onClose();
-      } catch (cause) {
-        if (mounted.current) {
-          setError(describeVisualWorkflowError(cause));
-          setShowAbandon(false);
-        }
-      }
-    });
-  }
-
-  async function discardCandidate(next: 'edit' | 'regenerate') {
-    if (!requestId) {
-      if (next === 'edit') setPhase('proposal');
-      else await previewImage(true);
+  async function abandonAnd(next: 'close' | 'edit' | 'regenerate') {
+    if (attempt.status === 'none') {
+      if (next === 'close') onClose();
+      else setPhase('proposal');
       return;
     }
-    let discarded = false;
+    const requestId = attempt.requestId;
+    let abandoned = false;
     await once(async () => {
       try {
         await ports.abandon(requestId);
         if (!mounted.current) return;
-        discarded = true;
-        setImage(null);
-        setImagePreview(null);
-        setRequestId(null);
-        setCandidateBound(false);
-        if (next === 'edit') setPhase('proposal');
+        abandoned = true;
+        setAttempt({ status: 'none' });
+        setConfirmation(null);
+        setError(null);
+        if (next === 'close') onClose();
+        else setPhase('proposal');
       } catch (cause) {
-        if (mounted.current) setError(describeVisualWorkflowError(cause));
+        if (mounted.current) {
+          setError(describeVisualWorkflowError(cause));
+          setConfirmation(null);
+        }
       }
     });
-    if (discarded && next === 'regenerate') await previewImage(true);
+    if (abandoned && next === 'regenerate') await previewImage();
   }
 
   async function remove() {
@@ -257,8 +314,8 @@ export function LessonVisualWorkflowDialog({
       } catch (cause) {
         if (mounted.current) {
           setError(describeVisualWorkflowError(cause));
-          setPhase('proposal');
-          setShowRemove(false);
+          setPhase('current');
+          setConfirmation(null);
         }
       }
     });
@@ -266,15 +323,21 @@ export function LessonVisualWorkflowDialog({
 
   function requestClose() {
     if (action.current) return;
-    if (staged) setShowAbandon(true);
+    if (candidateBound) setConfirmation({ kind: 'abandon', returnPhase: phase });
     else onClose();
   }
-  function invalidatePreview(value: string) {
-    setSubject(value);
-    setImagePreview(null);
-    setRequestId(null);
-    setPhase('proposal');
+
+  async function refreshUncertain() {
+    await once(async () => {
+      try {
+        await onRefresh();
+        if (mounted.current) onClose();
+      } catch (cause) {
+        if (mounted.current) setError(describeVisualWorkflowError(cause));
+      }
+    });
   }
+
   const busy = [
     'proposal-previewing',
     'proposal-generating',
@@ -287,182 +350,232 @@ export function LessonVisualWorkflowDialog({
     () => (image ? { aspectRatio: `${image.width} / ${image.height}` } : undefined),
     [image],
   );
+  const confirmationTitle =
+    confirmation?.kind === 'abandon'
+      ? 'Abbandonare l’anteprima?'
+      : confirmation?.kind === 'remove'
+        ? 'Rimuovere l’immagine attuale?'
+        : null;
 
   return (
     <DialogShell
-      title={currentManifest ? 'Gestisci immagine della lezione' : 'Arricchisci visivamente'}
-      onCancel={requestClose}
+      title={
+        confirmationTitle ??
+        (currentManifest ? 'Gestisci immagine della lezione' : 'Arricchisci visivamente')
+      }
+      role={confirmation ? 'alertdialog' : 'dialog'}
+      onCancel={() => {
+        if (confirmation) setConfirmation(null);
+        else requestClose();
+      }}
       busy={busy}
       variant="wide-scroll"
       closeOnBackdrop
       closeOnEscape
     >
-      <p className={styles.intro}>
-        Profilo fisso: <strong>Quality</strong>. Proposta testuale e immagine hanno costi e conferme
-        separate.
-      </p>
-      {busy && (
-        <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
-          <span className="spinner" aria-hidden="true" />
-          <span>Operazione in corso…</span>
-        </div>
-      )}
-      {phase === 'proposal-confirm' && proposalPreview && (
+      {confirmation ? (
+        <ConfirmationView
+          kind={confirmation.kind}
+          backRef={confirmBackRef}
+          onBack={() => {
+            setPhase(confirmation.returnPhase);
+            setConfirmation(null);
+          }}
+          onConfirm={() => void (confirmation.kind === 'abandon' ? abandonAnd('close') : remove())}
+        />
+      ) : (
         <>
-          <CostRows preview={proposalPreview} />
-          <Actions>
-            <button onClick={onClose}>Annulla</button>
-            <button className="btn-primary" onClick={() => void generateProposal()}>
-              Genera proposta
-            </button>
-          </Actions>
-        </>
-      )}
-      {phase === 'none' && proposal?.decision === 'none' && (
-        <>
-          <h4>Nessuna immagine utile</h4>
-          <p>{proposal.reason}</p>
-          <Actions>
-            <button className="btn-primary" onClick={onClose}>
-              Chiudi
-            </button>
-          </Actions>
-        </>
-      )}
-      {(phase === 'proposal' || (phase === 'error' && proposal?.decision === 'image')) &&
-        proposal?.decision === 'image' && (
-          <>
-            <label className={styles.field}>
-              Cosa deve mostrare l’immagine
-              <textarea
-                value={subject}
-                onChange={(e) => invalidatePreview(e.target.value)}
-                rows={4}
-              />
-            </label>
-            <p>
-              <strong>Utilità didattica:</strong> {proposal.rationale}
-            </p>
-            <label className={styles.field}>
-              Posizione
-              <select value={heading} onChange={(e) => setHeading(e.target.value)}>
-                {headings.map((h) => (
-                  <option key={`${h.index}-${h.text}`} value={h.text}>
-                    {h.text}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.field}>
-              Didascalia
-              <input value={caption} onChange={(e) => setCaption(e.target.value)} />
-            </label>
-            <label className={styles.field}>
-              Testo alternativo
-              <input value={altText} onChange={(e) => setAltText(e.target.value)} />
-            </label>
-            <Actions>
-              {currentManifest && (
-                <button className="btn-danger" onClick={() => setShowRemove(true)}>
-                  Rimuovi immagine
+          <p className={styles.intro}>
+            Profilo fisso: <strong>Quality</strong>. Proposta testuale e immagine hanno costi e
+            conferme separate.
+          </p>
+          {busy && <Busy />}
+          {phase === 'current' && currentManifest && (
+            <CurrentView
+              manifest={currentManifest}
+              bytes={currentBytes}
+              onPropose={consumeProposalPreview}
+              onRemove={() => setConfirmation({ kind: 'remove', returnPhase: 'current' })}
+              onClose={onClose}
+            />
+          )}
+          {phase === 'proposal-confirm' && proposalPreview && (
+            <>
+              <CostRows preview={proposalPreview} />
+              <Actions>
+                <button onClick={requestClose}>Annulla</button>
+                <button className="btn-primary" onClick={() => void generateProposal()}>
+                  Genera proposta
                 </button>
-              )}
-              <button onClick={requestClose}>Annulla</button>
-              <button
-                className="btn-primary"
-                disabled={!subject || !heading || !caption || !altText}
-                onClick={() => void previewImage(true)}
-              >
-                Stima immagine
+              </Actions>
+            </>
+          )}
+          {phase === 'none' && proposal?.decision === 'none' && (
+            <>
+              <h4>Nessuna immagine utile</h4>
+              <p>{proposal.reason}</p>
+              <ProposalCost actual={proposalActualCost} />
+              <Actions>
+                <button className="btn-primary" onClick={onClose}>
+                  Chiudi
+                </button>
+              </Actions>
+            </>
+          )}
+          {phase === 'proposal' && proposal?.decision === 'image' && (
+            <ProposalEditor
+              proposal={proposal}
+              proposalActualCost={proposalActualCost}
+              subject={subject}
+              onSubject={setSubject}
+              headingIndex={headingIndex}
+              onHeadingIndex={setHeadingIndex}
+              headings={headings}
+              caption={caption}
+              onCaption={setCaption}
+              altText={altText}
+              onAltText={setAltText}
+              currentManifest={currentManifest}
+              onRemove={() => setConfirmation({ kind: 'remove', returnPhase: 'proposal' })}
+              onCancel={requestClose}
+              onPreview={() => void previewImage()}
+            />
+          )}
+          {phase === 'image-preview-error' && attempt.status === 'bound' && (
+            <>
+              <p>Il candidato resta associato a questo tentativo.</p>
+              <Actions>
+                <button onClick={() => void abandonAnd('edit')}>Modifica soggetto</button>
+                <button className="btn-primary" onClick={() => void previewImage()}>
+                  Riprova stima
+                </button>
+              </Actions>
+            </>
+          )}
+          {phase === 'image-confirm' && imagePreview && (
+            <>
+              <ProposalCost actual={proposalActualCost} />
+              <h4>Conferma generazione immagine</h4>
+              <ul>
+                <li>Preset: SchoolForge Sketch v1</li>
+                <li>
+                  Costo stimato immagine: {formatMicroUsd(imagePreview.estimatedCostMicroUsd)}
+                </li>
+                <li>
+                  Tetto prenotabile immagine: {formatMicroUsd(imagePreview.reservationCostMicroUsd)}
+                </li>
+              </ul>
+              <Actions>
+                <button onClick={() => void abandonAnd('edit')}>Modifica soggetto</button>
+                <button className="btn-primary" onClick={() => void generateImage()}>
+                  Genera immagine
+                </button>
+              </Actions>
+            </>
+          )}
+          {phase === 'image-generate-error' && attempt.status === 'previewed' && (
+            <GenerateErrorActions
+              disposition={generateDisposition}
+              onRetry={() => void generateImage()}
+              onAbandon={() => void abandonAnd('edit')}
+              onRefresh={() => void refreshUncertain()}
+              onClose={requestClose}
+            />
+          )}
+          {phase === 'image-review' && attempt.status === 'generated' && image && (
+            <>
+              <p role="status">
+                <strong>Anteprima — non ancora applicata</strong>
+              </p>
+              <ProposalCost actual={proposalActualCost} />
+              <div className={currentManifest ? styles.comparison : undefined}>
+                {currentManifest && (
+                  <Preview
+                    title="Immagine attuale"
+                    manifest={currentManifest}
+                    bytes={currentBytes}
+                  />
+                )}
+                <figure className={styles.preview} style={imageStyle}>
+                  <strong>Nuova proposta</strong>
+                  <img
+                    src={image.dataUri}
+                    alt={altText}
+                    width={image.width}
+                    height={image.height}
+                  />
+                  <figcaption>{caption}</figcaption>
+                </figure>
+              </div>
+              <ul>
+                <li>
+                  {image.width} × {image.height}px · {image.byteLength.toLocaleString('it-IT')} byte
+                </li>
+                <li>
+                  {image.actualCostMicroUsd === null
+                    ? `Costo immagine regolato: ${formatMicroUsd(image.settledCostMicroUsd)}`
+                    : `Costo reale immagine: ${formatMicroUsd(image.actualCostMicroUsd)}`}
+                </li>
+              </ul>
+              <EditorialFields
+                headings={headings}
+                headingIndex={headingIndex}
+                onHeadingIndex={setHeadingIndex}
+                caption={caption}
+                onCaption={setCaption}
+                altText={altText}
+                onAltText={setAltText}
+              />
+              <Actions>
+                <button onClick={() => void abandonAnd('edit')}>Modifica soggetto</button>
+                <button onClick={() => void abandonAnd('regenerate')}>Rigenera</button>
+                <button
+                  onClick={() => setConfirmation({ kind: 'abandon', returnPhase: 'image-review' })}
+                >
+                  Abbandona
+                </button>
+                <button
+                  className="btn-primary"
+                  disabled={!caption || !altText || !selectedHeading}
+                  onClick={() => void promote()}
+                >
+                  {currentManifest ? 'Sostituisci l’immagine attuale' : 'Applica alla lezione'}
+                </button>
+              </Actions>
+            </>
+          )}
+          {error && (
+            <p role="alert" className="text-error">
+              {error}
+            </p>
+          )}
+          {phase === 'error' && !proposal && (
+            <Actions>
+              <button onClick={onClose}>Chiudi</button>
+              <button className="btn-primary" onClick={consumeProposalPreview}>
+                Riprova preview
               </button>
             </Actions>
-          </>
-        )}
-      {phase === 'image-confirm' && imagePreview && (
-        <>
-          <h4>Conferma generazione immagine</h4>
-          <ul>
-            <li>Preset: SchoolForge Sketch v1</li>
-            <li>Costo stimato: {formatMicroUsd(imagePreview.estimatedCostMicroUsd)}</li>
-            <li>Tetto prenotabile: {formatMicroUsd(imagePreview.reservationCostMicroUsd)}</li>
-          </ul>
-          <Actions>
-            <button onClick={() => void discardCandidate('edit')}>Modifica richiesta</button>
-            <button className="btn-primary" onClick={() => void generateImage()}>
-              Genera immagine
-            </button>
-          </Actions>
+          )}
         </>
-      )}
-      {phase === 'image-review' && image && (
-        <>
-          <p role="status">
-            <strong>Anteprima — non ancora applicata</strong>
-          </p>
-          <div className={currentManifest ? styles.comparison : undefined}>
-            {currentManifest && (
-              <Preview title="Immagine attuale" src={currentDataUri} manifest={currentManifest} />
-            )}
-            <figure className={styles.preview} style={imageStyle}>
-              <strong>Nuova proposta</strong>
-              <img src={image.dataUri} alt={altText} width={image.width} height={image.height} />
-              <figcaption>{caption}</figcaption>
-            </figure>
-          </div>
-          <ul>
-            <li>
-              {image.width} × {image.height}px · {image.byteLength.toLocaleString('it-IT')} byte
-            </li>
-            <li>
-              {image.actualCostMicroUsd === null
-                ? `Costo regolato: ${formatMicroUsd(image.settledCostMicroUsd)}`
-                : `Costo reale: ${formatMicroUsd(image.actualCostMicroUsd)}`}
-            </li>
-            <li>Posizione: {heading}</li>
-          </ul>
-          <Actions>
-            <button onClick={() => void discardCandidate('edit')}>Modifica richiesta</button>
-            <button onClick={() => void discardCandidate('regenerate')}>Rigenera</button>
-            <button onClick={() => setShowAbandon(true)}>Abbandona</button>
-            <button className="btn-primary" onClick={() => void promote()}>
-              {currentManifest ? 'Sostituisci l’immagine attuale' : 'Applica alla lezione'}
-            </button>
-          </Actions>
-        </>
-      )}
-      {error && (
-        <p role="alert" className="text-error">
-          {error}
-        </p>
-      )}
-      {phase === 'error' && !proposal && (
-        <Actions>
-          <button onClick={onClose}>Chiudi</button>
-        </Actions>
-      )}
-      {showAbandon && (
-        <Confirm
-          title="Abbandonare l’anteprima?"
-          confirm="Abbandona ed elimina"
-          onBack={() => setShowAbandon(false)}
-          onConfirm={() => void abandon()}
-        />
-      )}
-      {showRemove && (
-        <Confirm
-          title="Rimuovere l’immagine attuale?"
-          confirm="Rimuovi immagine"
-          onBack={() => setShowRemove(false)}
-          onConfirm={() => void remove()}
-        />
       )}
     </DialogShell>
+  );
+}
+
+function Busy() {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
+      <span className="spinner" aria-hidden="true" />
+      <span>Operazione in corso…</span>
+    </div>
   );
 }
 
 function Actions({ children }: { children: ReactNode }) {
   return <div className={`dialog-actions ${styles.actions}`}>{children}</div>;
 }
+
 function CostRows({ preview }: { preview: VisualProposalPreview }) {
   return (
     <>
@@ -470,20 +583,184 @@ function CostRows({ preview }: { preview: VisualProposalPreview }) {
       <ul>
         <li>Profilo: Quality</li>
         <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
-        <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
-        <li>Tetto prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
+        <li>Costo stimato proposta: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
+        <li>Tetto prenotabile proposta: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
       </ul>
     </>
   );
 }
+
+function ProposalCost({ actual }: { actual: number | null | undefined }) {
+  if (actual === undefined) return null;
+  return (
+    <p className={styles.costSeparation}>
+      <strong>Spesa proposta testuale:</strong>{' '}
+      {actual === null
+        ? 'costo esatto non disponibile; regolazione server conservativa'
+        : formatMicroUsd(actual)}
+    </p>
+  );
+}
+
+function CurrentView({
+  manifest,
+  bytes,
+  onPropose,
+  onRemove,
+  onClose,
+}: {
+  manifest: LessonVisualPrivateManifest;
+  bytes: CurrentVisualBytesState | null;
+  onPropose: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const unavailable = bytes?.status === 'unavailable';
+  const loading = bytes?.status !== 'ready' && !unavailable;
+  return (
+    <>
+      <h4>Immagine attuale</h4>
+      <Preview title="Immagine attuale" manifest={manifest} bytes={bytes} />
+      <p>
+        <strong>Didascalia:</strong> {manifest.caption}
+      </p>
+      <p>
+        <strong>Posizione:</strong> {manifest.anchor.headingText}
+      </p>
+      {loading && (
+        <p role="status">
+          Attendi il caricamento dell’immagine prima di proporre una sostituzione.
+        </p>
+      )}
+      {unavailable && (
+        <p role="alert">
+          L’immagine corrente non è leggibile. La sostituzione è bloccata; puoi comunque rimuoverla.
+        </p>
+      )}
+      <Actions>
+        <button className="btn-danger" onClick={onRemove}>
+          Rimuovi immagine
+        </button>
+        <button onClick={onClose}>Chiudi</button>
+        <button className="btn-primary" disabled={loading || unavailable} onClick={onPropose}>
+          Proponi una sostituzione
+        </button>
+      </Actions>
+    </>
+  );
+}
+
+function ProposalEditor(props: {
+  proposal: Extract<VisualProposal, { decision: 'image' }>;
+  proposalActualCost: number | null | undefined;
+  subject: string;
+  onSubject: (value: string) => void;
+  headingIndex: number;
+  onHeadingIndex: (value: number) => void;
+  headings: VisualHeading[];
+  caption: string;
+  onCaption: (value: string) => void;
+  altText: string;
+  onAltText: (value: string) => void;
+  currentManifest: LessonVisualPrivateManifest | null;
+  onRemove: () => void;
+  onCancel: () => void;
+  onPreview: () => void;
+}) {
+  return (
+    <>
+      <ProposalCost actual={props.proposalActualCost} />
+      <label className={styles.field}>
+        Cosa deve mostrare l’immagine
+        <textarea
+          value={props.subject}
+          onChange={(event) => props.onSubject(event.target.value)}
+          rows={4}
+        />
+      </label>
+      <p>
+        <strong>Utilità didattica:</strong> {props.proposal.rationale}
+      </p>
+      <EditorialFields
+        headings={props.headings}
+        headingIndex={props.headingIndex}
+        onHeadingIndex={props.onHeadingIndex}
+        caption={props.caption}
+        onCaption={props.onCaption}
+        altText={props.altText}
+        onAltText={props.onAltText}
+      />
+      <Actions>
+        {props.currentManifest && (
+          <button className="btn-danger" onClick={props.onRemove}>
+            Rimuovi immagine
+          </button>
+        )}
+        <button onClick={props.onCancel}>Annulla</button>
+        <button
+          className="btn-primary"
+          disabled={!props.subject || !props.caption || !props.altText}
+          onClick={props.onPreview}
+        >
+          Stima immagine
+        </button>
+      </Actions>
+    </>
+  );
+}
+
+function EditorialFields(props: {
+  headings: VisualHeading[];
+  headingIndex: number;
+  onHeadingIndex: (value: number) => void;
+  caption: string;
+  onCaption: (value: string) => void;
+  altText: string;
+  onAltText: (value: string) => void;
+}) {
+  return (
+    <>
+      <label className={styles.field}>
+        Posizione
+        <select
+          value={props.headingIndex}
+          onChange={(event) => props.onHeadingIndex(Number(event.target.value))}
+        >
+          {props.headings.map((heading) => (
+            <option key={heading.index} value={heading.index}>
+              {headingLabel(heading, props.headings)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        Didascalia
+        <input value={props.caption} onChange={(event) => props.onCaption(event.target.value)} />
+      </label>
+      <label className={styles.field}>
+        Testo alternativo
+        <input value={props.altText} onChange={(event) => props.onAltText(event.target.value)} />
+      </label>
+    </>
+  );
+}
+
+function headingLabel(heading: VisualHeading, headings: VisualHeading[]): string {
+  const equal = headings.filter((item) => item.text === heading.text);
+  if (equal.length === 1) return heading.text;
+  const occurrence = equal.findIndex((item) => item.index === heading.index) + 1;
+  const labels = ['prima', 'seconda', 'terza'];
+  return `${heading.text} — ${labels[occurrence - 1] ?? `${occurrence}ª`} occorrenza`;
+}
+
 function Preview({
   title,
-  src,
   manifest,
+  bytes,
 }: {
   title: string;
-  src: string | null;
   manifest: LessonVisualPrivateManifest;
+  bytes: CurrentVisualBytesState | null;
 }) {
   return (
     <figure
@@ -491,36 +768,100 @@ function Preview({
       style={{ aspectRatio: `${manifest.width} / ${manifest.height}` }}
     >
       <strong>{title}</strong>
-      {src ? (
-        <img src={src} alt={manifest.altText} width={manifest.width} height={manifest.height} />
+      {bytes?.status === 'ready' ? (
+        <img
+          src={bytes.dataUri}
+          alt={manifest.altText}
+          width={manifest.width}
+          height={manifest.height}
+        />
       ) : (
-        <div className={styles.placeholder}>Immagine non disponibile</div>
+        <div className={styles.placeholder}>
+          {bytes?.status === 'unavailable' ? 'Immagine non disponibile' : 'Caricamento immagine…'}
+        </div>
       )}
       <figcaption>{manifest.caption}</figcaption>
     </figure>
   );
 }
-function Confirm({
-  title,
-  confirm,
+
+function GenerateErrorActions({
+  disposition,
+  onRetry,
+  onAbandon,
+  onRefresh,
+  onClose,
+}: {
+  disposition: VisualErrorDisposition | null;
+  onRetry: () => void;
+  onAbandon: () => void;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  if (disposition === 'uncertain') {
+    return (
+      <Actions>
+        <button className="btn-primary" onClick={onRefresh}>
+          Aggiorna stato e chiudi
+        </button>
+      </Actions>
+    );
+  }
+  if (disposition === 'terminal') {
+    return (
+      <Actions>
+        <button className="btn-danger" onClick={onAbandon}>
+          Abbandona tentativo
+        </button>
+      </Actions>
+    );
+  }
+  if (disposition === 'blocked') {
+    return (
+      <Actions>
+        <button onClick={onClose}>Chiudi</button>
+        <button className="btn-primary" onClick={onRetry}>
+          Riprova sullo stesso tentativo
+        </button>
+      </Actions>
+    );
+  }
+  return (
+    <Actions>
+      <button onClick={onClose}>Chiudi</button>
+      <button className="btn-primary" onClick={onRetry}>
+        Verifica o riprova lo stesso tentativo
+      </button>
+    </Actions>
+  );
+}
+
+function ConfirmationView({
+  kind,
+  backRef,
   onBack,
   onConfirm,
 }: {
-  title: string;
-  confirm: string;
+  kind: 'abandon' | 'remove';
+  backRef: React.RefObject<HTMLButtonElement>;
   onBack: () => void;
   onConfirm: () => void;
 }) {
   return (
-    <DialogShell title={title} role="alertdialog" onCancel={onBack}>
+    <>
+      <p>
+        {kind === 'abandon'
+          ? 'Il candidato e lo staging verranno eliminati.'
+          : 'L’immagine sarà rimossa dalla lezione e dalla proiezione pubblica.'}
+      </p>
       <Actions>
-        <button type="button" onClick={onBack}>
+        <button ref={backRef} type="button" onClick={onBack}>
           Torna all’anteprima
         </button>
         <button type="button" className="btn-danger" onClick={onConfirm}>
-          {confirm}
+          {kind === 'abandon' ? 'Abbandona ed elimina' : 'Rimuovi immagine'}
         </button>
       </Actions>
-    </DialogShell>
+    </>
   );
 }

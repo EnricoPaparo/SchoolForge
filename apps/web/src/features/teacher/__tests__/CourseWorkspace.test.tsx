@@ -5,6 +5,7 @@ import { CourseWorkspace } from '../CourseWorkspace.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 import type { LessonItem, UdaItem } from '../../repository/programs/programsService.js';
+import type { LessonVisualPrivateManifest } from '../../../types/firestore.js';
 import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
 import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
 
@@ -31,8 +32,38 @@ const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
 const mockDownloadProgramPdf = vi.fn();
 const mockReloadCurrentPage = vi.fn();
+const mockVisualPreviewProposal = vi.fn();
+const mockVisualGenerateProposal = vi.fn();
+const mockVisualBind = vi.fn();
+const mockVisualPreviewImage = vi.fn();
+const mockVisualGenerateImage = vi.fn();
+const mockVisualPromote = vi.fn();
+const mockVisualAbandon = vi.fn();
+const mockVisualRemove = vi.fn();
+const mockReadAuthoritativePrivateVisual = vi.fn();
+const mockReadTeacherVisual = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+vi.mock('../../repository/programs/visualGenerationClient.js', () => ({
+  createVisualWorkflowPorts: () => ({
+    previewProposal: (...args: unknown[]) => mockVisualPreviewProposal(...args),
+    generateProposal: (...args: unknown[]) => mockVisualGenerateProposal(...args),
+    bind: (...args: unknown[]) => mockVisualBind(...args),
+    previewImage: (...args: unknown[]) => mockVisualPreviewImage(...args),
+    generateImage: (...args: unknown[]) => mockVisualGenerateImage(...args),
+    promote: (...args: unknown[]) => mockVisualPromote(...args),
+    abandon: (...args: unknown[]) => mockVisualAbandon(...args),
+    remove: (...args: unknown[]) => mockVisualRemove(...args),
+  }),
+  readAuthoritativePrivateVisual: (...args: unknown[]) =>
+    mockReadAuthoritativePrivateVisual(...args),
+}));
+vi.mock('../../repository/programs/visualReadClients.js', () => ({
+  createTeacherVisualReader:
+    () =>
+    (...args: unknown[]) =>
+      mockReadTeacherVisual(...args),
+}));
 vi.mock('../../../lib/pdfModuleLoader.js', async (importOriginal) => {
   const actual = await importOriginal<typeof PdfModuleLoaderModule>();
   return { ...actual, reloadCurrentPage: () => mockReloadCurrentPage() };
@@ -94,7 +125,22 @@ vi.mock('../lessonContent.js', () => ({
   fetchPublicLessonContent: (...a: unknown[]) => mockFetchPublicLessonContent(...a),
 }));
 vi.mock('../MarkdownRenderer.js', () => ({
-  MarkdownRenderer: ({ markdown }: { markdown: string }) => <div data-testid="md">{markdown}</div>,
+  MarkdownRenderer: ({
+    markdown,
+    visual,
+  }: {
+    markdown: string;
+    visual?: { caption: string; dataUri: string | null } | null;
+  }) => (
+    <div
+      data-testid="md"
+      data-visual={visual ? 'present' : 'absent'}
+      data-visual-caption={visual?.caption ?? ''}
+      data-visual-bytes={visual?.dataUri ?? ''}
+    >
+      {markdown}
+    </div>
+  ),
 }));
 // The pool editor has its own dedicated test; here we stub it to observe that
 // the workspace mounts it lazily (only on the Domande tab) and to drive its
@@ -132,6 +178,18 @@ beforeEach(() => {
   // legacy Storage path (fetchLessonContent). MOB-01C tests override this.
   mockFetchPublicLessonContent.mockResolvedValue(null);
   mockDownloadProgramPdf.mockResolvedValue(undefined);
+  mockVisualPreviewProposal.mockResolvedValue({
+    kind: 'visual_proposal',
+    modelProfile: 'quality',
+    estimatedInputTokens: 100,
+    maxOutputTokens: 200,
+    estimatedCostMicroUsd: 10,
+    reservationCostMicroUsd: 20,
+    requestedTotal: null,
+  });
+  mockVisualRemove.mockResolvedValue(undefined);
+  mockReadAuthoritativePrivateVisual.mockResolvedValue(null);
+  mockReadTeacherVisual.mockResolvedValue(null);
 });
 
 // Controllable matchMedia stub for the mobile/desktop breakpoint tests.
@@ -207,6 +265,30 @@ function lesson(id: string, udaDir: string, over: Partial<LessonItem> = {}): Les
     obiettivi: [],
     ...over,
   } as LessonItem;
+}
+
+function visualManifest(overrides: Partial<LessonVisualPrivateManifest> = {}) {
+  return {
+    assetId: '123e4567-e89b-42d3-a456-426614174000',
+    anchor: {
+      headingSlug: 'topologie',
+      headingText: 'Topologie',
+      placement: 'after-heading' as const,
+    },
+    caption: 'Topologie di rete',
+    altText: 'Schema delle topologie di rete',
+    width: 800,
+    height: 600,
+    storageRef:
+      'repository/owner/imp1/uda-01-reti/visuals/123e4567-e89b-42d3-a456-426614174000.webp',
+    byteLength: 128,
+    sha256: 'a'.repeat(64),
+    mimeType: 'image/webp' as const,
+    styleVersion: 'schoolforge-sketch/v1' as const,
+    sourceBodyHash: 'b'.repeat(64),
+    approvedAt: { toMillis: () => 1_700_000_000_000 } as LessonVisualPrivateManifest['approvedAt'],
+    ...overrides,
+  } satisfies LessonVisualPrivateManifest;
 }
 
 function renderWorkspace(over: Partial<CourseCard> = {}, onBack = vi.fn()) {
@@ -401,6 +483,95 @@ describe('CourseWorkspace — selection', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByText(/impossibile caricare il contenuto/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Arricchisci visivamente' })).toBeTruthy();
+  });
+});
+
+describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
+  async function openVisualLesson(currentVisual: LessonVisualPrivateManifest | null) {
+    mockListUdas.mockResolvedValue([
+      uda('uda-01-reti', {
+        titolo: 'Reti di calcolatori',
+        descrizione: 'Fondamenti di reti',
+        competenze: ['Progettare una LAN'],
+        obiettivi: ['Confrontare le topologie'],
+      }),
+    ]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', {
+        titolo: 'Topologie di rete',
+        visual: currentVisual ?? undefined,
+      }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue(
+      '---\ntitolo: Topologie di rete\ndifficolta: base\n---\n\n## Topologie\n\nCorpo.',
+    );
+    if (currentVisual) {
+      mockReadTeacherVisual.mockResolvedValue({
+        assetId: currentVisual.assetId,
+        dataUri: 'data:image/webp;base64,UklGRg==',
+        width: currentVisual.width,
+        height: currentVisual.height,
+      });
+    }
+
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(await screen.findByRole('button', { name: 'Topologie di rete' }));
+    await screen.findByTestId('md');
+  }
+
+  it('apre il percorso proposta dal controllo reale e restituisce il focus alla chiusura', async () => {
+    await openVisualLesson(null);
+    const trigger = screen.getByRole('button', { name: 'Arricchisci visivamente' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    await screen.findByText('Stima della proposta testuale');
+    expect(mockVisualPreviewProposal).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('gestisce e rimuove la visual corrente senza IA, poi aggiorna controllo e renderer', async () => {
+    const current = visualManifest();
+    await openVisualLesson(current);
+    await waitFor(() => expect(screen.getByTestId('md').dataset.visualBytes).toContain('UklGRg'));
+    expect(screen.getByTestId('md').dataset.visual).toBe('present');
+    expect(screen.getByTestId('md').dataset.visualCaption).toBe(current.caption);
+
+    const trigger = screen.getByRole('button', { name: 'Gestisci immagine' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    await screen.findByRole('heading', { name: 'Immagine attuale' });
+    expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
+    expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
+    expect(mockVisualBind).not.toHaveBeenCalled();
+    expect(mockVisualPreviewImage).not.toHaveBeenCalled();
+    expect(mockVisualGenerateImage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rimuovi immagine' }));
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Rimuovi immagine',
+      }),
+    );
+
+    await waitFor(() => expect(mockVisualRemove).toHaveBeenCalledOnce());
+    expect(mockVisualRemove).toHaveBeenCalledWith({
+      programId: 'p1',
+      importId: 'imp1',
+      lessonId: 'l1',
+    });
+    expect(mockReadAuthoritativePrivateVisual).toHaveBeenCalledOnce();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Arricchisci visivamente' })).toBeTruthy(),
+    );
+    expect(screen.getByTestId('md').dataset.visual).toBe('absent');
+    expect(screen.getByTestId('md').dataset.visualBytes).toBe('');
+    expect(document.activeElement).toBe(trigger);
+    expect(mockVisualPromote).not.toHaveBeenCalled();
+    expect(mockVisualAbandon).not.toHaveBeenCalled();
   });
 });
 

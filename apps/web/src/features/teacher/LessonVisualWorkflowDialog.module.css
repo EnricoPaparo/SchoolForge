@@ -1,6 +1,11 @@
 .intro {
   color: var(--text-secondary);
 }
+.costSeparation {
+  padding: 0.65rem 0.75rem;
+  border-inline-start: 3px solid var(--accent, #0891b2);
+  background: var(--surface-muted);
+}
 .field {
   display: grid;
   gap: 0.4rem;

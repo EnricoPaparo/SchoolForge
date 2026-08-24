@@ -98,6 +98,7 @@ function input(over: Partial<Record<keyof VisualPromotionInput, unknown>> = {}):
     importId: 'imp-1',
     lessonId: 'lesson-1',
     anchorHeadingText: 'La fotosintesi',
+    anchorHeadingIndex: 0,
     caption: 'Schema della fotosintesi',
     altText: 'Diagramma con foglia, luce e anidride carbonica',
     ...over,
@@ -123,6 +124,7 @@ describe('validateVisualPromotionInput', () => {
     const parsed = validateVisualPromotionInput(input());
     expect(Object.keys(parsed).sort()).toEqual([
       'altText',
+      'anchorHeadingIndex',
       'anchorHeadingText',
       'caption',
       'importId',
@@ -175,6 +177,14 @@ describe('validateVisualPromotionInput', () => {
   it('rifiuta un requestId che non è un UUID v4', () => {
     for (const bad of ['', 'nope', '11111111-2222-3333-4444-555555555555']) {
       expect(() => validateVisualPromotionInput(input({ requestId: bad }))).toThrow(/requestId/);
+    }
+  });
+
+  it('rifiuta un indice heading assente, negativo, frazionario o non numerico', () => {
+    for (const bad of [undefined, -1, 1.5, '0', null]) {
+      expect(() => validateVisualPromotionInput(input({ anchorHeadingIndex: bad }))).toThrow(
+        /Indice/,
+      );
     }
   });
 
@@ -587,6 +597,9 @@ describe('computePromotionInputHash', () => {
         computePromotionInputHash(parsed),
       );
     }
+    expect(computePromotionInputHash({ ...parsed, anchorHeadingIndex: 1 })).not.toBe(
+      computePromotionInputHash(parsed),
+    );
   });
 });
 

@@ -959,6 +959,27 @@ la vista con una lettura puntuale autorevole. La proiezione studente e le lettur
 byte restano quelle di VE-04A: nessun subject, costo, run ID, hash o storageRef
 raggiunge lo studente.
 
+La gestione di una visual esistente è un percorso distinto e gratuito: apre la
+visual corrente e consente rimozione/chiusura senza invocare nemmeno la preview
+testuale. La sostituzione comincia solo dopo una scelta esplicita. Se i byte
+correnti sono `loading` o definitivamente `unavailable`, la sostituzione è
+bloccata: pagare una proposta senza poter fare il confronto richiesto sarebbe
+una conferma inconsapevole; la rimozione resta invece sempre disponibile.
+
+Il candidato vive in un'unione discriminata `none | bound | previewed |
+generated`, e ogni ramo vivo porta lo stesso `requestId`. Un errore di preview
+non lo perde; cambiare subject o rigenerare richiede prima un abbandono riuscito.
+`uncertain_state` impone refresh/verifica, mentre un errore terminale richiede
+abbandono e un retry da risposta persa riusa lo stesso ID. Esiste un solo
+`DialogShell`: la conferma ne sostituisce il contenuto e il focus trap, non ne
+annida un secondo.
+
+Promote riceve anche `anchorHeadingIndex`: indice e testo sono verificati sul
+corpo autorevole fresco con `resolveAnchorByIndex`, l'indice entra nell'hash di
+replay/conflitto ma non viene mai proiettato. Infine il refresh del manifest è
+fail-closed: assente, valido e malformato sono stati distinti; un dato presente
+ma malformato non viene corretto, castato o reso parzialmente.
+
 ## 10. Checklist ai gate
 
 | Gate | Controlli minimi |

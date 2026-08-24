@@ -64,6 +64,7 @@ function promotionInput(requestId: string) {
     importId: IMPORT,
     lessonId: LESSON,
     anchorHeadingText: 'La fotosintesi',
+    anchorHeadingIndex: 0,
     caption: 'Schema della fotosintesi',
     altText: 'Diagramma con foglia, luce e anidride carbonica',
   };
@@ -310,6 +311,43 @@ emulatorDescribe('promozione — corse reali su Firestore e Storage Emulator', (
       .file(canonicalVisualStorageRef({ ownerUid: OWNER, importId: IMPORT, udaDir: UDA, assetId }))
       .download();
     expect(Buffer.from(canonical).equals(staged)).toBe(true);
+  });
+
+  it('promuove distintamente la seconda occorrenza di due heading omonimi', async () => {
+    const requestId = '11111111-2222-4333-8444-000000000009';
+    const assetId = '22222222-3333-4444-8555-000000000009';
+    const body = [
+      '# Lezione',
+      '',
+      '## La fotosintesi',
+      '',
+      'prima',
+      '',
+      '## La fotosintesi',
+      '',
+      'seconda',
+    ].join('\n');
+    await seedPromotable({ requestId, body });
+    writtenObjects.push(
+      canonicalVisualStorageRef({ ownerUid: OWNER, importId: IMPORT, udaDir: UDA, assetId }),
+    );
+
+    await promoteVisualForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...promotionInput(requestId), anchorHeadingIndex: 1 },
+      nowMs: NOW,
+      generateAssetId: () => assetId,
+    });
+
+    expect((await lessonRef().get()).data()?.visual?.anchor).toEqual({
+      headingSlug: 'la-fotosintesi-2',
+      headingText: 'La fotosintesi',
+      placement: 'after-heading',
+    });
+    expect((await publicRef().get()).data()?.visual?.anchor?.headingSlug).toBe('la-fotosintesi-2');
+    expect((await publicRef().get()).data()?.visual?.anchorHeadingIndex).toBeUndefined();
   });
 
   /**

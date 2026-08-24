@@ -3146,7 +3146,15 @@ function LessonDetail({
                   identity={{ programId, importId, lessonId: lesson.id }}
                   headings={visualHeadings}
                   currentManifest={manifest}
-                  currentDataUri={visualState.status === 'ready' ? visualState.bytes.dataUri : null}
+                  currentBytes={
+                    manifest
+                      ? visualState.status === 'ready'
+                        ? { status: 'ready', dataUri: visualState.bytes.dataUri }
+                        : visualState.status === 'unavailable'
+                          ? { status: 'unavailable' }
+                          : { status: 'loading' }
+                      : null
+                  }
                   ports={visualPorts}
                   onRefresh={refreshVisual}
                   onClose={() => setVisualDialogOpen(false)}

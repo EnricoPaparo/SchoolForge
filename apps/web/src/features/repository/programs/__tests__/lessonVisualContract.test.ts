@@ -3,6 +3,7 @@ import {
   MAX_VISUAL_DATA_URI_LENGTH,
   composeVisualDataUri,
   isWebpDataUri,
+  parsePrivateVisualManifest,
   readPublicLessonVisualBytes,
   readPublicVisualManifest,
   readStudentVisualManifest,
@@ -46,6 +47,88 @@ function bytesDoc(over: Record<string, unknown> = {}): Record<string, unknown> {
     ...over,
   };
 }
+
+function privateManifest(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...manifest(),
+    storageRef: `repository/owner/i1/uda-01/visuals/${ASSET}.webp`,
+    byteLength: 100,
+    sha256: 'a'.repeat(64),
+    mimeType: 'image/webp',
+    styleVersion: 'schoolforge-sketch/v1',
+    sourceBodyHash: 'b'.repeat(64),
+    approvedAt: { toMillis: () => 1_700_000_000_000 },
+    ...over,
+  };
+}
+
+const privateParams = (value: unknown) => ({
+  value,
+  ownerUid: 'owner',
+  importId: 'i1',
+  udaDir: 'uda-01',
+});
+
+describe('parsePrivateVisualManifest — refresh autorevole fail-closed', () => {
+  it('distingue assente e valido', () => {
+    expect(parsePrivateVisualManifest(privateParams(undefined))).toEqual({ kind: 'absent' });
+    expect(parsePrivateVisualManifest(privateParams(privateManifest())).kind).toBe('valid');
+  });
+
+  it('rifiuta chiave extra o mancante', () => {
+    expect(parsePrivateVisualManifest(privateParams(privateManifest({ extra: true }))).kind).toBe(
+      'malformed',
+    );
+    const missing = privateManifest();
+    delete missing.caption;
+    expect(parsePrivateVisualManifest(privateParams(missing)).kind).toBe('malformed');
+  });
+
+  it('rifiuta assetId, path e hash malformati o divergenti', () => {
+    for (const over of [
+      { assetId: 'bad' },
+      { storageRef: `repository/other/i1/uda-01/visuals/${ASSET}.webp` },
+      { storageRef: `repository/owner/i1/uda-01/visuals/other.webp` },
+      { sha256: 'x' },
+      { sourceBodyHash: 'x' },
+    ]) {
+      expect(parsePrivateVisualManifest(privateParams(privateManifest(over))).kind).toBe(
+        'malformed',
+      );
+    }
+  });
+
+  it('rifiuta dimensioni, byte e ancora malformati', () => {
+    for (const over of [
+      { width: 1_201 },
+      { height: 0 },
+      { byteLength: 204_801 },
+      { anchor: { headingSlug: 'Non valido', headingText: 'X', placement: 'after-heading' } },
+      { anchor: { headingSlug: 'x', headingText: 'X', placement: 'inline' } },
+    ]) {
+      expect(parsePrivateVisualManifest(privateParams(privateManifest(over))).kind).toBe(
+        'malformed',
+      );
+    }
+  });
+
+  it('rifiuta Timestamp assente, non risolto o che lancia', () => {
+    for (const approvedAt of [
+      undefined,
+      '2026-01-01',
+      { toMillis: () => Number.NaN },
+      {
+        toMillis: () => {
+          throw new Error('bad');
+        },
+      },
+    ]) {
+      expect(parsePrivateVisualManifest(privateParams(privateManifest({ approvedAt }))).kind).toBe(
+        'malformed',
+      );
+    }
+  });
+});
 
 describe('readPublicVisualManifest', () => {
   it('accetta il manifest chiuso', () => {

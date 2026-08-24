@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { LessonVisualWorkflowDialog } from '../LessonVisualWorkflowDialog.js';
 import type {
   VisualProposalRequest,
@@ -128,7 +128,7 @@ function open(p: VisualWorkflowPorts, onRefresh = vi.fn().mockResolvedValue(unde
       identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
       headings={[{ text: 'Topologie', index: 0 }]}
       currentManifest={null}
-      currentDataUri={null}
+      currentBytes={null}
       ports={p}
       onRefresh={onRefresh}
       onClose={vi.fn()}
@@ -143,7 +143,7 @@ function openWithCurrent(p: VisualWorkflowPorts, onRefresh = vi.fn().mockResolve
       identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
       headings={[{ text: 'Topologie', index: 0 }]}
       currentManifest={currentManifest}
-      currentDataUri="data:image/webp;base64,UklGRg=="
+      currentBytes={{ status: 'ready', dataUri: 'data:image/webp;base64,UklGRg==' }}
       ports={p}
       onRefresh={onRefresh}
       onClose={vi.fn()}
@@ -170,7 +170,7 @@ describe('LessonVisualWorkflowDialog', () => {
           identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
           headings={[{ text: 'Topologie', index: 0 }]}
           currentManifest={null}
-          currentDataUri={null}
+          currentBytes={null}
           ports={p}
           onRefresh={vi.fn()}
           onClose={vi.fn()}
@@ -179,6 +179,20 @@ describe('LessonVisualWorkflowDialog', () => {
     );
     await screen.findByText('Stima della proposta testuale');
     expect(p.previewProposal).toHaveBeenCalledOnce();
+  });
+
+  it('con immagine corrente apre la gestione a costo IA zero e avvia la preview solo su richiesta', async () => {
+    const p = ports(imageProposal);
+    openWithCurrent(p);
+    expect(await screen.findByRole('heading', { name: 'Immagine attuale' })).toBeTruthy();
+    expect(p.previewProposal).not.toHaveBeenCalled();
+    expect(p.generateProposal).not.toHaveBeenCalled();
+    expect(p.bind).not.toHaveBeenCalled();
+    expect(p.previewImage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Proponi una sostituzione'));
+    await screen.findByText('Stima della proposta testuale');
+    expect(p.previewProposal).toHaveBeenCalledOnce();
+    expect(p.generateProposal).not.toHaveBeenCalled();
   });
 
   it('mantiene la stessa request testuale tra preview e generate anche dopo un rerender', async () => {
@@ -195,7 +209,7 @@ describe('LessonVisualWorkflowDialog', () => {
         identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
         headings={[{ text: 'Topologie', index: 0 }]}
         currentManifest={null}
-        currentDataUri={null}
+        currentBytes={null}
         ports={p}
         onRefresh={vi.fn()}
         onClose={vi.fn()}
@@ -242,20 +256,19 @@ describe('LessonVisualWorkflowDialog', () => {
     fireEvent.click(screen.getByText('Applica alla lezione'));
     await waitFor(() => expect(p.promote).toHaveBeenCalledOnce());
     expect((p.promote as ReturnType<typeof vi.fn>).mock.calls[0]![0].requestId).toBe(boundId);
+    expect((p.promote as ReturnType<typeof vi.fn>).mock.calls[0]![0].anchorHeadingIndex).toBe(0);
     expect(refresh).toHaveBeenCalledOnce();
   });
 
   it('retry dopo risposta persa riusa requestId e il doppio click non duplica', async () => {
     const p = ports(imageProposal);
-    (p.generateImage as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
-      details: { code: 'provider_unavailable' },
-    });
+    (p.generateImage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('response lost'));
     open(p);
     fireEvent.click(await screen.findByText('Genera proposta'));
     fireEvent.click(await screen.findByText('Stima immagine'));
     fireEvent.click(await screen.findByText('Genera immagine'));
-    await screen.findByText(/servizio immagini/);
-    const button = screen.getByText('Genera immagine');
+    await screen.findByText(/Risposta non ricevuta/);
+    const button = screen.getByText('Verifica o riprova lo stesso tentativo');
     fireEvent.click(button);
     fireEvent.click(button);
     await screen.findByText('Anteprima — non ancora applicata');
@@ -284,7 +297,7 @@ describe('LessonVisualWorkflowDialog', () => {
     open(p);
     fireEvent.click(await screen.findByText('Genera proposta'));
     fireEvent.click(await screen.findByText('Stima immagine'));
-    fireEvent.click(await screen.findByText('Modifica richiesta'));
+    fireEvent.click(await screen.findByText('Modifica soggetto'));
     await waitFor(() => expect(p.abandon).toHaveBeenCalledOnce());
     fireEvent.change(screen.getByLabelText('Cosa deve mostrare l’immagine'), {
       target: { value: 'Una nuova rete ad anello' },
@@ -299,35 +312,125 @@ describe('LessonVisualWorkflowDialog', () => {
     );
   });
 
-  it('Escape dopo il bind apre alertdialog e abbandona una sola volta', async () => {
+  it('bind riuscito + preview fallita conserva il tentativo e il retry riusa requestId', async () => {
     const p = ports(imageProposal);
+    (p.previewImage as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce({ details: { code: 'budget_unavailable' } })
+      .mockResolvedValueOnce({
+        requestId: '',
+        styleVersion: 'schoolforge-sketch-v1',
+        preset: {},
+        estimatedInputTokens: 1,
+        expectedOutputTokens: 1,
+        estimatedCostMicroUsd: 100,
+        reservationCostMicroUsd: 200,
+      });
     open(p);
+    fireEvent.click(await screen.findByText('Genera proposta'));
+    fireEvent.click(await screen.findByText('Stima immagine'));
+    await screen.findByText('Riprova stima');
+    const boundId = (p.bind as ReturnType<typeof vi.fn>).mock.calls[0]![0].requestId;
+    fireEvent.click(screen.getByText('Riprova stima'));
+    await screen.findByText('Conferma generazione immagine');
+    expect(p.bind).toHaveBeenCalledOnce();
+    expect((p.previewImage as ReturnType<typeof vi.fn>).mock.calls[1]![0].requestId).toBe(boundId);
+  });
+
+  it('dopo preview fallita modifica soggetto solo dopo abandon riuscito', async () => {
+    const p = ports(imageProposal);
+    (p.previewImage as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
+      details: { code: 'budget_unavailable' },
+    });
+    open(p);
+    fireEvent.click(await screen.findByText('Genera proposta'));
+    fireEvent.click(await screen.findByText('Stima immagine'));
+    fireEvent.click(await screen.findByText('Modifica soggetto'));
+    await screen.findByLabelText('Cosa deve mostrare l’immagine');
+    const firstId = (p.bind as ReturnType<typeof vi.fn>).mock.calls[0]![0].requestId;
+    expect(p.abandon).toHaveBeenCalledWith(firstId);
+    fireEvent.change(screen.getByLabelText('Cosa deve mostrare l’immagine'), {
+      target: { value: 'Nuovo soggetto' },
+    });
+    fireEvent.click(screen.getByText('Stima immagine'));
+    await waitFor(() => expect(p.bind).toHaveBeenCalledTimes(2));
+    expect((p.bind as ReturnType<typeof vi.fn>).mock.calls[1]![0].requestId).not.toBe(firstId);
+  });
+
+  it('se abandon fallisce conserva il candidato e non crea un nuovo tentativo', async () => {
+    const p = ports(imageProposal);
+    (p.abandon as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('cleanup failed'));
+    open(p);
+    fireEvent.click(await screen.findByText('Genera proposta'));
+    fireEvent.click(await screen.findByText('Stima immagine'));
+    fireEvent.click(await screen.findByText('Genera immagine'));
+    fireEvent.click(await screen.findByText('Rigenera'));
+    await screen.findByText(/Risposta non ricevuta/);
+    expect(p.bind).toHaveBeenCalledOnce();
+    expect(p.previewImage).toHaveBeenCalledOnce();
+  });
+
+  it('usa un solo modal: Escape apre la conferma, Escape torna indietro e abandon ripristina il focus', async () => {
+    const p = ports(imageProposal);
+    function Harness() {
+      const [openDialog, setOpenDialog] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpenDialog(true)}>Apri workflow</button>
+          {openDialog && (
+            <LessonVisualWorkflowDialog
+              proposalRequest={proposalRequest}
+              identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+              headings={[{ text: 'Topologie', index: 0 }]}
+              currentManifest={null}
+              currentBytes={null}
+              ports={p}
+              onRefresh={vi.fn()}
+              onClose={() => setOpenDialog(false)}
+            />
+          )}
+        </>
+      );
+    }
+    render(<Harness />);
+    const trigger = screen.getByText('Apri workflow');
+    trigger.focus();
+    fireEvent.click(trigger);
     fireEvent.click(await screen.findByText('Genera proposta'));
     fireEvent.click(await screen.findByText('Stima immagine'));
     await screen.findByText('Conferma generazione immagine');
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     const confirm = await screen.findByRole('alertdialog');
-    expect(confirm).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
+    expect(document.activeElement).toBe(screen.getByText('Torna all’anteprima'));
+    fireEvent.keyDown(confirm, { key: 'Escape' });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(p.abandon).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     const abandon = screen.getByText('Abbandona ed elimina');
     fireEvent.click(abandon);
     fireEvent.click(abandon);
     await waitFor(() => expect(p.abandon).toHaveBeenCalledOnce());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it('sostituzione conserva la corrente e remove/promote fanno refresh autorevole', async () => {
     const p = ports(imageProposal);
     const refresh = vi.fn().mockResolvedValue(undefined);
     openWithCurrent(p, refresh);
-    fireEvent.click(await screen.findByText('Genera proposta'));
     fireEvent.click(await screen.findByText('Rimuovi immagine'));
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByText('Rimuovi immagine'));
     await waitFor(() => expect(p.remove).toHaveBeenCalledOnce());
     expect(refresh).toHaveBeenCalledOnce();
+    expect(p.previewProposal).not.toHaveBeenCalled();
+    expect(p.generateProposal).not.toHaveBeenCalled();
+    expect(p.bind).not.toHaveBeenCalled();
   });
 
   it('in sostituzione mostra corrente e proposta senza alterare la corrente prima del promote', async () => {
     const p = ports(imageProposal);
     openWithCurrent(p);
+    fireEvent.click(await screen.findByText('Proponi una sostituzione'));
     fireEvent.click(await screen.findByText('Genera proposta'));
     fireEvent.click(await screen.findByText('Stima immagine'));
     fireEvent.click(await screen.findByText('Genera immagine'));
@@ -338,17 +441,91 @@ describe('LessonVisualWorkflowDialog', () => {
     expect(p.promote).not.toHaveBeenCalled();
   });
 
+  it('modifica editoriale dopo la generazione non richiama provider e promuove indice e testi finali', async () => {
+    const p = ports(imageProposal);
+    render(
+      <LessonVisualWorkflowDialog
+        proposalRequest={proposalRequest}
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        headings={[
+          { text: 'Topologie', index: 0 },
+          { text: 'Topologie', index: 1 },
+        ]}
+        currentManifest={null}
+        currentBytes={null}
+        ports={p}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByText('Genera proposta'));
+    fireEvent.click(await screen.findByText('Stima immagine'));
+    fireEvent.click(await screen.findByText('Genera immagine'));
+    await screen.findByText('Anteprima — non ancora applicata');
+    expect(screen.getByText('Topologie — prima occorrenza')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Posizione'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Didascalia'), { target: { value: 'Finale' } });
+    fireEvent.change(screen.getByLabelText('Testo alternativo'), {
+      target: { value: 'Alt finale' },
+    });
+    fireEvent.click(screen.getByText('Applica alla lezione'));
+    await waitFor(() => expect(p.promote).toHaveBeenCalledOnce());
+    expect(p.generateImage).toHaveBeenCalledOnce();
+    expect(p.promote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anchorHeadingIndex: 1,
+        anchorHeadingText: 'Topologie',
+        caption: 'Finale',
+        altText: 'Alt finale',
+      }),
+    );
+  });
+
+  it('blocca sostituzione durante loading o unavailable ma lascia sempre disponibile remove', () => {
+    const p = ports(imageProposal);
+    const view = render(
+      <LessonVisualWorkflowDialog
+        proposalRequest={proposalRequest}
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        headings={[{ text: 'Topologie', index: 0 }]}
+        currentManifest={currentManifest}
+        currentBytes={{ status: 'loading' }}
+        ports={p}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Proponi una sostituzione').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Rimuovi immagine').hasAttribute('disabled')).toBe(false);
+    view.rerender(
+      <LessonVisualWorkflowDialog
+        proposalRequest={proposalRequest}
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        headings={[{ text: 'Topologie', index: 0 }]}
+        currentManifest={currentManifest}
+        currentBytes={{ status: 'unavailable' }}
+        ports={p}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/sostituzione è bloccata/)).toBeTruthy();
+    expect(screen.getByText('Proponi una sostituzione').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Rimuovi immagine').hasAttribute('disabled')).toBe(false);
+  });
+
   it('un errore di generazione conserva proposta, candidato e immagine corrente', async () => {
     const p = ports(imageProposal);
     (p.generateImage as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
       details: { code: 'provider_unavailable' },
     });
     openWithCurrent(p);
+    fireEvent.click(await screen.findByText('Proponi una sostituzione'));
     fireEvent.click(await screen.findByText('Genera proposta'));
     fireEvent.click(await screen.findByText('Stima immagine'));
     fireEvent.click(await screen.findByText('Genera immagine'));
-    await screen.findByText(/servizio immagini/);
-    expect(screen.getByText('Genera immagine')).toBeTruthy();
+    await screen.findByText(/provider immagini/);
+    expect(screen.getByText('Abbandona tentativo')).toBeTruthy();
     expect(p.abandon).not.toHaveBeenCalled();
     expect(p.promote).not.toHaveBeenCalled();
     expect(p.remove).not.toHaveBeenCalled();

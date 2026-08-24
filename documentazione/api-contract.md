@@ -1298,6 +1298,10 @@ usa `aiVisualBindCandidate` → `aiVisualPreview` → conferma →
 `aiVisualGenerate` → `aiVisualPromote`. Le quattro operazioni visuali condividono
 il `requestId`; un retry dopo risposta persa lo conserva, «Rigenera» ne crea uno
 nuovo. Promote invia soltanto `requestId`, `programId`, `importId`, `lessonId`,
-`anchorHeadingText`, `caption`, `altText`. Il manifest non è composto nel web:
+`anchorHeadingText`, `anchorHeadingIndex`, `caption`, `altText`. L'indice è
+zero-based sull'elenco canonico degli H2/H3 e deve coincidere col testo; il
+server rilegge il corpo fresco, risolve la coppia indice+testo e deriva lo slug.
+L'indice entra nell'hash editoriale del run, ma non nel manifest privato né
+nella proiezione pubblica. Il manifest non è composto nel web:
 una `getDoc` puntuale del `LessonDoc` aggiorna la vista. Rimozione e abbandono
 riusano `aiVisualRemove` e `aiVisualAbandon`.

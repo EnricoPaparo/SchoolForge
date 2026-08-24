@@ -1404,6 +1404,29 @@ un'operazione, ed è ciò che rende la funzione gratuita per la stragrande
 maggioranza delle lezioni. Nessun listener, nessun polling, nessuna lettura per
 card o per riga.
 
+**Workflow docente definitivo (VE-04B).** Con manifest presente il dialog apre
+direttamente «Immagine attuale»: mostra byte, didascalia e posizione e offre
+sostituzione, rimozione e chiusura con **zero chiamate IA**. Solo «Proponi una
+sostituzione» avvia la preview testuale. Se i byte correnti sono ancora in
+caricamento o non disponibili la sostituzione resta bloccata con motivo
+esplicito, perché il confronto non è completo; la rimozione rimane possibile.
+
+Il tentativo candidato è una union `none | bound | previewed | generated`, con
+`requestId` obbligatorio in ogni stato vivo. Preview fallita e retry conservano
+lo stesso ID; modifica del subject, rigenerazione e nuovo tentativo passano da
+un abbandono riuscito. Gli errori distinguono replay legittimo, stato terminale,
+blocco e `uncertain_state`. Un solo `DialogShell` ospita anche la conferma; non
+esistono due modal o due focus trap contemporanei.
+
+Dopo la generazione caption, alt text e ancora restano editoriali e possono
+cambiare senza provider né nuovo ID; solo il subject richiede una nuova
+immagine. I costi reali di proposta testuale e immagine restano separati nella
+UI. Gli heading omonimi sono selezionati per indice zero-based più testo: la
+promozione rilegge il corpo fresco con `resolveAnchorByIndex`, include l'indice
+nell'hash editoriale e non lo salva in alcun manifest/proiezione. Il refresh
+autorevole distingue manifest assente, valido e malformato e fallisce chiuso
+senza normalizzazioni silenziose.
+
 **Smoke responsive** (Chromium, markup e CSS reali dei componenti): 1440, 1024,
 390 e 320 px — zero overflow orizzontale, figura e didascalia entro la colonna,
 rapporto d'aspetto conservato, dialog dentro il viewport, target touch a 44 px,
