@@ -7,11 +7,19 @@ import { actualCostMicroUsd } from './aiCorrectionCost.js';
 import { resolveContentModel } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import {
+  MAX_VISUAL_BYTES,
   assertVisualProposalMatchesRequest,
   validateVisualProposalEnvelope,
   type VisualProposalOutput,
 } from './aiContentVisualProposal.js';
-import { AI_VISUAL_SERVER_CONFIG, actualVisualCostMicroUsd } from './aiVisualCore.js';
+import {
+  AI_VISUAL_SERVER_CONFIG,
+  AI_VISUAL_WEBP_QUALITY_ATTEMPTS,
+  actualVisualCostMicroUsd,
+  decodeStrictBase64,
+  inspectWebp,
+  sha256Hex,
+} from './aiVisualCore.js';
 import { normalizeVisualWebp, type NormalizedVisual } from './aiVisualNormalizer.js';
 import {
   createImageProvider,
@@ -98,7 +106,7 @@ export interface VisualQualityCliDeps {
   ) => VisualQualityExecutionPlan;
   createProviders: (apiKey: string) => { proposal: ContentProvider; image: ImageProvider };
   normalize: (bytes: Uint8Array) => Promise<NormalizedVisual>;
-  loadResume: (path: string) => Promise<VisualBenchmarkReport>;
+  loadResume: (path: string) => Promise<unknown>;
   writeCheckpoint: (report: VisualBenchmarkReport, path: string | null) => Promise<string>;
   now: () => Date;
   monotonicMs: () => number;
@@ -172,26 +180,321 @@ function sameClosedValue(actual: unknown, expected: unknown): boolean {
   );
 }
 
-function assertResumeCompatible(
-  report: VisualBenchmarkReport,
+function plainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function assertExactKeys(value: Record<string, unknown>, expected: readonly string[]): void {
+  const actual = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  if (actual.length !== canonical.length || actual.some((key, index) => key !== canonical[index])) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+}
+
+function assertJsonValue(value: unknown): void {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) assertJsonValue(item);
+    return;
+  }
+  if (plainObject(value)) {
+    for (const item of Object.values(value)) assertJsonValue(item);
+    return;
+  }
+  throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+}
+
+function nonNegativeNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  return value;
+}
+
+function nullableNonNegativeInteger(value: unknown): number | null {
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  return value;
+}
+
+function nonEmptyError(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  return value;
+}
+
+function isCanonicalIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function parseStoredImage(value: unknown): NonNullable<VisualBenchmarkPhaseRecord['image']> {
+  if (!plainObject(value)) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  assertExactKeys(value, [
+    'base64',
+    'width',
+    'height',
+    'byteLength',
+    'sha256',
+    'mimeType',
+    'webpQuality',
+    'normalizationAttempts',
+  ]);
+  const bytes = decodeStrictBase64(value.base64, MAX_VISUAL_BYTES);
+  const inspection = inspectWebp(bytes);
+  const normalizationAttempts = nullableNonNegativeInteger(value.normalizationAttempts);
+  if (
+    normalizationAttempts === null ||
+    normalizationAttempts < 1 ||
+    normalizationAttempts > AI_VISUAL_WEBP_QUALITY_ATTEMPTS.length ||
+    value.webpQuality !== AI_VISUAL_WEBP_QUALITY_ATTEMPTS[normalizationAttempts - 1] ||
+    value.mimeType !== 'image/webp' ||
+    value.byteLength !== bytes.length ||
+    value.sha256 !== sha256Hex(bytes) ||
+    value.width !== inspection.width ||
+    value.height !== inspection.height ||
+    inspection.animated ||
+    inspection.hasMetadata ||
+    Math.max(inspection.width, inspection.height) > AI_VISUAL_SERVER_CONFIG.maxLongEdge
+  ) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  return value as unknown as NonNullable<VisualBenchmarkPhaseRecord['image']>;
+}
+
+function parseStoredRecord(
+  value: unknown,
+  scenario: VisualQualityScenario,
+): VisualBenchmarkPhaseRecord {
+  if (!plainObject(value)) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  assertExactKeys(value, [
+    'scenarioId',
+    'phase',
+    'status',
+    'durationMs',
+    'inputTokens',
+    'outputTokens',
+    'actualCostMicroUsd',
+    'priorBillingRisk',
+    'raw',
+    'validationError',
+    'proposal',
+    'image',
+  ]);
+  if (
+    value.scenarioId !== scenario.id ||
+    (value.phase !== 'proposal' && value.phase !== 'image') ||
+    typeof value.status !== 'string' ||
+    !['valid', 'invalid', 'failed', 'skipped_none'].includes(value.status) ||
+    typeof value.priorBillingRisk !== 'boolean'
+  ) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  nonNegativeNumber(value.durationMs);
+  nullableNonNegativeInteger(value.inputTokens);
+  nullableNonNegativeInteger(value.outputTokens);
+  nullableNonNegativeInteger(value.actualCostMicroUsd);
+  assertJsonValue(value.raw);
+
+  if (value.phase === 'proposal') {
+    if (value.status === 'skipped_none' || value.image !== null) {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    }
+    if (value.status === 'valid') {
+      if (value.validationError !== null) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+      const proposal = assertVisualProposalMatchesRequest(
+        validateVisualProposalEnvelope(value.raw),
+        scenario.lessonBody,
+      );
+      if (!sameClosedValue(value.proposal, proposal)) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+    } else if (value.proposal !== null) {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    } else {
+      nonEmptyError(value.validationError);
+    }
+  } else {
+    if (value.proposal !== null) {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    }
+    if (value.status === 'skipped_none') {
+      if (
+        value.durationMs !== 0 ||
+        value.inputTokens !== 0 ||
+        value.outputTokens !== 0 ||
+        value.actualCostMicroUsd !== 0 ||
+        value.priorBillingRisk !== false ||
+        value.raw !== null ||
+        value.validationError !== null ||
+        value.image !== null
+      ) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+    } else if (value.status === 'valid') {
+      if (value.validationError !== null) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+      if (!plainObject(value.raw)) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+      assertExactKeys(value.raw, ['base64']);
+      decodeStrictBase64(value.raw.base64);
+      parseStoredImage(value.image);
+    } else if (value.image !== null) {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    } else {
+      nonEmptyError(value.validationError);
+    }
+  }
+
+  return value as unknown as VisualBenchmarkPhaseRecord;
+}
+
+function scenarioCompleted(records: readonly VisualBenchmarkPhaseRecord[]): boolean {
+  const proposal = records.find((record) => record.phase === 'proposal');
+  if (!proposal) return false;
+  if (proposal.status !== 'valid' || !proposal.proposal) return true;
+  const image = records.find((record) => record.phase === 'image');
+  return proposal.proposal.decision === 'none'
+    ? image?.status === 'skipped_none'
+    : image !== undefined && image.status !== 'skipped_none';
+}
+
+function parseVisualBenchmarkReportUnchecked(
+  value: unknown,
   dataset: VisualQualityDataset,
   plan: VisualQualityExecutionPlan,
   split: VisualQualitySplit,
-): void {
+): VisualBenchmarkReport {
+  if (!plainObject(value)) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  assertExactKeys(value, [
+    'reportVersion',
+    'status',
+    'verdict',
+    'datasetVersion',
+    'rubricVersion',
+    'visualConfig',
+    'normalizerVersion',
+    'split',
+    'plannedCalls',
+    'costUpperBoundMicroUsd',
+    'generatedAt',
+    'failure',
+    'records',
+    'totalActualCostMicroUsd',
+    'humanReview',
+  ]);
   if (
-    report.reportVersion !== 'visual-enrichment-05a-session-v1' ||
-    report.datasetVersion !== dataset.datasetVersion ||
-    report.rubricVersion !== dataset.rubricVersion ||
-    report.split !== split ||
-    (report.status !== 'running' && report.status !== 'failed') ||
-    report.verdict !== null ||
-    report.humanReview !== null ||
-    report.plannedCalls !== plan.maximumProviderCalls ||
-    report.costUpperBoundMicroUsd !== plan.costUpperBoundMicroUsd ||
-    report.normalizerVersion !== AI_VISUAL_NORMALIZER_VERSION ||
-    !sameClosedValue(report.visualConfig, AI_VISUAL_SERVER_CONFIG) ||
-    !Array.isArray(report.records)
+    value.reportVersion !== 'visual-enrichment-05a-session-v1' ||
+    value.datasetVersion !== dataset.datasetVersion ||
+    value.rubricVersion !== dataset.rubricVersion ||
+    value.split !== split ||
+    (value.status !== 'running' && value.status !== 'failed') ||
+    value.verdict !== null ||
+    value.humanReview !== null ||
+    value.plannedCalls !== plan.maximumProviderCalls ||
+    value.costUpperBoundMicroUsd !== plan.costUpperBoundMicroUsd ||
+    value.normalizerVersion !== AI_VISUAL_NORMALIZER_VERSION ||
+    !sameClosedValue(value.visualConfig, AI_VISUAL_SERVER_CONFIG) ||
+    !Array.isArray(value.records) ||
+    !isCanonicalIsoDate(value.generatedAt) ||
+    (value.status === 'running' ? value.failure !== null : typeof value.failure !== 'string')
   ) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  if (value.status === 'failed') nonEmptyError(value.failure);
+
+  const scenarios = selectVisualQualityScenarios(dataset, split);
+  const records: VisualBenchmarkPhaseRecord[] = [];
+  let currentScenarioIndex = -1;
+  for (const rawRecord of value.records) {
+    if (!plainObject(rawRecord) || typeof rawRecord.scenarioId !== 'string') {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    }
+    const scenarioIndex = scenarios.findIndex((scenario) => scenario.id === rawRecord.scenarioId);
+    if (scenarioIndex < 0 || scenarioIndex < currentScenarioIndex) {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    }
+    if (scenarioIndex > currentScenarioIndex) {
+      if (
+        scenarioIndex !== currentScenarioIndex + 1 ||
+        (currentScenarioIndex >= 0 &&
+          !scenarioCompleted(
+            records.filter((record) => record.scenarioId === scenarios[currentScenarioIndex]!.id),
+          ))
+      ) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+      currentScenarioIndex = scenarioIndex;
+    }
+    const parsed = parseStoredRecord(rawRecord, scenarios[scenarioIndex]!);
+    const sameScenario = records.filter((record) => record.scenarioId === parsed.scenarioId);
+    if (
+      (parsed.phase === 'proposal' && sameScenario.length > 0) ||
+      (parsed.phase === 'image' &&
+        (sameScenario.length !== 1 || sameScenario[0]?.phase !== 'proposal'))
+    ) {
+      throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+    }
+    if (parsed.phase === 'image') {
+      const proposal = sameScenario[0]!;
+      const expectedStatus =
+        proposal.status === 'valid' && proposal.proposal?.decision === 'none'
+          ? 'skipped_none'
+          : proposal.status === 'valid' && proposal.proposal?.decision === 'image'
+            ? 'provider_result'
+            : 'forbidden';
+      if (
+        (expectedStatus === 'skipped_none' && parsed.status !== 'skipped_none') ||
+        (expectedStatus === 'provider_result' && parsed.status === 'skipped_none') ||
+        expectedStatus === 'forbidden'
+      ) {
+        throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+      }
+    }
+    records.push(parsed);
+  }
+  const expectedCost = reportCost(records);
+  if (value.totalActualCostMicroUsd !== expectedCost) {
+    throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
+  }
+  return value as unknown as VisualBenchmarkReport;
+}
+
+export function parseVisualBenchmarkReport(
+  value: unknown,
+  dataset: VisualQualityDataset,
+  plan: VisualQualityExecutionPlan,
+  split: VisualQualitySplit,
+): VisualBenchmarkReport {
+  try {
+    return parseVisualBenchmarkReportUnchecked(value, dataset, plan, split);
+  } catch {
+    // Il checkpoint può contenere output provider non attendibile: non ne
+    // riportiamo mai testo, subject o byte nel messaggio d'errore.
     throw new Error('Checkpoint incompatibile, mutato o già finalizzato.');
   }
 }
@@ -366,7 +669,7 @@ export async function runVisualQualityCli(
 
   const resumePath = parseResume(deps.argv);
   const report: VisualBenchmarkReport = resumePath
-    ? await deps.loadResume(resumePath)
+    ? parseVisualBenchmarkReport(await deps.loadResume(resumePath), dataset, plan, split)
     : {
         reportVersion: 'visual-enrichment-05a-session-v1',
         status: 'running',
@@ -384,7 +687,10 @@ export async function runVisualQualityCli(
         totalActualCostMicroUsd: 0,
         humanReview: null,
       };
-  if (resumePath) assertResumeCompatible(report, dataset, plan, split);
+  if (resumePath) {
+    report.status = 'running';
+    report.failure = null;
+  }
   const done = new Set(report.records.map(completedKey));
   const scenarios = selectVisualQualityScenarios(dataset, split);
   let remaining = 0;
@@ -515,7 +821,7 @@ export function defaultVisualQualityCliDeps(argv = process.argv.slice(2)): Visua
       image: createImageProvider(createOpenAiImageTransport(apiKey)),
     }),
     normalize: normalizeVisualWebp,
-    loadResume: async (path) => JSON.parse(await readFile(path, 'utf8')) as VisualBenchmarkReport,
+    loadResume: async (path) => JSON.parse(await readFile(path, 'utf8')) as unknown,
     writeCheckpoint: atomicWrite,
     now: () => new Date(),
     monotonicMs: () => performance.now(),

@@ -127,6 +127,13 @@ non vengono richiamate; una proposta `none` già valida non può produrre una
 chiamata immagine al resume. Serve una nuova conferma esatta per il solo
 residuo.
 
+Il resume tratta il JSON come `unknown`: forma top-level e record sono chiusi,
+la sequenza proposta→immagine è verificata per scenario, una proposta valida è
+rivalidata dal proprio output raw contro la sorgente congelata e i WebP validi
+sono ricontrollati su base64, MIME, hash, byte, dimensioni e parametri di
+normalizzazione. Qualunque divergenza si ferma prima di conferma, secret,
+provider o nuova scrittura del checkpoint.
+
 ## Smoke layout futuro su DEV
 
 Da eseguire a 1440, 1024, 390 e 320 px sui componenti reali, con rete

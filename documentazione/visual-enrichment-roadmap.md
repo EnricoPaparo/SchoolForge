@@ -1445,6 +1445,9 @@ TTY, due flag espliciti e una frase che include il massimo di chiamate residue.
 Checkpoint atomico `0600` e resume conservano anche output o byte invalidi e
 non ripetono fasi completate; dataset, rubrica, preset, normalizzatore e limiti
 mutati sono rifiutati. Un report incompleto non può produrre PASS.
+Il parser del resume parte da `unknown` e richiude anche i singoli record: ordine
+delle fasi, proposta raw contro la sorgente e identità dei byte WebP vengono
+rivalidati prima di qualunque conferma, secret o provider.
 
 Evidenza, rubrica, blocker, comandi e checklist future:
 [`evidenze/visual-enrichment-05a-benchmark.md`](evidenze/visual-enrichment-05a-benchmark.md).

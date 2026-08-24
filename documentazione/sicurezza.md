@@ -993,6 +993,10 @@ checkpoint possono contenere output grezzi o byte base64: sono quindi locali,
 scritti atomicamente con mode `0600` sotto una directory ignorata da Git e non
 devono essere committati o condivisi senza revisione. Configurazione o dataset
 mutati bloccano il resume; una fase completata non viene addebitata di nuovo.
+Il file di resume non è attendibile: viene letto come `unknown`, validato a
+forma chiusa e confrontato con lo scenario congelato. Un subject, una sequenza
+di fasi o metadati WebP alterati sono rifiutati prima di conferma, lettura del
+secret, costruzione del provider e scrittura di un nuovo checkpoint.
 Nessuna callable, Rule, scrittura Firestore/Storage, deploy o rollout è parte di
 VE-05A.
 
