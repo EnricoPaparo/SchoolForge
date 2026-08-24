@@ -1,11 +1,13 @@
 # VISUAL-ENRICHMENT-05A — infrastruttura benchmark e rollout DEV
 
-> **Stato:** infrastruttura implementata; tre tuning reali eseguiti il
+> **Stato:** infrastruttura implementata; quattro tuning reali eseguiti il
 > 24 agosto 2026. Il primo ha trovato un blocker di lunghezza della proposta; il
 > secondo ha prodotto sei immagini tecnicamente valide ma ha trovato blocker di
 > grounding e sicurezza nell'immagine; il terzo ha confermato la qualità del
-> prompt immagine v2 ma ha trovato un'ultima debolezza strutturale nella scelta
-> dell'ancora. Rollout DEV non eseguito; Gate GVISUAL **PENDING**.
+> prompt immagine v2 ma ha trovato una debolezza strutturale nella scelta
+> dell'ancora; il quarto ha approvato qualità e astensioni e ha isolato un solo
+> falso rifiuto pre-provider, corretto deterministicamente in v3. Tuning
+> superato; holdout e rollout DEV non eseguiti; Gate GVISUAL **PENDING**.
 
 ## Primo tuning reale — blocker rilevato
 
@@ -59,8 +61,9 @@ Il candidato successivo conserva `visual-proposal-01-v2` e introduce il prompt
 immagine `schoolforge-sketch-prompt/v2`. Il subject diventa esaustivo: oggetti,
 sostanze, azioni, istruzioni, relazioni e frecce non nominate devono essere
 omessi. Le sole parole che il provider può scrivere sono estratte dal server
-dalle frasi racchiuse fra caporali `«…»` nel subject, con massimo 8 etichette da
-40 code point; una forma ambigua o duplicata fallisce prima del provider. La
+dalle frasi racchiuse fra caporali `«…»` nel subject, con massimo 8 etichette
+distinte da 40 code point; una ripetizione esatta viene deduplicata e una forma
+ambigua fallisce prima del provider. La
 versione entra nella config chiusa del run, quindi un run prodotto col prompt
 precedente non è un replay compatibile. Serve un nuovo tuning completo; lo
 split holdout resta sigillato fino alla sua review.
@@ -90,6 +93,28 @@ senza marcatori Markdown, deduplicati e limitati allo stesso cap del validator;
 se la lezione non possiede alcun heading valido, lo schema ammette soltanto
 `decision: 'none'`. Il controllo relazionale runtime resta come difesa in
 profondità. Serve un ultimo tuning completo prima di aprire lo split holdout.
+
+## Quarto tuning reale — qualità approvata e nanofix deterministico
+
+La sessione con `visual-proposal-01-v3` e `schoolforge-sketch-prompt/v2` ha
+prodotto 8/8 proposte strutturalmente valide. Cinque immagini sono risultate
+tecnicamente valide e visivamente approvate; due esiti `decision: 'none'` erano
+appropriati. Il costo reale conoscibile è stato 96.645 micro-USD ($0,096645),
+senza scritture Firestore o Storage.
+
+L'unico esito non completato (`VE05A-06`) è fallito prima del provider e a costo
+zero: il subject conteneva due occorrenze esatte di `«Libertà»`, mentre il
+validator trattava erroneamente la ripetizione come un ampliamento
+dell'allowlist. La policy `schoolforge-sketch-prompt/v3` usa ora una semantica
+di insieme: le ripetizioni esatte sono deduplicate, il limite di 8 vale sulle
+stringhe distinte e il subject resta byte per byte invariato. Il vocabolario
+autorizzato non si amplia.
+
+La correzione è deterministica e coperta da test, incluso il limite di otto
+etichette distinte ripetute. Lo stesso scenario aveva già prodotto e superato
+la review visuale nel tuning precedente: non serve ripetere un'altra batteria
+completa a pagamento. Dopo il merge di questo nanofix lo split tuning è
+considerato superato e può aprirsi lo split holdout sigillato.
 
 ## Dataset congelato
 

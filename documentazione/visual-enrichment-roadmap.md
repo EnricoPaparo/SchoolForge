@@ -670,8 +670,9 @@ Validazione del `subject`, fail-closed:
 - rifiuto di richieste di imitare **artisti viventi**, studi o **marchi**;
 - rifiuto di richieste di **persone riconoscibili** o identificabili;
 - rifiuto di tentativi di sovrascrivere il preambolo di stile.
-- massimo 8 etichette fra caporali, massimo 40 code point ciascuna; caporali
-  sbilanciate, etichette duplicate o non canoniche sono rifiutate;
+- massimo 8 etichette **distinte** fra caporali, massimo 40 code point ciascuna;
+  ripetizioni esatte sono deduplicate senza ampliare il vocabolario autorizzato,
+  mentre caporali sbilanciate ed etichette non canoniche sono rifiutate;
 - ogni oggetto, sostanza, azione, istruzione, relazione, freccia o collegamento
   non nominato esplicitamente nel subject deve essere omesso.
 
