@@ -70,7 +70,7 @@ export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v4' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v5' as const;
 
 export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
@@ -692,6 +692,12 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '  non racchiudere alcun testo fra caporali.',
     '  Elenca soltanto relazioni, frecce e collegamenti esplicitamente affermati',
     '  nella lezione: non dedurre nuove causalità, sequenze o rapporti fra elementi.',
+    '  Se l’utilità dipende dal confronto fra più posizioni, stati o istanze, il',
+    '  subject deve indicare un unico riferimento comune, la posizione relativa',
+    '  esatta di ciascun elemento e un modo visivo inequivocabile per distinguerli.',
+    '  Non chiedere punti, marcatori o simboli identici senza associare ciascuno alla',
+    '  propria posizione o a una breve etichetta autorizzata. Se il confronto non',
+    '  entra in questi limiti in modo affidabile, omettilo oppure scegli "none".',
     '- `rationale` — l’utilità didattica: che cosa lo studente capisce meglio',
     `  guardandola, che il solo testo non gli dà. Massimo ${MAX_VISUAL_RATIONALE_CHARS} caratteri.`,
     '- `anchorHeadingText` — il testo ESATTO di un titolo di sezione già presente nel',
@@ -703,6 +709,8 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '- `altText` — la descrizione per chi non vede l’immagine. Deve permettere di',
     '  ricavare la STESSA informazione didattica guardando solo il testo: non è una',
     `  ripetizione della didascalia. Massimo ${MAX_VISUAL_ALT_TEXT_CHARS} caratteri.`,
+    '  Caption e altText non devono affermare un confronto o una relazione che il',
+    '  subject non rende visivamente decidibile senza interpretazioni aggiuntive.',
     '',
     'Vincoli sul contenuto dell’immagine proposta:',
     '- una sola immagine, mai una serie;',

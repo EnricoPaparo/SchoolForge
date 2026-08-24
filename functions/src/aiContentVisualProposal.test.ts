@@ -301,7 +301,7 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v4');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v5');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
   });
@@ -327,6 +327,10 @@ describe('prompt della proposta visuale', () => {
     expect(user).toContain('argomento discorsivo');
     expect(user).toContain('scatole, frecce ed');
     expect(user).toMatch(/soltanto relazioni, frecce e collegamenti esplicitamente affermati/);
+    expect(user).toContain('un unico riferimento comune');
+    expect(user).toContain('la posizione relativa');
+    expect(user).toContain('punti, marcatori o simboli identici');
+    expect(user).toContain('visivamente decidibile');
     const imageBranch = (
       buildVisualProposalOutputSchema(visualRequest()).properties as {
         proposal: { anyOf: Array<{ properties: { subject: { description: string } } }> };
@@ -337,6 +341,11 @@ describe('prompt della proposta visuale', () => {
       'massimo assoluto 8 etichette distinte',
     );
     expect(imageBranch.properties.subject.description).toContain('40 caratteri');
+    expect(imageBranch.properties.subject.description).toContain('riferimento comune');
+    expect(imageBranch.properties.subject.description).toContain('posizione relativa esatta');
+    expect(imageBranch.properties.subject.description).toContain(
+      'distinzione visiva inequivocabile',
+    );
   });
 
   it('delimita il corpo e i metadati come dati', () => {

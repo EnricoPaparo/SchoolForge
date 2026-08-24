@@ -330,7 +330,7 @@ const VISUAL_PROPOSAL_IMAGE_SCHEMA = {
     decision: { type: 'string', enum: ['image'] },
     subject: {
       type: 'string',
-      description: `Descrizione visiva autosufficiente di una o due frasi: massimo assoluto ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode, obiettivo 240-320. Le sole etichette consentite nell'immagine devono essere racchiuse fra caporali «…»: massimo assoluto ${MAX_VISUAL_AUTHORIZED_LABELS} etichette distinte da ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna; se ne servono di più, semplifica o scegli none.`,
+      description: `Descrizione visiva autosufficiente di una o due frasi: massimo assoluto ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode, obiettivo 240-320. Le sole etichette consentite nell'immagine devono essere racchiuse fra caporali «…»: massimo assoluto ${MAX_VISUAL_AUTHORIZED_LABELS} etichette distinte da ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna; se ne servono di più, semplifica o scegli none. Nei confronti indica un riferimento comune, la posizione relativa esatta e una distinzione visiva inequivocabile per ciascun elemento.`,
     },
     rationale: {
       type: 'string',
