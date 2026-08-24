@@ -55,7 +55,11 @@
   "functions": {
     "source": "functions",
     "runtime": "nodejs22",
-    "predeploy": ["pnpm --dir \"$RESOURCE_DIR\" build"]
+    "predeploy": [
+      "pnpm --filter @schoolforge/lesson-contract build",
+      "node functions/scripts/syncLessonContractVendor.mjs",
+      "pnpm --dir \"$RESOURCE_DIR\" build"
+    ]
   },
   "emulators": {
     "auth": {
