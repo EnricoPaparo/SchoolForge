@@ -181,6 +181,20 @@ describe('LessonVisualWorkflowDialog', () => {
     expect(p.previewProposal).toHaveBeenCalledOnce();
   });
 
+  it('dopo un errore iniziale un solo retry esegue una nuova preview', async () => {
+    const p = ports(imageProposal);
+    (p.previewProposal as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('rete'));
+
+    open(p);
+    await screen.findByText('Risposta non ricevuta: verifica o riprova sullo stesso tentativo.');
+    expect(p.previewProposal).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByText('Riprova preview'));
+
+    await screen.findByText('Stima della proposta testuale');
+    expect(p.previewProposal).toHaveBeenCalledTimes(2);
+  });
+
   it('con immagine corrente apre la gestione a costo IA zero e avvia la preview solo su richiesta', async () => {
     const p = ports(imageProposal);
     openWithCurrent(p);

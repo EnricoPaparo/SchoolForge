@@ -128,6 +128,7 @@ export function LessonVisualWorkflowDialog({
       })
       .catch((cause) => {
         if (!active || !mounted.current) return;
+        proposalPreviewPromise.current = null;
         setError(describeVisualWorkflowError(cause));
         setPhase('error');
       });
