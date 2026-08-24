@@ -1,9 +1,8 @@
 # VISUAL-ENRICHMENT — Arricchimento visivo delle lezioni (contratto e roadmap)
 
-> **Stato: VISUAL-ENRICHMENT-00→03 implementati, non distribuiti.**
-> VE-03A, VE-03B e VE-03C sono chiusi: **VISUAL-ENRICHMENT-03 è chiuso.**
-> **VE-04 è suddiviso in A + B** e resta **aperto** fino al merge di entrambe.
-> VE-05 è aperto. **Gate GVISUAL: PENDING.**
+> **Stato: VISUAL-ENRICHMENT-00→04 chiusi nel codice, non distribuiti.**
+> **VE-05A** implementa soltanto l'infrastruttura locale del benchmark, senza
+> generazioni reali né rollout. VE-05 reale resta aperto. **Gate GVISUAL: PENDING.**
 >
 > Chiudere VE-03 non rende disponibile alcuna funzionalità al docente: il
 > backend è completo, ma senza la UI di VE-04 non esiste ancora un percorso per
@@ -865,7 +864,8 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** Suddiviso in **A + B** (vedi sotto). | VE-03 | **Chiuso nel codice, non distribuito.** |
 | **VE-04A** | **Renderer, lettura e riancoraggio.** Split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; lettura dei byte solo in presenza di manifest; fallback e avviso quando l'ancora non esiste più; riancoraggio server-side senza rigenerare; vista studente condizionale; responsive e accessibilità sui componenti reali. | VE-03 | **Implementato, non distribuito.** |
 | **VE-04B** | **Workflow di generazione.** `DialogShell` a stati espliciti; controllo «Arricchisci visivamente»/«Gestisci immagine»; proposta testuale Quality con conferma separata; bind, stima e generazione immagine; anteprima, approvazione, sostituzione, abbandono e rimozione; refresh puntuale autorevole. | VE-04A | **Implementato, non distribuito.** |
-| **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
+| **VISUAL-ENRICHMENT-05A** | **Infrastruttura benchmark locale.** Dodici lezioni congelate (8 tuning + 4 holdout), rubriche separate, runner dry-run fail-closed, provider iniettati, checkpoint atomico/resume e checklist layout/rollout. | VE-04 | **Implementato; nessuna chiamata reale e nessun deploy.** Vedi §15.7. |
+| **VISUAL-ENRICHMENT-05** | **Esecuzione qualitativa e rollout DEV.** Generazioni reali autorizzate separatamente, review umana, tasso di «nessuna immagine utile», peso/tempi/layout shift reali e rollout DEV. | VE-05A | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
 
 > **Suddivisione di VE-03 (decisa in corso d'opera).** VE-03 era un pacchetto
@@ -1431,6 +1431,28 @@ senza normalizzazioni silenziose.
 390 e 320 px — zero overflow orizzontale, figura e didascalia entro la colonna,
 rapporto d'aspetto conservato, dialog dentro il viewport, target touch a 44 px,
 console pulita.
+
+### 15.7 VISUAL-ENRICHMENT-05A — infrastruttura, non benchmark reale
+
+VE-05A congela dodici lezioni complete con SHA-256 dei byte sorgente e split
+anti-overfitting 8 tuning + 4 holdout. Il runner locale riusa richiesta, prompt,
+parser, provider, preset, listini e normalizzatore del runtime; i provider sono
+iniettati nei test e non esistono porte Firebase. Proposta e immagine sono fasi
+separate: `decision: none` registra lo skip e impedisce la chiamata immagine.
+
+Il comando è dry-run per default. Una futura esecuzione reale richiede Node 22,
+TTY, due flag espliciti e una frase che include il massimo di chiamate residue.
+Checkpoint atomico `0600` e resume conservano anche output o byte invalidi e
+non ripetono fasi completate; dataset, rubrica, preset, normalizzatore e limiti
+mutati sono rifiutati. Un report incompleto non può produrre PASS.
+Il parser del resume parte da `unknown` e richiude anche i singoli record: ordine
+delle fasi, proposta raw contro la sorgente e identità dei byte WebP vengono
+rivalidati prima di qualunque conferma, secret o provider.
+
+Evidenza, rubrica, blocker, comandi e checklist future:
+[`evidenze/visual-enrichment-05a-benchmark.md`](evidenze/visual-enrichment-05a-benchmark.md).
+In questa fase non sono avvenuti generazioni OpenAI, letture di secret, accessi
+Firebase, smoke DEV, deploy o rollout. VE-05 e GVISUAL restano aperti.
 
 ---
 

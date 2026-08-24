@@ -12,6 +12,7 @@
     "benchmark:lesson-manual-quality": "node lib/lessonManualQualityCli.js",
     "benchmark:lesson-tune-quality": "node lib/lessonTuneQualityCli.js",
     "benchmark:pool-tune": "node lib/poolTuneCli.js",
+    "benchmark:visual-quality": "node lib/visualQualityCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:firestore-integration": "vitest run --no-file-parallelism src/aiVisualFirestore.integration.test.ts src/aiVisualPromotion.integration.test.ts src/aiVisualLifecycle.integration.test.ts src/aiVisualExport.integration.test.ts src/aiVisualEndToEnd.integration.test.ts src/aiVisualCostModel.integration.test.ts src/aiVisualReanchor.integration.test.ts"

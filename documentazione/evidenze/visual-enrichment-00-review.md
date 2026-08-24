@@ -337,3 +337,16 @@ tecnico senza provider; preview immagine = read-only; conferma = una
 generazione; promote/abandon/remove = lifecycle server già documentato; dopo
 promote/remove una sola `getDoc` puntuale rilegge il `LessonDoc`. Nessun polling,
 listener o costo passivo. VE-05 e rollout DEV restano aperti; GVISUAL PENDING.
+
+## Addendum VE-05A — infrastruttura del benchmark
+
+VE-05A è implementata come infrastruttura locale riproducibile e fail-closed:
+12 lezioni congelate (8 tuning + 4 holdout), hash delle sorgenti, rubriche
+separate proposta/immagine, blocker, dry-run predefinito, provider iniettati e
+checkpoint atomico con resume. Riusa i contratti e i preset runtime, ma non
+chiama callable e non legge o scrive Firestore/Storage. Dettagli ed evidenza:
+[`visual-enrichment-05a-benchmark.md`](visual-enrichment-05a-benchmark.md).
+
+Non è una validazione qualitativa: zero chiamate OpenAI reali, zero immagini
+generate, zero secret locali letti, smoke layout e rollout DEV non eseguiti.
+VE-05 reale resta aperto e Gate GVISUAL resta **PENDING**.
