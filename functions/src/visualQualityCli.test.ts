@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import sharp from 'sharp';
 import type { ContentProvider } from './aiContentProvider.js';
+import { AI_VISUAL_PROPOSAL_PROMPT_VERSION } from './aiContentPrompt.js';
 import type { ImageProvider } from './aiVisualProvider.js';
 import { normalizeVisualWebp } from './aiVisualNormalizer.js';
 import {
@@ -193,6 +194,23 @@ describe('VISUAL-ENRICHMENT-05A CLI fail-closed', () => {
     ]);
     expect(final.status).toBe('awaiting_review');
     expect(final.verdict).toBeNull();
+    expect(final.reportVersion).toBe('visual-enrichment-05a-session-v2');
+    expect(final.proposalPromptVersion).toBe(AI_VISUAL_PROPOSAL_PROMPT_VERSION);
+  });
+
+  it('rifiuta un checkpoint della versione prompt precedente prima di conferma e provider', async () => {
+    const checkpoint = await completedCheckpoint('none');
+    const legacy = checkpoint as unknown as Record<string, unknown>;
+    legacy.reportVersion = 'visual-enrichment-05a-session-v1';
+    delete legacy.proposalPromptVersion;
+    await expectCheckpointRejectedBeforeIo(checkpoint);
+  });
+
+  it('rifiuta un checkpoint con prompt version mutata prima di conferma e provider', async () => {
+    const checkpoint = await completedCheckpoint('none');
+    (checkpoint as unknown as { proposalPromptVersion: string }).proposalPromptVersion =
+      'visual-proposal-01-v1';
+    await expectCheckpointRejectedBeforeIo(checkpoint);
   });
 
   it('conserva raw provider invalido senza chiamare immagine', async () => {

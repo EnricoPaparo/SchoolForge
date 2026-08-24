@@ -34,6 +34,14 @@ import {
 // prompt la dichiara al modello, `aiContentConceptMap` la fa rispettare. Vive
 // quindi lì, così non può divergere fra ciò che si chiede e ciò che si accetta.
 import { CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS } from './aiContentConceptMap.js';
+import {
+  MAX_VISUAL_ALT_TEXT_CHARS,
+  MAX_VISUAL_ANCHOR_HEADING_CHARS,
+  MAX_VISUAL_CAPTION_CHARS,
+  MAX_VISUAL_RATIONALE_CHARS,
+  MAX_VISUAL_REASON_CHARS,
+  MAX_VISUAL_SUBJECT_CHARS,
+} from './aiContentVisualProposal.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
 export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
@@ -60,7 +68,7 @@ export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v1' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v2' as const;
 
 export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
@@ -652,26 +660,30 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     'Se decision = "none", compila SOLO `reason`: spiega in poche righe perché',
     'un’illustrazione non aiuterebbe questa lezione. È il testo che il docente legge',
     'per fidarsi della scelta, quindi deve dire qualcosa di specifico su QUESTA',
-    'lezione, non una formula generica.',
+    `lezione, non una formula generica. Massimo ${MAX_VISUAL_REASON_CHARS} caratteri.`,
     '',
     'Se decision = "image", compila SOLO `subject`, `rationale`, `anchorHeadingText`,',
     '`caption` e `altText`:',
     '',
-    '- `subject` — che cosa va raffigurato, in una descrizione autosufficiente e',
-    '  concreta. Sarà l’UNICO testo variabile passato al generatore di immagini, che',
-    '  non vedrà la lezione: ciò che non scrivi qui non esiste. Vietato chiedere',
+    `- \`subject\` — MASSIMO ASSOLUTO ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode,`,
+    '  spazi inclusi. Mira a 240–320 caratteri e a una o due frasi compatte. Descrivi',
+    '  soltanto gli elementi visivi indispensabili e le loro relazioni: non riassumere',
+    '  la lezione, non motivare qui la scelta e non ripetere caption o altText. Deve',
+    '  restare una descrizione autosufficiente e concreta: sarà l’UNICO testo variabile',
+    '  passato al generatore di immagini, che non vedrà la lezione. Prima di rispondere,',
+    `  conta i caratteri e riscrivi il campo se supera ${MAX_VISUAL_SUBJECT_CHARS}. Vietato chiedere`,
     '  stili di autori, studi o marchi, persone riconoscibili o identificabili,',
     '  loghi, firme, watermark o testo esteso dentro l’immagine.',
     '- `rationale` — l’utilità didattica: che cosa lo studente capisce meglio',
-    '  guardandola, che il solo testo non gli dà.',
+    `  guardandola, che il solo testo non gli dà. Massimo ${MAX_VISUAL_RATIONALE_CHARS} caratteri.`,
     '- `anchorHeadingText` — il testo ESATTO di un titolo di sezione già presente nel',
     '  CORPO_LEZIONE, dopo il quale l’immagine va collocata. Copialo alla lettera;',
-    '  non inventarne uno nuovo e non riformularlo.',
+    `  non inventarne uno nuovo e non riformularlo. Massimo ${MAX_VISUAL_ANCHOR_HEADING_CHARS} caratteri.`,
     '- `caption` — la didascalia visibile. Deve aggiungere informazione, non ripetere',
-    '  il titolo della sezione.',
+    `  il titolo della sezione. Massimo ${MAX_VISUAL_CAPTION_CHARS} caratteri.`,
     '- `altText` — la descrizione per chi non vede l’immagine. Deve permettere di',
     '  ricavare la STESSA informazione didattica guardando solo il testo: non è una',
-    '  ripetizione della didascalia.',
+    `  ripetizione della didascalia. Massimo ${MAX_VISUAL_ALT_TEXT_CHARS} caratteri.`,
     '',
     'Vincoli sul contenuto dell’immagine proposta:',
     '- una sola immagine, mai una serie;',

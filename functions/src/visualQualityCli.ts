@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { actualCostMicroUsd } from './aiCorrectionCost.js';
 import { resolveContentModel } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
+import { AI_VISUAL_PROPOSAL_PROMPT_VERSION } from './aiContentPrompt.js';
 import {
   MAX_VISUAL_BYTES,
   assertVisualProposalMatchesRequest,
@@ -75,11 +76,12 @@ export interface VisualBenchmarkPhaseRecord {
 }
 
 export interface VisualBenchmarkReport {
-  reportVersion: 'visual-enrichment-05a-session-v1';
+  reportVersion: 'visual-enrichment-05a-session-v2';
   status: 'running' | 'failed' | 'awaiting_review';
   verdict: null;
   datasetVersion: string;
   rubricVersion: string;
+  proposalPromptVersion: typeof AI_VISUAL_PROPOSAL_PROMPT_VERSION;
   visualConfig: typeof AI_VISUAL_SERVER_CONFIG;
   normalizerVersion: typeof AI_VISUAL_NORMALIZER_VERSION;
   split: VisualQualitySplit;
@@ -396,6 +398,7 @@ function parseVisualBenchmarkReportUnchecked(
     'verdict',
     'datasetVersion',
     'rubricVersion',
+    'proposalPromptVersion',
     'visualConfig',
     'normalizerVersion',
     'split',
@@ -408,9 +411,10 @@ function parseVisualBenchmarkReportUnchecked(
     'humanReview',
   ]);
   if (
-    value.reportVersion !== 'visual-enrichment-05a-session-v1' ||
+    value.reportVersion !== 'visual-enrichment-05a-session-v2' ||
     value.datasetVersion !== dataset.datasetVersion ||
     value.rubricVersion !== dataset.rubricVersion ||
+    value.proposalPromptVersion !== AI_VISUAL_PROPOSAL_PROMPT_VERSION ||
     value.split !== split ||
     (value.status !== 'running' && value.status !== 'failed') ||
     value.verdict !== null ||
@@ -671,11 +675,12 @@ export async function runVisualQualityCli(
   const report: VisualBenchmarkReport = resumePath
     ? parseVisualBenchmarkReport(await deps.loadResume(resumePath), dataset, plan, split)
     : {
-        reportVersion: 'visual-enrichment-05a-session-v1',
+        reportVersion: 'visual-enrichment-05a-session-v2',
         status: 'running',
         verdict: null,
         datasetVersion: dataset.datasetVersion,
         rubricVersion: dataset.rubricVersion,
+        proposalPromptVersion: AI_VISUAL_PROPOSAL_PROMPT_VERSION,
         visualConfig: AI_VISUAL_SERVER_CONFIG,
         normalizerVersion: AI_VISUAL_NORMALIZER_VERSION,
         split,
