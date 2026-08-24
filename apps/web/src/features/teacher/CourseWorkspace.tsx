@@ -22,6 +22,7 @@ import {
   IconPanelLeft,
   IconPencil,
   IconPlus,
+  IconSparkles,
   IconTriangleAlert,
   IconTrash,
   IconUpload,
@@ -340,6 +341,7 @@ export function CourseWorkspace({
   const programPdfBusyRef = useRef(false);
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [visualDialogOpen, setVisualDialogOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -473,6 +475,10 @@ export function CourseWorkspace({
       : null;
   const selectedUda =
     selection.kind === 'uda' ? (tree?.udas.find((u) => u.dir === selection.udaDir) ?? null) : null;
+
+  useEffect(() => {
+    setVisualDialogOpen(false);
+  }, [selectedLesson?.id]);
 
   // Guards a navigation that would discard any unsaved edit (pool / content /
   // metadata): when dirty, hold the action back behind a confirm; else run it.
@@ -1390,6 +1396,11 @@ export function CourseWorkspace({
         : contentDirty
           ? 'Salva prima le modifiche al contenuto: la mappa si genera dal testo salvato.'
           : null;
+  const hasVisualAnchorHeading =
+    lessonContent !== null &&
+    parseLessonMarkdown(lessonContent).headings.some(
+      (heading) => heading.level === 2 || heading.level === 3,
+    );
   const visualBlockedReason: string | null = lessonLoading
     ? 'Attendi il caricamento del contenuto.'
     : lessonError
@@ -1402,7 +1413,11 @@ export function CourseWorkspace({
             ? 'Salva prima le modifiche al contenuto.'
             : !card.activeImportId
               ? 'L’importazione attiva non è disponibile.'
-              : null;
+              : !hasVisualAnchorHeading
+                ? 'Aggiungi almeno un titolo H2 o H3 al contenuto salvato.'
+                : visualDialogOpen
+                  ? 'Operazione visuale in corso.'
+                  : null;
 
   async function handleSaveConceptMap(lesson: LessonItem, markdown: string): Promise<void> {
     if (!card.activeImportId) throw new Error('Importazione non disponibile.');
@@ -2165,6 +2180,34 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
+                    aria-label="Arricchisci"
+                    aria-describedby={
+                      visualBlockedReason
+                        ? `visual-action-disabled-${selectedLesson.id}`
+                        : undefined
+                    }
+                    title={visualBlockedReason ?? undefined}
+                    disabled={visualBlockedReason !== null}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      selectTab('contenuto');
+                      setVisualDialogOpen(true);
+                    }}
+                  >
+                    <IconSparkles size={15} />
+                    Arricchisci
+                    {visualBlockedReason && (
+                      <span
+                        id={`visual-action-disabled-${selectedLesson.id}`}
+                        className={styles.srOnly}
+                      >
+                        {visualBlockedReason}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     className={styles.menuDanger}
                     onClick={() =>
                       openDialog({ kind: 'deleteLesson', lessonId: selectedLesson.id })
@@ -2278,7 +2321,11 @@ export function CourseWorkspace({
               conceptMapCallables={conceptMapCallables}
               onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
               onConceptMapDirtyChange={setConceptMapDirty}
-              visualBlockedReason={visualBlockedReason}
+              visualDialogOpen={visualDialogOpen}
+              onCloseVisualDialog={() => {
+                setVisualDialogOpen(false);
+                menuTriggerRef.current?.focus();
+              }}
             />
           )}
         </div>
@@ -2780,7 +2827,8 @@ function LessonDetail({
   conceptMapCallables,
   onSaveConceptMap,
   onConceptMapDirtyChange,
-  visualBlockedReason,
+  visualDialogOpen,
+  onCloseVisualDialog,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2814,7 +2862,8 @@ function LessonDetail({
   conceptMapCallables: AiConceptMapCallables;
   onSaveConceptMap: (conceptMapMarkdown: string) => Promise<void>;
   onConceptMapDirtyChange: (dirty: boolean) => void;
-  visualBlockedReason: string | null;
+  visualDialogOpen: boolean;
+  onCloseVisualDialog: () => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -2833,7 +2882,6 @@ function LessonDetail({
   const [localVisual, setLocalVisual] = useState<LessonVisualPrivateManifest | null | undefined>(
     undefined,
   );
-  const [visualDialogOpen, setVisualDialogOpen] = useState(false);
   const visualPorts = useMemo(() => createVisualWorkflowPorts(functions), []);
   const detailMounted = useRef(true);
   useEffect(() => {
@@ -2847,7 +2895,6 @@ function LessonDetail({
   // alla lezione su cui è stato applicato.
   useEffect(() => {
     setLocalVisual(undefined);
-    setVisualDialogOpen(false);
     setReanchoring(false);
   }, [lesson.id]);
 
@@ -2925,13 +2972,6 @@ function LessonDetail({
         .map((heading, index) => ({ text: heading.text, index })),
     [reanchorHeadings],
   );
-  const effectiveVisualBlockedReason =
-    visualBlockedReason ??
-    (visualHeadings.length === 0
-      ? 'Aggiungi almeno un titolo H2 o H3 al contenuto salvato.'
-      : visualDialogOpen
-        ? 'Operazione visuale in corso.'
-        : null);
   const visualProposalRequest = useMemo(
     () =>
       content && lessonAi.udaContext
@@ -3055,26 +3095,6 @@ function LessonDetail({
         aria-labelledby="tab-contenuto"
         hidden={activeTab !== 'contenuto'}
       >
-        {activeTab === 'contenuto' && (
-          <div className={styles.visualActions}>
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={effectiveVisualBlockedReason !== null}
-              aria-describedby={
-                effectiveVisualBlockedReason ? `visual-disabled-${lesson.id}` : undefined
-              }
-              onClick={() => setVisualDialogOpen(true)}
-            >
-              {manifest ? 'Gestisci immagine' : 'Arricchisci visivamente'}
-            </button>
-            {effectiveVisualBlockedReason && (
-              <span id={`visual-disabled-${lesson.id}`} className={styles.disabledReason}>
-                {effectiveVisualBlockedReason}
-              </span>
-            )}
-          </div>
-        )}
         {editingContent ? (
           // Mounted whenever editing (even if the tab is hidden) so the draft
           // survives switching to another tab of the same lesson.
@@ -3157,7 +3177,7 @@ function LessonDetail({
                   }
                   ports={visualPorts}
                   onRefresh={refreshVisual}
-                  onClose={() => setVisualDialogOpen(false)}
+                  onClose={onCloseVisualDialog}
                 />
               )}
               {reanchoring && manifest && (

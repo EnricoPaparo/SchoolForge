@@ -120,6 +120,15 @@ import { isStorageNotFound, type BucketLike } from './repositoryGatewayCore.js';
 /** Secret Firebase esistente. Il binding è presente solo su `aiVisualGenerate`. */
 export const AI_VISUAL_OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
+/**
+ * Cloud Run deve accettare il trasporto delle callable Firebase; la vera
+ * autorizzazione resta owner-only in `requireOwner`, all'inizio degli handler.
+ */
+const VISUAL_CALLABLE_OPTIONS = {
+  region: SCHOOLFORGE_FUNCTION_REGION,
+  invoker: 'public' as const,
+};
+
 /** Collezioni server-only: nessuna regola le apre in scrittura al client. */
 const VISUAL_CANDIDATES = 'aiVisualCandidates';
 const VISUAL_PROMOTIONS = 'aiVisualPromotions';
@@ -534,13 +543,13 @@ async function handleVisualRequest(
 }
 
 /** Preview read-only: nessun secret binding, nessuna scrittura e nessun provider. */
-export const aiVisualPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, (request) =>
+export const aiVisualPreview = onCall(VISUAL_CALLABLE_OPTIONS, (request) =>
   handleVisualRequest(request, 'preview'),
 );
 
 /** Generazione reale: unica callable con binding del secret Firebase esistente. */
 export const aiVisualGenerate = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION, secrets: [AI_VISUAL_OPENAI_API_KEY] },
+  { ...VISUAL_CALLABLE_OPTIONS, secrets: [AI_VISUAL_OPENAI_API_KEY] },
   (request) => handleVisualRequest(request, 'generate'),
 );
 
@@ -670,10 +679,7 @@ async function handleBindCandidate(request: CallableRequest<unknown>): Promise<u
  * Prepara un candidato: lega `requestId` a una lezione **prima** che l'immagine
  * esista. Nessun secret, nessun provider, nessuna spesa.
  */
-export const aiVisualBindCandidate = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION },
-  handleBindCandidate,
-);
+export const aiVisualBindCandidate = onCall(VISUAL_CALLABLE_OPTIONS, handleBindCandidate);
 
 // ─── VE-03A — promozione del candidato approvato ─────────────────────────────
 
@@ -1037,7 +1043,7 @@ async function handlePromoteVisual(request: CallableRequest<unknown>): Promise<u
 }
 
 /** Approvazione: nessun secret, nessun provider, nessuna spesa. */
-export const aiVisualPromote = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, handlePromoteVisual);
+export const aiVisualPromote = onCall(VISUAL_CALLABLE_OPTIONS, handlePromoteVisual);
 
 // ─── VE-03B: completamento, rimozione e abbandono ───────────────────────────
 
@@ -1274,10 +1280,7 @@ async function handleSetLessonCompleted(request: CallableRequest<unknown>): Prom
 }
 
 /** Unica mutazione autorevole dello stato svolta; nessun secret/provider. */
-export const setLessonCompleted = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION },
-  handleSetLessonCompleted,
-);
+export const setLessonCompleted = onCall(VISUAL_CALLABLE_OPTIONS, handleSetLessonCompleted);
 
 export interface RemovalRecoveryDoc extends LessonLifecycleInput {
   ownerUid: string;
@@ -1541,10 +1544,7 @@ async function handleRemoveLessonVisual(request: CallableRequest<unknown>): Prom
   }
 }
 
-export const aiVisualRemove = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION },
-  handleRemoveLessonVisual,
-);
+export const aiVisualRemove = onCall(VISUAL_CALLABLE_OPTIONS, handleRemoveLessonVisual);
 
 export async function cleanupVisualArtifactsForDelete(params: {
   db: Firestore;
@@ -1720,7 +1720,7 @@ async function handleCleanupVisualArtifactsForDelete(
 }
 
 export const aiVisualCleanupForDelete = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION },
+  VISUAL_CALLABLE_OPTIONS,
   handleCleanupVisualArtifactsForDelete,
 );
 
@@ -1812,7 +1812,7 @@ async function handleAbandonVisual(request: CallableRequest<unknown>): Promise<u
   }
 }
 
-export const aiVisualAbandon = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, handleAbandonVisual);
+export const aiVisualAbandon = onCall(VISUAL_CALLABLE_OPTIONS, handleAbandonVisual);
 
 export async function cleanupDeletedVisualRun(params: {
   opaqueRunId: string;
@@ -1997,10 +1997,7 @@ async function handleExportLessonVisuals(request: CallableRequest<unknown>): Pro
  * ne emette, e introdurne uno solo qui creerebbe una traccia asimmetrica che
  * racconta metà della stessa azione.
  */
-export const aiVisualExportBatch = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION },
-  handleExportLessonVisuals,
-);
+export const aiVisualExportBatch = onCall(VISUAL_CALLABLE_OPTIONS, handleExportLessonVisuals);
 
 // ─── VE-04A — riancoraggio ────────────────────────────────────────────────────
 
@@ -2146,7 +2143,4 @@ async function handleReanchorLessonVisual(request: CallableRequest<unknown>): Pr
 }
 
 /** Riancoraggio: owner-only, nessun secret, nessun provider, nessuno Storage. */
-export const aiVisualReanchor = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION },
-  handleReanchorLessonVisual,
-);
+export const aiVisualReanchor = onCall(VISUAL_CALLABLE_OPTIONS, handleReanchorLessonVisual);

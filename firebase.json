@@ -56,7 +56,7 @@
     "source": "functions",
     "runtime": "nodejs22",
     "predeploy": [
-      "pnpm --filter @schoolforge/lesson-contract build",
+      "pnpm --dir packages/lesson-contract build",
       "node functions/scripts/syncLessonContractVendor.mjs",
       "pnpm --dir \"$RESOURCE_DIR\" build"
     ]

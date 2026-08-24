@@ -309,6 +309,11 @@ function clickMenuAction(
   fireEvent.click(screen.getByRole('menuitem', { name: action }));
 }
 
+function openMenuAction(context: 'Azioni corso' | 'Azioni UDA' | 'Azioni lezione', action: string) {
+  fireEvent.click(screen.getByRole('button', { name: context }));
+  return screen.getByRole('menuitem', { name: action });
+}
+
 describe('CourseWorkspace — loading', () => {
   it('loads UDA and lessons once for the selected course only', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
@@ -404,7 +409,8 @@ describe('CourseWorkspace — selection', () => {
     await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Visuale' }));
 
-    const control = await screen.findByRole('button', { name: 'Arricchisci visivamente' });
+    await screen.findByRole('button', { name: 'Azioni lezione' });
+    const control = openMenuAction('Azioni lezione', 'Arricchisci');
     expect(control.hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('Attendi il caricamento del contenuto.')).toBeTruthy();
 
@@ -421,10 +427,9 @@ describe('CourseWorkspace — selection', () => {
     renderWorkspace();
     await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Vuota' }));
-    expect(await screen.findByText('La lezione deve avere un contenuto salvato.')).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Arricchisci visivamente' }).hasAttribute('disabled'),
-    ).toBe(true);
+    await screen.findByRole('button', { name: 'Azioni lezione' });
+    expect(openMenuAction('Azioni lezione', 'Arricchisci').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('La lezione deve avere un contenuto salvato.')).toBeTruthy();
   });
 
   it('non apre workflow dalla scheda Contenuto e richiede heading H2/H3 canonici', async () => {
@@ -434,7 +439,8 @@ describe('CourseWorkspace — selection', () => {
     renderWorkspace();
     await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Visuale' }));
-    const control = await screen.findByRole('button', { name: 'Arricchisci visivamente' });
+    await screen.findByRole('button', { name: 'Azioni lezione' });
+    const control = openMenuAction('Azioni lezione', 'Arricchisci');
     expect(control.hasAttribute('disabled')).toBe(true);
     expect(screen.getByText(/almeno un titolo H2 o H3/)).toBeTruthy();
     expect(screen.queryByText('Stima della proposta testuale')).toBeNull();
@@ -482,7 +488,7 @@ describe('CourseWorkspace — selection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByText(/impossibile caricare il contenuto/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Arricchisci visivamente' })).toBeTruthy();
+    expect(openMenuAction('Azioni lezione', 'Arricchisci')).toBeTruthy();
   });
 });
 
@@ -522,9 +528,9 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
 
   it('apre il percorso proposta dal controllo reale e restituisce il focus alla chiusura', async () => {
     await openVisualLesson(null);
-    const trigger = screen.getByRole('button', { name: 'Arricchisci visivamente' });
+    const trigger = screen.getByRole('button', { name: 'Azioni lezione' });
     trigger.focus();
-    fireEvent.click(trigger);
+    clickMenuAction('Azioni lezione', 'Arricchisci');
 
     await screen.findByText('Stima della proposta testuale');
     expect(mockVisualPreviewProposal).toHaveBeenCalledOnce();
@@ -540,9 +546,9 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     expect(screen.getByTestId('md').dataset.visual).toBe('present');
     expect(screen.getByTestId('md').dataset.visualCaption).toBe(current.caption);
 
-    const trigger = screen.getByRole('button', { name: 'Gestisci immagine' });
+    const trigger = screen.getByRole('button', { name: 'Azioni lezione' });
     trigger.focus();
-    fireEvent.click(trigger);
+    clickMenuAction('Azioni lezione', 'Arricchisci');
     await screen.findByRole('heading', { name: 'Immagine attuale' });
     expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
     expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
@@ -564,9 +570,7 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
       lessonId: 'l1',
     });
     expect(mockReadAuthoritativePrivateVisual).toHaveBeenCalledOnce();
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Arricchisci visivamente' })).toBeTruthy(),
-    );
+    expect(openMenuAction('Azioni lezione', 'Arricchisci')).toBeTruthy();
     expect(screen.getByTestId('md').dataset.visual).toBe('absent');
     expect(screen.getByTestId('md').dataset.visualBytes).toBe('');
     expect(document.activeElement).toBe(trigger);
@@ -1713,9 +1717,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     await openLesson();
     clickMenuAction('Azioni lezione', 'Modifica contenuto');
     const textarea = screen.getByLabelText('Corpo Markdown') as HTMLTextAreaElement;
-    expect(
-      screen.getByRole('button', { name: 'Arricchisci visivamente' }).hasAttribute('disabled'),
-    ).toBe(true);
+    expect(openMenuAction('Azioni lezione', 'Arricchisci').hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('Termina prima la modifica del contenuto.')).toBeTruthy();
     expect(textarea.value).toBe('Corpo lezione A.');
     fireEvent.change(textarea, { target: { value: 'Modificato.' } });

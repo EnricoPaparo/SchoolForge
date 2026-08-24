@@ -30,7 +30,7 @@ describe('Functions deployment package', () => {
     const functions = firebase.functions as { predeploy?: unknown };
 
     expect(functions.predeploy).toEqual([
-      'pnpm --filter @schoolforge/lesson-contract build',
+      'pnpm --dir packages/lesson-contract build',
       'node functions/scripts/syncLessonContractVendor.mjs',
       'pnpm --dir "$RESOURCE_DIR" build',
     ]);
