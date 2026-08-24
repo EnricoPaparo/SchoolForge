@@ -25,6 +25,8 @@ import {
   MAX_VISUAL_RATIONALE_CHARS,
   MAX_VISUAL_REASON_CHARS,
   MAX_VISUAL_SUBJECT_CHARS,
+  codePointLength,
+  extractAnchorableLessonHeadings,
 } from './aiContentVisualProposal.js';
 import type { OpenAiStructuredRequest } from './openAiGrader.js';
 
@@ -347,16 +349,57 @@ const VISUAL_PROPOSAL_IMAGE_SCHEMA = {
   },
 };
 
-export const VISUAL_PROPOSAL_OUTPUT_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['proposal'],
-  properties: {
-    proposal: {
-      anyOf: [VISUAL_PROPOSAL_NONE_SCHEMA, VISUAL_PROPOSAL_IMAGE_SCHEMA],
+/**
+ * Variante request-specific della proposta visuale.
+ *
+ * `anchorHeadingText` non e piu una stringa libera affidata alla sola
+ * istruzione testuale: lo Structured Output riceve l'elenco **esatto** degli
+ * H2/H3 realmente ancorabili nel corpo. In questo modo il provider non puo
+ * aggiungere i marcatori Markdown (`##`), cambiare maiuscole o parafrasare il
+ * titolo. Il controllo relazionale runtime resta autorevole come difesa in
+ * profondita.
+ *
+ * Gli heading duplicati testualmente compaiono una volta sola nell'`enum`: la
+ * scelta dell'occorrenza avviene piu tardi, nel workflow editoriale. Gli heading
+ * oltre il limite del campo sono esclusi perche nessun output valido potrebbe
+ * comunque contenerli. Se non esiste alcun heading ancorabile, lo schema rende
+ * rappresentabile soltanto l'esito `none`.
+ */
+export function buildVisualProposalOutputSchema(
+  request: Extract<AiContentRequest, { kind: 'visual_proposal' }>,
+): Record<string, unknown> {
+  const anchorHeadingTexts = [
+    ...new Set(
+      extractAnchorableLessonHeadings(request.lessonBody)
+        .map((heading) => heading.text)
+        .filter((text) => codePointLength(text) <= MAX_VISUAL_ANCHOR_HEADING_CHARS),
+    ),
+  ];
+  const imageSchema = {
+    ...VISUAL_PROPOSAL_IMAGE_SCHEMA,
+    properties: {
+      ...VISUAL_PROPOSAL_IMAGE_SCHEMA.properties,
+      anchorHeadingText: {
+        ...VISUAL_PROPOSAL_IMAGE_SCHEMA.properties.anchorHeadingText,
+        enum: anchorHeadingTexts,
+        description: `Scegli uno dei testi esatti ammessi, senza marcatori Markdown. Massimo ${MAX_VISUAL_ANCHOR_HEADING_CHARS} caratteri Unicode.`,
+      },
     },
-  },
-};
+  };
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['proposal'],
+    properties: {
+      proposal: {
+        anyOf:
+          anchorHeadingTexts.length === 0
+            ? [VISUAL_PROPOSAL_NONE_SCHEMA]
+            : [VISUAL_PROPOSAL_NONE_SCHEMA, imageSchema],
+      },
+    },
+  };
+}
 
 export const CONCEPT_MAP_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -391,7 +434,7 @@ export function buildContentStructuredRequest(
       : request.kind === 'concept_map'
         ? CONCEPT_MAP_OUTPUT_SCHEMA
         : request.kind === 'visual_proposal'
-          ? VISUAL_PROPOSAL_OUTPUT_SCHEMA
+          ? buildVisualProposalOutputSchema(request)
           : LESSON_OUTPUT_SCHEMA;
   return {
     model,

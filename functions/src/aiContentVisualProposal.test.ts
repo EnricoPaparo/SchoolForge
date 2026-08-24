@@ -41,9 +41,9 @@ import {
   buildVisualProposalPrompt,
 } from './aiContentPrompt.js';
 import {
-  VISUAL_PROPOSAL_OUTPUT_SCHEMA,
   VISUAL_PROPOSAL_OUTPUT_TOKENS,
   buildContentStructuredRequest,
+  buildVisualProposalOutputSchema,
   resolveMaxOutputTokens,
 } from './aiContentPayload.js';
 import { parseStoredRunDocument, serializeRun } from './aiContentRunDoc.js';
@@ -289,7 +289,7 @@ describe('integrazione del kind nel core', () => {
   it('la richiesta trasmessa usa schema e prompt della proposta visuale', () => {
     const built = buildContentStructuredRequest(visualRequest(), 'gpt-5.6-luna');
     expect(built.max_output_tokens).toBe(VISUAL_PROPOSAL_OUTPUT_TOKENS);
-    expect(built.text.format.schema).toEqual(VISUAL_PROPOSAL_OUTPUT_SCHEMA);
+    expect(built.text.format.schema).toEqual(buildVisualProposalOutputSchema(visualRequest()));
     expect(built.store).toBe(false);
     expect(JSON.stringify(built)).toContain('CORPO_LEZIONE');
   });
@@ -299,7 +299,7 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v2');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v3');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
   });
@@ -324,7 +324,7 @@ describe('prompt della proposta visuale', () => {
     expect(user).toContain('fra caporali «…»');
     expect(user).toMatch(/soltanto relazioni, frecce e collegamenti esplicitamente affermati/);
     const imageBranch = (
-      VISUAL_PROPOSAL_OUTPUT_SCHEMA.properties as {
+      buildVisualProposalOutputSchema(visualRequest()).properties as {
         proposal: { anyOf: Array<{ properties: { subject: { description: string } } }> };
       }
     ).proposal.anyOf[1]!;
@@ -964,7 +964,7 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
 // ─── REVIEW-FIX 1: schema strict con envelope ────────────────────────────────
 
 describe('schema trasmesso al provider — strict compatibile', () => {
-  const schema = VISUAL_PROPOSAL_OUTPUT_SCHEMA as {
+  const schema = buildVisualProposalOutputSchema(visualRequest()) as {
     type: string;
     additionalProperties: boolean;
     required: string[];
@@ -1040,6 +1040,61 @@ describe('schema trasmesso al provider — strict compatibile', () => {
       expect(image!.properties[field]!.description).toContain(`${limit} caratteri Unicode`);
     }
     expect(JSON.stringify(schema)).not.toContain('maxLength');
+  });
+
+  it('chiude anchorHeadingText sugli heading H2/H3 esatti della richiesta', () => {
+    const request = visualRequest({
+      lessonBody: [
+        '# Titolo lezione',
+        '',
+        "## Prima dell'attività",
+        '',
+        '### **Durante** l’esperimento',
+        '',
+        "## Prima dell'attività",
+        '',
+        '#### Dettaglio non ancorabile',
+      ].join('\n'),
+    });
+    const requestSchema = buildVisualProposalOutputSchema(request) as {
+      properties: {
+        proposal: {
+          anyOf: Array<{
+            properties: { anchorHeadingText?: { enum?: string[] } };
+          }>;
+        };
+      };
+    };
+    const imageBranch = requestSchema.properties.proposal.anyOf[1]!;
+    expect(imageBranch.properties.anchorHeadingText?.enum).toEqual([
+      "Prima dell'attività",
+      '**Durante** l’esperimento',
+    ]);
+    expect(imageBranch.properties.anchorHeadingText?.enum).not.toContain("## Prima dell'attività");
+  });
+
+  it('senza H2/H3 rende rappresentabile soltanto decision none', () => {
+    const requestSchema = buildVisualProposalOutputSchema(
+      visualRequest({ lessonBody: '# Solo titolo\n\nTesto senza sezioni.' }),
+    ) as {
+      properties: { proposal: { anyOf: Array<{ properties: Record<string, unknown> }> } };
+    };
+    expect(requestSchema.properties.proposal.anyOf).toHaveLength(1);
+    expect(Object.keys(requestSchema.properties.proposal.anyOf[0]!.properties).sort()).toEqual([
+      'decision',
+      'reason',
+    ]);
+  });
+
+  it('esclude dall’enum gli heading oltre il limite del campo', () => {
+    const requestSchema = buildVisualProposalOutputSchema(
+      visualRequest({
+        lessonBody: `## ${'a'.repeat(MAX_VISUAL_ANCHOR_HEADING_CHARS + 1)}\n\nTesto.`,
+      }),
+    ) as {
+      properties: { proposal: { anyOf: unknown[] } };
+    };
+    expect(requestSchema.properties.proposal.anyOf).toHaveLength(1);
   });
 });
 

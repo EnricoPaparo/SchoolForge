@@ -68,7 +68,7 @@ export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v2' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v3' as const;
 
 export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
@@ -687,7 +687,8 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '- `rationale` — l’utilità didattica: che cosa lo studente capisce meglio',
     `  guardandola, che il solo testo non gli dà. Massimo ${MAX_VISUAL_RATIONALE_CHARS} caratteri.`,
     '- `anchorHeadingText` — il testo ESATTO di un titolo di sezione già presente nel',
-    '  CORPO_LEZIONE, dopo il quale l’immagine va collocata. Copialo alla lettera;',
+    '  CORPO_LEZIONE, dopo il quale l’immagine va collocata. Sceglilo esclusivamente',
+    '  fra i valori ammessi dallo schema e copialo senza marcatori Markdown (`#`);',
     `  non inventarne uno nuovo e non riformularlo. Massimo ${MAX_VISUAL_ANCHOR_HEADING_CHARS} caratteri.`,
     '- `caption` — la didascalia visibile. Deve aggiungere informazione, non ripetere',
     `  il titolo della sezione. Massimo ${MAX_VISUAL_CAPTION_CHARS} caratteri.`,

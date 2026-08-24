@@ -937,6 +937,13 @@ nessun campo nullable, nessuna proprietà condivisa fra i rami: un «nessuna
 immagine» con la didascalia già scritta non è rappresentabile. Nessun prompt
 immagine compare nell'output: quel prompt lo comporrà il server in VE-03.
 
+Per la richiesta concreta, `anchorHeadingText` non è una stringa libera: lo
+schema inserisce un `enum` con i testi sorgente esatti degli H2/H3 realmente
+ancorabili. I duplicati testuali compaiono una volta sola e gli heading oltre il
+cap del campo sono esclusi; senza heading validi il ramo `image` non è
+rappresentabile. Questo impedisce strutturalmente marcatori `##`, parafrasi e
+variazioni di maiuscole prima ancora del validator relazionale.
+
 **Limiti dei campi, in code point Unicode** — non in unità UTF-16, così
 un'emoji fuori dal BMP conta una volta sola:
 
@@ -968,7 +975,7 @@ tentativo di injection sono esattamente il posto in cui quel testo non deve
 essere replicato: viene riportata solo la categoria.
 
 **Prompt.** Versione dedicata `AI_VISUAL_PROPOSAL_PROMPT_VERSION =
-'visual-proposal-01-v2'`, distinta da quelle di pool, lezione e mappa, che non
+'visual-proposal-01-v3'`, distinta da quelle di pool, lezione e mappa, che non
 sono state toccate. Il prompt tratta metadati e corpo come dati, delimita
 `lessonBody` con `fence()`, chiede una sola immagine e testo minimo al suo
 interno, vieta i concetti assenti, chiede caption e alt text sostanziali e
