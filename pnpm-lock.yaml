@@ -91,8 +91,8 @@ importers:
   functions:
     dependencies:
       '@schoolforge/lesson-contract':
-        specifier: workspace:*
-        version: link:../packages/lesson-contract
+        specifier: file:./vendor/lesson-contract
+        version: file:functions/vendor/lesson-contract
       firebase-admin:
         specifier: ^14.1.0
         version: 14.2.0
@@ -1310,6 +1310,9 @@ packages:
     resolution: {integrity: sha512-BfzEnDJOt9T8M989/lA37EcJgat01wLRnoi5dQf3QzOH7jzpqTAzdDbVfRljVr5r+jzKqpbHeyOfAaXxAd0PAA==}
     cpu: [x64]
     os: [win32]
+
+  '@schoolforge/lesson-contract@file:functions/vendor/lesson-contract':
+    resolution: {directory: functions/vendor/lesson-contract, type: directory}
 
   '@sinclair/typebox@0.27.10':
     resolution: {integrity: sha512-MTBk/3jGLNB2tVxv6uLlFh1iu64iYOQ2PbdOSK3NW8JZsmlaOh2q6sdtKowBhfw8QFLmYNzTW4/oK4uATIi6ZA==}
@@ -5885,6 +5888,11 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
+
+  '@schoolforge/lesson-contract@file:functions/vendor/lesson-contract':
+    dependencies:
+      yaml: 2.9.0
+      zod: 3.25.76
 
   '@sinclair/typebox@0.27.10': {}
 
