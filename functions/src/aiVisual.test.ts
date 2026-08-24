@@ -793,6 +793,21 @@ describe('gateway structure — secret boundary and privacy', () => {
     expect(generate).toContain('secrets: [AI_VISUAL_OPENAI_API_KEY]');
   });
 
+  it('exposes callable transport publicly while keeping background cleanup private', () => {
+    expect(source).toMatch(
+      /const VISUAL_CALLABLE_OPTIONS = \{\s*region: SCHOOLFORGE_FUNCTION_REGION,\s*invoker: 'public' as const,\s*\}/,
+    );
+    expect(source.match(/onCall\(\s*VISUAL_CALLABLE_OPTIONS/g)).toHaveLength(9);
+    expect(source.match(/onCall\(\s*\{ \.\.\.VISUAL_CALLABLE_OPTIONS, secrets:/g)).toHaveLength(1);
+
+    const cleanup = source.slice(
+      source.indexOf('export const visualRunCleanup'),
+      source.indexOf('export const aiVisualExportBatch'),
+    );
+    expect(cleanup).not.toContain('VISUAL_CALLABLE_OPTIONS');
+    expect(cleanup).not.toContain("invoker: 'public'");
+  });
+
   it('reads secret only inside the late openai provider path and exports all functions', () => {
     expect(source.match(/AI_VISUAL_OPENAI_API_KEY\.value\(\)/g)).toHaveLength(1);
     const secretRead = source.indexOf('AI_VISUAL_OPENAI_API_KEY.value()');

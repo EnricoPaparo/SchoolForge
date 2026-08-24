@@ -361,8 +361,7 @@ export function LessonVisualWorkflowDialog({
   return (
     <DialogShell
       title={
-        confirmationTitle ??
-        (currentManifest ? 'Gestisci immagine della lezione' : 'Arricchisci visivamente')
+        confirmationTitle ?? (currentManifest ? 'Gestisci immagine della lezione' : 'Arricchisci')
       }
       role={confirmation ? 'alertdialog' : 'dialog'}
       onCancel={() => {
