@@ -70,7 +70,7 @@ export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v5' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v6' as const;
 
 export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
@@ -695,6 +695,14 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '  Se l’utilità dipende dal confronto fra più posizioni, stati o istanze, il',
     '  subject deve indicare un unico riferimento comune, la posizione relativa',
     '  esatta di ciascun elemento e un modo visivo inequivocabile per distinguerli.',
+    '  Se afferma un ordine stretto (per esempio corto, intermedio, lungo), tutte le',
+    '  grandezze devono partire dalla stessa origine o essere leggibili sulla stessa',
+    '  scala o linea di base, con estremi separati e direttamente confrontabili.',
+    '  Due esiti dichiarati diversi non possono condividere lo stesso estremo visivo.',
+    '  Non confrontare traiettorie che partono da altezze diverse se la lezione non',
+    '  definisce anche il piano di arrivo e la geometria necessaria al confronto.',
+    '  Con tre o più stati ordinati, se questa prova visiva non è affidabile, riduci',
+    '  il confronto ai due estremi quando resta didatticamente fedele oppure scegli "none".',
     '  Non chiedere punti, marcatori o simboli identici senza associare ciascuno alla',
     '  propria posizione o a una breve etichetta autorizzata. Se il confronto non',
     '  entra in questi limiti in modo affidabile, omettilo oppure scegli "none".',
