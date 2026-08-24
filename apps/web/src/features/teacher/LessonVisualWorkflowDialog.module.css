@@ -8,8 +8,8 @@
 }
 .field {
   display: grid;
-  gap: 0.4rem;
-  margin: 1rem 0;
+  gap: 0.35rem;
+  margin: 0;
   font-weight: 600;
 }
 .field input,
@@ -18,6 +18,27 @@
   width: 100%;
   min-width: 0;
   font: inherit;
+}
+.field select,
+.field textarea {
+  min-height: 44px;
+}
+.field textarea {
+  line-height: 1.45;
+}
+.subjectField {
+  margin-block: 0.75rem;
+}
+.subjectField textarea {
+  min-height: 7rem;
+}
+.editorialFields {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+}
+.editorialFields textarea {
+  min-height: 4.25rem;
 }
 .comparison {
   display: grid;
@@ -32,25 +53,63 @@
   max-width: 100%;
   min-width: 0;
 }
-.preview img {
+.previewTitle {
+  margin: 0;
+}
+.previewFrame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+  background: var(--surface-muted);
+}
+.previewFrame img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: contain;
-  border-radius: 0.65rem;
+}
+.preview figcaption {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .placeholder {
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
   min-height: 10rem;
   background: var(--surface-muted);
 }
 .actions button {
   min-height: 36px;
 }
+.actions.reviewActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+.reviewActions button {
+  width: 100%;
+  min-width: 0;
+}
+.reviewActions button:last-child {
+  grid-column: 1 / -1;
+}
 @media (max-width: 640px) {
   .comparison {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 30rem) {
+  .actions.reviewActions {
+    grid-template-columns: 1fr;
+  }
+  .reviewActions button:last-child {
+    grid-column: auto;
   }
 }
 @media (pointer: coarse), (max-width: 640px) {
