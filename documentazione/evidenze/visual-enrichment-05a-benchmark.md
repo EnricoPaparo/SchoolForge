@@ -1,13 +1,13 @@
 # VISUAL-ENRICHMENT-05A — infrastruttura benchmark e rollout DEV
 
-> **Stato:** infrastruttura implementata; quattro tuning reali eseguiti il
-> 24 agosto 2026. Il primo ha trovato un blocker di lunghezza della proposta; il
-> secondo ha prodotto sei immagini tecnicamente valide ma ha trovato blocker di
-> grounding e sicurezza nell'immagine; il terzo ha confermato la qualità del
-> prompt immagine v2 ma ha trovato una debolezza strutturale nella scelta
-> dell'ancora; il quarto ha approvato qualità e astensioni e ha isolato un solo
-> falso rifiuto pre-provider, corretto deterministicamente in v3. Tuning
-> superato; holdout e rollout DEV non eseguiti; Gate GVISUAL **PENDING**.
+> **Stato:** infrastruttura e tuning completati. Il primo holdout reale (holdout
+> A) del 24 agosto 2026 **non ha superato il gate**: ha individuato una
+> divergenza fra il contratto della proposta e quello dell'immagine e una
+> astensione ancora troppo permissiva sui contenuti discorsivi. Le quattro fonti
+> A sono archiviate e non saranno mai riutilizzate come validazione indipendente.
+> Il candidato `visual-proposal-01-v4` chiude entrambi i difetti e un nuovo
+> holdout B indipendente è congelato nel dataset v2. Rollout DEV non eseguito;
+> Gate GVISUAL **PENDING**.
 
 ## Primo tuning reale — blocker rilevato
 
@@ -116,9 +116,47 @@ la review visuale nel tuning precedente: non serve ripetere un'altra batteria
 completa a pagamento. Dopo il merge di questo nanofix lo split tuning è
 considerato superato e può aprirsi lo split holdout sigillato.
 
+## Primo holdout reale (A) — gate non superato
+
+L'holdout A è stato aperto una sola volta sul candidato allora congelato
+(`visual-proposal-01-v3` + `schoolforge-sketch-prompt/v3`). Non costituisce un
+PASS:
+
+- `VE05A-09`: proposta valida, immagine fermata in `pre_invocation`; nessuna
+  chiamata immagini e nessun rischio di fatturazione;
+- `VE05A-10`: proposta e WebP validi; immagine 1024×1024, 31.068 byte,
+  SHA-256 `fca9b7577e40dfaab004850a88cb6f79c33726ac1533a2a872bc6ff09519ed92`,
+  approvata nella review visuale;
+- `VE05A-11`: proposta `image` formalmente valida ma non consumabile: conteneva
+  11 etichette distinte fra caporali, oltre il massimo di 8 imposto dalla fase
+  immagine; lo scenario discorsivo si attendeva inoltre `none`;
+- `VE05A-12`: astensione valida e appropriata.
+
+Il costo reale conoscibile è 33.556 micro-USD ($0,033556). Il vecchio report
+esponeva `totalActualCostMicroUsd: null` perché classificava erroneamente il
+fallimento certamente precedente al provider come costo ignoto; il runner ora
+registra per `pre_invocation` zero token e costo zero, mantenendo `null` soltanto
+quando esiste davvero un rischio di fatturazione.
+
+La correzione non viene valutata di nuovo sugli stessi quattro casi come se
+fossero ancora ciechi. Le sorgenti originali A sono conservate byte per byte in
+[`visual-enrichment-05a-holdout-a-sources/`](visual-enrichment-05a-holdout-a-sources/)
+e i loro hash storici sono congelati dai test. Il candidato
+`visual-proposal-01-v4`:
+
+1. applica nella fase proposta lo stesso contratto delle etichette usato dalla
+   fase immagine — massimo 8 distinte, massimo 40 code point, caporali bilanciate
+   e duplicati esatti deduplicati;
+2. chiede esplicitamente `decision: none` quando l'immagine trasformerebbe un
+   ragionamento discorsivo o astratto in sole caselle, frecce ed etichette senza
+   aggiungere informazione.
+
+Il dataset v2 contiene un holdout B nuovo e indipendente. Solo il risultato di B
+può decidere il gate qualitativo del candidato v4.
+
 ## Dataset congelato
 
-Il dataset `visual-enrichment-05a-dataset-v1` contiene dodici lezioni sintetiche
+Il dataset `visual-enrichment-05a-dataset-v2` contiene dodici lezioni sintetiche
 complete, prive di dati studente: otto tuning e quattro holdout. Il loader
 pretende ordine, cardinalità, proprietà esatte e SHA-256 dei byte UTF-8 di ogni
 sorgente. Lo split tuning riceve soltanto gli otto oggetti tuning; il codice di
@@ -135,10 +173,10 @@ split `holdout`.
 | VE05A-06 | tuning | argomento astratto: libertà e responsabilità | image oppure none, da motivare |
 | VE05A-07 | tuning | testo normativo: laboratorio | none |
 | VE05A-08 | tuning | testo autosufficiente: fonti storiche | none |
-| VE05A-09 | holdout | struttura meccanica: serratura | image |
-| VE05A-10 | holdout | processo spaziale: ombra | image |
-| VE05A-11 | holdout | argomento discorsivo: compromesso | none |
-| VE05A-12 | holdout | testo descrittivo: personaggio | none |
+| VE05A-09 | holdout B | meccanismo: forbici come due leve | image |
+| VE05A-10 | holdout B | struttura informativa: incapsulamento di rete | image |
+| VE05A-11 | holdout B | scelta discorsiva: registro linguistico | none |
+| VE05A-12 | holdout B | metodo testuale: citazione responsabile | none |
 
 Dataset e sorgenti sono in
 [`visual-enrichment-05a-dataset.json`](visual-enrichment-05a-dataset.json) e
@@ -201,20 +239,22 @@ Su sessione nuova tuning è:
 Il massimo è due chiamate per scenario, proposta più immagine; `none` registra
 `skipped_none` e non invoca il provider immagini. Il piano stampa stima e tetto
 separati per le due fasi; il report registra usage, costo reale conoscibile e
-durata per fase. Un rischio di fatturazione precedente rende il totale reale
-`null`, senza inventarlo.
+durata per fase. Un rischio di fatturazione reale rende il totale `null`, senza
+inventarlo. Un esito `pre_invocation`, che dimostra invece che il provider non è
+stato raggiunto, registra zero token e costo zero.
 
 Il dry-run Node 22 di VE-05A calcola, dal listino runtime congelato, questa
 matrice (micro-USD; tra parentesi USD):
 
 | Split | Chiamate max | Tentativi max | Stima | Tetto prenotabile |
 |---|---:|---:|---:|---:|
-| tuning | 16 | 32 | 228.638 ($0,228638) | 687.456 ($0,687456) |
-| holdout | 8 | 16 | 114.343 ($0,114343) | 343.916 ($0,343916) |
+| tuning | 16 | 32 | 228.638 ($0,228638) | 698.702 ($0,698702) |
+| holdout B | 8 | 16 | 114.456 ($0,114456) | 350.514 ($0,350514) |
 
-I tetti sono ricalcolati sui prompt effettivi: la proposta v2 comunica i propri
-limiti e il prompt immagine v2 aggiunge grounding e allowlist. Il tetto della
-proposta è 424.336 micro-USD per il tuning e 212.356 per l'holdout; quello
+I tetti sono ricalcolati sui prompt effettivi: la proposta v4 comunica limiti,
+astensione e allowlist condivisa; il prompt immagine v3 applica grounding e la
+stessa semantica di insieme. Il tetto della
+proposta è 435.582 micro-USD per il tuning e 218.954 per l'holdout B; quello
 dell'immagine è rispettivamente 263.120 e 131.560 micro-USD.
 
 Il preset immagine server-side è `gpt-image-2-2026-04-21`, `1024x1024`, qualità
@@ -289,8 +329,7 @@ sono verdi.
 
 ## Non verificato
 
-Qualità reale del nuovo prompt immagine v2, costi/tempi dopo il nuovo grounding,
-layout shift e intero rollout DEV. Il secondo tuning ha prodotto immagini e ha
-fermato correttamente il rollout sui blocker qualitativi descritti sopra; nessun
-tuning ha eseguito scritture Firebase, modifiche PROD o deploy. VE-05 reale resta
-aperto e GVISUAL resta PENDING.
+Qualità reale del candidato `visual-proposal-01-v4` sul nuovo holdout B,
+none-rate indipendente, layout shift e intero rollout DEV. L'holdout A ha
+fermato correttamente il rollout; nessun benchmark ha eseguito scritture
+Firebase, modifiche PROD o deploy. VE-05 resta aperto e GVISUAL resta PENDING.

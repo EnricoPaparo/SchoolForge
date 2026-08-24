@@ -14,6 +14,7 @@ import {
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
   MAX_VISUAL_ANCHOR_HEADING_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABELS,
   MAX_VISUAL_BYTES,
   MAX_VISUAL_CAPTION_CHARS,
   MAX_VISUAL_LONG_EDGE,
@@ -25,6 +26,7 @@ import {
   codePointLength,
   isValidStoredVisualProposalOutput,
   isValidVisualSubject,
+  inspectVisualAuthorizedLabels,
   resolveLessonVisualAnchor,
   validateLessonVisualAnchor,
   validateLessonVisualManifest,
@@ -299,7 +301,7 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v3');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v4');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
   });
@@ -320,8 +322,10 @@ describe('prompt della proposta visuale', () => {
     expect(user).toContain('Mira a 240–320 caratteri');
     expect(user).toContain('conta i caratteri e riscrivi il campo');
     expect(user).toMatch(/non riassumere\s+la lezione/);
-    expect(user).toContain('massimo 8 etichette, massimo 40 caratteri');
+    expect(user).toContain('MASSIMO ASSOLUTO 8 etichette DISTINTE');
     expect(user).toContain('fra caporali «…»');
+    expect(user).toContain('argomento discorsivo');
+    expect(user).toContain('scatole, frecce ed');
     expect(user).toMatch(/soltanto relazioni, frecce e collegamenti esplicitamente affermati/);
     const imageBranch = (
       buildVisualProposalOutputSchema(visualRequest()).properties as {
@@ -329,7 +333,9 @@ describe('prompt della proposta visuale', () => {
       }
     ).proposal.anyOf[1]!;
     expect(imageBranch.properties.subject.description).toContain('caporali «…»');
-    expect(imageBranch.properties.subject.description).toContain('massimo 8 etichette');
+    expect(imageBranch.properties.subject.description).toContain(
+      'massimo assoluto 8 etichette distinte',
+    );
     expect(imageBranch.properties.subject.description).toContain('40 caratteri');
   });
 
@@ -602,6 +608,37 @@ describe('validazione del subject', () => {
     expect(isValidVisualSubject(ofCodePoints(MAX_VISUAL_SUBJECT_CHARS + 1))).toBe(false);
     expect(isValidVisualSubject(' soggetto')).toBe(false);
     expect(isValidVisualSubject('')).toBe(false);
+  });
+
+  it('accetta ripetizioni esatte come un solo elemento dell’allowlist', () => {
+    const subject = 'Confronto fra «Libertà», «Libertà» e «Responsabilità».';
+    expect(inspectVisualAuthorizedLabels(subject)).toEqual({
+      ok: true,
+      labels: ['Libertà', 'Responsabilità'],
+    });
+    expect(isValidVisualSubject(subject)).toBe(true);
+  });
+
+  it('rifiuta nella proposta ciò che il generatore non potrebbe consumare', () => {
+    const labels = Array.from(
+      { length: MAX_VISUAL_AUTHORIZED_LABELS + 1 },
+      (_, index) => `«e${index}»`,
+    ).join(' ');
+    expect(inspectVisualAuthorizedLabels(labels)).toEqual({ ok: false, reason: 'too_many' });
+    expect(isValidVisualSubject(labels)).toBe(false);
+    expect(() => validateVisualProposalOutput(imageOutput({ subject: labels }))).toThrow(
+      /massimo 8 etichette distinte/,
+    );
+  });
+
+  it('rifiuta caporali sbilanciate già nella fase di proposta', () => {
+    expect(inspectVisualAuthorizedLabels('Schema «aperto')).toEqual({
+      ok: false,
+      reason: 'invalid_form',
+    });
+    expect(() => validateVisualProposalOutput(imageOutput({ subject: 'Schema «aperto' }))).toThrow(
+      /caporali non valide/,
+    );
   });
 });
 

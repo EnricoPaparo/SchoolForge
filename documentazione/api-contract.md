@@ -1325,4 +1325,9 @@ Il checkpoint viene parsato da `unknown` con chiavi e transizioni chiuse: output
 raw e proposta devono coincidere dopo la rivalidazione contro la lezione
 congelata, mentre un'immagine valida deve dimostrare nuovamente base64, WebP,
 hash, byte e dimensioni prima di poter contare come fase completata.
-VE-05A non esegue provider reali né rollout.
+Il dataset attivo è v2: il primo holdout A ha trovato un difetto ed è archiviato
+byte per byte; il nuovo holdout B resta indipendente dal candidato corretto. Il
+contratto della proposta e quello dell'immagine condividono ora la stessa
+validazione delle etichette. Un errore `pre_invocation` registra costo zero,
+mentre solo un rischio di fatturazione rende il totale reale sconosciuto.
+VE-05A non usa Firebase né esegue rollout.

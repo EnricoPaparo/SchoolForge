@@ -37,6 +37,8 @@ import { CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS } from './aiContentConceptMap.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
   MAX_VISUAL_ANCHOR_HEADING_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABEL_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABELS,
   MAX_VISUAL_CAPTION_CHARS,
   MAX_VISUAL_RATIONALE_CHARS,
   MAX_VISUAL_REASON_CHARS,
@@ -68,7 +70,7 @@ export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v3' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v4' as const;
 
 export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
@@ -658,6 +660,10 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     'Scegli decision = "image" solo quando l’illustrazione mostra una relazione',
     'spaziale, un processo, un confronto o una struttura che il testo descrive a',
     'parole e che si capisce meglio vedendola.',
+    'Scegli decision = "none" quando l’immagine si limiterebbe a trasformare un',
+    'argomento discorsivo o una sequenza di concetti astratti in scatole, frecce ed',
+    'etichette: se le forme e le posizioni non comunicano informazione oltre alle',
+    'parole che contengono, il testo è già il supporto più chiaro.',
     '',
     'Se decision = "none", compila SOLO `reason`: spiega in poche righe perché',
     'un’illustrazione non aiuterebbe questa lezione. È il testo che il docente legge',
@@ -677,8 +683,10 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '  stili di autori, studi o marchi, persone riconoscibili o identificabili,',
     '  loghi, firme, watermark o testo esteso dentro l’immagine.',
     '  Se servono etichette dentro l’immagine, racchiudi nel subject ciascuna frase',
-    '  consentita fra caporali «…»: massimo 8 etichette, massimo 40 caratteri',
-    '  ciascuna. Il generatore potrà copiare soltanto quelle espressioni esatte;',
+    `  consentita fra caporali «…»: MASSIMO ASSOLUTO ${MAX_VISUAL_AUTHORIZED_LABELS} etichette DISTINTE, massimo`,
+    `  ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna. Prima di rispondere conta le stringhe distinte fra`,
+    '  caporali: se sono più di 8, semplifica il soggetto oppure scegli "none".',
+    '  Il generatore potrà copiare soltanto quelle espressioni esatte;',
     '  qualunque parola non racchiusa fra caporali non sarà scritta nell’immagine.',
     '  Non usare le caporali per altro. Se le etichette non sono indispensabili,',
     '  non racchiudere alcun testo fra caporali.',

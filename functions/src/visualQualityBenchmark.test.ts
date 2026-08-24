@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +16,7 @@ import {
 import { MAX_VISUAL_BYTES } from './aiContentVisualProposal.js';
 
 describe('VISUAL-ENRICHMENT-05A dataset e piano', () => {
-  it('congela 8 tuning e 4 holdout con sorgenti SHA-256 verificate', async () => {
+  it('congela 8 tuning e 4 holdout B con sorgenti SHA-256 verificate', async () => {
     const dataset = await loadVisualQualityDataset();
     expect(selectVisualQualityScenarios(dataset, 'tuning')).toHaveLength(8);
     expect(selectVisualQualityScenarios(dataset, 'holdout')).toHaveLength(4);
@@ -23,6 +24,32 @@ describe('VISUAL-ENRICHMENT-05A dataset e piano', () => {
       dataset.scenarios.every((scenario) => /^[a-f0-9]{64}$/.test(scenario.sourceSha256)),
     ).toBe(true);
     expect(dataset.scenarios.every((scenario) => scenario.lessonBody.includes('\n## '))).toBe(true);
+    expect(
+      selectVisualQualityScenarios(dataset, 'holdout').map((scenario) => scenario.titolo),
+    ).toEqual([
+      'Le forbici come due leve',
+      'Come i dati vengono incapsulati in rete',
+      'Scegliere il registro linguistico',
+      'Citare una fonte in modo responsabile',
+    ]);
+  });
+
+  it('conserva byte e hash del holdout A fuori dal dataset attivo', async () => {
+    const archive = new URL(
+      '../../documentazione/evidenze/visual-enrichment-05a-holdout-a-sources/',
+      import.meta.url,
+    );
+    const expected = [
+      'efbfc19b1fd2b650167ddb6726733d7be314a046c1b6a74ed4c2533e667c2911',
+      '008ab1cfe5b3f02757f6723a54f7c9a2fd12ebc078de986d4842184da9e75ce6',
+      '289af4039894148c8ff4f9d712abeaed2c1d54c441b17e4fbe9ea130d087847f',
+      '86fe81d7c2c60df7d51d61de5597f582b115e750ab02ce0ab9fe7d11030af78f',
+    ];
+    for (let index = 0; index < expected.length; index += 1) {
+      const id = `VE05A-${String(index + 9).padStart(2, '0')}.md`;
+      const bytes = await readFile(new URL(id, archive));
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(expected[index]);
+    }
   });
 
   it('non espone gli scenari holdout al tuning', async () => {
