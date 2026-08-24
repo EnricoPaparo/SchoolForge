@@ -1,10 +1,11 @@
 # VISUAL-ENRICHMENT-05A — infrastruttura benchmark e rollout DEV
 
-> **Stato:** infrastruttura implementata; due tuning reali eseguiti il
+> **Stato:** infrastruttura implementata; tre tuning reali eseguiti il
 > 24 agosto 2026. Il primo ha trovato un blocker di lunghezza della proposta; il
 > secondo ha prodotto sei immagini tecnicamente valide ma ha trovato blocker di
-> grounding e sicurezza nell'immagine. Rollout DEV non eseguito; Gate GVISUAL
-> **PENDING**.
+> grounding e sicurezza nell'immagine; il terzo ha confermato la qualità del
+> prompt immagine v2 ma ha trovato un'ultima debolezza strutturale nella scelta
+> dell'ancora. Rollout DEV non eseguito; Gate GVISUAL **PENDING**.
 
 ## Primo tuning reale — blocker rilevato
 
@@ -63,6 +64,32 @@ dalle frasi racchiuse fra caporali `«…»` nel subject, con massimo 8 etichett
 versione entra nella config chiusa del run, quindi un run prodotto col prompt
 precedente non è un replay compatibile. Serve un nuovo tuning completo; lo
 split holdout resta sigillato fino alla sua review.
+
+## Terzo tuning reale — immagini approvate, ancora non chiusa
+
+La sessione con `visual-proposal-01-v2` e `schoolforge-sketch-prompt/v2` ha
+confermato la correzione del grounding:
+
+- 8 proposte elaborate: 6 immagini, 1 astensione valida e 1 proposta rifiutata;
+- 6/6 WebP tecnicamente validi e visivamente leggibili;
+- nessun testo, oggetto, azione o collegamento estraneo al `subject` approvato;
+- costo reale conoscibile: 100.221 micro-USD ($0,100221);
+- zero scritture Firestore o Storage.
+
+La review umana considera riuscite le sei immagini: ciclo dell'acqua, vulcano,
+ecosistema, massa/peso, libertà/responsabilità e fonti storiche. L'astensione
+sul grafico numerico è appropriata. L'unico rifiuto (`VE05A-07`) non riguarda
+il contenuto della proposta: il provider ha restituito
+`## Prima dell'attività` invece del valore sorgente `Prima dell'attività`.
+Il validator relazionale ha bloccato correttamente la persistenza, ma il prompt
+lasciava ancora rappresentabile nello schema una stringa arbitraria.
+
+Il candidato `visual-proposal-01-v3` chiude ora `anchorHeadingText` con un
+`enum` request-specific degli H2/H3 realmente ancorabili. I valori sono esatti,
+senza marcatori Markdown, deduplicati e limitati allo stesso cap del validator;
+se la lezione non possiede alcun heading valido, lo schema ammette soltanto
+`decision: 'none'`. Il controllo relazionale runtime resta come difesa in
+profondità. Serve un ultimo tuning completo prima di aprire lo split holdout.
 
 ## Dataset congelato
 
