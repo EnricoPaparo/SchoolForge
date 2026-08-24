@@ -248,6 +248,7 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
         requestId,
         ...identityOf(lessonId),
         anchorHeadingText: 'Reti',
+        anchorHeadingIndex: 0,
         caption: 'Schema dei nodi',
         altText: 'Tre nodi collegati',
       },
@@ -295,6 +296,7 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
           requestId,
           ...identityOf('cost-promote'),
           anchorHeadingText: 'Reti',
+          anchorHeadingIndex: 0,
           caption: 'Schema dei nodi',
           altText: 'Tre nodi collegati',
         },
@@ -321,6 +323,7 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
       requestId,
       ...identityOf('cost-replay'),
       anchorHeadingText: 'Reti',
+      anchorHeadingIndex: 0,
       caption: 'Schema dei nodi',
       altText: 'Tre nodi collegati',
     };

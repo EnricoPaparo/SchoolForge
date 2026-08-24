@@ -862,9 +862,9 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VE-03A** | **Ticket, manifest e promozione.** Ticket autorevole candidato↔lezione (`aiVisualCandidates`), binding **prima** della generazione, manifest privato e pubblico, promozione con copia canonica, sostituzione, idempotenza e Rules fondamentali (`publicLessonVisuals`, `publicLessons.visual` solo su lezione svolta). | VE-02 | **Implementato, non distribuito.** |
 | **VE-03B** | **Lifecycle.** `completed` true/false lato server, rimozione dell'immagine, abbandono dello staging, cleanup e cancellazioni lezione/UDA/corso. | VE-03A | **Implementato, non distribuito.** |
 | **VE-03C** | **Chiusura.** Export ZIP con binario, cost model e audit definitivi, integrazioni Emulator end-to-end, chiusura documentale della fase. | VE-03B | **Implementato, non distribuito.** |
-| **VISUAL-ENRICHMENT-04** | **UI e renderer.** Suddiviso in **A + B** (vedi sotto). | VE-03 | **Aperto** finché A e B non sono entrambe chiuse. |
+| **VISUAL-ENRICHMENT-04** | **UI e renderer.** Suddiviso in **A + B** (vedi sotto). | VE-03 | **Chiuso nel codice, non distribuito.** |
 | **VE-04A** | **Renderer, lettura e riancoraggio.** Split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; lettura dei byte solo in presenza di manifest; fallback e avviso quando l'ancora non esiste più; riancoraggio server-side senza rigenerare; vista studente condizionale; responsive e accessibilità sui componenti reali. | VE-03 | **Implementato, non distribuito.** |
-| **VE-04B** | **Workflow di generazione.** `DialogShell` a dieci stati secondo il prototipo; pulsante «Arricchisci visivamente»; proposta, anteprima, approvazione e sostituzione dal dialog; stati di errore e di costo. | VE-04A | **Aperto.** |
+| **VE-04B** | **Workflow di generazione.** `DialogShell` a stati espliciti; controllo «Arricchisci visivamente»/«Gestisci immagine»; proposta testuale Quality con conferma separata; bind, stima e generazione immagine; anteprima, approvazione, sostituzione, abbandono e rimozione; refresh puntuale autorevole. | VE-04A | **Implementato, non distribuito.** |
 | **VISUAL-ENRICHMENT-05** | **Benchmark qualitativo e rollout DEV.** Scenari didattici congelati; rubrica con blocker espliciti; misura del tasso di «nessuna immagine utile» (un tasso vicino a zero è **sospetto**, non un successo); verifica di peso, tempi e layout shift reali; rollout DEV. | VE-04 | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
 
@@ -1403,6 +1403,29 @@ un manifest esiste**: una lezione senza immagine non produce nemmeno
 un'operazione, ed è ciò che rende la funzione gratuita per la stragrande
 maggioranza delle lezioni. Nessun listener, nessun polling, nessuna lettura per
 card o per riga.
+
+**Workflow docente definitivo (VE-04B).** Con manifest presente il dialog apre
+direttamente «Immagine attuale»: mostra byte, didascalia e posizione e offre
+sostituzione, rimozione e chiusura con **zero chiamate IA**. Solo «Proponi una
+sostituzione» avvia la preview testuale. Se i byte correnti sono ancora in
+caricamento o non disponibili la sostituzione resta bloccata con motivo
+esplicito, perché il confronto non è completo; la rimozione rimane possibile.
+
+Il tentativo candidato è una union `none | bound | previewed | generated`, con
+`requestId` obbligatorio in ogni stato vivo. Preview fallita e retry conservano
+lo stesso ID; modifica del subject, rigenerazione e nuovo tentativo passano da
+un abbandono riuscito. Gli errori distinguono replay legittimo, stato terminale,
+blocco e `uncertain_state`. Un solo `DialogShell` ospita anche la conferma; non
+esistono due modal o due focus trap contemporanei.
+
+Dopo la generazione caption, alt text e ancora restano editoriali e possono
+cambiare senza provider né nuovo ID; solo il subject richiede una nuova
+immagine. I costi reali di proposta testuale e immagine restano separati nella
+UI. Gli heading omonimi sono selezionati per indice zero-based più testo: la
+promozione rilegge il corpo fresco con `resolveAnchorByIndex`, include l'indice
+nell'hash editoriale e non lo salva in alcun manifest/proiezione. Il refresh
+autorevole distingue manifest assente, valido e malformato e fallisce chiuso
+senza normalizzazioni silenziose.
 
 **Smoke responsive** (Chromium, markup e CSS reali dei componenti): 1440, 1024,
 390 e 320 px — zero overflow orizzontale, figura e didascalia entro la colonna,

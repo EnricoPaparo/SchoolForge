@@ -1,0 +1,65 @@
+.intro {
+  color: var(--text-secondary);
+}
+.costSeparation {
+  padding: 0.65rem 0.75rem;
+  border-inline-start: 3px solid var(--accent, #0891b2);
+  background: var(--surface-muted);
+}
+.field {
+  display: grid;
+  gap: 0.4rem;
+  margin: 1rem 0;
+  font-weight: 600;
+}
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+.comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.preview {
+  margin: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.65rem;
+}
+.placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 10rem;
+  background: var(--surface-muted);
+}
+.actions button {
+  min-height: 36px;
+}
+@media (max-width: 640px) {
+  .comparison {
+    grid-template-columns: 1fr;
+  }
+}
+@media (pointer: coarse), (max-width: 640px) {
+  .actions button {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preview {
+    scroll-behavior: auto;
+  }
+}

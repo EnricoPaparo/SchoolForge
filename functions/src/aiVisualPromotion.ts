@@ -77,6 +77,7 @@ export interface VisualPromotionInput {
   importId: string;
   lessonId: string;
   anchorHeadingText: string;
+  anchorHeadingIndex: number;
   caption: string;
   altText: string;
 }
@@ -87,6 +88,7 @@ const PROMOTION_KEYS = [
   'importId',
   'lessonId',
   'anchorHeadingText',
+  'anchorHeadingIndex',
   'caption',
   'altText',
 ] as const;
@@ -147,6 +149,12 @@ export function validateVisualPromotionInput(value: unknown): VisualPromotionInp
       'Heading di ancoraggio',
       MAX_VISUAL_ANCHOR_HEADING_CHARS,
     ),
+    anchorHeadingIndex:
+      typeof root.anchorHeadingIndex === 'number' &&
+      Number.isInteger(root.anchorHeadingIndex) &&
+      root.anchorHeadingIndex >= 0
+        ? root.anchorHeadingIndex
+        : invalidInput('Indice dell’heading di ancoraggio non valido.'),
     caption: assertEditorialText(root.caption, 'Didascalia', MAX_VISUAL_CAPTION_CHARS),
     altText: assertEditorialText(root.altText, 'Testo alternativo', MAX_VISUAL_ALT_TEXT_CHARS),
   };
@@ -457,6 +465,7 @@ export function computePromotionInputHash(input: VisualPromotionInput): string {
       importId: input.importId,
       lessonId: input.lessonId,
       anchorHeadingText: input.anchorHeadingText,
+      anchorHeadingIndex: input.anchorHeadingIndex,
       caption: input.caption,
       altText: input.altText,
     }),

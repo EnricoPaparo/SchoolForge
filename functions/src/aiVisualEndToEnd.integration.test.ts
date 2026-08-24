@@ -158,6 +158,7 @@ emulatorDescribe('VE-03 end-to-end — dal candidato alla cancellazione', () => 
     requestId,
     ...identity,
     anchorHeadingText: 'Reti',
+    anchorHeadingIndex: 0,
     caption: 'Schema dei nodi della rete',
     altText: 'Tre nodi collegati da frecce',
   });

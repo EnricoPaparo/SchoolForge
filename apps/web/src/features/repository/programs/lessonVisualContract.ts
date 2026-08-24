@@ -1,4 +1,8 @@
-import type { LessonVisualPublicManifest } from '../../../types/firestore.js';
+import type {
+  LessonVisualPrivateManifest,
+  LessonVisualPublicManifest,
+} from '../../../types/firestore.js';
+import type { Timestamp } from 'firebase/firestore';
 
 /**
  * VISUAL-ENRICHMENT-04A — lettura **fail-closed** dei dati visuali lato client.
@@ -35,6 +39,24 @@ const PUBLIC_MANIFEST_KEYS = [
 ] as const;
 
 const ANCHOR_KEYS = ['headingSlug', 'headingText', 'placement'] as const;
+const PRIVATE_MANIFEST_KEYS = [
+  ...PUBLIC_MANIFEST_KEYS,
+  'storageRef',
+  'byteLength',
+  'sha256',
+  'mimeType',
+  'styleVersion',
+  'sourceBodyHash',
+  'approvedAt',
+] as const;
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0)!;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -52,6 +74,105 @@ function isPositiveInt(value: unknown): value is number {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function isCanonicalSegment(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value === value.trim() &&
+    !value.includes('/') &&
+    value !== '.' &&
+    value !== '..' &&
+    !hasControlCharacters(value)
+  );
+}
+
+function isClosedText(value: unknown, max: number): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value === value.trim() &&
+    [...value].length <= max &&
+    !hasControlCharacters(value) &&
+    !/<\/?[a-z][^>]*>/i.test(value)
+  );
+}
+
+function isResolvedTimestamp(value: unknown): value is Timestamp {
+  if (!isPlainObject(value) && typeof value !== 'object') return false;
+  if (value === null || typeof (value as { toMillis?: unknown }).toMillis !== 'function') {
+    return false;
+  }
+  try {
+    const millis = (value as { toMillis: () => unknown }).toMillis();
+    return typeof millis === 'number' && Number.isFinite(millis);
+  } catch {
+    return false;
+  }
+}
+
+export type PrivateVisualManifestParseResult =
+  | { kind: 'absent' }
+  | { kind: 'valid'; manifest: LessonVisualPrivateManifest }
+  | { kind: 'malformed' };
+
+/** Manifest docente chiuso: assenza e corruzione sono esiti distinti. */
+export function parsePrivateVisualManifest(params: {
+  value: unknown;
+  ownerUid: unknown;
+  importId: unknown;
+  udaDir: unknown;
+}): PrivateVisualManifestParseResult {
+  const { value, ownerUid, importId, udaDir } = params;
+  if (value === undefined || value === null) return { kind: 'absent' };
+  if (
+    !isCanonicalSegment(ownerUid) ||
+    !isCanonicalSegment(importId) ||
+    !isCanonicalSegment(udaDir) ||
+    !isPlainObject(value) ||
+    !hasExactKeys(value, PRIVATE_MANIFEST_KEYS)
+  ) {
+    return { kind: 'malformed' };
+  }
+  const { assetId, anchor, caption, altText, width, height } = value;
+  if (typeof assetId !== 'string' || !UUID_V4_RE.test(assetId)) return { kind: 'malformed' };
+  if (!isClosedText(caption, 500) || !isClosedText(altText, 1_000)) {
+    return { kind: 'malformed' };
+  }
+  if (
+    !isPositiveInt(width) ||
+    !isPositiveInt(height) ||
+    Math.max(width, height) > 1_200 ||
+    !isPositiveInt(value.byteLength) ||
+    value.byteLength > 204_800
+  ) {
+    return { kind: 'malformed' };
+  }
+  if (
+    !isPlainObject(anchor) ||
+    !hasExactKeys(anchor, ANCHOR_KEYS) ||
+    typeof anchor.headingSlug !== 'string' ||
+    !HEADING_SLUG_RE.test(anchor.headingSlug) ||
+    !isClosedText(anchor.headingText, 300) ||
+    anchor.placement !== 'after-heading'
+  ) {
+    return { kind: 'malformed' };
+  }
+  const expectedStorageRef = `repository/${ownerUid}/${importId}/${udaDir}/visuals/${assetId}.webp`;
+  if (
+    value.storageRef !== expectedStorageRef ||
+    typeof value.sha256 !== 'string' ||
+    !SHA256_HEX_RE.test(value.sha256) ||
+    value.mimeType !== 'image/webp' ||
+    value.styleVersion !== 'schoolforge-sketch/v1' ||
+    typeof value.sourceBodyHash !== 'string' ||
+    !SHA256_HEX_RE.test(value.sourceBodyHash) ||
+    !isResolvedTimestamp(value.approvedAt)
+  ) {
+    return { kind: 'malformed' };
+  }
+  return { kind: 'valid', manifest: value as unknown as LessonVisualPrivateManifest };
 }
 
 /**

@@ -5,9 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { LessonManualBody } from '../../../../components/LessonManualBody.js';
 import { LessonVisualAnchorNotice } from '../../../teacher/LessonVisualAnchorNotice.js';
 import { LessonVisualReanchorDialog } from '../../../teacher/LessonVisualReanchorDialog.js';
+import { LessonVisualWorkflowDialog } from '../../../teacher/LessonVisualWorkflowDialog.js';
+import type { VisualWorkflowPorts } from '../visualGenerationClient.js';
 import figureStyles from '../../../../components/LessonVisualFigure.module.css';
 import dialogStyles from '../../../teacher/LessonVisualReanchorDialog.module.css';
 import shellStyles from '../../../../components/DialogShell.module.css';
+import workflowStyles from '../../../teacher/LessonVisualWorkflowDialog.module.css';
 
 /**
  * VE-04A — genera l'harness dello smoke responsive.
@@ -110,6 +113,79 @@ describe('harness dello smoke responsive', () => {
       />,
     );
     const dialog = baseElement.querySelector('[role="dialog"]')?.outerHTML ?? '';
+    const workflowPorts: VisualWorkflowPorts = {
+      previewProposal: async () => {
+        throw new Error('not called');
+      },
+      generateProposal: async () => {
+        throw new Error('not called');
+      },
+      bind: async () => undefined,
+      previewImage: async () => {
+        throw new Error('not called');
+      },
+      generateImage: async () => {
+        throw new Error('not called');
+      },
+      promote: async () => {
+        throw new Error('not called');
+      },
+      abandon: async () => undefined,
+      remove: async () => undefined,
+    };
+    const workflowRender = render(
+      <LessonVisualWorkflowDialog
+        proposalRequest={{
+          kind: 'visual_proposal',
+          requestId: '11111111-1111-4111-8111-111111111111',
+          modelProfile: 'quality',
+          titolo: 'La fotosintesi',
+          sottotitolo: null,
+          difficolta: 'base',
+          concettiChiave: ['clorofilla'],
+          obiettivi: ['Comprendere la fotosintesi'],
+          udaTitle: 'Biologia',
+          udaContext: {
+            title: 'Biologia',
+            descrizione: null,
+            competenze: [],
+            obiettivi: [],
+            currentLessonPosition: 1,
+            lessons: [{ position: 1, titolo: 'La fotosintesi', sottotitolo: null }],
+          },
+          lessonBody: BODY,
+        }}
+        identity={{ programId: 'p1', importId: 'i1', lessonId: 'l1' }}
+        headings={[{ text: 'La fotosintesi', index: 0 }]}
+        currentManifest={{
+          assetId: '11111111-1111-4111-8111-111111111111',
+          anchor: {
+            headingSlug: 'la-fotosintesi',
+            headingText: 'La fotosintesi',
+            placement: 'after-heading',
+          },
+          caption: LONG_CAPTION,
+          altText: 'Diagramma della fotosintesi',
+          width: 1024,
+          height: 768,
+          storageRef:
+            'repository/owner/i1/uda-01/visuals/11111111-1111-4111-8111-111111111111.webp',
+          byteLength: 100,
+          sha256: 'a'.repeat(64),
+          mimeType: 'image/webp',
+          styleVersion: 'schoolforge-sketch/v1',
+          sourceBodyHash: 'b'.repeat(64),
+          approvedAt: {} as never,
+        }}
+        currentBytes={{ status: 'ready', dataUri: TINY_WEBP }}
+        ports={workflowPorts}
+        onRefresh={async () => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    const workflowDialogs = workflowRender.baseElement.querySelectorAll('[role="dialog"]');
+    const workflowDialog =
+      workflowDialogs.item(workflowDialogs.length - 1)?.parentElement?.outerHTML ?? '';
 
     // Il markup deve contenere davvero i tre pezzi da misurare.
     expect(lesson).toContain('<figure');
@@ -119,6 +195,8 @@ describe('harness dello smoke responsive', () => {
     expect(lessonPending).not.toContain('<img');
     expect(notice).toContain('Riancora');
     expect(dialog).toContain('radiogroup');
+    expect(workflowDialog).toContain('Proponi una sostituzione');
+    expect(workflowDialog).toContain('Rimuovi immagine');
 
     if (!OUT) return;
 
@@ -144,6 +222,7 @@ describe('harness dello smoke responsive', () => {
 <style>${css('index.css')}</style>
 <style>${scopedCss('components/LessonVisualFigure.module.css', figureStyles)}</style>
 <style>${scopedCss('features/teacher/LessonVisualReanchorDialog.module.css', dialogStyles)}</style>
+<style>${scopedCss('features/teacher/LessonVisualWorkflowDialog.module.css', workflowStyles)}</style>
 <style>${scopedCss('components/DialogShell.module.css', shellStyles)}</style>
 <style>
   body { margin: 0; }
@@ -155,7 +234,8 @@ describe('harness dello smoke responsive', () => {
 <div class="harness-column" id="lesson">${lesson}</div>
 <div class="harness-column" id="lesson-pending">${lessonPending}</div>
 <div class="harness-column" id="notice">${notice}</div>
-<div id="dialog">${dialog}</div>
+<template id="reanchor-dialog-markup">${dialog}</template>
+<div id="workflow-dialog">${workflowDialog}</div>
 </body></html>`,
     );
   });
