@@ -84,7 +84,7 @@ export const MAX_PROVIDER_VISUAL_BYTES = 5 * 1024 * 1024;
 export const MAX_PROVIDER_VISUAL_BASE64_CHARS = Math.ceil(MAX_PROVIDER_VISUAL_BYTES / 3) * 4;
 export const AI_VISUAL_NORMALIZER_VERSION = 'visual-normalizer/v1' as const;
 /** Identità del preambolo e della composizione del prompt immagine. */
-export const AI_VISUAL_PROMPT_VERSION = 'schoolforge-sketch-prompt/v2' as const;
+export const AI_VISUAL_PROMPT_VERSION = 'schoolforge-sketch-prompt/v3' as const;
 export const AI_VISUAL_WEBP_QUALITY_ATTEMPTS = Object.freeze([82, 74, 66, 58, 50, 42] as const);
 export const AI_VISUAL_TARGET_BYTES = 150 * 1024;
 export const AI_VISUAL_MAX_LONG_EDGE = 1_200;
@@ -117,22 +117,22 @@ export const MAX_VISUAL_AUTHORIZED_LABEL_CHARS = 40;
 
 /**
  * Le sole stringhe fra caporali diventano testo autorizzato nell'immagine.
- * La lista è derivata dal `subject`, non è un nuovo dato del client. Una forma
- * ambigua fallisce chiusa prima del provider, invece di trasformarsi in testo
- * inventato dentro un asset già fatturato.
+ * La lista è derivata dal `subject`, non è un nuovo dato del client. È un set:
+ * ripetere la stessa etichetta esatta non amplia il vocabolario autorizzato.
+ * Una forma ambigua fallisce chiusa prima del provider, invece di trasformarsi
+ * in testo inventato dentro un asset già fatturato.
  */
 export function extractAuthorizedVisualLabels(subject: string): readonly string[] {
   const labels: string[] = [];
+  const seen = new Set<string>();
   const re = /«([^«»]+)»/gu;
   for (const match of subject.matchAll(re)) {
     const label = match[1]!;
-    if (
-      label !== label.trim() ||
-      [...label].length > MAX_VISUAL_AUTHORIZED_LABEL_CHARS ||
-      labels.includes(label)
-    ) {
+    if (label !== label.trim() || [...label].length > MAX_VISUAL_AUTHORIZED_LABEL_CHARS) {
       throw new AiVisualError('invalid_input', 'Le etichette del soggetto non sono valide.');
     }
+    if (seen.has(label)) continue;
+    seen.add(label);
     labels.push(label);
   }
   if (labels.length > MAX_VISUAL_AUTHORIZED_LABELS) {

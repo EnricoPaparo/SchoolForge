@@ -124,12 +124,25 @@ describe('aiVisualCore — contratto chiuso e identità', () => {
     expect(prompt).toContain(`SOGGETTO DA ILLUSTRARE:\n\n${subject}`);
   });
 
+  it('deduplica le ripetizioni esatte senza ampliare il testo autorizzato', () => {
+    const subject = 'Due frecce contrapposte «Libertà» e «Libertà» convergono in «Tensione».';
+    expect(extractAuthorizedVisualLabels(subject)).toEqual(['Libertà', 'Tensione']);
+    const prompt = buildSchoolForgeSketchPrompt(subject);
+    expect(prompt).toContain('TESTO AUTORIZZATO: "Libertà", "Tensione"');
+    expect(prompt).toContain(`SOGGETTO DA ILLUSTRARE:\n\n${subject}`);
+  });
+
+  it('applica il limite alle etichette distinte, non alle loro occorrenze', () => {
+    const labels = Array.from({ length: 8 }, (_, index) => `e${index}`);
+    const subject = labels.flatMap((label) => [`«${label}»`, `«${label}»`]).join(' ');
+    expect(extractAuthorizedVisualLabels(subject)).toEqual(labels);
+  });
+
   it.each([
     ['caporale aperta', 'Schema con «etichetta.'],
     ['caporale chiusa isolata', 'Schema con etichetta».'],
     ['etichetta vuota', 'Schema «».'],
     ['spazi esterni', 'Schema « etichetta».'],
-    ['duplicato', 'Schema «rete» e «rete».'],
     ['oltre 40 caratteri', `Schema «${'x'.repeat(41)}».`],
     [
       'oltre 8 etichette',
@@ -142,7 +155,7 @@ describe('aiVisualCore — contratto chiuso e identità', () => {
   });
 
   it('congela versione e guardrail di grounding del prompt immagine', () => {
-    expect(AI_VISUAL_PROMPT_VERSION).toBe('schoolforge-sketch-prompt/v2');
+    expect(AI_VISUAL_PROMPT_VERSION).toBe('schoolforge-sketch-prompt/v3');
     expect(AI_VISUAL_SERVER_CONFIG.promptVersion).toBe(AI_VISUAL_PROMPT_VERSION);
     for (const rule of [
       'Il soggetto è esaustivo',
