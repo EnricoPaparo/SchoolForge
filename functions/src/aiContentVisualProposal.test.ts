@@ -301,7 +301,7 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v5');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v6');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
   });
@@ -330,6 +330,10 @@ describe('prompt della proposta visuale', () => {
     expect(user).toContain('un unico riferimento comune');
     expect(user).toContain('la posizione relativa');
     expect(user).toContain('punti, marcatori o simboli identici');
+    expect(user).toContain('stessa origine');
+    expect(user).toContain('estremi separati');
+    expect(user).toContain('piano di arrivo');
+    expect(user).toContain('riduci');
     expect(user).toContain('visivamente decidibile');
     const imageBranch = (
       buildVisualProposalOutputSchema(visualRequest()).properties as {
@@ -346,6 +350,8 @@ describe('prompt della proposta visuale', () => {
     expect(imageBranch.properties.subject.description).toContain(
       'distinzione visiva inequivocabile',
     );
+    expect(imageBranch.properties.subject.description).toContain('stessa origine');
+    expect(imageBranch.properties.subject.description).toContain('estremi separati');
   });
 
   it('delimita il corpo e i metadati come dati', () => {

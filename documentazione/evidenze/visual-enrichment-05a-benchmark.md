@@ -1,12 +1,13 @@
 # VISUAL-ENRICHMENT-05A — infrastruttura benchmark e rollout DEV
 
-> **Stato:** infrastruttura e tuning completati. Gli holdout reali A e B del 24
-> agosto 2026 **non hanno superato il gate** e sono archiviati byte per byte. A
-> ha trovato una divergenza di contratto; B ha confermato decisioni e astensioni
-> corrette ma ha mostrato un confronto spaziale non rappresentato davvero
-> nell'immagine. Il candidato `visual-proposal-01-v5` +
-> `schoolforge-sketch-prompt/v4` chiude questo difetto e il dataset v3 congela
-> un holdout C indipendente. Rollout DEV non eseguito; Gate GVISUAL **PENDING**.
+> **Stato:** infrastruttura e tuning completati. Gli holdout reali A, B e C del
+> 24 agosto 2026 **non hanno superato il gate** e sono archiviati byte per byte.
+> C ha confermato tre decisioni corrette, ma il confronto dei getti non mostrava
+> l'ordine promesso e la stessa sorgente non definiva una geometria fisica
+> sufficiente. Il candidato `visual-proposal-01-v6` +
+> `schoolforge-sketch-prompt/v5` chiude il contratto generale dei confronti
+> ordinati; il dataset v4 congela un holdout D indipendente. Rollout DEV non
+> eseguito; Gate GVISUAL **PENDING**.
 
 ## Primo tuning reale — blocker rilevato
 
@@ -189,9 +190,50 @@ indipendente. Il candidato successivo introduce due guardrail coordinati:
 Il dataset v3 contiene un holdout C nuovo e indipendente. Solo C può decidere il
 gate qualitativo del nuovo candidato.
 
+## Terzo holdout reale (C) — tre esiti corretti, un caso invalido
+
+L'holdout C è stato eseguito una sola volta sul candidato
+`visual-proposal-01-v5` + `schoolforge-sketch-prompt/v4`. Tutte le proposte e
+i due WebP richiesti erano tecnicamente validi; le due astensioni erano
+appropriate. Costo reale conoscibile: **39.499 micro-USD ($0,039499)**, senza
+rischio di fatturazione ignoto e senza scritture Firestore o Storage.
+
+- `VE05A-09`, pressione e profondità: non supera la review. Il getto superiore
+  era correttamente più corto, ma quelli centrale e inferiore terminavano
+  sostanzialmente nello stesso punto, mentre subject, caption e alt text
+  dichiaravano tre distanze strettamente ordinate;
+- `VE05A-10`, profilo di un fiume: proposta e immagine approvate;
+- `VE05A-11`, correlazione e causalità: astensione specifica e appropriata;
+- `VE05A-12`, consegna ambigua: astensione specifica e appropriata.
+
+La review ha inoltre trovato un difetto nel benchmark, non solo nel modello:
+la distanza orizzontale di un getto dipende sia dalla velocità di uscita sia
+dal tempo di caduta. Senza definire altezza del livello, geometria e piano di
+arrivo, «il foro più basso arriva più lontano» non è una conseguenza generale
+da congelare come verità didattica. Un holdout non può giudicare il modello con
+una sorgente ambigua; C è quindi non superato e anche il suo scenario 09 è
+ritirato.
+
+Le sorgenti C sono archiviate byte per byte in
+[`visual-enrichment-05a-holdout-c-sources/`](visual-enrichment-05a-holdout-c-sources/)
+e i loro hash sono congelati dai test. Il candidato successivo introduce due
+guardrail generali, senza codificare il caso dei getti:
+
+1. `visual-proposal-01-v6` richiede, per un ordine stretto, stessa origine,
+   scala o linea di base, estremi separati e direttamente confrontabili; con
+   tre o più stati non affidabili deve ridurre ai due estremi, se fedele, oppure
+   scegliere `none`;
+2. `schoolforge-sketch-prompt/v5` vieta che valori dichiarati diversi
+   condividano lo stesso estremo e vieta di dimostrare distanze ordinate con
+   traiettorie da origini diverse senza un piano di arrivo comune definito.
+
+Il dataset v4 contiene un holdout D nuovo e indipendente, inclusa una misura
+ordinata fisicamente ben posta su una linea di base comune. Solo D può decidere
+il gate qualitativo del nuovo candidato.
+
 ## Dataset congelato
 
-Il dataset `visual-enrichment-05a-dataset-v3` contiene dodici lezioni sintetiche
+Il dataset `visual-enrichment-05a-dataset-v4` contiene dodici lezioni sintetiche
 complete, prive di dati studente: otto tuning e quattro holdout. Il loader
 pretende ordine, cardinalità, proprietà esatte e SHA-256 dei byte UTF-8 di ogni
 sorgente. Lo split tuning riceve soltanto gli otto oggetti tuning; il codice di
@@ -208,10 +250,10 @@ split `holdout`.
 | VE05A-06 | tuning | argomento astratto: libertà e responsabilità | image oppure none, da motivare |
 | VE05A-07 | tuning | testo normativo: laboratorio | none |
 | VE05A-08 | tuning | testo autosufficiente: fonti storiche | none |
-| VE05A-09 | holdout C | confronto spaziale: pressione e profondità | image |
-| VE05A-10 | holdout C | progressione spaziale: profilo di un fiume | image |
-| VE05A-11 | holdout C | ragionamento: correlazione e causalità | none |
-| VE05A-12 | holdout C | revisione testuale: consegna ambigua | none |
+| VE05A-09 | holdout D | confronto ordinato: lunghezze dallo stesso zero | image |
+| VE05A-10 | holdout D | processo biologico: acqua nella pianta | image |
+| VE05A-11 | holdout D | ragionamento: fatto e opinione | none |
+| VE05A-12 | holdout D | formulazione discorsiva: feedback | none |
 
 Dataset e sorgenti sono in
 [`visual-enrichment-05a-dataset.json`](visual-enrichment-05a-dataset.json) e
@@ -283,14 +325,13 @@ matrice (micro-USD; tra parentesi USD):
 
 | Split | Chiamate max | Tentativi max | Stima | Tetto prenotabile |
 |---|---:|---:|---:|---:|
-| tuning | 16 | 32 | 234.278 ($0,234278) | 744.814 ($0,744814) |
-| holdout C | 8 | 16 | 117.524 ($0,117524) | 375.626 ($0,375626) |
+| tuning | 16 | 32 | 239.718 ($0,239718) | 790.702 ($0,790702) |
+| holdout D | 8 | 16 | 120.177 ($0,120177) | 398.062 ($0,398062) |
 
-I tetti sono ricalcolati sui prompt effettivi: la proposta v5 comunica limiti,
-astensione, allowlist e confronti spaziali eseguibili; il prompt immagine v4
-applica grounding, semantica di insieme e distinzione dei marcatori. Il tetto
-della proposta è 447.854 micro-USD per il tuning e 227.146 per l'holdout C;
-quello dell'immagine è rispettivamente 296.960 e 148.480 micro-USD.
+I tetti sono ricalcolati sui prompt effettivi v6/v5: la proposta vale 460.942
+micro-USD per il tuning e 233.182 per l'holdout D; l'immagine vale
+rispettivamente 329.760 e 164.880 micro-USD. Nessuna stima del candidato
+precedente viene riutilizzata.
 
 Il preset immagine server-side è `gpt-image-2-2026-04-21`, `1024x1024`, qualità
 `low`, un output WebP opaco. Il listino runtime
@@ -364,8 +405,8 @@ sono verdi.
 
 ## Non verificato
 
-Qualità reale del candidato `visual-proposal-01-v5` +
-`schoolforge-sketch-prompt/v4` sul nuovo holdout C, none-rate indipendente,
-layout shift e intero rollout DEV. Gli holdout A e B hanno fermato correttamente
-il rollout; nessun benchmark ha eseguito scritture Firebase, modifiche PROD o
-deploy. VE-05 resta aperto e GVISUAL resta PENDING.
+Qualità reale del candidato `visual-proposal-01-v6` +
+`schoolforge-sketch-prompt/v5` sul nuovo holdout D, none-rate indipendente,
+layout shift e intero rollout DEV. Gli holdout A, B e C hanno fermato
+correttamente il rollout; nessun benchmark ha eseguito scritture Firebase,
+modifiche PROD o deploy. VE-05 resta aperto e GVISUAL resta PENDING.
