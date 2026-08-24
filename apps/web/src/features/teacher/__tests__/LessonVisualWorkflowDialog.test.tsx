@@ -197,8 +197,13 @@ describe('LessonVisualWorkflowDialog', () => {
 
   it('con immagine corrente apre la gestione a costo IA zero e avvia la preview solo su richiesta', async () => {
     const p = ports(imageProposal);
-    openWithCurrent(p);
+    const view = openWithCurrent(p);
     expect(await screen.findByRole('heading', { name: 'Immagine attuale' })).toBeTruthy();
+    const figure = view.baseElement.querySelector('figure');
+    const frame = figure?.querySelector<HTMLElement>('[data-visual-frame]');
+    expect(figure?.style.aspectRatio).toBe('');
+    expect(frame?.style.aspectRatio).toBe('640 / 480');
+    expect(screen.getAllByText('Attuale')).toHaveLength(1);
     expect(p.previewProposal).not.toHaveBeenCalled();
     expect(p.generateProposal).not.toHaveBeenCalled();
     expect(p.bind).not.toHaveBeenCalled();
@@ -207,6 +212,15 @@ describe('LessonVisualWorkflowDialog', () => {
     await screen.findByText('Stima della proposta testuale');
     expect(p.previewProposal).toHaveBeenCalledOnce();
     expect(p.generateProposal).not.toHaveBeenCalled();
+  });
+
+  it('usa controlli editoriali multilinea compatti invece di input a riga singola', async () => {
+    const p = ports(imageProposal);
+    open(p);
+    fireEvent.click(await screen.findByText('Genera proposta'));
+    expect((await screen.findByLabelText('Didascalia')).tagName).toBe('TEXTAREA');
+    expect(screen.getByLabelText('Testo alternativo').tagName).toBe('TEXTAREA');
+    expect(screen.getByLabelText('Posizione').tagName).toBe('SELECT');
   });
 
   it('mantiene la stessa request testuale tra preview e generate anche dopo un rerender', async () => {
@@ -266,6 +280,9 @@ describe('LessonVisualWorkflowDialog', () => {
     expect((p.previewImage as ReturnType<typeof vi.fn>).mock.calls[0]![0].requestId).toBe(boundId);
     fireEvent.click(screen.getByText('Genera immagine'));
     await screen.findByText('Anteprima — non ancora applicata');
+    const reviewActions = screen.getByText('Applica alla lezione').closest('[data-action-layout]');
+    expect(reviewActions?.getAttribute('data-action-layout')).toBe('review');
+    expect(reviewActions?.querySelectorAll('button')).toHaveLength(4);
     expect((p.generateImage as ReturnType<typeof vi.fn>).mock.calls[0]![0].requestId).toBe(boundId);
     fireEvent.click(screen.getByText('Applica alla lezione'));
     await waitFor(() => expect(p.promote).toHaveBeenCalledOnce());

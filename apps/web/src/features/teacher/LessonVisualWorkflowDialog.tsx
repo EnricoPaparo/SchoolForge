@@ -496,14 +496,16 @@ export function LessonVisualWorkflowDialog({
                     bytes={currentBytes}
                   />
                 )}
-                <figure className={styles.preview} style={imageStyle}>
-                  <strong>Nuova proposta</strong>
-                  <img
-                    src={image.dataUri}
-                    alt={altText}
-                    width={image.width}
-                    height={image.height}
-                  />
+                <figure className={styles.preview}>
+                  <h4 className={styles.previewTitle}>Nuova proposta</h4>
+                  <div className={styles.previewFrame} style={imageStyle} data-visual-frame>
+                    <img
+                      src={image.dataUri}
+                      alt={altText}
+                      width={image.width}
+                      height={image.height}
+                    />
+                  </div>
                   <figcaption>{caption}</figcaption>
                 </figure>
               </div>
@@ -526,7 +528,7 @@ export function LessonVisualWorkflowDialog({
                 altText={altText}
                 onAltText={setAltText}
               />
-              <Actions>
+              <Actions layout="review">
                 <button onClick={() => void abandonAnd('edit')}>Modifica soggetto</button>
                 <button onClick={() => void abandonAnd('regenerate')}>Rigenera</button>
                 <button
@@ -572,8 +574,21 @@ function Busy() {
   );
 }
 
-function Actions({ children }: { children: ReactNode }) {
-  return <div className={`dialog-actions ${styles.actions}`}>{children}</div>;
+function Actions({
+  children,
+  layout = 'default',
+}: {
+  children: ReactNode;
+  layout?: 'default' | 'review';
+}) {
+  return (
+    <div
+      className={`dialog-actions ${styles.actions} ${layout === 'review' ? styles.reviewActions : ''}`}
+      data-action-layout={layout}
+    >
+      {children}
+    </div>
+  );
 }
 
 function CostRows({ preview }: { preview: VisualProposalPreview }) {
@@ -619,11 +634,7 @@ function CurrentView({
   const loading = bytes?.status !== 'ready' && !unavailable;
   return (
     <>
-      <h4>Immagine attuale</h4>
       <Preview title="Immagine attuale" manifest={manifest} bytes={bytes} />
-      <p>
-        <strong>Didascalia:</strong> {manifest.caption}
-      </p>
       <p>
         <strong>Posizione:</strong> {manifest.anchor.headingText}
       </p>
@@ -670,7 +681,7 @@ function ProposalEditor(props: {
   return (
     <>
       <ProposalCost actual={props.proposalActualCost} />
-      <label className={styles.field}>
+      <label className={`${styles.field} ${styles.subjectField}`}>
         Cosa deve mostrare l’immagine
         <textarea
           value={props.subject}
@@ -719,7 +730,7 @@ function EditorialFields(props: {
   onAltText: (value: string) => void;
 }) {
   return (
-    <>
+    <div className={styles.editorialFields}>
       <label className={styles.field}>
         Posizione
         <select
@@ -735,13 +746,21 @@ function EditorialFields(props: {
       </label>
       <label className={styles.field}>
         Didascalia
-        <input value={props.caption} onChange={(event) => props.onCaption(event.target.value)} />
+        <textarea
+          value={props.caption}
+          onChange={(event) => props.onCaption(event.target.value)}
+          rows={2}
+        />
       </label>
       <label className={styles.field}>
         Testo alternativo
-        <input value={props.altText} onChange={(event) => props.onAltText(event.target.value)} />
+        <textarea
+          value={props.altText}
+          onChange={(event) => props.onAltText(event.target.value)}
+          rows={3}
+        />
       </label>
-    </>
+    </div>
   );
 }
 
@@ -763,23 +782,26 @@ function Preview({
   bytes: CurrentVisualBytesState | null;
 }) {
   return (
-    <figure
-      className={styles.preview}
-      style={{ aspectRatio: `${manifest.width} / ${manifest.height}` }}
-    >
-      <strong>{title}</strong>
-      {bytes?.status === 'ready' ? (
-        <img
-          src={bytes.dataUri}
-          alt={manifest.altText}
-          width={manifest.width}
-          height={manifest.height}
-        />
-      ) : (
-        <div className={styles.placeholder}>
-          {bytes?.status === 'unavailable' ? 'Immagine non disponibile' : 'Caricamento immagine…'}
-        </div>
-      )}
+    <figure className={styles.preview}>
+      <h4 className={styles.previewTitle}>{title}</h4>
+      <div
+        className={styles.previewFrame}
+        style={{ aspectRatio: `${manifest.width} / ${manifest.height}` }}
+        data-visual-frame
+      >
+        {bytes?.status === 'ready' ? (
+          <img
+            src={bytes.dataUri}
+            alt={manifest.altText}
+            width={manifest.width}
+            height={manifest.height}
+          />
+        ) : (
+          <div className={styles.placeholder}>
+            {bytes?.status === 'unavailable' ? 'Immagine non disponibile' : 'Caricamento immagine…'}
+          </div>
+        )}
+      </div>
       <figcaption>{manifest.caption}</figcaption>
     </figure>
   );
