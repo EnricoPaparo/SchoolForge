@@ -237,7 +237,7 @@ funzione non vale il suo costo.
 | VISUAL-ENRICHMENT-01 | **Aperto** |
 | VISUAL-ENRICHMENT-02 | **Aperto** |
 | VISUAL-ENRICHMENT-03 | **Aperto** |
-| VISUAL-ENRICHMENT-04 | **Aperto** |
+| VISUAL-ENRICHMENT-04 | **Chiuso nel codice, non distribuito** |
 | VISUAL-ENRICHMENT-05 | **Aperto** |
 | Gate GVISUAL | **PENDING** |
 
@@ -321,3 +321,19 @@ deploy.
 **Definition of Done:** `pnpm typecheck`, `pnpm lint`, `pnpm test` verdi;
 non-regressione degli `inputHash` dimostrata; nessuna dipendenza nuova; nessun
 file web modificato; nessun deploy.
+
+## Addendum VE-04B — workflow docente
+
+VE-04B è implementato nel web e resta non distribuito. La precedente assenza
+non era un limite del backend: VE-02/03 esponevano già tutte le callable, ma il
+portale docente non aveva adapter né orchestrazione. Il nuovo dialog usa una
+macchina a stati esplicita e separa rigorosamente la proposta testuale dalla
+generazione immagine. L'utilità didattica è informativa; soltanto `subject`
+modifica l'immagine. L'ancora è scelta dagli H2/H3 reali del corpo salvato.
+
+Cost model UI: apertura scheda e controllo = zero; apertura dialog = una preview
+testuale read-only; conferma = una generazione testuale; bind = lifecycle
+tecnico senza provider; preview immagine = read-only; conferma = una
+generazione; promote/abandon/remove = lifecycle server già documentato; dopo
+promote/remove una sola `getDoc` puntuale rilegge il `LessonDoc`. Nessun polling,
+listener o costo passivo. VE-05 e rollout DEV restano aperti; GVISUAL PENDING.

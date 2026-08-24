@@ -947,6 +947,18 @@ in `@schoolforge/lesson-contract`. Il controllo proposta accetta soltanto H2/H3
 realmente ancorabili; la promozione converte il testo Markdown sorgente nel
 testo visibile canonico prima di comporre il manifest.
 
+### VISUAL-ENRICHMENT-04B — confine della UI docente
+
+Il web non importa moduli Functions, non contiene secret e non chiama provider.
+Gli adapter inviano payload chiusi; non inviano prompt completo, owner UID,
+hash, path Storage, asset ID o Timestamp. Il solo testo variabile della richiesta
+immagine è `subject`; preset e preambolo restano server-side. Dopo il bind,
+Escape, backdrop e chiusura passano da un `alertdialog` e da
+`aiVisualAbandon`; un errore di cleanup resta visibile. Promote/remove aggiornano
+la vista con una lettura puntuale autorevole. La proiezione studente e le letture
+byte restano quelle di VE-04A: nessun subject, costo, run ID, hash o storageRef
+raggiunge lo studente.
+
 ## 10. Checklist ai gate
 
 | Gate | Controlli minimi |

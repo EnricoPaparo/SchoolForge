@@ -90,6 +90,11 @@ import {
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { LessonVisualAnchorNotice } from './LessonVisualAnchorNotice.js';
 import { LessonVisualReanchorDialog } from './LessonVisualReanchorDialog.js';
+import { LessonVisualWorkflowDialog } from './LessonVisualWorkflowDialog.js';
+import {
+  createVisualWorkflowPorts,
+  readAuthoritativePrivateVisual,
+} from '../repository/programs/visualGenerationClient.js';
 import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
 import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
@@ -1385,6 +1390,19 @@ export function CourseWorkspace({
         : contentDirty
           ? 'Salva prima le modifiche al contenuto: la mappa si genera dal testo salvato.'
           : null;
+  const visualBlockedReason: string | null = lessonLoading
+    ? 'Attendi il caricamento del contenuto.'
+    : lessonError
+      ? 'Risolvi prima l’errore di caricamento del contenuto.'
+      : lessonContent === null || lessonContent.trim().length === 0
+        ? 'La lezione deve avere un contenuto salvato.'
+        : editingContent
+          ? 'Termina prima la modifica del contenuto.'
+          : contentDirty
+            ? 'Salva prima le modifiche al contenuto.'
+            : !card.activeImportId
+              ? 'L’importazione attiva non è disponibile.'
+              : null;
 
   async function handleSaveConceptMap(lesson: LessonItem, markdown: string): Promise<void> {
     if (!card.activeImportId) throw new Error('Importazione non disponibile.');
@@ -2260,6 +2278,7 @@ export function CourseWorkspace({
               conceptMapCallables={conceptMapCallables}
               onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
               onConceptMapDirtyChange={setConceptMapDirty}
+              visualBlockedReason={visualBlockedReason}
             />
           )}
         </div>
@@ -2761,6 +2780,7 @@ function LessonDetail({
   conceptMapCallables,
   onSaveConceptMap,
   onConceptMapDirtyChange,
+  visualBlockedReason,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2794,6 +2814,7 @@ function LessonDetail({
   conceptMapCallables: AiConceptMapCallables;
   onSaveConceptMap: (conceptMapMarkdown: string) => Promise<void>;
   onConceptMapDirtyChange: (dirty: boolean) => void;
+  visualBlockedReason: string | null;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -2809,16 +2830,28 @@ function LessonDetail({
    * quelle superfici hanno già il manifest e non mostrano figure.
    */
   const [reanchoring, setReanchoring] = useState(false);
-  const [localVisual, setLocalVisual] = useState<LessonVisualPrivateManifest | null>(null);
+  const [localVisual, setLocalVisual] = useState<LessonVisualPrivateManifest | null | undefined>(
+    undefined,
+  );
+  const [visualDialogOpen, setVisualDialogOpen] = useState(false);
+  const visualPorts = useMemo(() => createVisualWorkflowPorts(functions), []);
+  const detailMounted = useRef(true);
+  useEffect(() => {
+    detailMounted.current = true;
+    return () => {
+      detailMounted.current = false;
+    };
+  }, []);
 
   // Cambio lezione: l'override locale del riancoraggio non deve sopravvivere
   // alla lezione su cui è stato applicato.
   useEffect(() => {
-    setLocalVisual(null);
+    setLocalVisual(undefined);
+    setVisualDialogOpen(false);
     setReanchoring(false);
   }, [lesson.id]);
 
-  const manifest = localVisual ?? lesson.visual ?? null;
+  const manifest = localVisual === undefined ? (lesson.visual ?? null) : localVisual;
   const contentOpen = activeTab === 'contenuto' && !editingContent;
 
   const visualRequest =
@@ -2884,6 +2917,52 @@ function LessonDetail({
         : [],
     [content],
   );
+
+  const visualHeadings = useMemo(
+    () =>
+      reanchorHeadings
+        .filter((heading) => heading.level === 2 || heading.level === 3)
+        .map((heading, index) => ({ text: heading.text, index })),
+    [reanchorHeadings],
+  );
+  const effectiveVisualBlockedReason =
+    visualBlockedReason ??
+    (visualHeadings.length === 0
+      ? 'Aggiungi almeno un titolo H2 o H3 al contenuto salvato.'
+      : visualDialogOpen
+        ? 'Operazione visuale in corso.'
+        : null);
+  const visualProposalRequest = useMemo(
+    () =>
+      content && lessonAi.udaContext
+        ? {
+            kind: 'visual_proposal' as const,
+            requestId: crypto.randomUUID(),
+            modelProfile: 'quality' as const,
+            titolo: lessonAi.titolo ?? '',
+            sottotitolo: lessonAi.sottotitolo ?? null,
+            difficolta: lessonAi.difficolta ?? '',
+            concettiChiave: lessonAi.concettiChiave ?? [],
+            obiettivi: lessonAi.obiettivi ?? [],
+            udaTitle: lessonAi.udaTitle ?? '',
+            udaContext: lessonAi.udaContext,
+            lessonBody: content,
+          }
+        : null,
+    [content, lessonAi],
+  );
+
+  async function refreshVisual() {
+    if (!importId) return;
+    const next = await readAuthoritativePrivateVisual({
+      db,
+      programId,
+      importId,
+      lessonId: lesson.id,
+    });
+    if (!detailMounted.current) return;
+    setLocalVisual(next);
+  }
 
   async function confirmReanchor(choice: { index: number; text: string }) {
     if (!importId || !manifest) return;
@@ -2976,6 +3055,26 @@ function LessonDetail({
         aria-labelledby="tab-contenuto"
         hidden={activeTab !== 'contenuto'}
       >
+        {activeTab === 'contenuto' && (
+          <div className={styles.visualActions}>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={effectiveVisualBlockedReason !== null}
+              aria-describedby={
+                effectiveVisualBlockedReason ? `visual-disabled-${lesson.id}` : undefined
+              }
+              onClick={() => setVisualDialogOpen(true)}
+            >
+              {manifest ? 'Gestisci immagine' : 'Arricchisci visivamente'}
+            </button>
+            {effectiveVisualBlockedReason && (
+              <span id={`visual-disabled-${lesson.id}`} className={styles.disabledReason}>
+                {effectiveVisualBlockedReason}
+              </span>
+            )}
+          </div>
+        )}
         {editingContent ? (
           // Mounted whenever editing (even if the tab is hidden) so the draft
           // survives switching to another tab of the same lesson.
@@ -3039,6 +3138,18 @@ function LessonDetail({
                       />
                     ) : null
                   }
+                />
+              )}
+              {visualDialogOpen && visualProposalRequest && importId && (
+                <LessonVisualWorkflowDialog
+                  proposalRequest={visualProposalRequest}
+                  identity={{ programId, importId, lessonId: lesson.id }}
+                  headings={visualHeadings}
+                  currentManifest={manifest}
+                  currentDataUri={visualState.status === 'ready' ? visualState.bytes.dataUri : null}
+                  ports={visualPorts}
+                  onRefresh={refreshVisual}
+                  onClose={() => setVisualDialogOpen(false)}
                 />
               )}
               {reanchoring && manifest && (

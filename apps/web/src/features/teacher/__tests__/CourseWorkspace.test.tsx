@@ -308,6 +308,56 @@ describe('CourseWorkspace — selection', () => {
     expect(mockListUdas).toHaveBeenCalledTimes(1);
   });
 
+  it('mostra il controllo visuale disabilitato durante loading, errore e contenuto vuoto', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Visuale' })]);
+    let rejectContent!: (cause: unknown) => void;
+    mockFetchLessonContent.mockReturnValue(
+      new Promise<string>((_resolve, reject) => {
+        rejectContent = reject;
+      }),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Visuale' }));
+
+    const control = await screen.findByRole('button', { name: 'Arricchisci visivamente' });
+    expect(control.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Attendi il caricamento del contenuto.')).toBeTruthy();
+
+    rejectContent(new Error('boom'));
+    await screen.findByText('Risolvi prima l’errore di caricamento del contenuto.');
+    expect(control.hasAttribute('disabled')).toBe(true);
+
+    cleanup();
+    vi.clearAllMocks();
+    mockFetchPublicLessonContent.mockResolvedValue(null);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Vuota' })]);
+    mockFetchLessonContent.mockResolvedValue('   ');
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Vuota' }));
+    expect(await screen.findByText('La lezione deve avere un contenuto salvato.')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Arricchisci visivamente' }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('non apre workflow dalla scheda Contenuto e richiede heading H2/H3 canonici', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Visuale' })]);
+    mockFetchLessonContent.mockResolvedValue('# Titolo\n\nCorpo senza sottosezioni.');
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Visuale' }));
+    const control = await screen.findByRole('button', { name: 'Arricchisci visivamente' });
+    expect(control.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/almeno un titolo H2 o H3/)).toBeTruthy();
+    expect(screen.queryByText('Stima della proposta testuale')).toBeNull();
+  });
+
   it('ignores an out-of-order stale fetch: the last selected lesson wins', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([
@@ -350,6 +400,7 @@ describe('CourseWorkspace — selection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByText(/impossibile caricare il contenuto/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Arricchisci visivamente' })).toBeTruthy();
   });
 });
 
@@ -1491,6 +1542,10 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     await openLesson();
     clickMenuAction('Azioni lezione', 'Modifica contenuto');
     const textarea = screen.getByLabelText('Corpo Markdown') as HTMLTextAreaElement;
+    expect(
+      screen.getByRole('button', { name: 'Arricchisci visivamente' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(screen.getByText('Termina prima la modifica del contenuto.')).toBeTruthy();
     expect(textarea.value).toBe('Corpo lezione A.');
     fireEvent.change(textarea, { target: { value: 'Modificato.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));

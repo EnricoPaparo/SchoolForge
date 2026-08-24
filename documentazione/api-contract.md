@@ -1289,3 +1289,15 @@ La callable **non emette audit**: l'export testuale che affianca non ne emette, 
 una traccia solo qui racconterebbe metà della stessa azione. È una lettura pura —
 zero scritture Firestore, zero scritture o delete Storage — quindi ripeterla è
 sicuro e produce byte identici.
+
+### VE-04B — sequenza client docente
+
+La UI usa `aiContentPreview(visual_proposal)` → conferma →
+`aiContentGenerate(visual_proposal)`. Solo per `decision: image` crea un UUID e
+usa `aiVisualBindCandidate` → `aiVisualPreview` → conferma →
+`aiVisualGenerate` → `aiVisualPromote`. Le quattro operazioni visuali condividono
+il `requestId`; un retry dopo risposta persa lo conserva, «Rigenera» ne crea uno
+nuovo. Promote invia soltanto `requestId`, `programId`, `importId`, `lessonId`,
+`anchorHeadingText`, `caption`, `altText`. Il manifest non è composto nel web:
+una `getDoc` puntuale del `LessonDoc` aggiorna la vista. Rimozione e abbandono
+riusano `aiVisualRemove` e `aiVisualAbandon`.

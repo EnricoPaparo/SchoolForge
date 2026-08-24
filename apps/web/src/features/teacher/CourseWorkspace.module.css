@@ -790,3 +790,15 @@
   margin: 0;
   word-break: break-word;
 }
+.visualActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+}
+
+.disabledReason {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
