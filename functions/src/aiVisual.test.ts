@@ -155,7 +155,7 @@ describe('aiVisualCore — contratto chiuso e identità', () => {
   });
 
   it('congela versione e guardrail di grounding del prompt immagine', () => {
-    expect(AI_VISUAL_PROMPT_VERSION).toBe('schoolforge-sketch-prompt/v3');
+    expect(AI_VISUAL_PROMPT_VERSION).toBe('schoolforge-sketch-prompt/v4');
     expect(AI_VISUAL_SERVER_CONFIG.promptVersion).toBe(AI_VISUAL_PROMPT_VERSION);
     for (const rule of [
       'Il soggetto è esaustivo',
@@ -163,6 +163,8 @@ describe('aiVisualCore — contratto chiuso e identità', () => {
       'Ogni freccia, linea o collegamento',
       'TESTO AUTORIZZATO',
       'indicare senza ambiguità',
+      'stesso riferimento comune',
+      'marcatori, punti o simboli identici',
     ]) {
       expect(SCHOOLFORGE_SKETCH_PREAMBLE).toContain(rule);
     }

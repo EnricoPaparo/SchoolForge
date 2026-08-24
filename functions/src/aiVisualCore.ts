@@ -85,7 +85,7 @@ export const MAX_PROVIDER_VISUAL_BYTES = 5 * 1024 * 1024;
 export const MAX_PROVIDER_VISUAL_BASE64_CHARS = Math.ceil(MAX_PROVIDER_VISUAL_BYTES / 3) * 4;
 export const AI_VISUAL_NORMALIZER_VERSION = 'visual-normalizer/v1' as const;
 /** Identità del preambolo e della composizione del prompt immagine. */
-export const AI_VISUAL_PROMPT_VERSION = 'schoolforge-sketch-prompt/v3' as const;
+export const AI_VISUAL_PROMPT_VERSION = 'schoolforge-sketch-prompt/v4' as const;
 export const AI_VISUAL_WEBP_QUALITY_ATTEMPTS = Object.freeze([82, 74, 66, 58, 50, 42] as const);
 export const AI_VISUAL_TARGET_BYTES = 150 * 1024;
 export const AI_VISUAL_MAX_LONG_EDGE = 1_200;
@@ -105,6 +105,8 @@ export const SCHOOLFORGE_SKETCH_PREAMBLE = [
   'Ogni freccia, linea o collegamento deve rappresentare soltanto una relazione esplicitamente dichiarata nel soggetto. Se la relazione è incerta, omettila.',
   'Scrivi esclusivamente le etichette elencate dal server come TESTO AUTORIZZATO, copiate alla lettera. Se il server dichiara NESSUNO, non inserire alcuna parola, lettera o numero.',
   'Ogni etichetta autorizzata deve indicare senza ambiguità il proprio elemento; se non puoi collocarla chiaramente, omettila invece di spostarla su un altro elemento.',
+  'Quando il soggetto confronta più posizioni, stati o istanze, rendi ciascun elemento distinguibile rispetto allo stesso riferimento comune mediante la posizione dichiarata e, se autorizzata, la propria etichetta.',
+  'Non usare marcatori, punti o simboli identici e non etichettati per rappresentare posizioni o stati differenti. Se il soggetto non rende la distinzione eseguibile senza inventare dettagli, ometti il confronto.',
   'Non produrre fotografie, 3D, neon, gradienti, texture, cornici, ombre decorative o sfondi elaborati.',
   'Non inserire logo, firma, watermark, persone riconoscibili o identificabili.',
   'Non imitare artisti, marchi, studi o stili proprietari.',

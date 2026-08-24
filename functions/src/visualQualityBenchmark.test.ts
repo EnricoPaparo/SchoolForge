@@ -16,7 +16,7 @@ import {
 import { MAX_VISUAL_BYTES } from './aiContentVisualProposal.js';
 
 describe('VISUAL-ENRICHMENT-05A dataset e piano', () => {
-  it('congela 8 tuning e 4 holdout B con sorgenti SHA-256 verificate', async () => {
+  it('congela 8 tuning e 4 holdout C con sorgenti SHA-256 verificate', async () => {
     const dataset = await loadVisualQualityDataset();
     expect(selectVisualQualityScenarios(dataset, 'tuning')).toHaveLength(8);
     expect(selectVisualQualityScenarios(dataset, 'holdout')).toHaveLength(4);
@@ -27,10 +27,10 @@ describe('VISUAL-ENRICHMENT-05A dataset e piano', () => {
     expect(
       selectVisualQualityScenarios(dataset, 'holdout').map((scenario) => scenario.titolo),
     ).toEqual([
-      'Le forbici come due leve',
-      'Come i dati vengono incapsulati in rete',
-      'Scegliere il registro linguistico',
-      'Citare una fonte in modo responsabile',
+      "La pressione dell'acqua aumenta con la profondità",
+      'Dalla sorgente alla foce: il profilo di un fiume',
+      'Correlazione non significa causalità',
+      'Riformulare una consegna ambigua',
     ]);
   });
 
@@ -44,6 +44,24 @@ describe('VISUAL-ENRICHMENT-05A dataset e piano', () => {
       '008ab1cfe5b3f02757f6723a54f7c9a2fd12ebc078de986d4842184da9e75ce6',
       '289af4039894148c8ff4f9d712abeaed2c1d54c441b17e4fbe9ea130d087847f',
       '86fe81d7c2c60df7d51d61de5597f582b115e750ab02ce0ab9fe7d11030af78f',
+    ];
+    for (let index = 0; index < expected.length; index += 1) {
+      const id = `VE05A-${String(index + 9).padStart(2, '0')}.md`;
+      const bytes = await readFile(new URL(id, archive));
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(expected[index]);
+    }
+  });
+
+  it('conserva byte e hash del holdout B fuori dal dataset attivo', async () => {
+    const archive = new URL(
+      '../../documentazione/evidenze/visual-enrichment-05a-holdout-b-sources/',
+      import.meta.url,
+    );
+    const expected = [
+      '5e57a7ea64737a53dae2c1162f29ad398245663e9cd14344b008c748b0c4783f',
+      'c80101e69938813fe647c09217c2b57d344d9fbdc098ed0b8c7f16ce8f4e4877',
+      '36834348cf9275da4a48491c2fdbf31b93f3d7ff83fa052be0c9ca8ba2d5a801',
+      '2bf0ea582289be6cd238e2f2580a9acae3f2fc9528b5acb4f6ff068175946c8f',
     ];
     for (let index = 0; index < expected.length; index += 1) {
       const id = `VE05A-${String(index + 9).padStart(2, '0')}.md`;
