@@ -12,7 +12,7 @@ import { estimateVisualCost } from './aiVisualCore.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import { maxAttemptsForPolicy } from './openAiStructuredRunner.js';
 
-export const VISUAL_QUALITY_DATASET_VERSION = 'visual-enrichment-05a-dataset-v1' as const;
+export const VISUAL_QUALITY_DATASET_VERSION = 'visual-enrichment-05a-dataset-v2' as const;
 export const VISUAL_QUALITY_RUBRIC_VERSION = 'visual-enrichment-05a-rubric-v1' as const;
 export const VISUAL_QUALITY_SPLITS = ['tuning', 'holdout'] as const;
 export type VisualQualitySplit = (typeof VISUAL_QUALITY_SPLITS)[number];

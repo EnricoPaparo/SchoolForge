@@ -1,8 +1,9 @@
 # VISUAL-ENRICHMENT — Arricchimento visivo delle lezioni (contratto e roadmap)
 
 > **Stato: VISUAL-ENRICHMENT-00→04 chiusi nel codice, non distribuiti.**
-> **VE-05A** implementa soltanto l'infrastruttura locale del benchmark, senza
-> generazioni reali né rollout. VE-05 reale resta aperto. **Gate GVISUAL: PENDING.**
+> **VE-05A** include infrastruttura e benchmark reali locali: tuning superato;
+> holdout A non superato e archiviato; holdout B indipendente congelato ma non
+> ancora eseguito. Nessun rollout. VE-05 resta aperto. **Gate GVISUAL: PENDING.**
 >
 > Chiudere VE-03 non rende disponibile alcuna funzionalità al docente: il
 > backend è completo, ma senza la UI di VE-04 non esiste ancora un percorso per
@@ -872,7 +873,7 @@ La suddivisione proposta dal mandato è mantenuta, con **una modifica motivata**
 | **VISUAL-ENRICHMENT-04** | **UI e renderer.** Suddiviso in **A + B** (vedi sotto). | VE-03 | **Chiuso nel codice, non distribuito.** |
 | **VE-04A** | **Renderer, lettura e riancoraggio.** Split del flusso di token nel renderer manuale con doppia sanificazione; `<figure>` React controllata; lettura dei byte solo in presenza di manifest; fallback e avviso quando l'ancora non esiste più; riancoraggio server-side senza rigenerare; vista studente condizionale; responsive e accessibilità sui componenti reali. | VE-03 | **Implementato, non distribuito.** |
 | **VE-04B** | **Workflow di generazione.** `DialogShell` a stati espliciti; controllo «Arricchisci visivamente»/«Gestisci immagine»; proposta testuale Quality con conferma separata; bind, stima e generazione immagine; anteprima, approvazione, sostituzione, abbandono e rimozione; refresh puntuale autorevole. | VE-04A | **Implementato, non distribuito.** |
-| **VISUAL-ENRICHMENT-05A** | **Infrastruttura benchmark locale.** Dodici lezioni congelate (8 tuning + 4 holdout), rubriche separate, runner dry-run fail-closed, provider iniettati, checkpoint atomico/resume e checklist layout/rollout. | VE-04 | **Implementato; nessuna chiamata reale e nessun deploy.** Vedi §15.7. |
+| **VISUAL-ENRICHMENT-05A** | **Infrastruttura benchmark locale.** Dodici lezioni congelate (8 tuning + 4 holdout), rubriche separate, runner dry-run fail-closed, provider iniettati, checkpoint atomico/resume e checklist layout/rollout. | VE-04 | **Implementato e usato.** Tuning superato; holdout A non superato e archiviato; candidato v4 e holdout B indipendente pronti. Nessun deploy. Vedi §15.7. |
 | **VISUAL-ENRICHMENT-05** | **Esecuzione qualitativa e rollout DEV.** Generazioni reali autorizzate separatamente, review umana, tasso di «nessuna immagine utile», peso/tempi/layout shift reali e rollout DEV. | VE-05A | **Aperto.** |
 | **Gate GVISUAL** | **Approvazione umana.** Il docente giudica se le immagini valgono il loro costo su lezioni reali. | VE-05 | **PENDING.** |
 
@@ -976,13 +977,18 @@ tentativo di injection sono esattamente il posto in cui quel testo non deve
 essere replicato: viene riportata solo la categoria.
 
 **Prompt.** Versione dedicata `AI_VISUAL_PROPOSAL_PROMPT_VERSION =
-'visual-proposal-01-v3'`, distinta da quelle di pool, lezione e mappa, che non
+'visual-proposal-01-v4'`, distinta da quelle di pool, lezione e mappa, che non
 sono state toccate. Il prompt tratta metadati e corpo come dati, delimita
 `lessonBody` con `fence()`, chiede una sola immagine e testo minimo al suo
 interno, vieta i concetti assenti, chiede caption e alt text sostanziali e
 distinti, e spinge esplicitamente verso `decision: 'none'` quando l'immagine
 sarebbe decorativa, ridondante, imprecisa, non verificabile o meno chiara del
-testo. Il preambolo `schoolforge-sketch/v1` e il prompt del provider immagini
+testo — incluso un ragionamento discorsivo trasformabile soltanto in caselle e
+frecce. La proposta applica già il contratto testuale della fase immagine:
+massimo 8 etichette distinte fra caporali, massimo 40 code point ciascuna,
+caporali bilanciate e duplicati esatti deduplicati. Una proposta accettata non
+può quindi fallire dopo per una seconda policy più stretta. Il preambolo
+`schoolforge-sketch/v1` e il prompt del provider immagini
 **non compaiono**: sono fuori scope.
 
 **Manifest e ancoraggio.** `LessonVisualManifest` e `LessonVisualAnchor` sono
@@ -1447,10 +1453,14 @@ senza normalizzazioni silenziose.
 rapporto d'aspetto conservato, dialog dentro il viewport, target touch a 44 px,
 console pulita.
 
-### 15.7 VISUAL-ENRICHMENT-05A — infrastruttura, non benchmark reale
+### 15.7 VISUAL-ENRICHMENT-05A — infrastruttura e benchmark locale
 
 VE-05A congela dodici lezioni complete con SHA-256 dei byte sorgente e split
-anti-overfitting 8 tuning + 4 holdout. Il runner locale riusa richiesta, prompt,
+anti-overfitting 8 tuning + 4 holdout. Il primo holdout A ha trovato una
+divergenza di contratto e non ha superato il gate: le sue quattro fonti sono
+archiviate byte per byte e non vengono riusate come validazione. Il dataset v2
+congela un nuovo holdout B indipendente per il candidato v4. Il runner locale
+riusa richiesta, prompt,
 parser, provider, preset, listini e normalizzatore del runtime; i provider sono
 iniettati nei test e non esistono porte Firebase. Proposta e immagine sono fasi
 separate: `decision: none` registra lo skip e impedisce la chiamata immagine.
@@ -1467,7 +1477,8 @@ rivalidati prima di qualunque conferma, secret o provider.
 Evidenza, rubrica, blocker, comandi e checklist future:
 [`evidenze/visual-enrichment-05a-benchmark.md`](evidenze/visual-enrichment-05a-benchmark.md).
 In questa fase non sono avvenuti generazioni OpenAI, letture di secret, accessi
-Firebase, smoke DEV, deploy o rollout. VE-05 e GVISUAL restano aperti.
+Firebase, smoke DEV, deploy o rollout. L'holdout B non è ancora eseguito; VE-05
+e GVISUAL restano aperti.
 
 ---
 

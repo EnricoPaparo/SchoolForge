@@ -514,14 +514,15 @@ async function runProposal(params: {
   const outcome = await params.provider.generate(request, model);
   const durationMs = Math.max(0, params.monotonicMs() - start);
   if (outcome.status !== 'ok') {
+    const definitelyNotInvoked = outcome.phase === 'pre_invocation';
     return {
       scenarioId: params.scenario.id,
       phase: 'proposal',
       status: 'failed',
       durationMs,
-      inputTokens: null,
-      outputTokens: null,
-      actualCostMicroUsd: null,
+      inputTokens: definitelyNotInvoked ? 0 : null,
+      outputTokens: definitelyNotInvoked ? 0 : null,
+      actualCostMicroUsd: definitelyNotInvoked ? 0 : null,
       priorBillingRisk: outcome.phase === 'invocation_unknown',
       raw: outcome,
       validationError: `provider_${outcome.phase}`,
@@ -584,16 +585,27 @@ async function runImage(params: {
   const outcome = await params.provider.generate(params.proposal.subject);
   const durationMs = Math.max(0, params.monotonicMs() - start);
   if (outcome.status !== 'success') {
+    const definitelyNotInvoked = outcome.status === 'pre_invocation';
     return {
       scenarioId: params.scenarioId,
       phase: 'image',
       status: outcome.status === 'billed_unusable' ? 'invalid' : 'failed',
       durationMs,
-      inputTokens: outcome.status === 'billed_unusable' ? usage(outcome.usage?.inputTokens) : null,
+      inputTokens:
+        outcome.status === 'billed_unusable'
+          ? usage(outcome.usage?.inputTokens)
+          : definitelyNotInvoked
+            ? 0
+            : null,
       outputTokens:
-        outcome.status === 'billed_unusable' ? usage(outcome.usage?.outputTokens) : null,
-      actualCostMicroUsd:
-        outcome.status === 'billed_unusable' && !outcome.priorBillingRisk && outcome.usage
+        outcome.status === 'billed_unusable'
+          ? usage(outcome.usage?.outputTokens)
+          : definitelyNotInvoked
+            ? 0
+            : null,
+      actualCostMicroUsd: definitelyNotInvoked
+        ? 0
+        : outcome.status === 'billed_unusable' && !outcome.priorBillingRisk && outcome.usage
           ? actualVisualCostMicroUsd(outcome.usage)
           : null,
       priorBillingRisk:

@@ -21,6 +21,8 @@ import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
   MAX_VISUAL_ANCHOR_HEADING_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABEL_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABELS,
   MAX_VISUAL_CAPTION_CHARS,
   MAX_VISUAL_RATIONALE_CHARS,
   MAX_VISUAL_REASON_CHARS,
@@ -328,7 +330,7 @@ const VISUAL_PROPOSAL_IMAGE_SCHEMA = {
     decision: { type: 'string', enum: ['image'] },
     subject: {
       type: 'string',
-      description: `Descrizione visiva autosufficiente di una o due frasi: massimo assoluto ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode, obiettivo 240-320. Le sole etichette consentite nell'immagine devono essere racchiuse fra caporali «…»: massimo 8 etichette da 40 caratteri ciascuna.`,
+      description: `Descrizione visiva autosufficiente di una o due frasi: massimo assoluto ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode, obiettivo 240-320. Le sole etichette consentite nell'immagine devono essere racchiuse fra caporali «…»: massimo assoluto ${MAX_VISUAL_AUTHORIZED_LABELS} etichette distinte da ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna; se ne servono di più, semplifica o scegli none.`,
     },
     rationale: {
       type: 'string',

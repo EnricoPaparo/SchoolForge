@@ -226,6 +226,53 @@ describe('VISUAL-ENRICHMENT-05A CLI fail-closed', () => {
     expect(image.generate).not.toHaveBeenCalled();
   });
 
+  it('contabilizza a zero un fallimento proposta certamente pre-provider', async () => {
+    const current = deps({
+      argv: [VISUAL_QUALITY_EXECUTE_FLAG, VISUAL_QUALITY_COST_ACK_FLAG],
+      createProviders: vi.fn(() => ({
+        proposal: {
+          generate: vi.fn(async () => ({
+            status: 'failed' as const,
+            phase: 'pre_invocation' as const,
+          })),
+        },
+        image: imageProvider(),
+      })),
+    });
+    await runVisualQualityCli(current);
+    const final = current.reports.at(-1)!;
+    expect(final.records[0]).toMatchObject({
+      status: 'failed',
+      inputTokens: 0,
+      outputTokens: 0,
+      actualCostMicroUsd: 0,
+      priorBillingRisk: false,
+    });
+    expect(final.totalActualCostMicroUsd).toBe(0);
+  });
+
+  it('somma zero per un fallimento immagine certamente pre-provider', async () => {
+    const current = deps({
+      argv: [VISUAL_QUALITY_EXECUTE_FLAG, VISUAL_QUALITY_COST_ACK_FLAG],
+      createProviders: vi.fn(() => ({
+        proposal: proposalProvider('image'),
+        image: {
+          generate: vi.fn(async () => ({ status: 'pre_invocation' as const })),
+        },
+      })),
+    });
+    await runVisualQualityCli(current);
+    const final = current.reports.at(-1)!;
+    expect(final.records[1]).toMatchObject({
+      status: 'failed',
+      inputTokens: 0,
+      outputTokens: 0,
+      actualCostMicroUsd: 0,
+      priorBillingRisk: false,
+    });
+    expect(final.totalActualCostMicroUsd).toBe(final.records[0]!.actualCostMicroUsd);
+  });
+
   it('checkpoint/resume non duplica una proposta già completata', async () => {
     const proposal = proposalProvider('none');
     const seed = deps({

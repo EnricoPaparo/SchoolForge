@@ -43,6 +43,10 @@ export const MAX_VISUAL_RATIONALE_CHARS = 800;
 export const MAX_VISUAL_ANCHOR_HEADING_CHARS = 300;
 export const MAX_VISUAL_CAPTION_CHARS = 500;
 export const MAX_VISUAL_ALT_TEXT_CHARS = 1_000;
+/** Numero massimo di stringhe **distinte** autorizzabili dentro l'immagine. */
+export const MAX_VISUAL_AUTHORIZED_LABELS = 8;
+/** Lunghezza massima, in code point, di una singola etichetta autorizzata. */
+export const MAX_VISUAL_AUTHORIZED_LABEL_CHARS = 40;
 
 /** Peso massimo dei byte canonici dell'immagine (VE-03). */
 export const MAX_VISUAL_BYTES = 204_800;
@@ -133,6 +137,38 @@ function invalidOutput(message: string): never {
 /** Lunghezza in **code point**, non in unità UTF-16. */
 export function codePointLength(value: string): number {
   return [...value].length;
+}
+
+export type VisualAuthorizedLabelsInspection =
+  | { readonly ok: true; readonly labels: readonly string[] }
+  | { readonly ok: false; readonly reason: 'invalid_form' | 'too_many' };
+
+/**
+ * Contratto puro condiviso dalle due fasi: una proposta accettata deve essere
+ * consumabile dal generatore di immagini senza incontrare un secondo insieme
+ * di regole. Le ripetizioni esatte sono un set e non ampliano l'allowlist.
+ */
+export function inspectVisualAuthorizedLabels(subject: string): VisualAuthorizedLabelsInspection {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  const re = /«([^«»]+)»/gu;
+  for (const match of subject.matchAll(re)) {
+    const label = match[1]!;
+    if (label !== label.trim() || codePointLength(label) > MAX_VISUAL_AUTHORIZED_LABEL_CHARS) {
+      return { ok: false, reason: 'invalid_form' };
+    }
+    if (seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+  }
+  const residual = subject.replace(/«[^«»]+»/gu, '');
+  if (residual.includes('«') || residual.includes('»')) {
+    return { ok: false, reason: 'invalid_form' };
+  }
+  if (labels.length > MAX_VISUAL_AUTHORIZED_LABELS) {
+    return { ok: false, reason: 'too_many' };
+  }
+  return { ok: true, labels };
 }
 
 /**
@@ -242,6 +278,14 @@ export function assertValidVisualSubject(value: unknown): string {
     if (re.test(subject)) {
       invalidOutput(`Soggetto non ammesso (${why}).`);
     }
+  }
+  const labels = inspectVisualAuthorizedLabels(subject);
+  if (!labels.ok) {
+    invalidOutput(
+      labels.reason === 'too_many'
+        ? `Soggetto: massimo ${MAX_VISUAL_AUTHORIZED_LABELS} etichette distinte.`
+        : 'Soggetto: etichette fra caporali non valide.',
+    );
   }
   return subject;
 }
