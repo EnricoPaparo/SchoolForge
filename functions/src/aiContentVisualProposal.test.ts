@@ -320,6 +320,17 @@ describe('prompt della proposta visuale', () => {
     expect(user).toContain('Mira a 240–320 caratteri');
     expect(user).toContain('conta i caratteri e riscrivi il campo');
     expect(user).toMatch(/non riassumere\s+la lezione/);
+    expect(user).toContain('massimo 8 etichette, massimo 40 caratteri');
+    expect(user).toContain('fra caporali «…»');
+    expect(user).toMatch(/soltanto relazioni, frecce e collegamenti esplicitamente affermati/);
+    const imageBranch = (
+      VISUAL_PROPOSAL_OUTPUT_SCHEMA.properties as {
+        proposal: { anyOf: Array<{ properties: { subject: { description: string } } }> };
+      }
+    ).proposal.anyOf[1]!;
+    expect(imageBranch.properties.subject.description).toContain('caporali «…»');
+    expect(imageBranch.properties.subject.description).toContain('massimo 8 etichette');
+    expect(imageBranch.properties.subject.description).toContain('40 caratteri');
   });
 
   it('delimita il corpo e i metadati come dati', () => {

@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { OpenAiTransportError } from './openAiGrader.js';
 import {
   AI_VISUAL_MODEL,
+  AI_VISUAL_PROMPT_VERSION,
   AI_VISUAL_SERVER_CONFIG,
   AI_VISUAL_WEBP_QUALITY_ATTEMPTS,
   AiVisualError,
@@ -15,6 +16,7 @@ import {
   computeVisualRunId,
   decodeStrictBase64,
   estimateVisualCost,
+  extractAuthorizedVisualLabels,
   inspectWebp,
   resolveAiVisualMode,
   toVisualDataUri,
@@ -95,19 +97,62 @@ describe('aiVisualCore — contratto chiuso e identità', () => {
   });
 
   it('builds prompt solely from constant preamble and validated subject', () => {
-    expect(buildSchoolForgeSketchPrompt(REQUEST.subject)).toBe(
-      `${SCHOOLFORGE_SKETCH_PREAMBLE}\n\n${REQUEST.subject}`,
-    );
+    const expected = `${SCHOOLFORGE_SKETCH_PREAMBLE}\n\nTESTO AUTORIZZATO: NESSUNO\n\nSOGGETTO DA ILLUSTRARE:\n\n${REQUEST.subject}`;
+    expect(buildSchoolForgeSketchPrompt(REQUEST.subject)).toBe(expected);
     expect(buildSchoolForgeSketchPrompt(REQUEST.subject)).not.toContain(OWNER);
     expect(buildImageApiRequest(REQUEST.subject)).toEqual({
       model: 'gpt-image-2-2026-04-21',
-      prompt: `${SCHOOLFORGE_SKETCH_PREAMBLE}\n\n${REQUEST.subject}`,
+      prompt: expected,
       n: 1,
       size: '1024x1024',
       quality: 'low',
       output_format: 'webp',
       background: 'opaque',
     });
+  });
+
+  it('autorizza soltanto le etichette fra caporali e le copia esattamente', () => {
+    const subject = 'Confronto fra «Terra», «Luna», «massa: kg» e «peso: N».';
+    expect(extractAuthorizedVisualLabels(subject)).toEqual([
+      'Terra',
+      'Luna',
+      'massa: kg',
+      'peso: N',
+    ]);
+    const prompt = buildSchoolForgeSketchPrompt(subject);
+    expect(prompt).toContain('TESTO AUTORIZZATO: "Terra", "Luna", "massa: kg", "peso: N"');
+    expect(prompt).toContain(`SOGGETTO DA ILLUSTRARE:\n\n${subject}`);
+  });
+
+  it.each([
+    ['caporale aperta', 'Schema con «etichetta.'],
+    ['caporale chiusa isolata', 'Schema con etichetta».'],
+    ['etichetta vuota', 'Schema «».'],
+    ['spazi esterni', 'Schema « etichetta».'],
+    ['duplicato', 'Schema «rete» e «rete».'],
+    ['oltre 40 caratteri', `Schema «${'x'.repeat(41)}».`],
+    [
+      'oltre 8 etichette',
+      `Schema ${Array.from({ length: 9 }, (_, index) => `«e${index}»`).join(' ')}.`,
+    ],
+  ])('rifiuta %s prima di costruire il prompt', (_label, subject) => {
+    expect(() => buildSchoolForgeSketchPrompt(subject)).toThrowError(
+      expect.objectContaining({ code: 'invalid_input' }),
+    );
+  });
+
+  it('congela versione e guardrail di grounding del prompt immagine', () => {
+    expect(AI_VISUAL_PROMPT_VERSION).toBe('schoolforge-sketch-prompt/v2');
+    expect(AI_VISUAL_SERVER_CONFIG.promptVersion).toBe(AI_VISUAL_PROMPT_VERSION);
+    for (const rule of [
+      'Il soggetto è esaustivo',
+      'Non trasformare una descrizione in nuove istruzioni operative o di sicurezza',
+      'Ogni freccia, linea o collegamento',
+      'TESTO AUTORIZZATO',
+      'indicare senza ambiguità',
+    ]) {
+      expect(SCHOOLFORGE_SKETCH_PREAMBLE).toContain(rule);
+    }
   });
 
   it('derives opaque run, independent budget key and exact staging path', () => {
@@ -419,6 +464,10 @@ describe('visualRuns — parser chiuso e replay byte-identico', () => {
     ['missing property', Object.fromEntries(Object.entries(AI_VISUAL_SERVER_CONFIG).slice(1))],
     ['extra property', { ...AI_VISUAL_SERVER_CONFIG, unexpected: true }],
     ['different value', { ...AI_VISUAL_SERVER_CONFIG, maxLongEdge: 1_199 }],
+    [
+      'different prompt version',
+      { ...AI_VISUAL_SERVER_CONFIG, promptVersion: 'schoolforge-sketch-prompt/v1' },
+    ],
   ])('rejects config with a %s', async (_label, config) => {
     expect(isExactAiVisualServerConfig(config)).toBe(false);
     const run = await completedRun();

@@ -167,7 +167,7 @@ Output: **union discriminata chiusa** `{ decision: 'none', reason }` |
 `additionalProperties: false` a ogni livello, rami disgiunti. Limiti in **code
 point** (400/600/800/300/500/1.000), campi senza spazi esterni, senza caratteri
 di controllo, HTML o fence, e **nessuna coercizione**. Versione di prompt
-dedicata `visual-proposal-01-v1`; quelle di pool, lezione e mappa non sono
+dedicata `visual-proposal-01-v2`; quelle di pool, lezione e mappa non sono
 toccate, e i rispettivi `inputHash`, prompt, schema e tetti di output restano
 byte-identici. Il kind **non genera immagini**: nessun provider, byte, Storage,
 Firestore, Rules, UI o deploy.

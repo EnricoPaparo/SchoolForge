@@ -652,7 +652,8 @@ Vincolo strutturale, ed è la difesa che conta di più.
 Il prompt inviato al provider di immagini è **composto dal server**:
 
 ```
-[preambolo di stile SchoolForge Sketch v1 — costante server, non negoziabile]
+[preambolo SchoolForge Sketch — costante server, non negoziabile]
++ [allowlist di testo derivata soltanto dalle frasi `«…»` del subject]
 + [campo `subject` validato, ≤ 400 caratteri]
 ```
 
@@ -669,6 +670,10 @@ Validazione del `subject`, fail-closed:
 - rifiuto di richieste di imitare **artisti viventi**, studi o **marchi**;
 - rifiuto di richieste di **persone riconoscibili** o identificabili;
 - rifiuto di tentativi di sovrascrivere il preambolo di stile.
+- massimo 8 etichette fra caporali, massimo 40 code point ciascuna; caporali
+  sbilanciate, etichette duplicate o non canoniche sono rifiutate;
+- ogni oggetto, sostanza, azione, istruzione, relazione, freccia o collegamento
+  non nominato esplicitamente nel subject deve essere omesso.
 
 ### 9.3 Nessun dato studente raggiunge il provider
 
@@ -678,9 +683,11 @@ differenziazione, consegne, valutazioni, verifiche, appunti personali,
 identificatori di sessione.
 
 Il payload della proposta contiene **soltanto**: metadati didattici della
-lezione e corpo della lezione. Il payload dell'immagine contiene **soltanto**:
-preambolo di stile e `subject`. Nient'altro è ammesso, e l'aggiunta di un campo
-è una modifica di contratto, non un dettaglio implementativo.
+lezione e corpo della lezione. Il prompt immagine contiene **soltanto** il
+preambolo server-owned, l'allowlist di testo derivata deterministicamente dal
+`subject` e il `subject` stesso. Nessun nuovo dato del client è ammesso, e
+l'aggiunta di un campo è una modifica di contratto, non un dettaglio
+implementativo.
 
 ### 9.4 Contenuto dell'immagine
 
