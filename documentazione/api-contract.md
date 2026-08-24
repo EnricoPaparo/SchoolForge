@@ -1305,3 +1305,20 @@ L'indice entra nell'hash editoriale del run, ma non nel manifest privato né
 nella proiezione pubblica. Il manifest non è composto nel web:
 una `getDoc` puntuale del `LessonDoc` aggiorna la vista. Rimozione e abbandono
 riusano `aiVisualRemove` e `aiVisualAbandon`.
+
+### VE-05A — runner locale, non API Firebase
+
+`visualQualityCli` non introduce callable, endpoint, collezioni o schema. È un
+runner locale con dry-run predefinito che costruisce il payload
+`visual_proposal` tramite il validatore runtime e riusa prompt, Structured
+Output, parser relazionale degli heading, provider testuale/immagine, preset,
+listini e normalizzatore WebP reali. I confini provider e normalizzatore sono
+iniettati nei test; non esistono import Firebase Admin né letture/scritture
+Firestore o Storage.
+
+Proposta e immagine sono record distinti. Solo una proposta valida con
+`decision: image` abilita l'immagine; `none` registra `skipped_none` a costo e
+chiamate immagine zero. Il report è incompleto fino alla review umana e mantiene
+`verdict: null`. Resume accetta soltanto dataset, rubrica, split, preset,
+normalizzatore e limiti identici; le fasi già checkpointate non sono richiamate.
+VE-05A non esegue provider reali né rollout.
