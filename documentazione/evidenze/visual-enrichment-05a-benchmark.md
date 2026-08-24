@@ -1,8 +1,35 @@
 # VISUAL-ENRICHMENT-05A — infrastruttura benchmark e rollout DEV
 
-> **Stato:** infrastruttura implementata; benchmark reale e rollout DEV non
-> eseguiti; Gate GVISUAL **PENDING**. Questa evidenza non contiene immagini
+> **Stato:** infrastruttura implementata; primo tuning reale eseguito il
+> 24 agosto 2026 e fermato correttamente da un blocker del prompt; rollout DEV
+> non eseguito; Gate GVISUAL **PENDING**. Questa evidenza non contiene immagini
 > generate né un verdetto qualitativo.
+
+## Primo tuning reale — blocker rilevato
+
+L'esecuzione autorizzata sugli otto scenari tuning ha terminato in
+`awaiting_review` senza errori infrastrutturali, ma non costituisce un PASS:
+
+- 8 proposte testuali elaborate;
+- 7 proposte `image` rifiutate fail-closed perché `subject` superava il limite
+  autorevole di 400 caratteri (valori osservati: 450–738);
+- 1 proposta `none` valida, con relativa fase immagine `skipped_none`;
+- 0 chiamate al provider immagini;
+- costo testuale effettivo conoscibile: 41.127 micro-USD ($0,041127);
+- zero scritture Firestore o Storage.
+
+La causa era precisa: il limite viveva nel validator, ma non era comunicato né
+nel prompt né nelle descrizioni dello Structured Output. Il modello riceveva
+«descrizione autosufficiente» senza un budget e produceva descrizioni troppo
+lunghe; il validator le respingeva correttamente prima della fase immagine.
+
+La correzione candidata `visual-proposal-01-v2` mantiene il limite fail-closed,
+lo deriva dalla stessa costante nel prompt e nelle descrizioni dello schema,
+chiede un obiettivo operativo di 240–320 caratteri e impedisce al `subject` di
+diventare un riassunto della lezione. I checkpoint registrano ora anche la
+versione del prompt e la sessione passa a `visual-enrichment-05a-session-v2`:
+un report della v1 non è riprendibile come se fosse stato prodotto dalla v2.
+Serve un nuovo tuning reale prima dell'holdout.
 
 ## Dataset congelato
 
@@ -75,7 +102,7 @@ pnpm --filter @schoolforge/functions benchmark:visual-quality
 pnpm --filter @schoolforge/functions benchmark:visual-quality -- --benchmark-split=holdout
 ```
 
-Esecuzione reale futura, vietata in VE-05A:
+Esecuzione reale, ammessa soltanto nella fase VE-05 con autorizzazione esplicita:
 
 ```sh
 pnpm --filter @schoolforge/functions benchmark:visual-quality -- \
@@ -97,8 +124,14 @@ matrice (micro-USD; tra parentesi USD):
 
 | Split | Chiamate max | Tentativi max | Stima | Tetto prenotabile |
 |---|---:|---:|---:|---:|
-| tuning | 16 | 32 | 218.318 ($0,218318) | 596.224 ($0,596224) |
-| holdout | 8 | 16 | 109.183 ($0,109183) | 298.300 ($0,298300) |
+| tuning | 16 | 32 | 218.318 ($0,218318) | 611.568 ($0,611568) |
+| holdout | 8 | 16 | 109.183 ($0,109183) | 305.972 ($0,305972) |
+
+Il tetto della proposta è salito in modo misurato con
+`visual-proposal-01-v2` perché il prompt trasmette ora i limiti che prima
+esistevano soltanto nel validatore. La stima centrale resta invariata; il nuovo
+tetto è 410.208 micro-USD per il tuning e 205.292 per l'holdout, più la stessa
+quota immagine di prima.
 
 Il preset immagine server-side è `gpt-image-2-2026-04-21`, `1024x1024`, qualità
 `low`, un output WebP opaco. Il listino runtime
@@ -173,6 +206,7 @@ sono verdi.
 ## Non verificato
 
 Qualità reale delle proposte e immagini, tasso reale di `none`, costi/tempi
-provider, layout shift e intero rollout DEV. Nessuna chiamata OpenAI reale,
-lettura di secret locale, scrittura Firebase, modifica PROD o deploy è avvenuta
-in VE-05A. VE-05 reale resta aperto e GVISUAL resta PENDING.
+provider immagini, layout shift e intero rollout DEV. Il primo tuning ha
+verificato il percorso reale della proposta ma non ha prodotto immagini; non ha
+eseguito scritture Firebase, modifiche PROD o deploy. VE-05 reale resta aperto e
+GVISUAL resta PENDING.

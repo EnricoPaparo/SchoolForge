@@ -961,7 +961,7 @@ tentativo di injection sono esattamente il posto in cui quel testo non deve
 essere replicato: viene riportata solo la categoria.
 
 **Prompt.** Versione dedicata `AI_VISUAL_PROPOSAL_PROMPT_VERSION =
-'visual-proposal-01-v1'`, distinta da quelle di pool, lezione e mappa, che non
+'visual-proposal-01-v2'`, distinta da quelle di pool, lezione e mappa, che non
 sono state toccate. Il prompt tratta metadati e corpo come dati, delimita
 `lessonBody` con `fence()`, chiede una sola immagine e testo minimo al suo
 interno, vieta i concetti assenti, chiede caption e alt text sostanziali e

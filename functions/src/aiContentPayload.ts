@@ -18,6 +18,14 @@ import {
   buildVisualProposalPrompt,
 } from './aiContentPrompt.js';
 import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
+import {
+  MAX_VISUAL_ALT_TEXT_CHARS,
+  MAX_VISUAL_ANCHOR_HEADING_CHARS,
+  MAX_VISUAL_CAPTION_CHARS,
+  MAX_VISUAL_RATIONALE_CHARS,
+  MAX_VISUAL_REASON_CHARS,
+  MAX_VISUAL_SUBJECT_CHARS,
+} from './aiContentVisualProposal.js';
 import type { OpenAiStructuredRequest } from './openAiGrader.js';
 
 /** Nome schema (distinto da `schoolforge_ai_grading` della correzione). */
@@ -290,13 +298,23 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
  * fino al documento persistito renderebbe il contratto pubblico ostaggio della
  * forma richiesta oggi da un provider.
  */
+/**
+ * I limiti testuali compaiono nelle `description` perché lo Structured Output
+ * strict del provider accetta solo un sottoinsieme di JSON Schema: il
+ * validatore runtime resta l'autorità fail-closed e non viene sostituito da un
+ * `maxLength` potenzialmente non supportato. Prompt, descrizioni e validator
+ * leggono però le stesse costanti, quindi non possono divergere in silenzio.
+ */
 const VISUAL_PROPOSAL_NONE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['decision', 'reason'],
   properties: {
     decision: { type: 'string', enum: ['none'] },
-    reason: { type: 'string' },
+    reason: {
+      type: 'string',
+      description: `Motivazione specifica in italiano, massimo ${MAX_VISUAL_REASON_CHARS} caratteri Unicode.`,
+    },
   },
 };
 
@@ -306,11 +324,26 @@ const VISUAL_PROPOSAL_IMAGE_SCHEMA = {
   required: ['decision', 'subject', 'rationale', 'anchorHeadingText', 'caption', 'altText'],
   properties: {
     decision: { type: 'string', enum: ['image'] },
-    subject: { type: 'string' },
-    rationale: { type: 'string' },
-    anchorHeadingText: { type: 'string' },
-    caption: { type: 'string' },
-    altText: { type: 'string' },
+    subject: {
+      type: 'string',
+      description: `Descrizione visiva autosufficiente di una o due frasi: massimo assoluto ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode, obiettivo 240-320.`,
+    },
+    rationale: {
+      type: 'string',
+      description: `Utilità didattica specifica, massimo ${MAX_VISUAL_RATIONALE_CHARS} caratteri Unicode.`,
+    },
+    anchorHeadingText: {
+      type: 'string',
+      description: `Testo esatto di un heading della lezione, massimo ${MAX_VISUAL_ANCHOR_HEADING_CHARS} caratteri Unicode.`,
+    },
+    caption: {
+      type: 'string',
+      description: `Didascalia informativa, massimo ${MAX_VISUAL_CAPTION_CHARS} caratteri Unicode.`,
+    },
+    altText: {
+      type: 'string',
+      description: `Descrizione accessibile equivalente, massimo ${MAX_VISUAL_ALT_TEXT_CHARS} caratteri Unicode.`,
+    },
   },
 };
 

@@ -299,9 +299,27 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v1');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v2');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
+  });
+
+  it('comunica al modello tutti i limiti autorevoli, incluso il budget operativo del subject', () => {
+    const { user } = buildVisualProposalPrompt(visualRequest());
+    for (const limit of [
+      MAX_VISUAL_SUBJECT_CHARS,
+      MAX_VISUAL_REASON_CHARS,
+      MAX_VISUAL_RATIONALE_CHARS,
+      MAX_VISUAL_ANCHOR_HEADING_CHARS,
+      MAX_VISUAL_CAPTION_CHARS,
+      MAX_VISUAL_ALT_TEXT_CHARS,
+    ]) {
+      expect(user).toContain(`${limit} caratteri`);
+    }
+    expect(user).toContain('MASSIMO ASSOLUTO 400 caratteri Unicode');
+    expect(user).toContain('Mira a 240–320 caratteri');
+    expect(user).toContain('conta i caratteri e riscrivi il campo');
+    expect(user).toMatch(/non riassumere\s+la lezione/);
   });
 
   it('delimita il corpo e i metadati come dati', () => {
@@ -991,6 +1009,26 @@ describe('schema trasmesso al provider — strict compatibile', () => {
       'rationale',
       'subject',
     ]);
+  });
+
+  it('ripete nello schema descrittivo i limiti del validatore senza maxLength non supportati', () => {
+    const [none, image] = schema.properties.proposal.anyOf as {
+      properties: Record<string, { description?: string }>;
+    }[];
+    expect(none!.properties.reason!.description).toContain(
+      `massimo ${MAX_VISUAL_REASON_CHARS} caratteri Unicode`,
+    );
+    const limits = {
+      subject: MAX_VISUAL_SUBJECT_CHARS,
+      rationale: MAX_VISUAL_RATIONALE_CHARS,
+      anchorHeadingText: MAX_VISUAL_ANCHOR_HEADING_CHARS,
+      caption: MAX_VISUAL_CAPTION_CHARS,
+      altText: MAX_VISUAL_ALT_TEXT_CHARS,
+    } as const;
+    for (const [field, limit] of Object.entries(limits)) {
+      expect(image!.properties[field]!.description).toContain(`${limit} caratteri Unicode`);
+    }
+    expect(JSON.stringify(schema)).not.toContain('maxLength');
   });
 });
 
