@@ -1,9 +1,10 @@
 # VISUAL-ENRICHMENT-05A — infrastruttura benchmark e rollout DEV
 
-> **Stato:** infrastruttura implementata; primo tuning reale eseguito il
-> 24 agosto 2026 e fermato correttamente da un blocker del prompt; rollout DEV
-> non eseguito; Gate GVISUAL **PENDING**. Questa evidenza non contiene immagini
-> generate né un verdetto qualitativo.
+> **Stato:** infrastruttura implementata; due tuning reali eseguiti il
+> 24 agosto 2026. Il primo ha trovato un blocker di lunghezza della proposta; il
+> secondo ha prodotto sei immagini tecnicamente valide ma ha trovato blocker di
+> grounding e sicurezza nell'immagine. Rollout DEV non eseguito; Gate GVISUAL
+> **PENDING**.
 
 ## Primo tuning reale — blocker rilevato
 
@@ -30,6 +31,38 @@ diventare un riassunto della lezione. I checkpoint registrano ora anche la
 versione del prompt e la sessione passa a `visual-enrichment-05a-session-v2`:
 un report della v1 non è riprendibile come se fosse stato prodotto dalla v2.
 Serve un nuovo tuning reale prima dell'holdout.
+
+## Secondo tuning reale — blocker qualitativo dell'immagine
+
+La sessione v2 ha dimostrato che la correzione della proposta funziona, ma non
+ha superato il gate umano:
+
+- 8/8 proposte valide, senza output rifiutati;
+- 6 esiti `image` e 2 esiti `none` (`VE05A-05` e `VE05A-06`);
+- 6/6 WebP tecnicamente validi, 1024×1024, qualità 82, per 421.570 byte totali
+  (circa 70 KB medi, massimo 119.066 byte);
+- costo reale conoscibile: 83.388 micro-USD ($0,083388), di cui 38.603 per le
+  proposte e 44.785 per le immagini;
+- zero scritture Firestore o Storage.
+
+La review visuale ha rilevato difetti concreti: un'etichetta del vulcano
+puntava alla colata invece che al cono; alcune frecce del ciclo dell'acqua e
+della rete alimentare erano ambigue o dedotte; soprattutto l'immagine sulla
+sicurezza in laboratorio inventava la sostanza «ACIDO CLORIDRICO» e
+l'istruzione «avvisa e pulisci subito», assenti dalla lezione. L'asset sulle
+fonti storiche era invece valido benché il dataset si aspettasse prudenzialmente
+`none`: questo non è da solo un errore, ma conferma che l'astensione va giudicata
+insieme all'utilità reale.
+
+Il candidato successivo conserva `visual-proposal-01-v2` e introduce il prompt
+immagine `schoolforge-sketch-prompt/v2`. Il subject diventa esaustivo: oggetti,
+sostanze, azioni, istruzioni, relazioni e frecce non nominate devono essere
+omessi. Le sole parole che il provider può scrivere sono estratte dal server
+dalle frasi racchiuse fra caporali `«…»` nel subject, con massimo 8 etichette da
+40 code point; una forma ambigua o duplicata fallisce prima del provider. La
+versione entra nella config chiusa del run, quindi un run prodotto col prompt
+precedente non è un replay compatibile. Serve un nuovo tuning completo; lo
+split holdout resta sigillato fino alla sua review.
 
 ## Dataset congelato
 
@@ -124,14 +157,13 @@ matrice (micro-USD; tra parentesi USD):
 
 | Split | Chiamate max | Tentativi max | Stima | Tetto prenotabile |
 |---|---:|---:|---:|---:|
-| tuning | 16 | 32 | 218.318 ($0,218318) | 611.568 ($0,611568) |
-| holdout | 8 | 16 | 109.183 ($0,109183) | 305.972 ($0,305972) |
+| tuning | 16 | 32 | 228.638 ($0,228638) | 687.456 ($0,687456) |
+| holdout | 8 | 16 | 114.343 ($0,114343) | 343.916 ($0,343916) |
 
-Il tetto della proposta è salito in modo misurato con
-`visual-proposal-01-v2` perché il prompt trasmette ora i limiti che prima
-esistevano soltanto nel validatore. La stima centrale resta invariata; il nuovo
-tetto è 410.208 micro-USD per il tuning e 205.292 per l'holdout, più la stessa
-quota immagine di prima.
+I tetti sono ricalcolati sui prompt effettivi: la proposta v2 comunica i propri
+limiti e il prompt immagine v2 aggiunge grounding e allowlist. Il tetto della
+proposta è 424.336 micro-USD per il tuning e 212.356 per l'holdout; quello
+dell'immagine è rispettivamente 263.120 e 131.560 micro-USD.
 
 Il preset immagine server-side è `gpt-image-2-2026-04-21`, `1024x1024`, qualità
 `low`, un output WebP opaco. Il listino runtime
@@ -205,8 +237,8 @@ sono verdi.
 
 ## Non verificato
 
-Qualità reale delle proposte e immagini, tasso reale di `none`, costi/tempi
-provider immagini, layout shift e intero rollout DEV. Il primo tuning ha
-verificato il percorso reale della proposta ma non ha prodotto immagini; non ha
-eseguito scritture Firebase, modifiche PROD o deploy. VE-05 reale resta aperto e
-GVISUAL resta PENDING.
+Qualità reale del nuovo prompt immagine v2, costi/tempi dopo il nuovo grounding,
+layout shift e intero rollout DEV. Il secondo tuning ha prodotto immagini e ha
+fermato correttamente il rollout sui blocker qualitativi descritti sopra; nessun
+tuning ha eseguito scritture Firebase, modifiche PROD o deploy. VE-05 reale resta
+aperto e GVISUAL resta PENDING.
