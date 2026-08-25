@@ -1277,3 +1277,21 @@ evidenza dell'adapter in
 | ORCHESTRATOR-03 | Ciclo Codex review→Claude fix, massimo quattro iterazioni, fault injection e arresto fail-closed. | ORCHESTRATOR-02 | **Aperto.** |
 | ORCHESTRATOR-04 | Pilot reale `MULTI-VISUAL-00`, limitato a documentazione e prototipo. | ORCHESTRATOR-03 | **Deliverable del task manifest prodotti manualmente** (ORCHESTRATOR-02/03 — registro GitHub e ciclo review automatico — restano **Aperto**, quindi non è stato il ciclo automatico a eseguirlo): [`multi-visual-roadmap.md`](multi-visual-roadmap.md), prototipo e [evidenze/multi-visual-00-review.md](evidenze/multi-visual-00-review.md). PR draft aperta, ferma a `gate:human`. |
 | Gate GORCH | Verifica recovery quote/crash, rispetto scope, qualità review e corretto arresto al gate umano. | ORCHESTRATOR-04 | **PENDING.** |
+
+---
+
+## Appendice H — MULTI-VISUAL
+
+Estensione dell'arricchimento visivo a un massimo di tre immagini generate o
+caricate per lezione. Contratto completo in
+[multi-visual-roadmap.md](multi-visual-roadmap.md).
+
+| Pacchetto | Sintesi | Dipendenze | Stato |
+|---|---|---|---|
+| MULTI-VISUAL-00 | Contratto, cost model e prototipo responsive. | VISUAL-ENRICHMENT | **Chiuso.** PR #423. |
+| MULTI-VISUAL-01 | Tipi, manifest, adattatore legacy, ancore e validatori puri. | MULTI-VISUAL-00 | **Chiuso.** PR #425. |
+| MULTI-VISUAL-02 | Proposta coordinata interna `visual_plan_proposal`; upload PNG/JPEG/WebP owner-only, normalizzazione WebP condivisa, `VisualUploadRun`, replay/conflitto, staging create-only, abbandono e cleanup puntuale con prova di proprietà. | MULTI-VISUAL-01 | **Implementato, non distribuito.** Nessuna UI, Rule, proiezione studente, chiamata provider reale o deploy. |
+| MULTI-VISUAL-03 | Persistenza e lifecycle economico del piano, promozione condivisa, Rules, export e wiring TTL. | MULTI-VISUAL-02 | **Aperto.** |
+| MULTI-VISUAL-04 | UI docente/studente, upload, galleria, riordino e integrazione con «Genera lezione». | MULTI-VISUAL-03 | **Aperto.** |
+| MULTI-VISUAL-05 | Benchmark reale e rollout controllato. | MULTI-VISUAL-04 | **Aperto.** |
+| Gate GMULTI | Approvazione umana su qualità, flusso e responsive. | MULTI-VISUAL-05 | **PENDING.** |
