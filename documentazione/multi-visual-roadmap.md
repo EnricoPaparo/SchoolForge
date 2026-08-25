@@ -31,6 +31,28 @@
 > distinte resta legittima, solo l'idea duplicata è vietata (§7.4). §21 ne
 > elenca la correzione e la prova.
 >
+> **Revisione 4 (25 agosto 2026).** La terza review Codex ha trovato **sei
+> difetti di coerenza/idempotenza** sopravvissuti alla revisione 3:
+> `planHash` non includeva davvero tutti i campi che §5.5 promette, e un
+> replay dopo la promozione del piano stesso lo avrebbe dichiarato stale —
+> corretto separando identità della richiesta (immutabile, verificata
+> contro i valori iniziali persistiti) dalle guardie sul mondo mutabile
+> (verificate solo alla scrittura, §10.1, §10.1.1); «un solo piano attivo»
+> non era garantito da un `opaquePlanId` derivato dal `requestId` client —
+> corretto con un lease deterministico `visualPlanLeases/{SHA-256(ownerUid,
+> lessonId)}`, acquisito nella stessa transazione della prenotazione, con
+> race A/B esplicite (§10.3); l'upload non aveva un contratto di
+> idempotenza — nuovo `VisualUploadRun` con `requestId`, replay, conflitto,
+> riuso della promozione di §8.6, cap combinato con il piano (§9.6–§9.9);
+> le Rules dipendevano da primitive inventate (`lessonIdOf`,
+> `assetIdsOf().toSet()`) — sostituite dagli helper reali del runtime
+> (`isOwner()`, `isApprovedStudent()`, `isClassmateOf()`,
+> `activeImportId`, `examModeAppliesToClass`) e da una funzione a rami
+> espliciti per cardinalità 1/2/3 (§5.4.1–§5.4.3); l'export dichiarava
+> tutto-o-niente per lezione invece che sull'intero batch — corretto
+> (§14.2); test e costi delle nuove guardie aggiunti in §12 e §19. §22 ne
+> elenca la correzione e la prova.
+>
 > Questo documento **non sostituisce**
 > [`visual-enrichment-roadmap.md`](visual-enrichment-roadmap.md) (di seguito
 > «VE»): lo **estende**. Ogni principio, invariante o meccanismo di VE non
@@ -41,7 +63,7 @@
 > **Prototipo:** [`prototipi/lesson-multi-visual.html`](prototipi/lesson-multi-visual.html)
 > **Review di fase:** [`evidenze/multi-visual-00-review.md`](evidenze/multi-visual-00-review.md)
 
-**Data:** 25 agosto 2026 (revisione 3).
+**Data:** 25 agosto 2026 (revisione 4).
 **Base:** `main` — merge di PR #421 (`agent-orchestrator-01`).
 **Dipendenze documentali:** `visual-enrichment-roadmap.md` (VE-00→05A);
 `lesson-manual-contract.md` (renderer, sanificazione, slug); `sicurezza.md`
@@ -403,78 +425,83 @@ sottocollezione per asset romperebbe l'invariante «una lettura puntuale,
 indipendente dal numero di immagini» (Firestore fattura per documento
 letto): resta quindi scartata per lo stesso motivo di VE §3.3.
 
-### 5.4.1 Rules — congelate, non più «fase implementativa futura»
+### 5.4.1 Rules — congelate con le primitive reali del runtime, non inventate
 
-**Correzione rispetto alla revisione 2**, che rimandava la forma delle
-Rules a un'implementazione futura senza specificarle. La review ha
-correttamente osservato che senza le Rules scritte qui, il modello di
-sicurezza non è specificato — solo rimandato. Questo paragrafo le congela,
-in pseudocodice coerente con lo stile già usato da `sicurezza.md` e da
-VE-00 per `storage.rules`; la sintassi Firestore Rules esatta è compito
-dell'implementazione, ma **ogni condizione elencata qui è vincolante**.
+**Correzione rispetto alla revisione 3.** Il pseudocodice precedente usava
+`isOwnerOfLesson(publicLessonId)` — una funzione che risale da
+`publicLessonId` al `LessonDoc` privato per confrontarne l'owner — e
+`assetIdsOf(...).toSet()`/`allAssetDimensionsMatch(...)` come se CEL
+avesse iterazione generica su mappe. Nessuna delle due esiste nel runtime
+reale, e la seconda non è nemmeno esprimibile in CEL per una mappa di
+dimensione arbitraria. La review ha respinto correttamente un contratto
+che dipende da primitive impossibili. Questa versione usa **solo** gli
+helper Rules già in vigore, citati da `sicurezza.md` §170 e usati altrove
+nel repository, e sostituisce l'iterazione generica con una funzione a
+rami espliciti — praticabile perché il tetto di tre elementi (§4) rende
+«esplicito» sinonimo di «breve».
+
+**`isOwner()` non ha bisogno di alcun parametro, né di risalire da
+`publicLessonId`.** SchoolForge è single-owner/single-tenant per scelta di
+design (`performance-security-audit.md`): un solo `settings/owner` per
+l'intero deployment. `isOwner()` confronta `request.auth.uid` con
+`settings/owner.ownerUid` **globalmente** (`hardening-audit-v1.md` §2) — non
+esiste un "owner di questa lezione" distinto dall'unico owner
+dell'installazione, quindi non esiste nulla da cui risalire. La revisione
+3 aveva inventato una risalita che il modello a singolo proprietario non
+richiede.
 
 **`publicLessonVisuals/{publicLessonId}`:**
 
 ```
 match /publicLessonVisuals/{publicLessonId} {
 
-  allow read: if isOwnerOfLesson(publicLessonId)
-              || isStudentAllowedToRead(publicLessonId);
+  allow read: if isOwner()
+              || isStudentAllowedToReadVisualBytes(publicLessonId);
 
-  // Scrittura SEMPRE negata al client, in ogni ruolo. Il documento è
-  // scritto solo da Cloud Functions (Admin SDK, bypassa le Rules) durante
-  // la promozione (§8.6), la rimozione (§8.9) e il cleanup (§8.12).
+  // Scrittura SEMPRE negata al client, in ogni ruolo — anche l'owner.
+  // Il documento è scritto solo da Cloud Functions (Admin SDK, bypassa le
+  // Rules) durante la promozione (§8.6/§9.8), la rimozione (§8.9) e il
+  // cleanup (§8.12).
   allow write: if false;
 }
 
-function isOwnerOfLesson(publicLessonId) {
-  // Stessa disciplina owner-only già usata da VE per LessonDoc/staging:
-  // richiede risalire dal publicLessonId al LessonDoc privato e
-  // confrontare l'owner con request.auth.uid. Costo di lettura accettato
-  // solo lato docente (superficie di gestione, non lo studente).
-  return request.auth != null
-      && get(/databases/$(db)/documents/lessons/$(lessonIdOf(publicLessonId))).data.ownerUid == request.auth.uid;
-}
-
-function isStudentAllowedToRead(publicLessonId) {
+function isStudentAllowedToReadVisualBytes(publicLessonId) {
   let lesson = get(/databases/$(db)/documents/publicLessons/$(publicLessonId)).data;
   let bytes  = resource.data;
 
   return request.auth != null
 
-      // 1. Le stesse guardie di scoperta già usate da `publicLessons` per
-      //    il testo — programma/import attivo (`activeImportId`, riuso
-      //    del meccanismo di STRUCTURE-IMPORT/HARD-02B), classe dello
-      //    studente, Modalità verifica: nessuna guardia nuova, nessuna
-      //    guardia più permissiva di quella che già protegge il testo
-      //    della stessa lezione.
-      && passesLessonDiscoveryGuards(lesson)
+      // 1. Le stesse guardie di scoperta GIÀ IN VIGORE per il testo della
+      //    stessa lezione — nessuna guardia nuova, nessuna più permissiva:
+      //    isApprovedStudent() (sicurezza.md §41), isClassmateOf() sulle
+      //    classIds del programma padre (sicurezza.md §94-96),
+      //    l'import realmente attivo (`resource.data.importId ==
+      //    get(program).activeImportId`, HARD-02B-1) e l'assenza di
+      //    Modalità verifica sulla classe (`examModeAppliesToClass`,
+      //    sicurezza.md §106). Questo contratto non re-implementa questi
+      //    helper: li richiama così come sono già scritti in
+      //    `firestore.rules`.
+      && isApprovedStudent()
+      && isClassmateOf(get(/databases/$(db)/documents/programs/$(lesson.programId)).data.classIds)
+      && lesson.importId == get(/databases/$(db)/documents/programs/$(lesson.programId)).data.activeImportId
+      && !examModeAppliesToClass(myStudentClassId())
 
-      // 2. La proiezione visiva esiste ed è ben formata.
+      // 2. La proiezione visiva esiste, è ben formata, e la lezione è
+      //    svolta — senza `completed == true` la proiezione stessa non
+      //    dovrebbe esistere (§8.11), ma la Rule non si fida del solo
+      //    fatto che il documento sia leggibile per dedurlo.
       && lesson.visuals != null
-      && isWellFormedPublicVisualsManifest(lesson.visuals)
-
-      // 3. La lezione è svolta — senza questa condizione la proiezione
-      //    stessa non dovrebbe esistere (§8.11), ma la Rule non si fida
-      //    del solo fatto che il documento sia leggibile per dedurlo.
       && lesson.completed == true
 
-      // 4. Identità del byte doc coerente con la lezione che dice di
-      //    servire — "non fidarsi solo del path".
+      // 3. Identità del byte doc coerente con la lezione che dice di
+      //    servire — "non fidarsi solo del path" (§5.4).
       && bytes.publicLessonId == publicLessonId
       && bytes.programId == lesson.programId
       && bytes.importId  == lesson.importId
 
-      // 5. L'insieme delle chiavi di `bytes` coincide ESATTAMENTE con
-      //    l'insieme degli assetId del manifest pubblico — non un
-      //    sottoinsieme, non un soprainsieme. Una chiave in più sarebbe un
-      //    residuo leggibile di una rimozione incompleta (§8.9); una
-      //    chiave in meno servirebbe un manifest che promette un'immagine
-      //    che il documento non ha.
-      && bytes.bytes.keys().toSet() == assetIdsOf(lesson.visuals).toSet()
-
-      // 6. Dimensioni coerenti asset per asset fra manifest e byte doc.
-      && allAssetDimensionsMatch(lesson.visuals, bytes.bytes);
+      // 4. Chiavi e dimensioni coerenti, a rami espliciti per
+      //    cardinalità — mai un'iterazione generica (§5.4.2).
+      && bytesKeysAndDimsMatch(lesson.visuals.items, bytes.bytes);
 }
 ```
 
@@ -482,8 +509,11 @@ function isStudentAllowedToRead(publicLessonId) {
 
 ```
 match /publicLessons/{publicLessonId} {
-  allow read: if isOwnerOfLesson(publicLessonId)
-              || passesLessonDiscoveryGuards(resource.data);
+  allow read: if isOwner()
+              || (isApprovedStudent()
+                  && isClassmateOf(get(/databases/$(db)/documents/programs/$(resource.data.programId)).data.classIds)
+                  && resource.data.importId == get(/databases/$(db)/documents/programs/$(resource.data.programId)).data.activeImportId
+                  && !examModeAppliesToClass(myStudentClassId()));
   allow write: if false; // solo Cloud Functions
 }
 ```
@@ -499,6 +529,88 @@ eccezione per il docente: anche l'owner scrive solo attraverso le callable
 autenticate (§8.6, §8.9, §8.12), mai con una scrittura diretta al
 documento — stessa disciplina già in vigore per `visualRuns` e lo staging
 di VE.
+
+### 5.4.2 `bytesKeysAndDimsMatch` — a rami espliciti, perché CEL non itera mappe generiche
+
+**Nuovo in questa revisione.** CEL (il linguaggio delle Firestore Security
+Rules) non offre un modo di iterare una mappa di dimensione arbitraria e
+confrontarla campo per campo con un array — `toSet()` su una mappa e un
+confronto generico tipo `allAssetDimensionsMatch(...)` della revisione 3
+non sono primitive che esistono. Il limite di tre elementi (§4) rende
+questo non un problema: la funzione si scrive a mano, un ramo per
+cardinalità, mai più di tre confronti espliciti:
+
+```
+function bytesKeysAndDimsMatch(items, bytesMap) {
+  return
+    items.size() == 1 ?
+         bytesMap.size() == 1
+      && (items[0].assetId in bytesMap)
+      && bytesMap[items[0].assetId].width  == items[0].width
+      && bytesMap[items[0].assetId].height == items[0].height
+    :
+    items.size() == 2 ?
+         bytesMap.size() == 2
+      && (items[0].assetId in bytesMap) && (items[1].assetId in bytesMap)
+      && bytesMap[items[0].assetId].width  == items[0].width
+      && bytesMap[items[0].assetId].height == items[0].height
+      && bytesMap[items[1].assetId].width  == items[1].width
+      && bytesMap[items[1].assetId].height == items[1].height
+    :
+    items.size() == 3 ?
+         bytesMap.size() == 3
+      && (items[0].assetId in bytesMap) && (items[1].assetId in bytesMap) && (items[2].assetId in bytesMap)
+      && bytesMap[items[0].assetId].width  == items[0].width
+      && bytesMap[items[0].assetId].height == items[0].height
+      && bytesMap[items[1].assetId].width  == items[1].width
+      && bytesMap[items[1].assetId].height == items[1].height
+      && bytesMap[items[2].assetId].width  == items[2].width
+      && bytesMap[items[2].assetId].height == items[2].height
+    :
+    false; // items.size() == 0 non deve mai arrivare qui: senza `visuals`
+           // il byte doc non esiste (§3.3 di VE, §5.4), quindi questa
+           // funzione non è mai chiamata su un manifest vuoto.
+```
+
+**Perché `bytesMap.size() == N` più N chiavi nominate implica corrispondenza
+esatta, senza un `toSet()`.** Gli `assetId` sono UUID v4 generati
+server-side (§5.1): due elementi distinti dello stesso manifest non
+possono mai avere lo stesso `assetId`. Verificare che la mappa abbia
+esattamente N chiavi **e** che le N chiavi nominate ci siano tutte esclude
+per costruzione qualunque chiave extra — non serve enumerare le chiavi
+della mappa per dimostrarlo, basta contarle.
+
+### 5.4.3 Costo dichiarato dei `get()` aggiunti da questa Rule
+
+Ogni `get()` allo stesso percorso, all'interno della stessa valutazione di
+una Rule, è **memoizzato** da Firestore — chiamarlo più volte nello stesso
+`match` non lo fattura più volte (stesso comportamento già sfruttato da
+HARD-02B-1 per `get(program)`, citato in `hard-02b-import-chunking-design.md`
+§7: «le due `get` sullo stesso path sono memoizzate entro la stessa
+valutazione»). Il delta introdotto da questa sezione, rispetto a ciò che
+la lettura di `publicLessons` già costa oggi:
+
+- **owner**: `isOwner()` — 1 `get()` su `settings/owner`, già pagato da
+  ogni altra Rule owner-only del repository; nessun `get()` nuovo
+  specifico di questa funzione.
+- **studente, lettura di `publicLessonVisuals`**: **+1 `get()` nuovo**
+  rispetto a una lettura di `publicLessons` da sola — quello su
+  `publicLessons/{publicLessonId}` stesso, necessario perché questa Rule
+  valuta un documento **diverso** (`publicLessonVisuals`) e deve risalire
+  al padre per le condizioni 1–4. Il `get(programs/{programId})` richiesto
+  da `isClassmateOf`/`activeImportId` è **lo stesso** già pagato oggi dalla
+  lettura di `publicLessons` (HARD-02B-1) — non un secondo `get()`
+  indipendente, per la memoizzazione sopra.
+- **studente, lettura di `publicLessons.visuals`**: **+0 `get()`
+  nuovi** — nessuna condizione di questa sezione introduce un `get()` che
+  la Rule esistente su `publicLessons` non pagasse già.
+
+Questo costo è **Rules-time** (fatturato per valutazione di lettura,
+indipendentemente dal numero di immagini) — un costo diverso e distinto
+dal cost model applicativo di §12, che conta operazioni Firestore lato
+Function, non valutazioni di Rules lato lettura diretta client. Nessuna
+riga di §12 include questo costo, e nessuna dovrebbe: sono due livelli
+diversi di fatturazione Firebase.
 
 ### 5.5 Piano visivo — `VisualPlanRun`
 
@@ -659,21 +771,25 @@ export interface VisualPlanRun {
 
 **Un record presente ma divergente o malformato è `corrupted_state`, mai
 assenza o replay.** Vale per ogni lettura di `visualPlanRuns/{opaquePlanId}`
-— sia al primo tentativo di autorizzazione (§8.3) sia a un resume (§8.8):
+— sia al primo tentativo di autorizzazione (§8.3) sia a un resume (§8.8).
+**Corretto rispetto alla revisione 3**: il giudizio non confronta più nulla
+contro una rilettura del mondo attuale (§10.1 lo vieta esplicitamente) —
+solo contro la forma e l'identità persistite nel record stesso:
 
 - il documento **non esiste** → percorso normale di creazione di un nuovo
   piano (§8.3);
-- il documento esiste, **struttura valida**, `planHash` coincide col
-  ricalcolo corrente → replay legittimo, nessuna nuova scrittura (§10.1);
-- il documento esiste, **struttura valida**, ma `ownerUid`/`programId`/
-  `importId`/`lessonId`/`publicLessonId` **non coincidono** con quanto
-  risulterebbe da una rilettura fresca di `LessonDoc` a quell'`opaquePlanId`
-  → **`corrupted_state`**, non `visual_plan_stale` (quell'esito è riservato
-  a un `planHash` che diverge per un cambiamento *legittimo* dello stato
-  della lezione, §10.1) e non un'assenza silenziosa che farebbe ripartire
-  la creazione di un piano duplicato sotto lo stesso `opaquePlanId` — un
-  conflitto di scrittura che il codice deve poter distinguere, non
-  nascondere;
+- il documento esiste, **struttura valida**, i campi identità persistiti
+  (`ownerUid`/`programId`/`importId`/`lessonId`/`publicLessonId`/
+  `requestId`) coincidono con quelli della richiesta corrente → replay
+  legittimo, nessuna nuova scrittura, il record restituito così com'è
+  qualunque cosa sia successo alla lezione nel frattempo (§10.1);
+- il documento esiste, **struttura valida**, ma i campi identità **non
+  coincidono** con quelli della richiesta corrente → **`corrupted_state`**
+  — non un'assenza silenziosa che farebbe ripartire la creazione di un
+  piano duplicato sotto lo stesso `opaquePlanId` (un conflitto di
+  scrittura che il codice deve poter distinguere, non nascondere), e non
+  un giudizio basato su una rilettura di `LessonDoc` (che il passo sopra
+  esclude per principio, §10.1);
 - il documento esiste ma **non supera il validatore strutturale** (chiavi
   mancanti, unione di stato non valida, array `slots` con `slotIndex`
   duplicati) → **`corrupted_state`**, stessa ragione: un tentativo di
@@ -714,6 +830,15 @@ export interface VisualPlanSlot {
     byteLength: number;
     sha256: string;
   } | null;
+  /**
+   * `assetId` generato al momento della promozione (§8.6 passo 5), non
+   * prima — lo staging resta chiavato per `slotIndex`, non per `assetId`,
+   * finché lo slot non diventa canonico. `null` in ogni stato diverso da
+   * `promoted`. Nuovo in questa revisione: è il campo che rende
+   * calcolabile `promotedAssetIdsByThisPlan` (§10.1) senza dover
+   * ricostruirlo da `LessonDoc.visuals` a ogni verifica.
+   */
+  promotedAssetId: string | null;
 }
 ```
 
@@ -1321,8 +1446,11 @@ type VisualPromotionMode =
    dichiarati per quello slot;
 3. risolve l'ancora dal `VisualAnchorSelector` dello slot contro il corpo
    **fresco** (§7.2) — mai lo slug, mai l'indice da solo;
-4. rilegge (o adotta, §6.2) `LessonDoc.visuals`, applica la modalità
-   all'array fresco — fail-closed `visual_slot_full` se non c'è più spazio,
+4. rilegge (o adotta, §6.2) `LessonDoc.visuals`; verifica che l'insieme di
+   `assetId` presenti coincida esattamente con `expectedLiveAssetIds` del
+   piano (§10.1.1) — disallineamento ⇒ **`visual_plan_external_mutation`**,
+   zero scritture, slot ancora `ready`; applica poi la modalità all'array
+   fresco — fail-closed `visual_slot_full` se non c'è più spazio,
    `visual_replace_target_missing` se l'`assetId` da sostituire non esiste
    più;
 5. copia i byte dallo staging al percorso canonico `storageRef` del nuovo
@@ -1337,8 +1465,11 @@ type VisualPromotionMode =
    scrittura rimuove anche la chiave del vecchio `assetId`;
 8. elimina lo staging di quello slot e, in `replace`, pianifica (dopo il
    commit) la cancellazione del vecchio oggetto Storage canonico;
-9. aggiorna `VisualPlanRun.slots[slotIndex].state = 'promoted'` e
-   `settlement.slots[slotIndex]` con il costo reale registrato;
+9. aggiorna `VisualPlanRun.slots[slotIndex].state = 'promoted'`,
+   `slots[slotIndex].promotedAssetId = assetId` (§10.1.1 — è questo campo
+   che rende calcolabile `promotedAssetIdsByThisPlan` senza rileggere
+   `LessonDoc`) e `settlement.slots[slotIndex]` con il costo reale
+   registrato;
 10. registra l'audit `lesson.visualApproved` con `mode`, `assetId`,
     posizione e conteggio totale.
 
@@ -1613,7 +1744,11 @@ Nessuna fase di proposta testuale: il docente scrive `caption`/`altText`
 esplicitamente prima di poter confermare — stessi vincoli di VE §9.6. Il
 punto di ancoraggio è scelto dal docente fra gli heading realmente
 presenti, con lo stesso `VisualAnchorSelector` a indice+testo di §7.1: nes-
-sun campo di testo libero.
+sun campo di testo libero. La forma completa del run che porta questi
+campi, il suo ciclo di vita e la sua idempotenza sono specificati in
+§9.6–§9.9 — **nuovi in questa revisione**, perché la revisione 3 descriveva
+byte e normalizzazione senza mai definire un contratto di replay per
+l'upload, a differenza del piano.
 
 ### 9.4 Perché nessuna verifica di stile — compromesso invariato dalla revisione 1
 
@@ -1639,48 +1774,305 @@ quel punto deliberatamente, e questo documento lo delimita, non lo nasconde
 
 L'upload non chiama alcun provider: zero payload esce verso l'esterno.
 
+### 9.6 `VisualUploadRun` — ciclo di vita indipendente dal piano
+
+**Nuovo in questa revisione.** L'upload **non** è uno slot di
+`VisualPlanRun`: ha un'autorizzazione economica diversa (zero, §9.5) e un
+ciclo di vita più semplice, e mescolarlo dentro il piano avrebbe costretto
+il piano — che *ha* un tetto da rispettare — a contabilizzare operazioni
+che non costano nulla. Resta però un documento server-only con lo stesso
+rigore di idempotenza del piano, non una scrittura diretta:
+
+```ts
+export interface VisualUploadRun {
+  contractVersion: 'visual-upload/v1';
+
+  // ── Identità — stessa disciplina di VisualPlanRun (§5.5): fonte
+  //    autorevole, mai il payload nudo ──
+  ownerUid: string;
+  programId: string;
+  importId: string;
+  lessonId: string;
+  publicLessonId: string;
+  udaDir: string;
+
+  /** UUID v4, client, stabile fra i retry. */
+  requestId: string;
+
+  status: 'accepted' | 'ready' | 'promoted' | 'abandoned' | 'expired' | 'failed';
+
+  /** SHA-256 del corpo lezione al momento dell'upload. Stessa funzione di
+   *  VE §8.2/§7.2.1: protegge l'integrità dell'ancora scelta, non la
+   *  fedeltà del contenuto — un file caricato non deriva dal testo
+   *  (§5.1, nota su `sourceBodyHash` per `source: 'uploaded'`). */
+  sourceBodyHash: string;
+
+  /** Ancora scelta dal docente, stessa forma del piano (§7.1). */
+  anchor: VisualAnchorSelector;
+
+  /** Hash e dimensione dei byte GREZZI, prima di qualunque decodifica —
+   *  usati esclusivamente per il controllo di conflitto (§9.7), mai per
+   *  l'identità finale dell'asset (quella è `normalized.sha256`, dei byte
+   *  canonici, coerente con VE §4). */
+  rawBytesSha256: string;
+  rawByteLength: number;
+
+  /** Popolato dopo la normalizzazione (§9.2), `null` prima. */
+  normalized: {
+    storageRef: string; // staging/{ownerUid}/{opaqueUploadRunId}.webp
+    width: number;
+    height: number;
+    byteLength: number;
+    sha256: string; // dei byte CANONICI
+  } | null;
+
+  caption: string | null;
+  altText: string | null;
+
+  lastError:
+    | 'visual_upload_too_large'
+    | 'visual_upload_unsupported_format'
+    | 'visual_upload_conflict'
+    | null;
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  /** TTL 24 h, stesso di VE — invariato indipendentemente dal fatto che
+   *  l'upload non abbia un costo provider da proteggere: lo staging
+   *  occupa comunque Storage e va ripulito. */
+  expireAt: Timestamp;
+}
+```
+
+**Percorso**: `visualUploadRuns/{opaqueUploadRunId}`,
+`opaqueUploadRunId = SHA-256(canonical(['visual-upload/v1', ownerUid, requestId]))`
+— namespace distinto da `visual-plan/v1`, `visual-plan-slot/v1` e da
+`visual-enrichment/v1` di VE, per la stessa ragione di VE §8.1: un
+`requestId` non deve poter collidere fra domini diversi.
+
+### 9.7 Idempotenza, replay, conflitto
+
+**Risposta persa, stesso file.** Il client ripete con lo stesso
+`requestId` **e** lo stesso file (`rawBytesSha256` identico). Il server
+trova `VisualUploadRun`, riconosce lo stesso hash grezzo, e restituisce lo
+stato già raggiunto — **senza ripetere la normalizzazione**: se
+`normalized` è già popolato, quei byte sono quelli restituiti, non
+ricalcolati una seconda volta. È lo stesso principio di replay del piano
+(§10.1), applicato qui per evitare di spendere due volte CPU di
+normalizzazione, non budget economico (che l'upload non ha).
+
+**Conflitto — stesso `requestId`, file o ancora diversi.** Se un retry
+arriva con lo stesso `requestId` ma `rawBytesSha256` **diverso** (il
+docente ha scelto un file diverso senza che il client generasse un nuovo
+`requestId`), oppure con lo stesso `requestId` ma un `VisualAnchorSelector`
+diverso da quello già registrato, l'esito è **`visual_upload_conflict`**,
+fail-closed, zero scritture sopra il run esistente. Un `requestId` è un
+identificatore di **tentativo**, non un contenitore riusabile per intenti
+diversi: sovrascrivere silenziosamente violerebbe la stessa disciplina che
+protegge il piano da una doppia spesa, qui applicata a evitare uno stato
+ambiguo («a quale file si riferisce davvero questo `requestId`?»). Il
+client che vuole davvero cambiare file genera un nuovo `requestId`.
+
+**Un record presente ma malformato o con identità divergente è
+`corrupted_state`**, stessa disciplina di §5.5 e §10.1: mai trattato come
+assenza (rifarebbe la normalizzazione) né come replay di un contenuto che
+non è mai stato verificato.
+
+### 9.8 Promozione — riuso diretto di §8.6, non una seconda procedura
+
+Un `VisualUploadRun` in stato `ready` si promuove **con la stessa
+procedura di §8.6**, passo per passo, senza duplicarla: la promozione non
+distingue "slot di piano" da "run di upload" se non nella provenienza dei
+dati che legge (da `VisualPlanRun.slots[i]` o da `VisualUploadRun`) — tutto
+il resto (rilettura di `LessonDoc`, verifica `sourceBodyHash`, risoluzione
+dell'ancora fresca §7.2.1, verifica dei byte staged, copia su Storage
+canonico, scrittura transazionale, proiezione pubblica se svolta) è
+**identico**. Il manifest privato risultante (`LessonVisualItem`, §5.1)
+porta `source: 'uploaded'` e `styleVersion: 'uploaded/v1'` — gli unici due
+campi che distinguono un'immagine caricata da una generata, coerente con
+§5.1 e §13.
+
+**Il cap combinato di tre resta un solo contatore, indipendente dalla
+provenienza.** La verifica `items.length < 3` (o `visual_slot_full`) di
+§8.6 passo 4 legge sempre l'array **fresco** di `LessonDoc.visuals`, non un
+contatore separato per «slot di piano» e «upload»: se un piano ha già due
+immagini pronte per la promozione e il docente carica un file mentre il
+piano è ancora in corso, **chi promuove per primo** occupa il terzo slot —
+Firestore serializza le due transazioni sullo stesso documento, e la
+seconda a committare, qualunque sia la sua provenienza, vede l'array
+aggiornato e riceve `visual_slot_full` se non c'è più spazio. Nessuna
+riserva di slot per provenienza, nessuna priorità: primo a scrivere,
+primo servito.
+
+**L'upload non partecipa al lease del piano (§10.3).** Il lease
+serializza i **piani**, perché solo un piano ha un'autorizzazione
+economica da proteggere da una doppia prenotazione. Un upload può
+procedere in parallelo a un piano attivo sulla stessa lezione, esattamente
+come già dichiarato in §11.5 — la sicurezza della scrittura finale non
+dipende dal lease ma dalla rilettura transazionale di §8.6, che si applica
+a entrambe le provenienze allo stesso modo.
+
+### 9.9 Abbandono e cleanup
+
+**Abbandono.** Un `VisualUploadRun` non ancora promosso può essere
+scartato: elimina lo staging, marca `status: 'abandoned'`. A differenza
+dell'abbandono di un piano (§8.7), **non richiede la stessa conferma
+esplicita bloccante**: non c'è una spesa reale da proteggere (§9.5), solo
+il tempo di normalizzazione server-side già speso, che viene comunque
+scartato pulendo lo staging. L'interfaccia può comunque avvisare
+(«il file caricato verrà scartato»), ma non è un invariante di prodotto
+allo stesso livello di VE §6.4.
+
+**Cleanup TTL.** Un `VisualUploadRun` mai promosso che raggiunge
+`expireAt` (24 h) segue la stessa politica di cleanup dello staging
+scaduto del piano (§8.7, §12.7): `status: 'expired'`, delete dello
+staging.
+
+**Zero Storage diretto lato client, in ogni fase.** Il client non scrive
+mai direttamente su un bucket Storage: i byte grezzi viaggiano nel payload
+della callable di upload (§9.2), che li normalizza e li scrive lato
+server. Non esiste un URL di upload firmato, non esiste un percorso
+Storage scrivibile dal client — stessa disciplina già in vigore per ogni
+altra scrittura Storage di questo contratto (§8.6, §8.12).
+
 ---
 
 ## 10. Idempotenza e corse
 
-### 10.1 Il piano come unità di idempotenza
+### 10.1 Il piano come unità di idempotenza — identità della richiesta separata dalle guardie sul mondo mutabile
 
-Un solo `requestId` (UUID v4, client, stabile fra i retry) per **l'intero
-piano**, non uno per immagine:
+**Correzione rispetto alla revisione 3.** La versione precedente
+ricalcolava `planHash` dallo stato **attuale** della lezione a ogni
+replay dell'autorizzazione — inclusi `existingItemAssetIds` letti di
+nuovo, ora. Questo rompe il caso più comune di tutti: dopo che lo stesso
+piano ha promosso il suo primo slot (§8.6), l'elenco `LessonDoc.visuals`
+**cambia legittimamente**, perché la promozione è esattamente l'effetto
+voluto del piano. Un refresh di pagina o una risposta persa a quel punto
+avrebbe ricalcolato un `planHash` diverso da quello memorizzato e
+dichiarato stale **il piano stesso**, come se la propria promozione fosse
+un'interferenza esterna. La correzione separa due cose che la revisione 3
+confondeva in un solo numero:
+
+- **l'identità della richiesta** — «questo replay è davvero un retry della
+  stessa autorizzazione, o un tentativo diverso sotto lo stesso
+  `requestId`?» — verificata contro i valori **iniziali persistiti**, mai
+  ricalcolata sul mondo attuale;
+- **le guardie sul mondo mutabile** — «il corpo o l'elenco sono cambiati in
+  un modo che rende un'azione specifica non più valida?» — verificate
+  **solo quando quell'azione scrive** (§7.2.1, e il nuovo controllo di
+  coerenza dell'array sotto), mai alla sola lettura di un piano esistente.
+
+**Namespace di `requestId` — invariato:**
 
 ```
 opaquePlanId = SHA-256(canonical(['visual-plan/v1', ownerUid, requestId]))
-```
-
-Ogni slot deriva il proprio identificatore di run **deterministicamente**
-dal piano, senza un secondo `requestId` dal client:
-
-```
 opaqueSlotRunId = SHA-256(canonical(['visual-plan-slot/v1', ownerUid, opaquePlanId, slotIndex]))
 ```
 
-`planHash` protegge dalla corsa fra autorizzazione e stato della lezione:
+**`planHash` — corretto: include davvero tutti i campi che §5.5 già
+promette**, calcolato **una sola volta**, alla creazione, dai valori
+**iniziali**:
 
 ```
 planHash = SHA-256(canonical([
-  'visual-plan/v1', ownerUid, lessonId, sourceBodyHash,
-  existingItemAssetIds (ordinati), quantity
+  'visual-plan/v1',
+  ownerUid, programId, importId, lessonId, publicLessonId,
+  sourceBodyHash,                    // del corpo al momento della creazione
+  existingItemAssetIds (ordinati),   // dell'array al momento della creazione
+  quantity
 ]))
 ```
 
-**Risposta persa sull'autorizzazione.** Il client ripete con la stessa
-`requestId`. Il server trova il `VisualPlanRun`, verifica che `planHash`
-coincida con quello ricalcolato dallo stato **attuale** — se la lezione è
-cambiata nel frattempo in un modo che invaliderebbe il piano (corpo
-riscritto, slot liberi cambiati), la risposta è `visual_plan_stale`: il
-docente deve avviarne uno nuovo, con una nuova, singola autorizzazione. Se
-`planHash` coincide, il piano esistente viene restituito così com'è —
-**nessuna seconda prenotazione, nessuna seconda proposta**.
+La revisione 3 dichiarava questi campi nel commento di `VisualPlanRun.
+planHash` (§5.5) ma la formula effettiva ne ometteva tre
+(`programId`, `importId`, `publicLessonId`); questa è la correzione. Una
+volta scritto, `planHash` è **immutabile per la vita del piano** — non
+viene mai ricalcolato dopo la creazione, nemmeno a scopo di verifica: è un
+fingerprint di ciò che il piano *era* all'origine, non un sensore di ciò
+che la lezione *è ora*.
+
+**Risposta persa sull'autorizzazione — procedura di replay, in ordine:**
+
+1. il client ripete la chiamata di autorizzazione con lo stesso
+   `requestId`; il server calcola lo stesso `opaquePlanId` e legge
+   `visualPlanRuns/{opaquePlanId}`;
+2. **il documento non esiste** → non è un replay, è una richiesta nuova:
+   procede alla creazione normale (§8.3, §10.3 per il lease);
+3. **il documento esiste ma non supera il validatore strutturale** →
+   `corrupted_state` (§5.5, invariato);
+4. **il documento esiste, è valido, ma i campi identità persistiti
+   (`ownerUid`, `programId`, `importId`, `lessonId`, `publicLessonId`,
+   `requestId`) non coincidono** con quelli della richiesta corrente →
+   `corrupted_state` — non dovrebbe mai accadere con un `requestId`
+   generato correttamente (UUID v4), ma un contratto fail-closed non lo
+   presuppone impossibile (stessa disciplina di §5.5);
+5. **il documento esiste, è valido, i campi identità coincidono** →
+   **è un replay legittimo**. Il server **non** rilegge `LessonDoc`, non
+   ricalcola `sourceBodyHash`, non ricalcola `existingItemAssetIds`, non
+   confronta nulla contro il mondo attuale: restituisce il record così
+   com'è, qualunque cosa sia successo alla lezione nel frattempo —
+   **nessuna seconda prenotazione, nessuna seconda proposta**. Il fatto
+   che il piano abbia già promosso uno o più slot (§8.6) non ha alcun
+   effetto su questo passo: la promozione ha scritto su `LessonDoc`, non
+   su `visualPlanRuns/{opaquePlanId}` in un modo che invaliderebbe la sua
+   stessa identità.
+
+**`planHash` non viene mai usato per decidere se un replay è valido** —
+quel giudizio è interamente nel passo 4 (identità) e nel passo 3
+(struttura). Il suo ruolo è più stretto e più semplice: un controllo di
+integrità interna, verificabile offline, che il record non sia stato
+alterato in un campo senza alterare coerentemente gli altri — se mai
+`SHA-256` dei campi persistiti non coincidesse col `planHash` persistito
+nello stesso record, sarebbe la prova di una scrittura fuori disciplina
+(un bug, non uno scenario di business), e produce anch'esso
+`corrupted_state`.
 
 **Risposta persa su un singolo slot.** Stesso principio di VE §8.1: il
 client ripete l'azione (genera/promuovi) sullo stesso `(opaquePlanId,
 slotIndex)`; il server riconosce lo stato già raggiunto e lo restituisce
-senza ripetere provider, upload o promozione.
+senza ripetere provider, upload o promozione — invariato.
+
+### 10.1.1 La guardia sul mondo mutabile — coerenza dell'array alla scrittura
+
+**Nuovo in questa revisione.** Non basta che la promozione (§7.2.1, §8.6)
+verifichi solo `sourceBodyHash` (il corpo). Va verificato **anche** che
+l'array live di `LessonDoc.visuals.items` sia esattamente quello che
+questo piano si aspetta — non un valore arbitrario, ma **esattamente**:
+
+```
+expectedLiveAssetIds =
+  VisualPlanRun.existingItemAssetIds       // ciò che c'era all'origine
+  ∪ promotedAssetIdsByThisPlan             // ciò che QUESTO piano ha già promosso
+  (con le sostituzioni `replace` già dichiarate: l'assetId sostituito esce
+   dall'insieme, il nuovo vi entra, nello stesso passo)
+
+promotedAssetIdsByThisPlan =
+  { slot.promotedAssetId | slot in VisualPlanRun.slots, slot.state === 'promoted' }
+```
+
+Prima di ogni scrittura che tocca `LessonDoc.visuals` (una nuova
+promozione, §8.6 passo 4), il server confronta l'insieme di `assetId`
+**effettivamente presente** nell'array rifresco con `expectedLiveAssetIds`:
+
+- **coincidono** → l'array è nello stato che questo piano si aspetta;
+  procede;
+- **non coincidono** → qualcosa **fuori da questo piano** ha modificato
+  l'elenco — un upload dalla galleria mentre il piano è in corso, una
+  rimozione manuale, un'altra sessione che ha agito sulla stessa lezione
+  senza passare dal lease (§10.3, che dovrebbe impedirlo — questo controllo
+  è la seconda linea di difesa, non la prima). Esito:
+  **`visual_plan_external_mutation`**, fail-closed, **zero scritture**. Lo
+  slot in corso di promozione resta `ready`, non perso: il docente vede
+  l'esito, può rivedere la galleria aggiornata e ripetere l'azione — a
+  quel punto `existingItemAssetIds` del piano resta quello che era (non si
+  aggiorna mai a metà vita), ma il confronto userà comunque l'insieme
+  fresco al momento del nuovo tentativo, quindi un secondo tentativo dopo
+  che il docente ha preso atto della mutazione esterna procede
+  normalmente se nel frattempo non ne avvengono altre.
+
+Questo controllo è **strutturale** (confronto di insiemi), non un secondo
+controllo sul corpo: è indipendente da §7.2.1 e si applica **in aggiunta**,
+non in sostituzione.
 
 ### 10.2 La corsa fra modifica della lezione e conferma
 
@@ -1688,17 +2080,122 @@ Identica a VE §8.2, applicata al piano nel suo complesso (autorizzazione,
 §10.1) e a ciascuno slot alla promozione (§8.6 passo 1): il corpo fresco è
 sempre riletto, mai assunto invariato.
 
-### 10.3 Un solo piano attivo per lezione
+### 10.3 Un solo piano attivo per lezione — lease deterministico, non una query
 
-**Regola**: mentre `VisualPlanRun.status` non è terminale
-(`completed | partially_completed | abandoned | expired`), un tentativo di
-avviare un secondo piano sulla stessa lezione è rifiutato con
-`visual_plan_already_active`, e la risposta include l'identificativo del
-piano esistente perché il client possa aprirlo (§8.8) invece di crearne un
-altro. Questo è ciò che rende «piano persistito e riprendibile» (Blocker 2)
-anche una difesa di concorrenza, non solo una comodità: due schede dello
-stesso docente non possono mai prenotare due tetti economici sovrapposti
-per la stessa lezione.
+**Correzione rispetto alla revisione 3.** La regola precedente («mentre
+`VisualPlanRun.status` non è terminale, un secondo tentativo è rifiutato»)
+non diceva **come** il server trova il piano esistente per rifiutare il
+secondo. `opaquePlanId` è derivato dal `requestId`, generato dal
+**client**: due schede con due UUID diversi calcolano due `opaquePlanId`
+diversi e scriverebbero **due documenti `visualPlanRuns` distinti**,
+nessuno dei due in conflitto diretto con l'altro. Trovare «l'altro piano»
+richiederebbe una query (`where lessonId == ... and status not in
+[...]`), e una query non è un'unità di serializzazione: due transazioni
+che leggono lo stesso risultato di query possono comunque scrivere
+entrambe senza che Firestore le faccia contendere sullo stesso documento.
+La review ha respinto correttamente questa lacuna.
+
+**Correzione: un lease deterministico, non derivato dal `requestId`.**
+
+```ts
+/**
+ * Documento server-only. Percorso deterministico —
+ * `visualPlanLeases/{leaseId}`,
+ * `leaseId = SHA-256(canonical(['visual-plan-lease/v1', ownerUid, lessonId]))`
+ * — calcolato da `(ownerUid, lessonId)`, MAI dal `requestId`: è così che
+ * due richieste con due `requestId` diversi per la stessa lezione
+ * calcolano lo **stesso** percorso e contendono sullo **stesso**
+ * documento, dove la transazione Firestore fornisce la serializzazione
+ * che una query non può dare.
+ */
+export interface VisualPlanLease {
+  contractVersion: 'visual-plan-lease/v1';
+  ownerUid: string;
+  programId: string;
+  importId: string;
+  lessonId: string;
+  /** Il piano che detiene attualmente il lease. */
+  opaquePlanId: string;
+  requestId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  /** Rinnovato a ogni transizione di stato del piano (§8.7). Un piano
+   *  attivo non lascia mai scadere il proprio lease; solo un piano
+   *  abbandonato a metà (crash, chiusura del browser senza resume) può
+   *  raggiungere questo istante senza essere stato rinnovato. */
+  expireAt: Timestamp;
+}
+```
+
+**Acquisizione — nella stessa transazione della prenotazione di budget e
+della creazione di `VisualPlanRun` (§8.3), mai una transazione a parte:**
+
+1. calcola `leaseId` da `(ownerUid, lessonId)`;
+2. **dentro la stessa transazione**, legge `visualPlanLeases/{leaseId}`:
+   - **assente** → scrive il lease con `opaquePlanId`/`requestId` di questo
+     piano, `expireAt` allineato al TTL del piano (24 h); procede alla
+     prenotazione e alla creazione di `VisualPlanRun` nella stessa
+     transazione — acquisizione e creazione sono atomiche insieme, non due
+     passi separati che potrebbero disallinearsi a un crash;
+   - **presente, non valido strutturalmente** → **`corrupted_state`**,
+     l'intera autorizzazione si ferma, zero scritture — stessa disciplina
+     di §5.5;
+   - **presente, valido, `opaquePlanId` coincide con quello di questo
+     piano** → è un replay della stessa autorizzazione (§10.1): il lease è
+     già suo, nessuna riscrittura necessaria, procede come nel caso di
+     replay;
+   - **presente, valido, non scaduto (`expireAt` nel futuro), `opaquePlanId`
+     diverso** → **`visual_plan_already_active`**, zero scritture; la
+     risposta include `opaquePlanId`/`requestId` del piano che detiene il
+     lease, perché il client possa aprirlo (§8.8) invece di crearne un
+     altro;
+   - **presente, valido, ma `expireAt` nel passato** → **riacquisizione
+     condizionata**: la stessa transazione che ha appena *letto* la
+     scadenza è quella che *riscrive* il lease per il nuovo piano — mai un
+     passo di pulizia separato che lascerebbe una finestra fra «lease
+     eliminato» e «lease riassegnato» in cui un terzo tentativo potrebbe
+     intrufolarsi. La condizione (verificare `expireAt` nel passato prima
+     di sovrascrivere) è ciò che rende la riacquisizione «condizionata» e
+     non un overwrite incondizionato.
+
+**Rinnovo.** Ogni transizione di stato del piano (§8.7 — proposta
+completata, uno slot promosso, ecc.) rinnova `expireAt`/`updatedAt` del
+lease **nella stessa transazione** della transizione stessa. Un piano
+usato attivamente non lascia mai scadere il proprio lease.
+
+**Rilascio.** Quando `VisualPlanRun.status` raggiunge uno stato terminale
+(§8.7), la stessa transazione che lo scrive **elimina** il lease — non lo
+lascia scadere per TTL: un piano concluso libera immediatamente la
+lezione per un piano successivo, senza attendere 24 ore.
+
+**Le due corse, esplicite:**
+
+- **Race A — due tab, nessun piano esistente, autorizzazione quasi
+  simultanea.** Entrambe le transazioni leggono `visualPlanLeases/{leaseId}`
+  assente e tentano di scriverlo. Firestore serializza: la prima a
+  raggiungere il commit vince: il proprio piano si crea. La transazione
+  della seconda **fallisce per conflitto di scrittura sullo stesso
+  documento** e Firestore la ripete automaticamente (comportamento
+  standard delle transazioni) — al secondo tentativo, la lettura del lease
+  trova ora un `opaquePlanId` diverso dal proprio ⇒
+  `visual_plan_already_active`. In nessun momento esistono due lease
+  scritti per la stessa lezione.
+- **Race B — un piano già attivo, un secondo tentativo (stessa scheda dopo
+  un refresh con un nuovo `requestId` per errore, o una seconda scheda).**
+  La transazione del secondo tentativo legge il lease già presente, valido,
+  non scaduto, con `opaquePlanId` diverso dal proprio ⇒
+  `visual_plan_already_active`, deterministico, indipendentemente da
+  quanti tentativi concorrenti si presentino: contendono tutti sullo
+  stesso documento.
+
+**Perché questo, e non un campo su `LessonDoc`.** Un campo diretto su
+`LessonDoc` (per esempio `LessonDoc.activeVisualPlanId`) avrebbe lo stesso
+effetto di serializzazione ma allargherebbe la superficie di scrittura di
+un documento che molte altre transazioni toccano per altre ragioni (testo,
+metadati, altre funzionalità), aumentando le probabilità di conflitti di
+transazione non correlati al piano visivo. Un documento dedicato
+(`visualPlanLeases/{leaseId}`) isola questa contesa alla sola funzione che
+la riguarda.
 
 ### 10.4 Corse sull'elenco — invariate dalla revisione 1
 
@@ -1874,9 +2371,13 @@ verificata in Emulator (§17, §19).
 
 | Momento | Provider | Firestore | Storage | Function |
 |---|---|---|---|---|
-| **Autorizzazione del piano** (1 per sessione, qualunque `ceiling`) | 0 | **2W**: 1 scrittura `VisualPlanRun` + 1 scrittura sul ledger mensile di budget (riuso AIGEN, `ai-content-budget/v1` — la stessa prenotazione già scritta oggi per ogni `AiContentRequest`, non un meccanismo nuovo) | 0 | 1 |
+| **Autorizzazione del piano** (1 per sessione, qualunque `ceiling`) | 0 | **1R + 3W**: 1 lettura + 1 scrittura del lease (`visualPlanLeases/{leaseId}`, §10.3 — nella stessa transazione), 1 scrittura `VisualPlanRun`, 1 scrittura sul ledger mensile di budget (riuso AIGEN, `ai-content-budget/v1`) | 0 | 1 |
+| **Replay dell'autorizzazione** (stesso `requestId`, §10.1) | 0 | 1 lettura (`visualPlanRuns`) — **nessuna scrittura**, lease invariato | 0 | 1 |
+| **Tentativo respinto da `visual_plan_already_active`** (§10.3, Race A/B) | 0 | 1 lettura del lease, **zero scritture** | 0 | 1 |
 | **Proposta coordinata** (1 per piano, mai N) | 1 chiamata testo, `quality`, indipendente da `ceiling` nel numero di chiamate | **2W**: 1 aggiornamento `VisualPlanRun.slots`+`settlement.proposalActualCost`, 1 settlement sul ledger mensile (stessa disciplina già in vigore per `lesson`/`pool`/`concept_map`/`visual_proposal`) | 0 | 1 |
 | **Rilascio della quota non usata** (`ceiling − slot con decision:'image'`) | 0 | incluso nell'aggiornamento sopra — nessuna scrittura aggiuntiva | 0 | 0 |
+| **Rinnovo del lease** (a ogni transizione di stato del piano, §10.3) | 0 | incluso nella stessa transazione della transizione — nessuna scrittura aggiuntiva rispetto a quanto quella transizione già conta | 0 | 0 |
+| **Rilascio del lease** (piano terminale, §8.7) | 0 | incluso nella stessa transazione della transizione a stato terminale — 1 delete, nessuna scrittura aggiuntiva oltre a quella già contata dalla transizione stessa | 0 | 0 |
 
 **Perché prenotazione e run sono scritture distinte.** La revisione 2
 contava «1 scrittura» per l'autorizzazione, collassando `VisualPlanRun` e
@@ -1887,7 +2388,10 @@ qui, non duplicato — mentre `VisualPlanRun` è il documento **di questo
 piano**. Sono due scritture perché sono due documenti, esattamente come lo
 sono già oggi per una singola richiesta `AiContentRequest` esistente
 (VE-02 §8.1: «il run è scritto prima della chiamata al provider, con
-prenotazione di budget»).
+prenotazione di budget»). **Nuovo in questa revisione**: il lease (§10.3)
+aggiunge una terza scrittura e una lettura, nella stessa transazione — la
+garanzia di piano unico per lezione non è gratuita, ed è dichiarata come
+tale invece di essere assorbita silenziosamente nel conteggio del piano.
 
 **Formula del tetto iniziale**, corretta rispetto alla revisione 2 —
 include i tentativi:
@@ -1930,12 +2434,22 @@ tentativi per slot, non più un numero indefinito:
 3 immagini generate → 3..6 righe, indipendenti per slot
 ```
 
-### 12.3 Upload (per immagine, zero provider in ogni caso) — STIMATO, nessun equivalente in VE-03
+### 12.3 Upload — `VisualUploadRun` (per immagine, zero provider in ogni caso) — STIMATO, nessun equivalente in VE-03
+
+**Corretto rispetto alla revisione 3**, che contava «1 scrittura ticket»
+senza un contratto di idempotenza dietro (§9.6–§9.9 sono nuovi in questa
+revisione). Nessuna riga qui coinvolge il lease del piano (§10.3): l'upload
+non lo usa (§9.8).
 
 | Momento | Provider | Firestore | Storage | Function |
 |---|---|---|---|---|
-| **Accettazione file** (per immagine caricata) | **0** | 1 scrittura ticket | 1 scrittura staging | 1 (normalizzazione, cap input 2 MB) |
-| **Rifiuto pre-decodifica** (formato/peso non validi) | 0 | 0 | 0 | 1 (termina al passo 0 di §9.2, nessuna scrittura) |
+| **Accettazione file** (per immagine caricata, 1° tentativo) | **0** | 1 scrittura `VisualUploadRun` (`status: 'accepted'` → `'ready'`) | 1 scrittura staging | 1 (normalizzazione, cap input 2 MB) |
+| **Rifiuto pre-decodifica** (formato/peso non validi, §9.2) | 0 | 0 | 0 | 1 (termina al passo 0, nessuna scrittura) |
+| **Replay** (stesso `requestId`, stesso `rawBytesSha256`, §9.7) | 0 | 1 lettura — **nessuna seconda normalizzazione** | 0 | 1 |
+| **Conflitto** (stesso `requestId`, byte o ancora diversi, §9.7) | 0 | 1 lettura, **zero scritture** | 0 | 1 |
+| **Promozione di un upload** | 0 | **identica alla riga «Promozione» di §12.4** — l'upload riusa §8.6 senza una seconda procedura (§9.8) | identico a §12.4 | 1 |
+| **Abbandono** (non promosso) | 0 | 1 scrittura (`status: 'abandoned'`) | 1 delete staging | 1 |
+| **Cleanup TTL scaduto** | 0 | 1 scrittura (`status: 'expired'`) | 1 delete staging | 1 |
 
 ### 12.4 Promozione — individuale o in blocco, mai una transazione multi-immagine
 
@@ -1977,7 +2491,8 @@ di interazione, non un'ottimizzazione di costo.
 
 | Momento | Firestore | Storage |
 |---|---|---|
-| **Cleanup piano scaduto** (TTL 24h, STIMATO — nessun equivalente in VE-03) | 1 delete `VisualPlanRun` | 1 delete per slot con staging residuo |
+| **Cleanup piano scaduto** (TTL 24h, STIMATO — nessun equivalente in VE-03) | 1 delete `VisualPlanRun` + 1 delete lease (§10.3, se non già rilasciato) | 1 delete per slot con staging residuo |
+| **Cleanup upload scaduto** (TTL 24h, STIMATO, §9.9) | 1 scrittura `VisualUploadRun` (`status: 'expired'`) | 1 delete staging |
 | **Delete lezione**, N=0..3 asset | **7R/5W** — **misurato**, VE-03 (§12.0), **costante al variare di N** (§8.12.5) | N delete |
 | **Delete UDA**, L lezioni, N_i asset ciascuna | **L × (7R/5W)** — **misurato per L=3** (VE-03: 21R/15W), lineare per costruzione | Σ N_i delete |
 | **Delete corso/import** | fuori da questo conteggio — `deleteImportPrefix` (SGW-02A), autorevole e invariato (§8.12.3) | prefisso, non enumerato |
@@ -1996,7 +2511,11 @@ di interazione, non un'ottimizzazione di costo.
   un'operazione che ne riguarda una parte);
 - **un'unica autorizzazione economica per piano**, mai una per immagine,
   e il tetto copre esplicitamente i tentativi di retry (§12.1);
-- l'upload **non** ha mai un costo di provider;
+- **un solo piano attivo per lezione, garantito da un documento dedicato
+  (il lease, §10.3) su cui Firestore serializza — non da una query**, al
+  costo dichiarato di 1R+1W aggiuntivi per autorizzazione (§12.1);
+- l'upload **non** ha mai un costo di provider e non condivide il lease
+  del piano (§9.8);
 - il consuntivo (`VisualPlanRun.settlement`) è sempre disponibile per fase
   e per asset, e non supera mai il tetto prenotato;
 - **nessuna riga di questa sezione riguardante il piano, la generazione o
@@ -2109,26 +2628,65 @@ export interface AiVisualExportAsset {
 }
 ```
 
-**Validazione all-or-nothing, per lezione — generalizzazione diretta di
-VE-03C.** VE-03C stabilisce che una lezione che *dichiara* un visual non
-recuperabile o non verificabile ferma l'intero export, perché un archivio a
-cui manca in silenzio una figura sembra completo. Con N asset possibili per
-lezione, la stessa regola si applica **all'insieme**, non asset per asset:
-se una lezione dichiara 3 immagini e anche una sola delle tre non supera la
-verifica (Storage assente, hash non corrispondente, conteggio diverso da
-quello del manifest), **l'intera lezione** fallisce con un errore tipizzato
-— mai una risposta con 2 asset su 3 che lascerebbe intendere un successo
-parziale silenzioso.
+**Validazione all-or-nothing sull'INTERO batch, non lezione per lezione —
+corretto rispetto alla revisione 3.** La versione precedente faceva
+fallire «l'intera lezione» lasciando intendere che le **altre** lezioni
+del batch restassero comunque nella risposta. La review ha respinto questo
+comportamento: **un solo asset dichiarato ma non recuperabile o non
+verificabile, in una qualunque lezione del batch, aborte l'intera chiamata
+prima che qualunque output venga prodotto** — non «zero asset per quella
+lezione, le altre intatte». Un risultato parziale è ambiguo esattamente
+allo stesso modo che VE-03C ha già escluso per lezione singola: se la
+callable restituisse le lezioni valide e marcasse solo quella incriminata
+come fallita, il chiamante dovrebbe comunque decidere se un archivio
+parzialmente valido è accettabile — una decisione che questo contratto
+non delega al composer, la prende qui.
 
-**Collisioni e dedup — generalizzazione diretta di VE-03C.** VE-03C
+**Procedura, in due fasi separate, mai interfogliate:**
+
+1. **Fase di verifica — nessun output prodotto.** Per ogni `lessonId` del
+   batch, si legge il manifest (`visuals`, o `visual` singolare via
+   `adaptSingular`) e si verificano tutti i suoi asset dichiarati (esistenza
+   Storage, hash, conteggio contro il manifest). Questa fase non scrive,
+   non compone `base64`, non alloca la risposta: **osserva soltanto**.
+2. **Decisione, sull'insieme, non sulla singola lezione.** Se **anche un
+   solo asset di una sola lezione** fallisce la verifica, la callable
+   **lancia un errore tipizzato e restituisce zero output** — nessun
+   `AiVisualExportBatchResult`, nemmeno parziale, nemmeno per le lezioni
+   che avevano superato la verifica. Solo se **tutte** le lezioni del
+   batch superano la verifica, la callable procede alla seconda fase e
+   **allora** assembla e restituisce `AiVisualExportBatchResult` per
+   l'intero batch, incluse le lezioni legittimamente `{ status: 'absent'
+   }` (che non sono un fallimento, mai lo sono state).
+
+**Collisioni e dedup — stessa disciplina, sull'intero batch.** VE-03C
 stabilisce che due lezioni con lo stesso `assetId` producono un errore
 invece di un archivio con una figura in meno (`JSZip.file()` sovrascrive
 senza dire niente). Con più asset per lezione, il controllo di unicità
 copre **tutti** gli `assetId` dell'intero batch — fino a 3 per lezione,
-fino a 13 lezioni nel caso peggiore (§14.3) — non solo un assetId per
-lezione: un `Set` costruito sull'intero batch, verificato prima di scrivere
-qualunque file, con la stessa politica di errore invece di sovrascrittura
-silenziosa.
+fino a 13 lezioni nel caso peggiore (§14.3) — verificato nella **stessa**
+fase di verifica sopra: una collisione rilevata in qualunque punto del
+batch aborte l'intera chiamata con la stessa disciplina all-or-nothing,
+mai un errore isolato a una coppia di lezioni con le altre restituite.
+
+**Test esplicito** (§19): tre lezioni nel batch, un asset non
+recuperabile nella **seconda** — verifica che la risposta sia un errore
+tipizzato, **zero** `AiVisualExportBatchResult`, e che né la prima né la
+terza lezione (entrambe valide) compaiano in un output parziale.
+
+**Composer web — attende e valida l'intero export prima di scrivere
+qualunque file, non solo `assets` di una singola risposta.** Poiché il
+dimensionamento del batch è dinamico (§14.3), un export che copre più di
+~13 lezioni richiede **più chiamate sequenziali** a
+`aiVisualExportBatch`. Il composer deve trattare l'intero export come
+un'unità: **non inizia a scrivere lo ZIP dopo la prima chiamata riuscita**
+se altre chiamate del medesimo export sono ancora in corso o falliscono
+successivamente — attende **tutte** le risposte dei batch dell'export
+corrente, e solo se **tutte** sono riuscite comincia a comporre lo ZIP.
+Una chiamata di batch fallita a metà di un export multi-batch invalida
+l'intero export lato composer, non solo il batch che ha fallito, per la
+stessa ragione per cui una callable non restituisce mai un output
+parziale al proprio interno.
 
 **Ordine — nuovo requisito esplicito, assente in VE-03C perché lì
 irrilevante con un solo asset.** `assets` è nello **stesso ordine**
@@ -2347,12 +2905,63 @@ Nuovi in questa revisione:
   lezioni con `LessonDoc.visual` reale e variegato, adottate
   indipendentemente, senza interferenza reciproca; caso di retry
   idempotente; caso di `visual_legacy_malformed` fail-closed.
-- **Idempotenza del piano (§10.1)**: replay dell'autorizzazione con
-  `planHash` invariato restituisce lo stesso piano senza nuova
-  prenotazione; `planHash` cambiato dopo modifica del corpo ⇒
-  `visual_plan_stale`; un secondo tentativo di piano su una lezione con
-  piano attivo ⇒ `visual_plan_already_active` con riferimento al piano
-  esistente.
+- **Idempotenza del piano (§10.1), corretto rispetto alla revisione 3**:
+  replay dell'autorizzazione con identità invariata restituisce lo stesso
+  piano senza nuova prenotazione **anche dopo che il piano ha già promosso
+  uno o più slot** (il caso che la revisione 3 gestiva male); identità
+  persistita divergente dalla richiesta corrente ⇒ `corrupted_state`, mai
+  `visual_plan_stale` (esito ritirato: nessun confronto contro il mondo
+  attuale avviene più a questo livello, §10.1).
+- **Risposta persa dopo la promozione dello slot 1, nuovo in questa
+  revisione**: piano a 3 slot, slot 1 promosso con successo, la risposta
+  della callable di promozione va persa lato client; il client ripete
+  l'autorizzazione (o riapre il piano, §8.8) con lo stesso `requestId` ⇒
+  stesso `VisualPlanRun` restituito, **nessuna nuova prenotazione, nessuna
+  nuova proposta coordinata**, slot 1 ancora `promoted`, slot 2 e 3 nel
+  proprio stato — verificato che il replay non fallisca né declassi il
+  piano a stale nonostante `LessonDoc.visuals` sia legittimamente cambiato
+  dalla promozione stessa (§10.1.1).
+- **Mutazione esterna dell'array, nuovo in questa revisione**: piano
+  attivo con `existingItemAssetIds` iniziale registrato; un'azione **fuori
+  dal piano** (upload dalla galleria, rimozione manuale) modifica
+  `LessonDoc.visuals.items` mentre il piano è in corso; il tentativo
+  successivo di promuovere uno slot del piano ⇒
+  `visual_plan_external_mutation`, zero scritture, slot ancora `ready`
+  (§10.1.1) — distinto dal caso «risposta persa dopo promozione» sopra,
+  dove la mutazione **è** del piano stesso e non deve produrre questo
+  esito.
+- **Lease — due `requestId` concorrenti sulla stessa lezione, nuovo in
+  questa revisione, contro Emulator (simulazione di transazioni
+  concorrenti)**: due autorizzazioni quasi simultanee con due `requestId`
+  diversi per la stessa lezione (§10.3, Race A) ⇒ **una sola** acquisisce
+  il lease e crea il proprio `VisualPlanRun`, l'altra riceve
+  `visual_plan_already_active` con riferimento al piano vincitore, **mai
+  due `VisualPlanRun` attivi contemporaneamente per la stessa lezione**;
+  un terzo tentativo mentre il primo piano è ancora attivo (Race B) ⇒
+  stesso esito, deterministico.
+- **Lease scaduto e malformato, nuovo in questa revisione**: un lease con
+  `expireAt` nel passato ⇒ riacquisizione condizionata riuscita per un
+  nuovo piano, nella stessa transazione che lo rileva scaduto (§10.3); un
+  lease presente ma che non supera il validatore strutturale ⇒
+  `corrupted_state`, l'intera autorizzazione si ferma, zero scritture; un
+  piano che raggiunge uno stato terminale (§8.7) rilascia il proprio lease
+  nella stessa transazione — verificato che un piano successivo possa
+  acquisire il lease **immediatamente**, senza attendere il TTL.
+- **Upload — replay, conflitto, abbandono, cleanup, nuovo in questa
+  revisione (§9.6–§9.9)**: stesso `requestId` e stesso `rawBytesSha256` ⇒
+  replay, nessuna seconda normalizzazione, stessi byte restituiti; stesso
+  `requestId` con `rawBytesSha256` **diverso** ⇒ `visual_upload_conflict`,
+  zero scritture sul run esistente; stesso `requestId` con
+  `VisualAnchorSelector` diverso ⇒ stesso esito; promozione di un
+  `VisualUploadRun` riusa `§8.6` e produce `LessonVisualItem.source ===
+  'uploaded'` e `styleVersion === 'uploaded/v1'`; cap combinato di tre
+  rispettato indipendentemente dalla provenienza quando un piano e un
+  upload sono in corso sulla stessa lezione contemporaneamente — chi
+  promuove per primo occupa lo slot, il secondo riceve `visual_slot_full`
+  se non c'è più spazio, qualunque sia la sua provenienza; abbandono di un
+  upload non promosso ⇒ staging eliminato, nessuna conferma bloccante
+  richiesta (§9.9); `VisualUploadRun` mai promosso oltre il TTL ⇒
+  `expired`, cleanup dello staging.
 - **Retry per slot che non perde asset riusciti (§8.5)**: piano a 3 slot
   con uno fallito, verifica che gli altri due restino `ready` e
   approvabili indipendentemente dal retry del terzo, fino al tetto di 2
@@ -2370,8 +2979,8 @@ Nuovi in questa revisione:
   prima della decodifica; SVG e GIF rifiutati dall'allowlist; WebP animato
   rifiutato nonostante lo sniffing positivo; PNG con canale alfa
   normalizzato su sfondo opaco `#f7f5f0`.
-- **Rules su `publicLessonVisuals`/`publicLessons.visuals` (§5.4.1),
-  contro Firestore Emulator — nuovo in questa revisione**:
+- **Rules su `publicLessonVisuals`/`publicLessons.visuals` (§5.4.1–§5.4.2),
+  contro Firestore Emulator**:
   - **aggiunta**: dopo una promozione `add` su lezione svolta, lo studente
     autorizzato legge il byte doc e il nuovo `assetId` è fra le chiavi;
   - **rimozione**: dopo `§8.9`, il byte doc non contiene più la chiave
@@ -2381,38 +2990,58 @@ Nuovi in questa revisione:
     coesistono entrambe o nessuna delle due;
   - **chiave extra**: un byte doc con un `assetId` nella mappa `bytes` che
     non compare in `publicLessons.visuals.items` ⇒ lettura studente
-    **negata** (condizione 5 di §5.4.1);
+    **negata** (`bytesKeysAndDimsMatch`, condizione 4 di §5.4.1);
   - **chiave mancante**: un `assetId` nel manifest pubblico assente dalla
     mappa `bytes` ⇒ lettura studente **negata**, stessa condizione;
   - **asset estraneo**: un byte doc il cui contenuto dichiara
     `programId`/`importId` diversi da quelli del `publicLessons`
-    corrispondente ⇒ lettura studente **negata** (condizione 4);
+    corrispondente ⇒ lettura studente **negata** (condizione 3);
   - **`completed: false`**: byte doc e manifest esistono ma la lezione non
-    è svolta ⇒ lettura studente **negata** (condizione 3) — indipendente
+    è svolta ⇒ lettura studente **negata** (condizione 2) — indipendente
     dal fatto che il docente veda comunque i propri dati;
   - **import inattivo**: le stesse guardie di scoperta di `publicLessons`
     negano l'accesso quando l'import non è quello attivo (condizione 1),
     verificato che il byte doc non sia un'eccezione a quella regola;
   - **identità divergente**: dimensioni dichiarate nel manifest pubblico
     diverse da quelle nel byte doc per lo stesso `assetId` ⇒ lettura
-    studente **negata** (condizione 6) — anche se le altre condizioni
-    passerebbero;
+    studente **negata** (condizione 4, stesso ramo di `bytesKeysAndDimsMatch`
+    delle chiavi) — anche se le altre condizioni passerebbero;
+  - **`bytesKeysAndDimsMatch` a rami espliciti (§5.4.2), nuovo in questa
+    revisione**: eseguito **tre volte**, una per cardinalità — manifest a 1
+    elemento con chiave/dimensioni corrette ⇒ concesso, con una divergenza
+    ⇒ negato; manifest a 2 elementi, stessa coppia di casi per **ciascuno**
+    dei due asset indipendentemente; manifest a 3 elementi, stessa coppia
+    di casi per **ciascuno** dei tre — verifica che ogni ramo `size() == N`
+    sia effettivamente raggiunto e che nessun ramo confonda l'ordine degli
+    `items[i]` con quello delle chiavi della mappa;
+  - **`isOwner()` senza risalita da `publicLessonId`, nuovo in questa
+    revisione**: verificato che la lettura owner non esegua alcun `get()`
+    su un ipotetico `lessonIdOf(publicLessonId)` (che non esiste) e che
+    `isOwner()` da solo, globale, sia sufficiente indipendentemente da
+    quale lezione il documento riguarda;
   - **scrittura client, in ogni caso sopra**: sempre negata, anche per
     l'owner autenticato.
 - **Test del limite matematico di §4**, invariato dalla revisione 1.
 - **Test del criterio di batching dinamico dell'export**, invariato.
-- **Export v2 — davvero multi-asset (§14.2), nuovo in questa revisione,
-  end-to-end contro Emulator**: lezione con 0/1/2/3 asset ⇒ `assets` della
-  lunghezza corrispondente, nello **stesso ordine** di
+- **Export v2 — davvero multi-asset (§14.2)**: lezione con 0/1/2/3 asset ⇒
+  `assets` della lunghezza corrispondente, nello **stesso ordine** di
   `LessonDoc.visuals.items`; lezione non adottata (manifest singolare) ⇒
-  `assets` a un elemento via `adaptSingular`, stesso formato v2; **tutto-o-
-  niente**: una lezione con 3 asset dichiarati di cui uno con hash non
-  corrispondente ⇒ l'intera lezione fallisce, zero asset restituiti per
-  quella lezione, le altre lezioni del batch non sono toccate; **collisione
-  di `assetId`** fra due lezioni diverse dello stesso batch ⇒ errore,
-  nessuno ZIP parziale; **composer web**: dato un risultato v2 con 3 asset
-  per una lezione, verifica che il composer scriva tutti e tre i sidecar
-  `visuals/{assetId}.json`/`.webp`, non solo il primo.
+  `assets` a un elemento via `adaptSingular`, stesso formato v2; **composer
+  web**: dato un risultato v2 con 3 asset per una lezione, verifica che il
+  composer scriva tutti e tre i sidecar `visuals/{assetId}.json`/`.webp`,
+  non solo il primo.
+- **Export v2 — tutto-o-niente sull'intero batch, corretto rispetto alla
+  revisione 3, nuovo in questa revisione, end-to-end contro Emulator**:
+  batch di **tre lezioni**, un asset non recuperabile (hash non
+  corrispondente) nella **seconda** ⇒ la callable restituisce un errore
+  tipizzato e **zero** `AiVisualExportBatchResult` — verificato
+  esplicitamente che **né la prima né la terza lezione** (entrambe valide)
+  compaiano in un output parziale, non solo che la seconda fallisca;
+  **collisione di `assetId`** fra due lezioni diverse dello stesso batch ⇒
+  stesso esito, zero output per l'intero batch; **composer multi-batch**:
+  un export che richiede due chiamate sequenziali (>13 lezioni, §14.3) con
+  la seconda chiamata fallita ⇒ il composer non ha scritto alcun file
+  dalla prima chiamata riuscita, zero ZIP prodotto per l'intero export.
 - **Test del renderer N-way**, invariato.
 - **Sequenza testo-poi-immagini (§11.3)**: simulazione di un fallimento del
   piano visivo dopo un salvataggio di testo riuscito, verifica che
@@ -2576,3 +3205,67 @@ ricostruire il diff:
     verificato con un diff, non assunto); costi runtime multi e Rules
     future marcati esplicitamente come non misurati finché non esistono
     test Emulator (§12, §17 di questo contratto).
+
+---
+
+## 22. Correzioni rispetto alla revisione 3 — punto per punto
+
+La terza review Codex ha trovato sei difetti di coerenza/idempotenza
+sopravvissuti alla revisione 3. Sintesi puntuale:
+
+1. **Replay del piano dopo le sue stesse promozioni** — §10.1 riscritto:
+   `planHash` calcolato **una sola volta**, alla creazione, da destinazione
+   completa (`ownerUid`, `programId`, `importId`, `lessonId`,
+   `publicLessonId`), `sourceBodyHash` e `existingItemAssetIds`
+   **iniziali**, `quantity` — la formula ora include davvero i campi che
+   §5.5 già promette. Un replay valida **identità persistita contro
+   richiesta corrente**, mai il mondo attuale. Nuovo §10.1.1: la guardia
+   sul mondo mutabile (coerenza dell'array) si applica **solo** al momento
+   della scrittura, con `expectedLiveAssetIds = existingItemAssetIds ∪
+   promotedAssetIdsByThisPlan` — nuovo campo `VisualPlanSlot.
+   promotedAssetId` per calcolarlo senza rileggere `LessonDoc`.
+   `visual_plan_stale` ritirato; nuovo `visual_plan_external_mutation` per
+   la mutazione esterna.
+2. **Un solo piano attivo, garantito** — nuovo §10.3: lease deterministico
+   `visualPlanLeases/{SHA-256(ownerUid, lessonId)}`, **non** derivato dal
+   `requestId` — è così che due `requestId` diversi per la stessa lezione
+   contendono sullo stesso documento invece di crearne due. Acquisizione
+   nella stessa transazione della prenotazione; rinnovo a ogni transizione
+   di stato; rilascio al termine; riacquisizione condizionata per un lease
+   scaduto; `corrupted_state` per un lease malformato. Race A (due tab,
+   nessun piano) e Race B (piano già attivo) esplicite, risolte dalla
+   serializzazione Firestore sullo stesso documento — mai una query.
+3. **Contratto di idempotenza per l'upload** — nuovi §9.6–§9.9:
+   `VisualUploadRun` indipendente dal piano (autorizzazione economica
+   diversa, §9.6), `requestId` stabile, replay senza seconda
+   normalizzazione, conflitto su byte/ancora diversi sotto lo stesso
+   `requestId` (§9.7), promozione che riusa direttamente §8.6 producendo
+   `source: 'uploaded'`/`styleVersion: 'uploaded/v1'` (§9.8), cap combinato
+   di tre rispettato dalla rilettura transazionale indipendente dalla
+   provenienza, nessuna partecipazione al lease del piano, abbandono senza
+   conferma bloccante e cleanup TTL (§9.9).
+4. **Rules con primitive reali** — §5.4.1 riscritto: `isOwnerOfLesson`
+   (inventata) sostituita da `isOwner()` (globale, single-tenant, già in
+   vigore — `hardening-audit-v1.md`); `passesLessonDiscoveryGuards`
+   espansa negli helper reali citati da `sicurezza.md` §170
+   (`isApprovedStudent`, `isClassmateOf`, `activeImportId`,
+   `examModeAppliesToClass`). Nuovo §5.4.2: `bytesKeysAndDimsMatch` a rami
+   espliciti per cardinalità 1/2/3, perché CEL non itera mappe generiche —
+   sostituisce `assetIdsOf(...).toSet()`/`allAssetDimensionsMatch`, mai
+   esprimibili. Nuovo §5.4.3: costo dichiarato dei `get()` aggiunti
+   (+1 `get(publicLessons)` per la lettura studente del byte doc, il resto
+   memoizzato con quanto già pagato oggi).
+5. **Export tutto-o-niente sull'intero batch** — §14.2 corretto: un asset
+   non recuperabile in **una qualunque** lezione del batch aborte l'intera
+   callable **prima** di produrre output — non più «zero asset per quella
+   lezione, le altre intatte». Procedura a due fasi (verifica pura, poi
+   decisione sull'insieme). Composer corretto per attendere **tutte** le
+   chiamate di un export multi-batch prima di scrivere qualunque file.
+6. **Test e costi delle nuove guardie** — §19 esteso con: risposta persa
+   dopo promozione slot 1 (resume senza nuova prenotazione), mutazione
+   esterna dell'array, due `requestId` concorrenti (lease Race A/B), lease
+   scaduto/malformato, upload replay/conflitto/abbandono/cleanup, Rules a
+   rami 1/2/3, export tutto-o-niente sul batch. §12 esteso con le righe di
+   costo del lease (+1R+1W per autorizzazione, §12.1) e di
+   `VisualUploadRun` (§12.3), tutte marcate STIMATO. Evidenza aggiornata
+   in `evidenze/multi-visual-00-review.md` §12.
