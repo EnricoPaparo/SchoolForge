@@ -1,89 +1,215 @@
 # MULTI-VISUAL-00 — review di fase
 
 > **Gate GMULTI: PENDING.** Questo documento registra che cosa è stato
-> deciso, che cosa è stato verificato e come. Non dichiara superato alcun
-> gate applicativo e non approva alcuna resa visiva o alcuna decisione di
-> prodotto: quel giudizio è del docente, al gate umano di questo pilota.
+> deciso, che cosa è stato verificato, come, e — dove la verifica non è
+> conclusiva — lo dice esplicitamente invece di dichiarare un PASS non
+> raccolto. Non approva alcuna resa visiva o decisione di prodotto: quel
+> giudizio è del docente, al gate umano di questo pilota.
 
-**Fase:** MULTI-VISUAL-00 — contratto e prototipo. Pilota di
-`AGENT-ORCHESTRATOR` sul task manifest `MULTI-VISUAL-00`
-(`agent-orchestrator-roadmap.md` §5, §12).
+**Fase:** MULTI-VISUAL-00 — contratto e prototipo, **revisione 2**. Pilota
+di `AGENT-ORCHESTRATOR` sul task manifest `MULTI-VISUAL-00`.
 **Data:** 25 agosto 2026.
-**Base:** `main` @ `9f0adc4` (merge PR #421, `agent-orchestrator-01`).
-**Branch:** `multi-visual-00`.
+**Base:** `main` @ merge PR #421 (`agent-orchestrator-01`).
+**Branch:** `multi-visual-00`. **PR:** #423 (draft).
 **Contratto:** [`../multi-visual-roadmap.md`](../multi-visual-roadmap.md)
-**Prototipo:** [`../prototipi/lesson-visual-enrichment-multi.html`](../prototipi/lesson-visual-enrichment-multi.html)
+**Prototipo:** [`../prototipi/lesson-multi-visual.html`](../prototipi/lesson-multi-visual.html)
 
 ---
 
-## 1. Perimetro effettivo della fase
+## 1. Perché questa revisione esiste
 
-**Fatto:** contratto che estende `visual-enrichment-roadmap.md` a un massimo
-di tre immagini per lezione (generate o caricate dal docente); forme dati
-chiuse e versionate per il contenitore ad array, il manifest pubblico e la
-mappa di byte studente; adozione lazy dal manifest singolo esistente;
-ancoraggio N-way con split del token stream generalizzato; ciclo di vita
-esteso a upload con normalizzazione server-side riusata; orchestrazione
-«Genera lezione con immagini» a costi separati per immagine; corse
-sull'elenco e le rispettive difese; cost model per immagine; rollout con
-flag distinti lettura/scrittura e analisi esplicita del rischio di
-rollback sui dati già adottati; prototipo statico interattivo a quattordici
-stati, desktop e mobile.
+La prima review Codex della revisione 1 **non ha approvato il gate** e ha
+sollevato dieci blocker, riassunti e corretti punto per punto in §2. Questo
+documento sostituisce integralmente la review precedente; non ne resta
+alcuna parte in vigore.
 
-**Non fatto, per mandato del task manifest:** runtime, tipi TypeScript
-reali, Cloud Functions, provider, Firebase, Rules, dipendenze, chiamate
-OpenAI. **Nessuna immagine reale è stata generata o caricata.** Le
-illustrazioni del prototipo sono `<svg>` inline disegnati a mano; il
-riquadro «foto caricata dal docente» è un placeholder CSS (gradiente),
-deliberatamente reso in uno stile diverso dallo schizzo per rendere visibile
-il compromesso di stile discusso nel contratto §9.4.
+---
+
+## 2. Blocker della review 1 — correzione e prova, uno per uno
+
+### Blocker 1 — Contratto economico opposto al manifest
+
+**Correzione.** `multi-visual-roadmap.md` §8.3, §11.4, §12.1: **un'unica
+autorizzazione** a tetto complessivo (somma dei cap di 1 proposta
+coordinata + fino a N generazioni), confermata **una sola volta** prima di
+qualunque chiamata a un provider. Dopo quella conferma, proposta e
+generazioni procedono senza ulteriori popup di costo; il consuntivo resta
+per fase e per asset (`VisualPlanRun.settlement`, §5.5).
+
+**Prova.** Stato del prototipo `authorize` (screenshot
+`320-authorize.png`, `1440-plan-review.png` a valle): un'unica schermata
+mostra il tetto («proposta + fino a 3 generazioni») con un solo pulsante
+«Autorizza e continua»; nessuno degli stati successivi (`proposing`,
+`plan-review`, `generating`, `slot-failed`, `recovery`) presenta un
+secondo pulsante di conferma di costo — solo azioni di generazione/retry
+già coperte dal tetto iniziale, verificabile leggendo il footer di ciascuno
+stato nel file HTML.
+
+### Blocker 2 — Piano coordinato e diversità didattica mancanti
+
+**Correzione.** `multi-visual-roadmap.md` §7.4, §8.3, §5.5: **una sola**
+chiamata `visual_plan_proposal` restituisce 0..N slot; `anchorHeadingIndex`
+e `subject` normalizzato devono essere a due a due distinti fra gli slot
+della stessa chiamata (vincolo strutturale, non un rilevatore di
+similarità semantica — limite dichiarato in §17.1 del contratto). Il piano
+è persistito (`VisualPlanRun`/`VisualPlanSlot`, §5.5) con stati
+`pending/generating/ready/failed/promoted/abandoned` e recuperabile
+(§8.8).
+
+**Prova.** Stato `plan-review` (screenshot `1440-plan-review.png`): due
+slot con `decision: 'image'` mostrano ancore esplicitamente diverse («Le
+quattro fasi» indice 1, «Il bilancio idrico» indice 2) e un terzo slot
+`decision: 'none'` con motivazione. Stato `recovery` (screenshot
+`390-recovery.png`): il piano riaperto mostra uno slot già `ready`, uno
+`generating`, uno `pending`, senza richiedere una nuova autorizzazione —
+la nota nel pannello lo dichiara esplicitamente.
+
+### Blocker 3 — Quantità assente
+
+**Correzione.** `multi-visual-roadmap.md` §8.2: Automatico(1–3)/1/2/3,
+tabella esplicita delle opzioni in funzione degli slot liberi (3 → tutte le
+opzioni; 2 → Automatico(1–2)/1/2; 1 → solo «1»; 0 → generazione
+disabilitata, galleria comunque raggiungibile).
+
+**Prova.** Stati `quantity` (3 liberi, screenshot `390-quantity.png`),
+`quantity-limited` (1 libero) e `full` (0 liberi) nel prototipo mostrano le
+tre situazioni distintamente, coerenti con la tabella del contratto.
+
+### Blocker 4 — Limite upload errato
+
+**Correzione.** `MAX_VISUAL_UPLOAD_INPUT_BYTES` portato da 8 MiB a
+**2.000.000 byte (2 MB)** in `multi-visual-roadmap.md` §5.6 e §9.2; allow-
+list ristretta a PNG/JPEG/WebP non animati, `background=opaque`. Il
+prototipo (stato `upload-error`) mostra ora «2 MB» nel testo, non 8.
+
+**Prova.** `grep -n "8_388_608\|8 MiB\|8388608" documentazione/multi-visual-
+roadmap.md documentazione/prototipi/lesson-multi-visual.html` → nessuna
+occorrenza (verificato in §4.2). `grep -n "2_000_000\|2 MB"` → presente in
+entrambi i file.
+
+### Blocker 5 — Ingresso e workflow lezione+immagini
+
+**Correzione.** `multi-visual-roadmap.md` §11.1: un solo ingresso,
+«Arricchisci» dentro Azioni; nessun secondo pulsante in Contenuto. §11.2–
+§11.3: «Genera lezione con immagini» è ora un **passo** del flusso di
+generazione testo esistente, offerto **dopo** il salvataggio canonico del
+testo; un fallimento del piano visivo non tocca mai `LessonDoc.body`, e il
+retry di uno slot non rigenera il testo.
+
+**Prova.** Nel prototipo, `page-teacher-0` mostra il menu «Azioni ▾» con
+l'unica voce «Arricchisci» (nessuna scheda «Contenuto» separata con un
+secondo pulsante). Lo stato `lesson-gen-step` (screenshot
+`320-lesson-gen-step.png`) mostra testualmente «Il testo è già salvato in
+modo canonico» come precondizione del passo, prima di offrire «Sì, genera
+anche le immagini».
+
+### Blocker 6 — Ancoraggio omonimi incompleto
+
+**Correzione.** `multi-visual-roadmap.md` §7.1–§7.3: `VisualAnchorSelector`
+(`anchorHeadingIndex` + `anchorHeadingText`) come identità autorevole in
+pianificazione, promozione e riancoraggio; l'elenco mostrato al modello e
+al docente è enumerato per indice, mai deduplicato per testo; lo slug resta
+ricalcolato server-side dal corpo fresco solo al momento del consumo.
+Collisioni testate esplicitamente in §19 (due heading «Reti» risolvono a
+`reti`/`reti-2` indipendentemente da quale scelto).
+
+**Prova.** Nel prototipo, gli stati `plan-review` e `upload` mostrano il
+campo Ancora come `«Le quattro fasi» (indice 1)` / `«Il bilancio idrico»
+(indice 2)` — mai un testo nudo.
+
+### Blocker 7 — Stati prototipo incompleti
+
+**Correzione.** Il prototipo, rinominato (Blocker 10), copre ora
+realmente: galleria a 1/2/3 immagini (`gallery-1`, `gallery-2`,
+`gallery-3`); piano IA modificabile con soggetto/ancora/didascalia
+(`plan-review`, campi `<textarea>`/`<input>` reali, non testo statico);
+generazione con progresso per asset (`generating`, tre slot in tre stati
+diversi contemporaneamente); fallimento e retry di un solo asset che
+preserva gli altri (`slot-failed`); upload (`upload`, `upload-error`);
+sostituzione/rimozione individuale (`replace`, azione «Rimuovi» per
+elemento nella galleria); lezione+immagini con testo salvato
+(`lesson-gen-step`); vista studente (`page-student-with`,
+`page-student-without`); recovery (`recovery`).
+
+**Prova.** Elenco completo con screenshot in §4.4.
+
+### Blocker 8 — Responsive/accessibilità non dimostrati
+
+**Correzione e prova.** Sezione dedicata, §4, con metriche reali misurate
+via Chromium/CDP — non dichiarazioni. Riassunto:
+
+- `.btn--small` **rimosso**: ogni controllo interattivo eredita
+  `min-height`/`min-width: 44px` dalla classe base `.btn`, senza eccezioni
+  per varianti compatte (solo il padding/font-size cambia).
+- Il dialog usa `<dialog>.showModal()` nativo con
+  `max-height: calc(100dvh - 32px)`, corpo con `overflow-y: auto`, footer
+  `flex: 0 0 auto` — mai fuori viewport, con scroll interno quando serve.
+- Focus trap **verificato** con otto pressioni reali di Tab (non simulato
+  a parole): un difetto reale è stato trovato e corretto (§4.5).
+- Ripristino del focus sul trigger **verificato** con un difetto reale
+  trovato e corretto (§4.6).
+- Stabilità del frame immagine pending→ready **verificata** con un difetto
+  reale trovato e corretto nel metodo di misura, poi confermato stabile
+  (§4.7).
+- Interception di Escape su un piano non salvato: **verificata funzionante
+  sul percorso DOM standard**, **non verificabile in modo conclusivo**
+  contro l'input sintetico di CDP in headless — riportato come limite di
+  verifica, non come PASS (§4.8).
+
+### Blocker 9 — Stato prodotto e minimizzazione
+
+**Correzione.** `multi-visual-roadmap.md` §1.1: la divergenza fra lo stato
+dichiarato di VE su `main` (Gate GVISUAL: PENDING, holdout D «non ancora
+eseguito», anche nel commit più recente che tocca quel file) e la guida
+operativa di questo pilota (arricchimento a singola immagine funzionante e
+validato) è **dichiarata esplicitamente**, senza scegliere quale sia
+corretta e senza riscrivere i file di VE. Ogni meccanismo (adozione, corse,
+cost model) è specificato per restare corretto in entrambi gli scenari
+(§6.3 del contratto). `source` **rimosso** dal manifest pubblico
+(`PublicLessonVisualItem`, §5.3) — resta solo nel manifest privato
+(`LessonVisualItem`, §5.1).
+
+**Prova.** `grep -n "nessuna lezione reale ha mai avuto"
+documentazione/multi-visual-roadmap.md` → nessuna occorrenza (la frase
+categorica della revisione 1 è stata rimossa). `grep -n "source"` nel blocco
+`PublicLessonVisualItem` di §5.3 → assente; presente solo in
+`LessonVisualItem` (§5.1).
+
+### Blocker 10 — Deliverable e cost model
+
+**Correzione.** File rinominato in
+`documentazione/prototipi/lesson-multi-visual.html` (verificato: il vecchio
+nome non esiste più nel repository, §4.2). `multi-visual-roadmap.md` §12
+riscritto con tabelle e **formule esplicite** per 0/1/2/3 immagini,
+distinguendo pianificazione coordinata (§12.1), N generazioni indipendenti
+(§12.2), upload (§12.3), promozione individuale/in blocco (§12.4), lettura
+studente (§12.5), riordino/rimozione/cleanup (§12.6).
+
+**Prova.** Il vecchio file è stato rimosso (`git rm`) e il nuovo creato con
+il nome corretto nello stesso commit. Git non lo rileva come una rinomina
+automatica (`git diff --cached -M --stat` mostra `D`/`A` distinti, non `R`)
+perché il contenuto è stato riscritto per intero e scende sotto la soglia
+di similarità euristica — è una sostituzione dichiarata, non una rinomina
+silenziosa: `git status --short -- documentazione/prototipi/` mostra
+esplicitamente `D  .../lesson-visual-enrichment-multi.html` e
+`A  .../lesson-multi-visual.html`.
+
+---
+
+## 3. Perimetro effettivo di questa revisione
 
 Il diff tocca **esclusivamente** `documentazione/**`:
-`multi-visual-roadmap.md` (nuovo), `prototipi/lesson-visual-enrichment-
-multi.html` (nuovo), `evidenze/multi-visual-00-review.md` (questo file,
-nuovo), `evidenze/multi-visual-00-prototipo/` (nuovo, screenshot reali),
-più tre righe di stato aggiornate in `INDEX.md`,
-`agent-orchestrator-roadmap.md` e `piano-implementazione.md`. Nessun file
-runtime, nessuna dipendenza, nessuna Rule.
+`multi-visual-roadmap.md` (riscritto), `prototipi/lesson-multi-visual.html`
+(nuovo, sostituisce il file rinominato), `evidenze/multi-visual-00-
+review.md` (questo file, riscritto), `evidenze/multi-visual-00-prototipo/`
+(screenshot e report rigenerati), più le righe di collegamento in
+`INDEX.md` e `agent-orchestrator-roadmap.md` aggiornate al nuovo nome del
+file. Nessun file runtime, nessuna dipendenza, nessuna Rule, nessuna
+chiamata a provider.
 
 ---
 
-## 2. Documenti letti, nell'ordine prescritto dal task
-
-`INDEX.md` → `agent-orchestrator-roadmap.md` (protocollo, macchina degli
-stati, manifest del pilota `MULTI-VISUAL-00`) → `visual-enrichment-
-roadmap.md` (contratto a singola immagine, integrale) → `evidenze/visual-
-enrichment-00-review.md` (review di fase, verifiche eseguite e non
-eseguite) → `piano-implementazione.md` (riga `ORCHESTRATOR-04`) →
-`prototipi/lesson-visual-enrichment.html` (baseline di stile e di
-interazione riusata). Verificata l'assenza di `AGENTS.md` nel repository
-(nessuna corrispondenza). Verificato che `main`/`HEAD` contenesse il merge
-di PR #421 prima di creare il branch (`git log`, `git status`).
-
----
-
-## 3. Perché questa fase riapre un punto che VE aveva chiuso
-
-La verifica più rilevante di questa fase non è tecnica: è di **coerenza fra
-mandati**. `visual-enrichment-roadmap.md` §16 elenca esplicitamente «upload
-di immagini proprie» come fuori scope, con una motivazione dichiarata
-(licenze, moderazione, formati, provenienza — «è una funzione diversa»). Il
-task manifest di questo pilota chiede testualmente «upload con
-normalizzazione server-side e limiti».
-
-Questa review conferma che il contratto prodotto (`multi-visual-roadmap.md`
-§9) **non nasconde** questa tensione: la dichiara nel testo, importa la
-motivazione originale di VE senza modificarla, e la delimita con un
-argomento verificabile — SchoolForge è uno strumento a singolo docente
-(`brief.md`), quindi il rischio di moderazione multi-tenant che aveva
-motivato l'esclusione originale non si applica nello stesso modo. Non è una
-verifica che il compromesso sia "giusto": è la verifica che sia stato **reso
-esplicito** invece che risolto per omissione. Resta un rischio residuo
-dichiarato (`multi-visual-roadmap.md` §17.1).
-
----
-
-## 4. Verifiche eseguite
+## 4. Verifiche eseguite — con metriche reali, non dichiarazioni
 
 ### 4.1 Perimetro del diff
 
@@ -91,257 +217,274 @@ dichiarato (`multi-visual-roadmap.md` §17.1).
 |---|---|
 | Il diff tocca solo `documentazione/**` | **PASS** |
 | Nessun file runtime creato o modificato | **PASS** |
-| Nessuna dipendenza aggiunta (`package.json`, lockfile invariati) | **PASS** |
-| Nessuna chiamata a provider eseguita | **PASS** — nessun codice eseguibile introdotto nel diff del repository |
-| Nessuna immagine reale generata o caricata | **PASS** |
-| `windows-tuning-backup-2026-08-21/` non toccato | **PASS** — cartella pre-esistente e non tracciata, ignorata per l'intera sessione |
-| `git diff --check` (spazi finali, conflitti) | **PASS** |
-| `npx prettier --check` sui Markdown modificati/nuovi | **PASS** |
-| Nessun merge, nessun deploy | **PASS** |
+| Nessuna dipendenza aggiunta | **PASS** |
+| `windows-tuning-backup-2026-08-21/` non toccato | **PASS** |
+| `git diff --check` | **PASS** (§5) |
+| `npx prettier --check` sui Markdown/JSON modificati | **PASS** (§5) |
 
-> `prettier --check` è stato eseguito sui quattro file Markdown toccati
-> (`INDEX.md`, `agent-orchestrator-roadmap.md`, `piano-implementazione.md`,
-> `multi-visual-roadmap.md`); il prototipo `.html` resta fuori dal glob di
-> `format:check` del repository (`{ts,tsx,json,md,yaml,yml}`), comportamento
-> preesistente e condiviso con tutti i prototipi già presenti — non
-> modificato per questa fase.
-
-### 4.2 Prototipo — verifiche statiche
-
-| Verifica | Comando | Esito |
-|---|---|---|
-| Nessun URL esterno | `grep -nE 'https?://\|src="//\|url\('` | **PASS** — nessuna occorrenza |
-| Nessuna risorsa remota | `grep -nE '<link\|<script[^>]+src=\|@import'` | **PASS** — nessuna occorrenza |
-| Nessuna chiamata di rete | `grep -nE 'fetch\(\|XMLHttpRequest'` | **PASS** — nessuna occorrenza |
-| Nessun `data:` URI | `grep -n 'data:'` | **PASS** — nessuna occorrenza |
-| Quattordici stati presenti | `grep -c 'class="panel"'` | **PASS** — 14 |
-| `overflow-x: hidden` su `html, body` | ispezione | **PASS** |
-| `prefers-reduced-motion: reduce` dichiarato nel CSS | ispezione | **PASS** — confermato anche a runtime, §4.3 |
-| `:focus-visible` con contrasto | ispezione | **PASS** — confermato anche a runtime, §4.3 |
-| Target touch ≥ 44 px | token `--touch: 44px` su `.btn`, `.demo-bar button`, campi | **PASS** strutturale |
-| Immagini fluide | `img, svg { max-width: 100%; height: auto }` | **PASS** |
-
-### 4.3 Smoke responsive reale — **ESEGUITO**, a differenza di VE-00
-
-A differenza della review di VE-00 (`visual-enrichment-00-review.md` §5.1,
-non eseguita per assenza di un browser nell'ambiente di quella sessione),
-questa sessione **dispone** di Chromium (`C:\Program Files\Google\Chrome\
-Application\chrome.exe`, verificato al percorso reale prima di procedere).
-Lo smoke è stato eseguito **davvero**, con la stessa metodologia già
-prescritta da quella review e usata per `vdif-00-prototipo-visivo.md`:
-Chrome reale in `--headless=new`, pilotato via **Chrome DevTools Protocol**
-su un WebSocket nativo (`globalThis.WebSocket`, disponibile in Node 24 senza
-alcuna dipendenza nuova), con `Emulation.setDeviceMetricsOverride` per il
-viewport e `Page.captureScreenshot` per l'evidenza — **mai**
-`--window-size`, per la stessa ragione già documentata in VE-00 (su Windows
-Chrome impone una larghezza minima di finestra di 500 px).
-
-Lo script pilota (`node:child_process` + WebSocket nativo, nessuna
-dipendenza npm installata) vive fuori dal repository, in una cartella
-temporanea del sistema, e non fa parte del diff.
-
-**Matrice eseguita** — quattro larghezze, undici catture, gli stati che
-stressano di più ciascuna larghezza:
-
-| Larghezza | Stati catturati | Che cosa verificano |
-|---|---|---|
-| 1440 | 1 · 5 · 10 | griglia delle proposte (`.slots`), griglia della galleria (`.gallery`), figure impilate sulla stessa ancora nella vista lezione |
-| 1024 | 5 · 11 | transizione della griglia della galleria, vista studente con più immagini |
-| 390 | 0 · 3 · 8 | footer del dialog a pulsanti impilati, form di upload, conferma di abbandono |
-| 320 | 1 · 5 · 9 | collasso a una colonna di `.slots` e `.gallery`, avviso di ancora persa per un singolo elemento |
-
-**Risultato — misurato, non dichiarato per assunzione:**
+### 4.2 Nome del file — verificato, non assunto
 
 ```
-1440×900  s1 : scrollW=1440 innerW=1440 overflowX=false visiblePanels=1
-1440×900  s5 : scrollW=1425 innerW=1440 overflowX=false visiblePanels=1
-1440×900  s10: scrollW=1425 innerW=1440 overflowX=false visiblePanels=1
-1024×900  s5 : scrollW=1009 innerW=1024 overflowX=false visiblePanels=1
-1024×900  s11: scrollW=1009 innerW=1024 overflowX=false visiblePanels=1
-390×844   s0 : scrollW=390  innerW=390  overflowX=false visiblePanels=1
-390×844   s3 : scrollW=390  innerW=390  overflowX=false visiblePanels=1
-390×844   s8 : scrollW=390  innerW=390  overflowX=false visiblePanels=1
-320×720   s1 : scrollW=320  innerW=320  overflowX=false visiblePanels=1
-320×720   s5 : scrollW=320  innerW=320  overflowX=false visiblePanels=1
-320×720   s9 : scrollW=320  innerW=320  overflowX=false visiblePanels=1
+$ git status --short -- documentazione/prototipi/
+D  documentazione/prototipi/lesson-visual-enrichment-multi.html
+A  documentazione/prototipi/lesson-multi-visual.html
 ```
 
-`overflowX=false` su tutte e undici le combinazioni: `document.
-documentElement.scrollWidth` non supera mai `window.innerWidth`, a nessuna
-delle quattro larghezze. `visiblePanels=1` su ogni cattura conferma che
-`.panel[hidden] { display: none !important }` funziona come inteso — è
-esattamente la classe di difetto che `vdif-00-prototipo-visivo.md` §3 aveva
-trovato solo con uno screenshot, con i controlli statici verdi (un
-`display: flex` che batteva `[hidden]` per specificità, lasciando visibili
-più pannelli insieme); qui è stata verificata a runtime, non assunta dalla
-sola ispezione del CSS. **Console del browser (`Log.entryAdded` a livello
-`error`/`warning`, `Runtime.exceptionThrown`): nessuna voce, su tutte e
-undici le catture.**
+Il vecchio nome non compare più in alcun link:
+`grep -rn "lesson-visual-enrichment-multi" documentazione/` → nessuna
+occorrenza fuori da questo stesso paragrafo di cronaca.
 
-Le undici catture sono salvate in
-[`multi-visual-00-prototipo/`](multi-visual-00-prototipo/) insieme al
-report grezzo (`smoke-report.json`). Ispezione visiva delle catture (non
-solo delle metriche): galleria a tre colonne leggibile a 1440, collasso a
-una colonna dei pannelli `.slots`/`.gallery` a 320 senza testo troncato o
-sovrapposto, form di upload e conferma di abbandono utilizzabili a 390,
-badge di provenienza («Generata»/«Caricata») leggibili a ogni larghezza.
+### 4.3 Prototipo — verifiche statiche
 
-### 4.4 `prefers-reduced-motion` e `:focus-visible` — verificati a runtime
+| Verifica | Esito |
+|---|---|
+| Nessun URL esterno / risorsa remota / chiamata di rete / `data:` URI | **PASS** — nessuna occorrenza |
+| 7 pagine lezione (`class="page"`) | **PASS** — 7 |
+| Nessun controllo sotto 44 px in CSS (`36px` non presente come valore) | **PASS** |
+| `--touch: 44px` applicato dalla classe base `.btn` a ogni variante | **PASS** — verificato leggendo le regole CSS; confermato a runtime in §4.4 |
 
-Estensione di questa sessione oltre la sola matrice responsive, con lo
-stesso Chromium: la barra di avanzamento dello stato 2 (Generazione) ha
-`animation-duration` **1,4 s** di base; con
-`Emulation.setEmulatedMedia({ 'prefers-reduced-motion': 'reduce' })` attivo,
-il valore calcolato scende a **1 µs** (il minimo praticabile prodotto dalla
-regola `animation-duration: 0.001ms !important` del CSS), confermando che
-la regola dichiarata in §4.2 non è solo presente nel foglio di stile ma
-**ha effetto** sull'elemento realmente animato del prototipo.
+### 4.4 Smoke responsive reale — Chromium via CDP, misure raccolte
 
-Navigazione da tastiera: un singolo evento `Tab` sposta il focus su un
-`<button>` della barra demo con `outline-style: solid`,
-`outline-color: rgb(251, 146, 60)` (`--color-brand-orange`),
-`outline-width: 2px` — la regola `:focus-visible` dichiarata in §4.2 è
-verificata sull'elemento realmente attivo, non solo letta dal CSS.
+Metodologia invariata dalla revisione 1 (Chrome reale
+`--headless=new`, `Emulation.setDeviceMetricsOverride`,
+`Page.captureScreenshot`, mai `--window-size`), estesa con le metriche
+richieste esplicitamente dalla review: overflow orizzontale, rettangolo
+dialog/viewport con scroll interno e footer raggiungibile, dimensione di
+ogni controllo interattivo visibile, stabilità del frame immagine. Script
+fuori dal repository (cartella temporanea di sistema), nessuna dipendenza
+npm installata (WebSocket nativo di Node 24).
 
-### 4.5 I quattordici stati richiesti
+**Matrice eseguita — undici catture, quattro larghezze:**
 
-| # | Stato | Pannello | Presente |
-|---|---|---|---|
-| 0 | Galleria vuota (0/3) | `#s0` | ✅ |
-| 1 | Orchestrazione «Genera lezione con immagini», costi separati per slot | `#s1` | ✅ |
-| 2 | Generazione in corso per un singolo slot | `#s2` | ✅ |
-| 3 | Caricamento di un file proprio, normalizzazione server-side | `#s3` | ✅ |
-| 4 | Errore di caricamento (formato/peso) | `#s4` | ✅ |
-| 5 | Galleria «Gestisci immagini» a 3/3, provenienza mista, riordino | `#s5` | ✅ |
-| 6 | Sostituzione di un elemento specifico (non dell'intero manifest) | `#s6` | ✅ |
-| 7 | Slot pieno — tentativo di superare il limite di tre | `#s7` | ✅ |
-| 8 | Conferma di abbandono | `#s8` | ✅ |
-| 9 | Ancora persa per un singolo elemento su tre | `#s9` | ✅ |
-| 10 | Vista lezione docente con immagini su ancore diverse e in coda | `#s10` | ✅ |
-| 11 | Vista studente con immagini (lezione svolta) | `#s11` | ✅ |
-| 12 | Vista studente senza immagini (lezione non svolta) | `#s12` | ✅ |
-| 13 | Compatibilità con il manifest singolo esistente (non adottato) | `#s13` | ✅ |
+| Larghezza | Stati catturati |
+|---|---|
+| 1440 | `plan-review` · `generating` · `gallery-3` |
+| 1024 | `gallery-2` · `slot-failed` |
+| 390 | `quantity` · `upload` · `recovery` |
+| 320 | `authorize` · `gallery-1` · `lesson-gen-step` |
 
-Note di merito su tre stati:
+**Overflow orizzontale — misurato su tutte e undici le catture:**
 
-- **#1 Orchestrazione** mostra tre proposte indipendenti (due generabili, una
-  «nessuna immagine utile») con un'unica nota esplicita — «nessuno sconto
-  combinato» — che rende visibile la decisione di costo del contratto §11.1:
-  ogni slot è una spesa a sé.
-- **#9 Ancora persa** è deliberatamente scoperto su **una sola** delle tre
-  immagini: le altre due restano ancorate, a dimostrazione che la perdita
-  dell'ancora è una proprietà per-elemento e non dell'intero manifest
-  (contratto §7.4).
-- **#13 Legacy singola** è la resa del punto più delicato del contratto: una
-  lezione scritta sotto VE, mai toccata da MULTI-VISUAL, deve apparire
-  **identica** al prototipo a singola immagine di VE-00. Il confronto visivo
-  fra questo pannello e `#s7` di `lesson-visual-enrichment.html` conferma la
-  stessa struttura (stessa lezione di esempio, stesso schizzo, stessa nota
-  del docente riformulata per dire esplicitamente «non ancora adottato»).
+```
+1440×900  plan-review : scrollW=1425 innerW=1440 overflowX=false
+1440×900  generating  : scrollW=1425 innerW=1440 overflowX=false
+1440×900  gallery-3   : scrollW=1425 innerW=1440 overflowX=false
+1024×900  gallery-2   : scrollW=1009 innerW=1024 overflowX=false
+1024×900  slot-failed : scrollW=1009 innerW=1024 overflowX=false
+390×844   quantity    : scrollW=390  innerW=390  overflowX=false
+390×844   upload      : scrollW=390  innerW=390  overflowX=false
+390×844   recovery    : scrollW=390  innerW=390  overflowX=false
+320×720   authorize   : scrollW=320  innerW=320  overflowX=false
+320×720   gallery-1   : scrollW=320  innerW=320  overflowX=false
+320×720   lesson-gen-step: scrollW=320 innerW=320 overflowX=false
+```
+
+`overflowX=false` su tutte le undici combinazioni.
+
+**Target interattivi ≥ 44 px — ogni controllo visibile, non un campione:**
+per ciascuna delle undici catture, lo script ha enumerato **tutti** i
+`button`/`a`/`input`/`textarea`/`select`/`[role=menuitem]` visibili nella
+vista corrente (dialog se aperto, altrimenti pagina) e misurato
+`getBoundingClientRect()`:
+
+```
+1440 plan-review   : 7 controlli, 0 sotto 44px
+1440 generating    : 1 controllo,  0 sotto 44px
+1440 gallery-3     : 11 controlli, 0 sotto 44px
+1024 gallery-2     : 8 controlli,  0 sotto 44px
+1024 slot-failed   : 2 controlli,  0 sotto 44px
+390  quantity      : 6 controlli,  0 sotto 44px
+390  upload        : 5 controlli,  0 sotto 44px
+390  recovery      : 1 controllo,  0 sotto 44px
+320  authorize     : 2 controlli,  0 sotto 44px
+320  gallery-1     : 4 controlli,  0 sotto 44px
+320  lesson-gen-step: 2 controlli, 0 sotto 44px
+```
+
+**Totale: 49 controlli misurati, 0 sotto 44 px, su tutte le larghezze,
+incluse quelle a puntatore presumibilmente coarse (390, 320, `mobile:
+true` nell'emulazione).**
+
+**Dialog dentro il viewport, scroll interno, footer raggiungibile** —
+misurato sullo stato `plan-review` (il più alto in contenuto) a ciascuna
+larghezza:
+
+```
+1440: dialogWithinViewport=true  bodyHasInternalScroll=false footerReachable=true
+1024: dialogWithinViewport=true  bodyHasInternalScroll=false footerReachable=true
+390:  dialogWithinViewport=true  bodyHasInternalScroll=true  footerReachable=true
+320:  dialogWithinViewport=true  bodyHasInternalScroll=true  footerReachable=true
+```
+
+Il dialog resta sempre entro il rettangolo del viewport
+(`top/left ≥ 0`, `right/bottom ≤` dimensioni viewport, tolleranza
+0,5 px). Lo scroll interno si attiva correttamente solo alle altezze più
+basse (390/320, dove il contenuto non entra nell'altezza disponibile);
+alle altezze desktop (900 px) il contenuto entra senza bisogno di
+scroll. Il footer resta sempre interamente dentro il viewport.
+
+**Console del browser**: `Log.entryAdded` a livello `error`/`warning` e
+`Runtime.exceptionThrown` — **zero voci** su tutta la sessione di smoke.
+
+Le undici catture e il report grezzo (`smoke-report.json`) sono salvati in
+[`multi-visual-00-prototipo/`](multi-visual-00-prototipo/).
+
+### 4.5 Focus trap — un difetto reale trovato e corretto
+
+**Prima misura (non dichiarata PASS):** otto pressioni reali di Tab
+(`Input.dispatchKeyEvent`) a partire dall'apertura del dialog hanno
+mostrato che, al giro di boccola dall'ultimo elemento focalizzabile
+(«Chiudi») al primo, il focus transitava per un istante su `<body>` —
+fuori dal dialog — prima di rientrare al Tab successivo. È un difetto
+reale del solo affidamento al comportamento nativo di `<dialog>` in questo
+ambiente, trovato **perché** la misura è stata eseguita passo per passo
+invece di controllare solo lo stato iniziale e finale.
+
+**Correzione.** Aggiunto un handler `keydown` esplicito sul dialog che
+intercetta Tab sull'ultimo elemento focalizzabile e Shift+Tab sul primo,
+forzando il wrap senza mai lasciare che il focus tocchi `<body>` o
+qualunque elemento fuori dal dialog.
+
+**Rimisura, dopo la correzione:**
+
+```
+trapHeldAcross8Tabs: true
+```
+
+Otto Tab consecutivi restano tutti dentro `#arricchisci` (verificato con
+`dialog.contains(document.activeElement)` a ogni singolo passo, non solo
+all'inizio e alla fine).
+
+### 4.6 Ripristino del focus sul trigger — un secondo difetto trovato e corretto
+
+**Prima misura:** aprendo il dialog dal percorso reale (click su «Azioni
+▾» → click su «Arricchisci» nel menu), e premendo poi Escape, il focus
+**non** tornava sull'elemento che aveva aperto il dialog. Causa: la voce di
+menu «Arricchisci» viene nascosta (`hidden`) nello stesso istante in cui il
+dialog si apre, quindi al momento della chiusura quell'elemento non è più
+focalizzabile e il ripristino nativo non ha un bersaglio valido.
+
+**Correzione.** Il ripristino del focus è ora gestito esplicitamente:
+`lastTrigger` è impostato al pulsante «Azioni ▾» (che resta visibile per
+tutta la vita del dialog, a differenza della voce di menu), e un listener
+`close` lo rifocalizza esplicitamente se è ancora presente e visibile.
+
+**Rimisura, dal trigger reale (non una scorciatoia della barra demo):**
+
+```
+afterOpen:  { open: true, activeInsideDialog: true, activeTag: "BUTTON" }
+afterEscape:{ open: false, activeTag: "BUTTON", activeIsTrigger: true }
+```
+
+Il focus torna correttamente sul pulsante «Azioni ▾».
+
+### 4.7 Stabilità del frame immagine pending→ready — un errore di metodo corretto
+
+**Prima misura (metodo errato, scartata):** un primo tentativo confrontava
+il frame di uno slot nella vista `generating` (griglia a tre colonne) con
+il frame di un elemento nella vista `gallery-1` (griglia a una colonna):
+`stable=false` a 1440 e 1024, perché **la griglia intera cambia larghezza
+di colonna** fra un contesto a tre elementi e uno a un elemento — un
+effetto di layout dovuto al numero di elementi nel contenitore, non un
+layout shift del contenuto della singola card. Confrontare due contesti
+diversi non misura ciò che il blocker chiede.
+
+**Metodo corretto.** Il confronto giusto è **dentro la stessa vista**: la
+vista `generating` mostra contemporaneamente uno slot già `ready` (slot 1,
+con miniatura reale) e uno slot ancora `generating` (slot 2, con
+scheletro/spinner), fianco a fianco nella stessa griglia. Se il loro
+`.frame` ha la stessa dimensione, il box non cambia misura quando il
+contenuto passa da scheletro a immagine reale — è esattamente l'invariante
+richiesto.
+
+**Misura, con il metodo corretto:**
+
+```
+1440: ready={w:282.66,h:176.66} generating={w:282.67,h:176.66} stable=true
+1024: ready={w:279.66,h:174.78} generating={w:279.67,h:174.78} stable=true
+390:  ready={w:300,   h:187.5 } generating={w:300,   h:187.5 } stable=true
+320:  ready={w:230,   h:143.75} generating={w:230,   h:143.75} stable=true
+```
+
+Stabile a tutte e quattro le larghezze (differenza sub-pixel, < 0,5 px,
+dovuta a `box-sizing` e non a un ridimensionamento del contenuto).
+
+### 4.8 Escape su un piano non salvato — verificato dove possibile, limite dichiarato altrove
+
+Il contratto richiede che chiudere il dialog mentre un piano ha slot già
+generati (costo sostenuto) e non ancora applicati non scarti nulla in
+silenzio, ma apra una conferma di abbandono (§8.7 del contratto,
+`abandon-plan` nel prototipo).
+
+**Tre misure indipendenti, riportate senza arrotondarle a un unico
+verdetto:**
+
+1. **Evento `cancel` generato attraverso il percorso DOM standard**
+   (`dialog.dispatchEvent(new Event('cancel', {cancelable:true}))` —
+   equivalente, per specifica, a ciò che un browser genera davvero quando
+   Escape chiude un `<dialog>`): `defaultPrevented: true`,
+   `stillOpen: true`, il pannello passa a «Abbandonare il piano?». **La
+   logica applicativa dell'intercettazione funziona.**
+2. **Click reale sul backdrop** (`Input.dispatchMouseEvent` fuori dal
+   contenuto del dialog): il dialog **resta aperto**, senza alcuna
+   intercettazione necessaria — comportamento nativo confermato di
+   `<dialog>.showModal()`, che a differenza di molte modali custom **non**
+   si chiude da solo al click esterno. Nessun rischio da mitigare su
+   questo fronte.
+3. **Escape simulato come input sintetico via Chrome DevTools Protocol**
+   in modalità headless: il dialog **si chiude comunque**
+   (`stillOpen: false`), nonostante l'handler `cancel` e un secondo
+   handler `keydown` in fase di cattura dedicato esplicitamente a questo
+   caso. Non è stato possibile, nel tempo di questa sessione, determinare
+   con certezza se il comportamento sia un limite specifico
+   dell'automazione headless via CDP (il caso 1 dimostra che la stessa
+   identica logica applicativa, raggiunta per un percorso diverso,
+   funziona) oppure un caso reale non coperto.
+
+**Conclusione onesta, non un PASS forzato.** L'intercettazione
+dell'abbandono è verificata funzionante quando innescata dal normale
+evento `cancel` del DOM (caso 1) e il click sul backdrop non pone il
+problema (caso 2, comportamento nativo). Il caso 3 — Escape via automazione
+CDP — **non è dichiarato superato**: è un limite di verifica registrato
+come rischio residuo (§6) e un'azione da ripetere in una fase futura con
+uno strumento di automazione che simuli l'input a un livello diverso (per
+esempio Playwright, non disponibile in questo ambiente), o con un test
+manuale reale.
 
 ---
 
-## 5. Verifiche NON eseguite — e perché
+## 5. Gate eseguiti
 
-### 5.1 Qualità didattica delle immagini — **NON MISURATA**
-
-Nessuna immagine è stata generata né caricata. Vale identica la posizione
-di VE-00: è un'ipotesi, non una misura, ed è esplicitamente fuori scope di
-questa fase documentale.
-
-### 5.2 Comportamento reale dell'adozione dal manifest legacy — **NON ESEGUITO**
-
-Il contratto (§6.2) specifica una transazione di adozione, ma nessun codice
-esiste ancora: non c'è nulla da eseguire. È dichiarato come rischio residuo
-esplicito in `multi-visual-roadmap.md` §17.2 — l'adozione non sarà mai stata
-esercitata su dati reali prima della prima lezione reale con due immagini,
-indipendentemente da quale opzione di rollout (§15.2 del contratto) venga
-scelta.
-
-### 5.3 Verifica del margine di byte su un documento Firestore reale — **NON ESEGUITA**
-
-Il calcolo di `multi-visual-roadmap.md` §4 (margine del 21,9% con tre
-immagini al cap rigido) è aritmetica verificabile a mano, non una misura
-contro un'istanza Firestore reale — nessun Firestore, reale o emulato, è
-stato toccato in questa fase. La verifica contro un'istanza reale è
-esplicitamente elencata come test obbligatorio di una fase implementativa
-futura (`multi-visual-roadmap.md` §19).
-
-### 5.4 Componenti React reali — **NON APPLICABILE A QUESTA FASE**
-
-Il prototipo è HTML statico. Lo smoke di §4.3 verifica il prototipo, non i
-componenti React che una fase implementativa dovrà costruire — quello smoke
-resta da fare quando quei componenti esisteranno, con la stessa metodologia
-(§19 del contratto lo elenca esplicitamente).
+| Comando | Esito |
+|---|---|
+| `npx prettier --check` sui Markdown/JSON modificati | **PASS** |
+| `git diff --check` sull'intero diff staged | **PASS** — nessuno spazio finale, nessun marcatore di conflitto |
+| Controlli statici del prototipo (§4.3) | **PASS** |
+| Smoke Chromium reale 1440/1024/390/320 (§4.4–§4.8) | **PASS su overflow, target ≥44px, dialog/viewport, stabilità frame, focus trap, ripristino focus, backdrop; limite di verifica dichiarato su Escape via CDP (§4.8)** |
 
 ---
 
-## 6. Stato dichiarato
+## 6. Rischi residui aggiornati da questa revisione
+
+Ereditati da `multi-visual-roadmap.md` §17, più:
+
+1. **Escape via automazione CDP non verificato in modo conclusivo**
+   (§4.8). Azione futura: ripetere con Playwright o con un test manuale
+   reale prima di considerare questo specifico comportamento chiuso.
+2. **Il vincolo di diversità del piano resta strutturale, non
+   semantico** (ereditato, contratto §7.4, §17.1).
+3. **Il cap di upload a 2 MB è più stretto delle foto tipiche di uno
+   smartphone** (ereditato, contratto §17.2) — friction reale per il
+   docente, non eliminata da questo documento.
+4. **La divergenza sullo stato di VE resta dichiarata, non risolta**
+   (contratto §1.1, §17.3).
+
+---
+
+## 7. Stato dichiarato
 
 | Elemento | Stato |
 |---|---|
-| MULTI-VISUAL-00 | **Contratto e prototipo prodotti; smoke responsive reale eseguito e verde** |
-| MULTI-VISUAL-01→05 | **Aperte** |
+| MULTI-VISUAL-00 (revisione 2) | **Contratto e prototipo corretti su tutti i dieci blocker; smoke reale con metriche misurate, non dichiarate** |
+| MULTI-VISUAL-01→05 | Aperte |
 | Gate GMULTI | **PENDING** |
-| Dipendenza dichiarata | VE-00→05A (Gate GVISUAL **PENDING** — vedi `multi-visual-roadmap.md` §15.1 per la raccomandazione di sequenza) |
-
----
-
-## 7. Domande aperte per il gate umano
-
-Nessuna di queste è risolvibile in implementazione: sono decisioni del
-docente, aggiuntive rispetto a quelle già aperte da
-`visual-enrichment-00-review.md` §7 (non risolte da questa fase, vedi
-`multi-visual-roadmap.md` §17.7).
-
-1. **Tre immagini restano il numero giusto?** Il contratto lo deriva
-   matematicamente dal limite di documento Firestore (§4), non da un
-   giudizio di prodotto: il docente potrebbe comunque ritenere che anche
-   tre siano troppe, o troppo poche per un uso reale.
-2. **L'upload di immagini proprie vale la riapertura di un punto già
-   chiuso in VE?** È il compromesso più grande di questo pilota (§3), reso
-   esplicito ma non risolto: nessuna moderazione automatica del contenuto
-   caricato, responsabilità interamente del docente.
-3. **La sequenza raccomandata (VE prima, MULTI-VISUAL dopo) è quella
-   giusta**, o conviene assorbire subito MULTI-VISUAL come V1 dell'intera
-   funzione (opzione B di `multi-visual-roadmap.md` §15.2), accettando che
-   l'adozione resti non esercitata su dati reali più a lungo?
-4. **Il costo separato per immagine nell'orchestrazione «Genera lezione con
-   immagini» è comunicato in modo sufficientemente chiaro** nel flusso del
-   prototipo (stato #1), o rischia comunque di essere percepito come un
-   pacchetto unico da chi non legge la nota esplicita?
-5. **Il riordino a sole frecce da tastiera (§16 del contratto, nessun
-   drag-and-drop in V1)** è un compromesso di accessibilità accettabile, o
-   un'esperienza percepita come troppo macchinosa per tre elementi al
-   massimo?
-
----
-
-## 8. Scope esatto di MULTI-VISUAL-01
-
-Riportato qui perché la fase successiva non debba ricostruirlo da zero,
-sullo stesso modello di VE-00 §8:
-
-Fase **tipi e validatori puri**. Nessuna Function, nessuna UI, nessuna
-persistenza, nessun deploy, nessuna chiamata a provider.
-
-**Da produrre**, come da `multi-visual-roadmap.md` §18, riga
-MULTI-VISUAL-01: `LessonVisualsManifest`, `LessonVisualItem` e relativo
-validatore strutturale a chiavi chiuse (§5.1 del contratto);
-`PublicLessonVisualsManifest`/`PublicLessonVisualItem` (§5.2);
-`PublicLessonVisualBytesDoc` come mappa per `assetId` (§5.3);
-`adaptSingular` puro (§6.1); risolutore d'ancora esteso a N elementi con la
-stessa regola di confronto esatto di VE; costanti
-`MAX_VISUALS_PER_LESSON = 3` e `MAX_VISUAL_UPLOAD_INPUT_BYTES = 8_388_608`;
-test di non-regressione byte-identica sui contratti VE-01 esistenti
-(namespace `visual-enrichment/v1` invariato).
-
-**Prima di procedere oltre questa fase**, il contratto raccomanda
-esplicitamente una decisione su Gate GVISUAL (`multi-visual-roadmap.md`
-§15.1) — non un blocco tecnico su MULTI-VISUAL-01 stesso, che può procedere
-in parallelo essendo puro e senza alcuna dipendenza da dati reali.
-
-**Definition of Done:** stessa disciplina di VE-01 — build/typecheck/lint/
-test verdi (quando esisterà codice da compilare), non-regressione degli
-`inputHash` dimostrata, nessuna dipendenza nuova, nessun file web
-modificato, nessun deploy.
