@@ -6,16 +6,30 @@
 > task manifest `MULTI-VISUAL-00`. **Gate GMULTI: PENDING.**
 >
 > **Revisione 2 (25 agosto 2026).** La prima review Codex ha respinto la
-> revisione 1 con dieci blocker. Questa versione li corregge tutti: modello
+> revisione 1 con dieci blocker UX/workflow. Corretti tutti — modello
 > economico a **autorizzazione unica** (§8, §11, §12), **piano coordinato**
 > invece di proposte indipendenti (§8.3), selettore di **quantità** (§8.2),
 > cap di upload corretto a **2 MB** (§9), punto di ingresso unico
-> **«Arricchisci»** dentro Azioni e integrazione con il flusso di
-> generazione della lezione (§11), identità di ancoraggio
-> **indice + testo** in ogni fase (§7), rimozione di `source` dal manifest
-> pubblico (§5.2, §13), nome file del prototipo corretto, cost model con
-> conteggi espliciti (§12). Il §20 elenca, per ciascun blocker, la
-> correzione e la prova.
+> **«Arricchisci»** dentro Azioni, identità di ancoraggio **indice + testo**
+> (§7), rimozione di `source` dal manifest pubblico (§5.3, §13), nome file
+> del prototipo corretto, cost model con conteggi espliciti (§12). §20 ne
+> elenca la correzione e la prova.
+>
+> **Revisione 3 (25 agosto 2026).** La seconda review Codex ha approvato
+> l'esito UX ma respinto **dieci blocker architetturali**: matrice di
+> migrazione fail-closed per la coesistenza `visuals`/`visual` (§6.1),
+> forma chiusa completa di `VisualPlanRun` con identità e fonte autorevole
+> per campo (§5.5), tetto economico riconciliato con i tentativi di retry
+> ammessi — niente più seconda conferma dopo il tetto (§8.5, §12.1),
+> fail-closed sulla corsa corpo/ancora **alla promozione**, coda solo
+> **dopo** una promozione già avvenuta (§7.2), forma chiusa e Rules
+> congelate del documento byte pubblico (§5.4, §5.4.1), export v2 davvero
+> multi-asset (§14.2), generalizzazione del cleanup per cancellazione
+> lezione/UDA/corso (§8.12), cost model riconciliato con i numeri
+> **misurati** di VE-03 invece di stime scritte da zero (§12.0–§12.8), e la
+> correzione del vincolo di diversità: un'ancora condivisa fra idee
+> distinte resta legittima, solo l'idea duplicata è vietata (§7.4). §21 ne
+> elenca la correzione e la prova.
 >
 > Questo documento **non sostituisce**
 > [`visual-enrichment-roadmap.md`](visual-enrichment-roadmap.md) (di seguito
@@ -27,7 +41,7 @@
 > **Prototipo:** [`prototipi/lesson-multi-visual.html`](prototipi/lesson-multi-visual.html)
 > **Review di fase:** [`evidenze/multi-visual-00-review.md`](evidenze/multi-visual-00-review.md)
 
-**Data:** 25 agosto 2026 (revisione 2).
+**Data:** 25 agosto 2026 (revisione 3).
 **Base:** `main` — merge di PR #421 (`agent-orchestrator-01`).
 **Dipendenze documentali:** `visual-enrichment-roadmap.md` (VE-00→05A);
 `lesson-manual-contract.md` (renderer, sanificazione, slug); `sicurezza.md`
@@ -145,7 +159,7 @@ provider). A questi si aggiungono, congelati per questa funzione:
 | Cardinalità | 0 o 1 per lezione | 0..3 per lezione, ordinate |
 | Punto di ingresso | scheda Contenuto | **Azioni → «Arricchisci»**, unico, gestisce anche la galleria (§11.1) |
 | Autorizzazione economica | una conferma per generazione | **una conferma per piano** (tetto = somma dei cap di 1 proposta coordinata + N generazioni), §8, §12 |
-| Proposta testuale | 1 chiamata → 1 esito | **1 chiamata coordinata → 0..N esiti**, ancore ed idee reciprocamente distinte per costruzione (§7.4, §8.3) |
+| Proposta testuale | 1 chiamata → 1 esito | **1 chiamata coordinata → 0..N esiti**, idee reciprocamente distinte (soggetto e utilità, non l'ancora — condividere un'ancora resta legittimo, §7.4, §8.3) |
 | Identità di ancoraggio in pianificazione | non applicabile (1 sola immagine) | `(anchorHeadingIndex, anchorHeadingText)`, mai lo slug (§7) |
 | Manifest privato | `LessonDoc.visual` (oggetto singolo) | `LessonDoc.visuals` (contenitore con array `items`, §5) |
 | Manifest pubblico | `publicLessons.visual` (con provenienza implicita: sempre generata) | `publicLessons.visuals` — **senza** campo di provenienza (§5.2, §13) |
@@ -155,7 +169,7 @@ provider). A questi si aggiungono, congelati per questa funzione:
 | Idempotenza | `requestId` nel namespace `visual-enrichment/v1` | **piano**: `requestId` + `planHash` nel namespace `visual-plan/v1`; ogni slot ha un `opaqueRunId` derivato deterministicamente dal piano, non un secondo `requestId` client (§10.1) |
 | Rules Storage | nessuna regola nuova | **nessuna regola nuova** |
 | Rules Firestore | forma su `publicLessons.visual` | forma **nuova** su `publicLessons.visuals` (fase implementativa, fuori da questo documento) |
-| Export ZIP | sidecar `visuals/{assetId}.{json,webp}` | **invariato** — i sidecar sono già chiavati per `assetId`, non per lezione (§14) |
+| Export ZIP | `aiVisualExportBatch` restituisce 1 asset per lezione | **v2**: 1..3 asset per lezione, stesso formato di sidecar `visuals/{assetId}.{json,webp}`, validazione all-or-nothing estesa all'insieme, dedup sull'intero batch (§14.2) |
 
 **Che cosa non cambia mai.** Il corpo Markdown della lezione. Il divieto di
 `innerHTML`/`dangerouslySetInnerHTML` su contenuto post-sanificazione. Il
@@ -337,16 +351,47 @@ export interface PublicLessonVisualItem {
 
 ### 5.4 Byte studente — `publicLessonVisuals/{publicLessonId}`
 
-Invariato dalla revisione 1 — la scelta di una **mappa per `assetId`**
-resta valida e non è toccata da alcun blocker:
+La scelta di una **mappa per `assetId`** resta invariata dalla revisione 1
+e non è toccata da alcun blocker. **La forma del documento è invece
+corretta rispetto alla revisione 2**, che aveva eliminato per errore
+l'identità documentale e le dimensioni per asset di cui le Rules (sotto) e
+il resto del contratto hanno bisogno:
 
 ```ts
 export interface PublicLessonVisualBytesDoc {
   contractVersion: 'lesson-visuals/v1';
+
+  /**
+   * Identità del documento, dichiarata nel contenuto e non solo affidata
+   * al percorso. «Non fidarsi solo del path»: il percorso Firestore
+   * (`publicLessonVisuals/{publicLessonId}`) individua già il documento,
+   * ma le Rules devono poter verificare che il CONTENUTO dichiari la
+   * stessa identità del documento `publicLessons` a cui dice di
+   * appartenere — un controllo di coerenza interna che il solo pattern di
+   * `match` sul percorso non offre, perché `programId`/`importId` non
+   * fanno parte di questo percorso (che è piatto, un solo segmento
+   * variabile).
+   */
+  publicLessonId: string;
+  programId: string;
+  importId: string;
+
   bytes: {
     [assetId: string]: {
       dataUri: string; // 'data:image/webp;base64,...'
       mimeType: 'image/webp';
+      /**
+       * Duplicate delle stesse dimensioni già presenti nel manifest
+       * pubblico piccolo (`PublicLessonVisualItem.width/height`, §5.3).
+       * La duplicazione è deliberata: permette alle Rules (sotto) di
+       * verificare la coerenza fra manifest e byte confrontando due campi
+       * dello stesso tipo di documento senza dover decodificare l'immagine
+       * — cosa che le Rules non possono fare — e senza fidarsi ciecamente
+       * che chi ha scritto il byte doc abbia anche scritto il manifest
+       * correttamente.
+       */
+      width: number;
+      height: number;
     };
   };
 }
@@ -358,18 +403,184 @@ sottocollezione per asset romperebbe l'invariante «una lettura puntuale,
 indipendente dal numero di immagini» (Firestore fattura per documento
 letto): resta quindi scartata per lo stesso motivo di VE §3.3.
 
+### 5.4.1 Rules — congelate, non più «fase implementativa futura»
+
+**Correzione rispetto alla revisione 2**, che rimandava la forma delle
+Rules a un'implementazione futura senza specificarle. La review ha
+correttamente osservato che senza le Rules scritte qui, il modello di
+sicurezza non è specificato — solo rimandato. Questo paragrafo le congela,
+in pseudocodice coerente con lo stile già usato da `sicurezza.md` e da
+VE-00 per `storage.rules`; la sintassi Firestore Rules esatta è compito
+dell'implementazione, ma **ogni condizione elencata qui è vincolante**.
+
+**`publicLessonVisuals/{publicLessonId}`:**
+
+```
+match /publicLessonVisuals/{publicLessonId} {
+
+  allow read: if isOwnerOfLesson(publicLessonId)
+              || isStudentAllowedToRead(publicLessonId);
+
+  // Scrittura SEMPRE negata al client, in ogni ruolo. Il documento è
+  // scritto solo da Cloud Functions (Admin SDK, bypassa le Rules) durante
+  // la promozione (§8.6), la rimozione (§8.9) e il cleanup (§8.12).
+  allow write: if false;
+}
+
+function isOwnerOfLesson(publicLessonId) {
+  // Stessa disciplina owner-only già usata da VE per LessonDoc/staging:
+  // richiede risalire dal publicLessonId al LessonDoc privato e
+  // confrontare l'owner con request.auth.uid. Costo di lettura accettato
+  // solo lato docente (superficie di gestione, non lo studente).
+  return request.auth != null
+      && get(/databases/$(db)/documents/lessons/$(lessonIdOf(publicLessonId))).data.ownerUid == request.auth.uid;
+}
+
+function isStudentAllowedToRead(publicLessonId) {
+  let lesson = get(/databases/$(db)/documents/publicLessons/$(publicLessonId)).data;
+  let bytes  = resource.data;
+
+  return request.auth != null
+
+      // 1. Le stesse guardie di scoperta già usate da `publicLessons` per
+      //    il testo — programma/import attivo (`activeImportId`, riuso
+      //    del meccanismo di STRUCTURE-IMPORT/HARD-02B), classe dello
+      //    studente, Modalità verifica: nessuna guardia nuova, nessuna
+      //    guardia più permissiva di quella che già protegge il testo
+      //    della stessa lezione.
+      && passesLessonDiscoveryGuards(lesson)
+
+      // 2. La proiezione visiva esiste ed è ben formata.
+      && lesson.visuals != null
+      && isWellFormedPublicVisualsManifest(lesson.visuals)
+
+      // 3. La lezione è svolta — senza questa condizione la proiezione
+      //    stessa non dovrebbe esistere (§8.11), ma la Rule non si fida
+      //    del solo fatto che il documento sia leggibile per dedurlo.
+      && lesson.completed == true
+
+      // 4. Identità del byte doc coerente con la lezione che dice di
+      //    servire — "non fidarsi solo del path".
+      && bytes.publicLessonId == publicLessonId
+      && bytes.programId == lesson.programId
+      && bytes.importId  == lesson.importId
+
+      // 5. L'insieme delle chiavi di `bytes` coincide ESATTAMENTE con
+      //    l'insieme degli assetId del manifest pubblico — non un
+      //    sottoinsieme, non un soprainsieme. Una chiave in più sarebbe un
+      //    residuo leggibile di una rimozione incompleta (§8.9); una
+      //    chiave in meno servirebbe un manifest che promette un'immagine
+      //    che il documento non ha.
+      && bytes.bytes.keys().toSet() == assetIdsOf(lesson.visuals).toSet()
+
+      // 6. Dimensioni coerenti asset per asset fra manifest e byte doc.
+      && allAssetDimensionsMatch(lesson.visuals, bytes.bytes);
+}
+```
+
+**`publicLessons/{publicLessonId}` — delta sul campo `visuals`:**
+
+```
+match /publicLessons/{publicLessonId} {
+  allow read: if isOwnerOfLesson(publicLessonId)
+              || passesLessonDiscoveryGuards(resource.data);
+  allow write: if false; // solo Cloud Functions
+}
+```
+
+Nessuna condizione nuova rispetto a quelle già in vigore per il resto del
+documento `publicLessons` (testo, metadati): il campo `visuals` non
+introduce un livello di autorizzazione proprio, eredita quello del
+documento che lo contiene — coerente con VE §9.7 («nessuna modifica alle
+guardie di scoperta studente»).
+
+**Scrittura client sempre negata, in ogni Rule di questa sezione.** Nessuna
+eccezione per il docente: anche l'owner scrive solo attraverso le callable
+autenticate (§8.6, §8.9, §8.12), mai con una scrittura diretta al
+documento — stessa disciplina già in vigore per `visualRuns` e lo staging
+di VE.
+
 ### 5.5 Piano visivo — `VisualPlanRun`
 
 Nuovo in questa revisione: la forma che rende **una** l'autorizzazione
 economica invece di N (Blocker 1) e **coordinata** la proposta (Blocker 2).
 
+**Correzione rispetto alla revisione 2.** La forma precedente non
+dichiarava a quale lezione appartenesse un piano se non implicitamente, non
+distingueva la fonte autorevole di ciascun campo identità dal payload non
+fidato del client, e la formula del tetto non teneva conto dei tentativi di
+retry ammessi per slot (corretto anche in §8.5, §12.1). Questa versione
+chiude entrambi i buchi.
+
+**Percorso del documento:** `visualPlanRuns/{opaquePlanId}` — collezione di
+primo livello, server-only, sullo stesso modello di `visualRuns` e
+`aiVisualCandidates` di VE (non annidato sotto la lezione: l'identità della
+lezione è un **campo**, non un segmento di percorso, perché `opaquePlanId`
+è già derivato da `(ownerUid, requestId)` — §10.1 — e non c'è motivo di
+duplicare l'annidamento). Owner-only nelle Rules, TTL 24 h come lo staging
+di VE. Un solo piano ATTIVO per lezione alla volta (§10.3).
+
 ```ts
-/**
- * Documento server-only, owner-only nelle Rules, TTL 24 h come lo staging
- * di VE. Un solo piano ATTIVO per lezione alla volta (§10.3).
- */
 export interface VisualPlanRun {
   contractVersion: 'visual-plan/v1';
+
+  // ── Identità — una riga per campo: fonte autorevole, non il payload nudo ──
+
+  /**
+   * UID del docente proprietario. Fonte autorevole: `auth.uid` del
+   * contesto di autenticazione della callable che crea il piano — MAI un
+   * valore letto dal payload client, per lo stesso motivo per cui VE non
+   * accetta mai un `ownerUid` dichiarato (l'owner UID compare solo perché
+   * la richiesta è autenticata come lui).
+   */
+  ownerUid: string;
+
+  /**
+   * Fonte autorevole: il payload di autorizzazione lo propone, ma il
+   * server lo accetta **solo dopo aver riletto `LessonDoc` a quel percorso
+   * e verificato che appartenga a `ownerUid`** — mai il payload da solo.
+   * Fail-closed (`lesson_not_found`) se la lettura fallisce.
+   */
+  programId: string;
+  /** Stessa disciplina di `programId`: verificato contro `LessonDoc` riletto. */
+  importId: string;
+  /** Stessa disciplina di `programId`: verificato contro `LessonDoc` riletto. */
+  lessonId: string;
+
+  /**
+   * Fonte autorevole: **derivato server-side** dallo stesso helper
+   * condiviso di proiezione già usato da VE
+   * (`lessonProjectionIdentity`) — mai inviato dal client. Necessario per
+   * calcolare i percorsi di `publicLessons`/`publicLessonVisuals` alla
+   * promozione (§8.6) senza ricalcolarli lì una seconda volta con un
+   * rischio di divergenza.
+   */
+  publicLessonId: string;
+
+  /**
+   * Fonte autorevole: letto da `LessonDoc`/metadati di import, mai dal
+   * client. Necessario per il percorso Storage canonico
+   * `repository/{ownerUid}/{importId}/{udaDir}/visuals/{assetId}.webp`
+   * (VE §4) che la promozione di ciascuno slot userà.
+   */
+  udaDir: string;
+
+  /** UUID v4, generato dal client. Persistito per audit/debug; l'unica
+   *  cosa che ne deriva dal client è `opaquePlanId` (§10.1) — il campo qui
+   *  non è mai riletto come autorità su nient'altro. */
+  requestId: string;
+
+  /**
+   * SHA-256 calcolato **server-side** (§10.1) da destinazione (`ownerUid`,
+   * `programId`, `importId`, `lessonId`, `publicLessonId`), quantità e
+   * stato iniziale rilevante (`sourceBodyHash`, `existingItemAssetIds`
+   * ordinati). Mai inviato dal client: un client che inviasse un
+   * `planHash` proprio potrebbe costruirne uno che punta a una
+   * destinazione diversa da quella autenticata.
+   */
+  planHash: string;
+
+  // ── Stato e contenuto del piano ──
 
   /** Stato del piano nel suo complesso. Vedi §8.7. */
   status:
@@ -386,28 +597,51 @@ export interface VisualPlanRun {
   /** Selezione di quantità del docente. Mai un pavimento — vedi §8.2. */
   quantity: VisualPlanQuantitySelection;
 
-  /** SHA-256 del corpo lezione al momento dell'autorizzazione. */
+  /** SHA-256 del corpo lezione al momento dell'autorizzazione. Fonte
+   *  autorevole: `LessonDoc.body` riletto al momento della creazione del
+   *  piano, non un hash dichiarato dal client. */
   sourceBodyHash: string;
 
   /**
-   * `assetId` delle immagini già approvate al momento dell'autorizzazione.
-   * Usato per calcolare gli slot liberi e per rilevare, alla promozione,
-   * se l'insieme è cambiato sotto al piano (§10.3).
+   * `assetId` delle immagini già approvate al momento dell'autorizzazione,
+   * nello stesso ordine di `LessonDoc.visuals.items`. Fonte autorevole:
+   * `LessonDoc.visuals`/`visual` riletto (dopo il controllo di co-presenza
+   * di §6.1 — un piano non può nascere su una lezione in
+   * `visual_legacy_conflict`). Usato per calcolare gli slot liberi e per
+   * rilevare, alla promozione, se l'insieme è cambiato sotto al piano
+   * (§10.3).
    */
   existingItemAssetIds: string[];
 
-  /** Tetto totale prenotato = 1 proposta + `quantity` generazioni. */
+  /**
+   * Tetto totale prenotato = 1 proposta + (`quantity.ceiling` × tentativi
+   * massimi) generazioni. **Corretto rispetto alla revisione 2**: la
+   * formula precedente non copriva i retry ammessi da §8.5, rendendoli
+   * contraddittori con l'autorizzazione unica (§8.3, §12.1).
+   */
   budgetCeiling: {
+    /** Chiave di prenotazione sul ledger mensile di budget, riuso del
+     *  meccanismo AIGEN esistente (`ai-content-budget/v1`) — non un
+     *  meccanismo nuovo (§10.1, §12.1). */
     reservationKey: string;
     proposalCap: number;
-    perSlotGenerationCap: number;
-    totalReserved: number; // proposalCap + perSlotGenerationCap × ceiling
+    generationCap: number;
+    /** Tentativi massimi per slot coperti da QUESTA prenotazione — deve
+     *  coincidere con `VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT` al momento della
+     *  creazione del piano; congelato nel documento perché un cambio
+     *  futuro della costante non deve alterare retroattivamente il tetto
+     *  di un piano già autorizzato. */
+    maxAttemptsPerSlot: number;
+    /** proposalCap + generationCap × quantity.ceiling × maxAttemptsPerSlot */
+    totalReserved: number;
   };
 
   /** 0..ceiling elementi, popolati dopo la proposta coordinata. */
   slots: VisualPlanSlot[];
 
-  /** Consuntivo — vedi §12. Popolato progressivamente, mai stimato due volte. */
+  /** Consuntivo — vedi §12. Popolato progressivamente, mai stimato due
+   *  volte. Invariante verificato ad ogni scrittura: la somma dei costi
+   *  reali non supera mai `budgetCeiling.totalReserved` (§8.5). */
   settlement: {
     proposalActualCost: number | null;
     slots: Array<{
@@ -421,6 +655,36 @@ export interface VisualPlanRun {
   updatedAt: Timestamp;
   expireAt: Timestamp;
 }
+```
+
+**Un record presente ma divergente o malformato è `corrupted_state`, mai
+assenza o replay.** Vale per ogni lettura di `visualPlanRuns/{opaquePlanId}`
+— sia al primo tentativo di autorizzazione (§8.3) sia a un resume (§8.8):
+
+- il documento **non esiste** → percorso normale di creazione di un nuovo
+  piano (§8.3);
+- il documento esiste, **struttura valida**, `planHash` coincide col
+  ricalcolo corrente → replay legittimo, nessuna nuova scrittura (§10.1);
+- il documento esiste, **struttura valida**, ma `ownerUid`/`programId`/
+  `importId`/`lessonId`/`publicLessonId` **non coincidono** con quanto
+  risulterebbe da una rilettura fresca di `LessonDoc` a quell'`opaquePlanId`
+  → **`corrupted_state`**, non `visual_plan_stale` (quell'esito è riservato
+  a un `planHash` che diverge per un cambiamento *legittimo* dello stato
+  della lezione, §10.1) e non un'assenza silenziosa che farebbe ripartire
+  la creazione di un piano duplicato sotto lo stesso `opaquePlanId` — un
+  conflitto di scrittura che il codice deve poter distinguere, non
+  nascondere;
+- il documento esiste ma **non supera il validatore strutturale** (chiavi
+  mancanti, unione di stato non valida, array `slots` con `slotIndex`
+  duplicati) → **`corrupted_state`**, stessa ragione: un tentativo di
+  "ripararlo" scrivendo sopra presupporrebbe di sapere quale parte fosse
+  quella corrotta, esattamente il presupposto che §6.1 rifiuta per
+  `visual_legacy_conflict`.
+
+In ogni caso di `corrupted_state`, l'operazione richiesta si ferma, zero
+scritture, e il piano non è né utilizzabile né sovrascrivibile
+automaticamente — stessa disciplina fail-closed di §6.1, applicata qui al
+piano invece che al manifest.
 
 export type VisualPlanQuantitySelection =
   | { mode: 'auto'; ceiling: 1 | 2 | 3 }
@@ -440,7 +704,7 @@ export interface VisualPlanSlot {
   anchor: VisualAnchorSelector | null;
   caption: string | null;
   altText: string | null;
-  attempts: number; // ≤ VISUAL_PLAN_MAX_GENERATION_ATTEMPTS_PER_SLOT
+  attempts: number; // ≤ VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT
   lastError: 'visual_too_large' | 'provider_invalid_output' | 'transient_error' | null;
   /** Presente solo quando state === 'ready'. Stessa forma dei campi normalizzati di VE §7. */
   staged: {
@@ -472,30 +736,97 @@ export const ACCEPTED_VISUAL_UPLOAD_MIME_TYPES = [
 ] as const;
 
 /** Tentativi di generazione coperti dalla prenotazione di un singolo slot. */
-export const VISUAL_PLAN_MAX_GENERATION_ATTEMPTS_PER_SLOT = 2;
+export const VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT = 2;
 ```
 
 ---
 
 ## 6. Compatibilità e migrazione dal manifest singolo
 
-### 6.1 Lettura — nessuna migrazione richiesta per leggere
+### 6.1 Lettura — matrice di stato completa, fail-closed sulle incoerenze
 
-Il renderer e la vista studente leggono in quest'ordine, per ogni lezione:
+**Correzione rispetto alla revisione 2.** La versione precedente trattava
+la coesistenza di `visuals` e `visual` come un caso ordinario: «`visuals`
+presente → è l'unica fonte... il campo legacy, se presente, è ignorato». La
+review ha respinto questo comportamento — ignorare silenziosamente un
+campo presente è una scelta arbitraria su uno stato che la disciplina di
+scrittura di questo contratto (§6.2) non dovrebbe mai produrre, e proprio
+per questo, se si verifica comunque (edit manuale in Firestore Console, un
+bug di un'implementazione futura, la scrittura di uno strumento esterno),
+il contratto non può permettersi di indovinare quale dei due campi sia
+quello vero.
 
-1. `visuals` presente → è l'unica fonte, letta e resa così com'è. Il campo
-   legacy `visual` (singolare), se presente, è **ignorato**.
-2. `visuals` assente, `visual` (singolare) presente → **modello di lettura
-   compatibile**: trattato come un array a un elemento
-   `{ contractVersion: 'lesson-visuals/v1', items: [adaptSingular(visual)] }`,
-   calcolato **a runtime**, mai scritto. `adaptSingular` copia i campi 1:1
-   e imposta `source: 'generated'`.
-3. Nessuno dei due presente → nessuna lettura aggiuntiva, percorso odierno
-   invariato, esattamente come VE §11.
+**Procedura di lettura, in tre passi, sempre in quest'ordine:**
 
-Questo comportamento **non dipende** dal numero di lezioni che si trovano
-nel caso 2 quando il codice viene distribuito: che siano zero o migliaia,
-il meccanismo è lo stesso, letto una lezione alla volta (§1.1).
+1. **Controllo di co-presenza, prima di qualunque validazione
+   strutturale.** Se **entrambi** i campi `visuals` e `visual` esistono nel
+   documento — indipendentemente dal fatto che uno, l'altro o nessuno dei
+   due superi il proprio validatore strutturale — l'esito è
+   **`visual_legacy_conflict`**. Non si tenta di stabilire quale sia «più
+   valido»: la loro stessa coesistenza è il segnale di corruzione, non un
+   dettaglio da risolvere euristicamente.
+2. Se **un solo** campo è presente, si valida **quello**:
+   - `visuals` presente, valido → è l'unica fonte, letta e resa così com'è;
+   - `visuals` presente, **malformato** → `visuals_malformed`;
+   - `visual` (singolare) presente, valido → modello di lettura compatibile
+     invariato: trattato come un array a un elemento
+     `{ contractVersion: 'lesson-visuals/v1', items: [adaptSingular(visual)] }`,
+     calcolato **a runtime**, mai scritto — `adaptSingular` copia i campi
+     1:1 e imposta `source: 'generated'`;
+   - `visual` (singolare) presente, **malformato** →
+     `visual_legacy_malformed` (nome invariato dalla revisione 2, §6.3).
+3. Se **nessuno dei due** è presente → nessuna immagine, nessuna lettura
+   aggiuntiva, percorso odierno invariato, esattamente come VE §11.
+
+**Matrice completa** — `visuals` sulle righe, `visual` sulle colonne:
+
+| `visuals` \\ `visual` | assente | valido | malformato |
+|---|---|---|---|
+| **assente** | nessuna immagine (normale) | lettura compatibile, `adaptSingular` (normale) | `visual_legacy_malformed`, fail-closed |
+| **valido** | è l'unica fonte (normale, stato post-adozione) | **`visual_legacy_conflict`**, fail-closed | **`visual_legacy_conflict`**, fail-closed |
+| **malformato** | `visuals_malformed`, fail-closed | **`visual_legacy_conflict`**, fail-closed | **`visual_legacy_conflict`**, fail-closed |
+
+Le tre celle di conflitto sono deliberatamente identiche: la validità
+individuale dei campi non attenua la co-presenza. Sapere che `visuals` è
+strutturalmente valido non dice nulla sul **perché** `visual` esista
+ancora — potrebbe essere un residuo di una scrittura fuori dalla
+transazione di adozione (§6.2), che non dovrebbe mai poter accadere ma che
+un contratto fail-closed non presuppone impossibile.
+
+**Effetto di `visual_legacy_conflict` e delle forme malformate — zero
+rendering automatico, zero scritture automatiche, nessuna riparazione:**
+
+- **Lato docente.** Il renderer del manuale (scheda Contenuto) non prova a
+  scegliere quale manifest rendere: **non renderizza alcuna figura**; il
+  corpo Markdown resta comunque leggibile per intero (il conflitto riguarda
+  solo il manifest visivo, mai il testo). La scheda «Arricchisci» (§11.1)
+  mostra un banner bloccante con il codice dell'errore. Ogni azione che
+  scriverebbe su `visuals`/`visual` — adozione, promozione, rimozione,
+  riordino — è rifiutata con lo stesso codice, zero scritture, finché lo
+  stato non è risolto.
+- **Lato studente — non toccato strutturalmente da questa fase.** Lo
+  studente non legge mai `LessonDoc` direttamente (legge solo
+  `publicLessons`/`publicLessonVisuals`, §5.3–§5.4): un conflitto nel
+  documento privato **non implica automaticamente** che la proiezione
+  pubblica, scritta da una promozione precedente valida, sia anch'essa
+  corrotta. La proiezione pubblica resta quindi visibile così com'è, fino
+  alla successiva scrittura autorizzata su quella lezione — che però, per
+  il punto sopra, non può avvenire finché il conflitto lato docente non è
+  risolto. È una scelta esplicita: bloccare anche lo studente per un
+  conflitto che potrebbe riguardare solo metadati di governo interni
+  sarebbe una penalizzazione senza una necessità dimostrata.
+- **Nessuna riparazione automatica.** Il contratto delibera di non
+  specificare un meccanismo che scelga automaticamente `visuals` o `visual`
+  come «quello giusto» e cancelli l'altro. Risolvere un
+  `visual_legacy_conflict` richiede un intervento deliberato — lettura
+  manuale di entrambi i campi, o un futuro strumento di manutenzione
+  dedicato, non progettato in questo documento (§16) — prima che qualunque
+  scrittura automatica possa riprendere su quella lezione.
+
+Questo comportamento **non dipende** dal numero di lezioni in ciascuna
+cella della matrice quando il codice viene distribuito: che siano zero o
+migliaia, il meccanismo è lo stesso, valutato una lezione alla volta
+(§1.1).
 
 ### 6.2 Scrittura — adozione pigra, atomica, irreversibile in forma
 
@@ -503,10 +834,15 @@ La prima volta che una lezione con manifest singolo riceve **una seconda
 immagine**, o comunque la prima scrittura sotto il contratto MULTI-VISUAL,
 la transazione di promozione (§8.6) esegue un passo di **adozione**:
 
-1. rilegge `LessonDoc`. Se `visuals` è già presente, l'adozione è già
-   avvenuta: salta questo passo (idempotenza);
-2. se `visual` (singolare) è presente e `visuals` è assente, costruisce
-   `items[0] = adaptSingular(visual)`;
+0. **applica prima il controllo di co-presenza di §6.1.** Se lo stato è
+   `visual_legacy_conflict`, `visuals_malformed` o `visual_legacy_malformed`,
+   l'intera operazione — non solo l'adozione — si ferma qui, **zero
+   scritture**, con quel codice tipizzato restituito al chiamante. Il resto
+   dei passi sotto presuppone che questo controllo sia già passato;
+1. rilegge `LessonDoc`. Se `visuals` è già presente (e valido, per il passo
+   0), l'adozione è già avvenuta: salta questo passo (idempotenza);
+2. se `visual` (singolare) è presente e valido e `visuals` è assente,
+   costruisce `items[0] = adaptSingular(visual)`;
 3. applica la mutazione richiesta (aggiungi/sostituisci, §8.6) all'array
    così ottenuto;
 4. scrive `LessonDoc.visuals` con l'array risultante **e cancella il campo
@@ -518,6 +854,14 @@ la transazione di promozione (§8.6) esegue un passo di **adozione**:
    copiato un'immagine preesistente, anche con la chiave dell'`assetId`
    ereditato, letta dal vecchio `publicLessonVisuals/{id}.data` **prima**
    di sovrascrivere il documento.
+
+**L'adozione rifiuta gli stati incoerenti, non li ripara.** Il passo 0 non
+è una formalità aggiunta in coda: è la ragione per cui l'adozione non può
+mai trasformarsi in uno strumento di risoluzione dei conflitti. Un
+`LessonDoc` in stato `visual_legacy_conflict` **non** viene "sistemato"
+scegliendo `visuals` o `visual` e scrivendo comunque — l'intera famiglia di
+operazioni (adozione compresa) resta bloccata finché il conflitto non è
+risolto da un intervento deliberato, esterno a questo flusso (§6.1).
 
 **Idempotenza.** Un retry dopo un commit riuscito rileva `visuals` già
 presente al passo 1 e non ricostruisce `items[0]` una seconda volta.
@@ -538,14 +882,17 @@ già un'immagine singola oggi», l'adozione è progettata per essere corretta
   alcun'altra lezione. Non esiste un job che itera sul repository: ogni
   adozione è innescata solo dall'azione del docente su **quella** lezione
   (§1.1, nessun backfill).
-- **Fail-closed su forma inattesa.** Se `LessonDoc.visual` esiste ma non
-  supera il validatore strutturale di VE (un manifest scritto da un
-  contratto futuro incompatibile, o corrotto), l'adozione **non tenta una
-  conversione parziale**: fallisce con un errore tipizzato
-  `visual_legacy_malformed`, zero scritture, e l'operazione richiesta dal
-  docente (aggiungere un'immagine) è bloccata finché il campo legacy non è
-  in una forma valida o rimosso — mai un'adozione che scarta silenziosamente
-  campi che non capisce.
+- **Fail-closed su forma inattesa — l'intera matrice di §6.1, non solo il
+  caso singolare.** Se `LessonDoc.visual` esiste ma non supera il
+  validatore strutturale di VE, l'adozione fallisce con
+  `visual_legacy_malformed`. Se `LessonDoc.visuals` esiste ma non supera il
+  proprio validatore, fallisce con `visuals_malformed`. Se **entrambi**
+  esistono, fallisce con `visual_legacy_conflict`, indipendentemente dalla
+  validità di ciascuno (§6.1). In ogni caso: **zero scritture**, e
+  l'operazione richiesta dal docente (aggiungere un'immagine) resta
+  bloccata finché lo stato non è risolto — mai un'adozione che scarta
+  silenziosamente campi che non capisce, mai una scelta automatica fra due
+  campi presenti.
 - **Nessuna assunzione sul numero di record.** Il codice di adozione non
   contiene alcun ramo condizionato su «se questa è la prima lezione mai
   adottata» o simili: ogni chiamata è indistinguibile dalle altre, che sia
@@ -598,11 +945,28 @@ sola immagine da ancorare ma insufficiente quando il piano deve
 disambiguare fra più scelte contemporaneamente); non modifica il codice di
 VE-01, che resta di sua competenza.
 
-### 7.2 Verifica all'uso — indice e testo devono concordare
+### 7.2 Verifica all'uso — due momenti diversi, due esiti diversi
 
-Ogni punto che consuma un `VisualAnchorSelector` (promozione, §8.6;
-riancoraggio, invariato da VE-04A) esegue, server-side, sul corpo
-**fresco**:
+**Correzione rispetto alla revisione 2.** La versione precedente applicava
+la stessa politica di coda (VE §5.3) sia alla promozione sia al rendering
+successivo, come se fossero lo stesso rischio. Non lo sono, e la review lo
+ha respinto correttamente: **durante la promozione**, un indice fuori
+range o un testo divergente significa che il corpo è cambiato *dopo* la
+pianificazione e *prima* che l'immagine sia mai entrata nella lezione — non
+c'è ancora nulla da salvare in coda, e promuovere comunque scriverebbe
+un'ancora scelta su un corpo che non esiste più. **Dopo** una promozione
+già avvenuta, invece, un'ancora valida al momento della promozione che
+smette di risolvere perché il docente ha poi rinominato l'heading è
+esattamente il caso per cui la coda di VE §5.3 esiste — lì l'immagine è già
+pagata e già nella lezione, e la coda è ciò che evita di perderla. Sono due
+momenti diversi con due esiti diversi, e il contratto ora li tiene distinti
+esplicitamente.
+
+#### 7.2.1 Alla promozione (§8.6) e al riancoraggio — fail-closed, zero scritture
+
+Ogni punto che consuma un `VisualAnchorSelector` **per scrivere** (la
+promozione di uno slot, §8.6; il riancoraggio, invariato da VE-04A)
+esegue, server-side, sul corpo **fresco**:
 
 1. ricalcola l'elenco enumerato degli heading H2/H3 realmente presenti nel
    corpo attuale (stessa estrazione ATX/Setext con blocchi recintati
@@ -614,13 +978,42 @@ riancoraggio, invariato da VE-04A) esegue, server-side, sul corpo
    nessuno slug, nessun fuzzy matching, identica disciplina di VE §15.1;
 4. **se una delle due verifiche fallisce** (indice fuori range, o testo
    cambiato — il docente ha riscritto o riordinato gli heading fra la
-   scelta e il commit), l'ancora non è **inventata altrove**: si applica la
-   stessa politica di coda di VE §5.3 (l'immagine promuove comunque, ma
-   `anchorResolved: 'fallback'` a runtime, mai persistito).
-5. **solo se** le verifiche passano, lo slug viene calcolato dall'helper
-   condiviso (`@schoolforge/lesson-contract`, riusato sia dal web sia dalle
-   Functions, come da VE-04A) e **quello** — non l'indice, non il testo
-   grezzo — è ciò che finisce in `LessonVisualAnchor.headingSlug` (§5.1).
+   scelta e il commit), l'esito è **fail-closed**: errore tipizzato
+   `visual_promotion_anchor_stale`, **zero scritture**. Lo slot **non**
+   viene promosso in coda «per sicurezza»: resta nello stato in cui era
+   (`ready` per una promozione, invariato per un riancoraggio), il costo
+   già sostenuto per generarlo non è perso, e il docente può scegliere
+   un'ancora diversa fra gli heading **attuali** (una nuova selezione,
+   stesso `VisualAnchorSelector`, zero rigenerazione, zero nuovo costo) e
+   ritentare la promozione.
+5. **solo se entrambe le verifiche passano**, lo slug viene calcolato
+   dall'helper condiviso (`@schoolforge/lesson-contract`, riusato sia dal
+   web sia dalle Functions, come da VE-04A) e **quello** — non l'indice,
+   non il testo grezzo — è ciò che finisce in
+   `LessonVisualAnchor.headingSlug` (§5.1).
+
+**Perché due verifiche indipendenti quando il passo 1 di §8.6 ha già
+confrontato `sourceBodyHash`.** Se `sourceBodyHash` coincide, l'elenco
+enumerato è per costruzione identico a quello visto in pianificazione, e
+indice+testo *devono* concordare — la verifica di questo paragrafo non
+troverebbe mai una divergenza in quel caso. Il controllo resta comunque
+**non ridondante quanto sembra**: le due verifiche sono due implementazioni
+indipendenti dello stesso fatto («il corpo è lo stesso»), e se mai
+disaccordassero nonostante `sourceBodyHash` invariato, quel disaccordo
+sarebbe la prova di un bug (per esempio un hash calcolato sul campo
+sbagliato) che merita di fallire rumorosamente qui, non di essere mascherato
+da un secondo controllo che si limita a confermare il primo.
+
+#### 7.2.2 Dopo una promozione valida — la coda resta l'unica politica corretta
+
+Un'ancora **già persistita** come `LessonVisualAnchor.headingSlug` (§5.1) —
+cioè un'immagine già promossa, già nella lezione — che smette di risolvere
+perché un heading successivo è stato rinominato o rimosso **non** rientra
+in §7.2.1: nessuna scrittura è in corso in quel momento, è un fatto del
+rendering. Questo caso resta la coda di VE §5.3, generalizzata per elemento
+in §7.7, invariata da questa revisione: l'immagine va in fondo alla
+lezione, `anchorResolved: 'fallback'` a runtime, mai persistito, mai
+eliminata automaticamente.
 
 ### 7.3 Collisioni — che cosa succede con due heading letteralmente identici
 
@@ -636,40 +1029,74 @@ persistito (§5.1) contiene quindi lo slug **già disambiguato** — è per
 questo che il manifest persistito non ha bisogno di conservare l'indice: lo
 slug, una volta risolto, è già univoco per costruzione.
 
-### 7.4 Diversità didattica del piano — vincolo strutturale, non semantico
+### 7.4 Diversità didattica del piano — vieta l'idea duplicata, non l'ancora condivisa
 
-Blocco esplicito richiesto dalla review: la proposta coordinata (§8.3) non
-può restituire due slot che illustrano la stessa idea. Questo documento
-**non** introduce un rilevatore di similarità semantica (embedding,
-seconda chiamata a un modello di confronto): sarebbe un meccanismo nuovo,
-probabilistico, e un punto di fallimento silenzioso in più. Usa invece un
-vincolo **strutturale**, deterministico e verificabile senza alcuna
-chiamata aggiuntiva:
+**Correzione rispetto alla revisione 2.** La versione precedente vietava
+strutturalmente due slot con lo stesso `anchorHeadingIndex`, trattando
+«stesso heading» come sinonimo di «stessa idea». La review lo ha respinto
+con una prova concreta: il prototipo stesso (galleria a due immagini,
+`page-teacher-2`) mostra legittimamente due figure ancorate a «Il bilancio
+idrico» — una che illustra la precipitazione sul rilievo, l'altra una
+fotografia del ruscellamento reale, due idee distinte che condividono la
+stessa sezione perché è lì che entrambe sono utili al lettore. Vietare
+questo caso per costruzione avrebbe reso il contratto in contraddizione
+con il proprio prototipo. Il mandato vieta **due immagini sulla stessa
+idea**, non due immagini sullo stesso heading: la correzione allinea il
+vincolo a quello che dice davvero.
 
-- **`anchorHeadingIndex` deve essere a due a due distinto fra tutti gli
-  slot con `decision: 'image'` della stessa proposta coordinata.** Due
-  immagini sullo stesso heading non possono nascere dalla stessa proposta:
-  se il modello lo tenta, l'output è strutturalmente non rappresentabile
-  (lo schema Structured Output impone l'unicità) e la validazione lo
-  rifiuta con `provider_invalid_output`, prima di qualunque persistenza.
+Questo documento **non** introduce un rilevatore di similarità semantica
+(embedding, seconda chiamata a un modello di confronto): resterebbe un
+meccanismo nuovo, probabilistico, e un punto di fallimento silenzioso in
+più — quel limite, dichiarato nella revisione precedente, resta valido e
+non è ciò che questa correzione cambia. Cambia **su che cosa** il vincolo
+strutturale disponibile agisce:
+
+- **`anchorHeadingIndex` NON è più, da solo, un blocco.** Due o tre slot
+  possono legittimamente condividere la stessa ancora nella stessa
+  proposta coordinata — è il caso normale di due idee distinte sulla
+  stessa sezione, non un'eccezione da aggirare.
 - **`subject` deve essere a due a due distinto**, dopo normalizzazione
-  (trim, minuscolo, spazi collassati) — un secondo controllo indipendente
-  dal primo, perché due `subject` quasi identici su ancore diverse
-  sarebbero comunque la stessa idea duplicata altrove nella pagina.
+  (trim, minuscolo, spazi collassati), **indipendentemente dall'ancora**:
+  due soggetti quasi identici sono la stessa idea duplicata, che condividano
+  l'ancora o meno.
+- **`rationale` (l'utilità didattica dichiarata) deve essere a due a due
+  distinto**, con la stessa normalizzazione — nuovo controllo di questa
+  revisione, indipendente da `subject`: due soggetti descritti con parole
+  diverse ma la stessa utilità dichiarata («mostra il ciclo dell'acqua»
+  ripetuto identico su due slot) sono comunque il segnale di un'idea
+  duplicata che il solo confronto su `subject` potrebbe non cogliere.
+  Qualunque violazione di questi due controlli lessicali produce
+  `provider_invalid_output`, prima di qualunque persistenza — la stessa
+  disciplina della revisione precedente, solo senza il terzo controllo,
+  ormai rimosso, sull'ancora.
+- **Istruzione di prompt, non vincolo strutturale**: la proposta coordinata
+  istruisce esplicitamente il modello a proporre più immagini sulla stessa
+  ancora **solo** quando illustrano idee genuinamente distinte, e a non
+  usare uno heading condiviso come scorciatoia per riempire slot con
+  variazioni minime della stessa immagine. È un'istruzione, non un vincolo
+  verificabile automaticamente — il limite dichiarato sotto.
 
-**Limite dichiarato di questo vincolo** (§17): impedisce i duplicati
-*strutturali* (stesso punto, stesso soggetto), non ogni possibile
-sovrapposizione semantica più sottile (due soggetti diversi che illustrano
-comunque lo stesso concetto con parole diverse). È un compromesso
-esplicito fra rigore e semplicità del meccanismo, non un rilevamento
-di duplicati risolto in generale.
+**Limite dichiarato di questo vincolo** (§17): i controlli lessicali su
+`subject` e `rationale` impediscono i duplicati *strutturali* (stesso
+punto, stesso soggetto o la stessa utilità dichiarata con le stesse
+parole), non ogni possibile sovrapposizione semantica più sottile (due
+soggetti descritti con parole del tutto diverse che illustrano comunque lo
+stesso concetto). È un compromesso esplicito fra rigore e semplicità del
+meccanismo, non un rilevamento di duplicati risolto in generale.
 
-**Fuori dal perimetro della proposta coordinata**, questo vincolo **non
-si applica**: un'immagine caricata dal docente può condividere l'ancora con
-un'immagine generata (§7.5 di `multi-visual-roadmap.md` — ereditato
-invariato dalla revisione 1), perché in quel caso la scelta è
-dichiaratamente del docente, non un artefatto di una singola chiamata
-automatica.
+**La revisione del piano (§8.4) resta il backstop reale, e non costa
+nulla.** Prima che una sola immagine venga generata, il docente vede tutti
+gli slot proposti insieme, side by side, comprese le rispettive ancore e
+utilità dichiarate: un duplicato che i controlli lessicali non hanno colto
+è visibile a occhio in quel momento, e abbandonare uno slot lì è gratuito
+(§8.4) — a differenza di scoprire il duplicato dopo aver già speso la
+generazione.
+
+**Fuori dal perimetro della proposta coordinata**, questi controlli **non
+si applicano**: un'immagine caricata dal docente può condividere l'ancora
+(e persino il soggetto dichiarato) con un'immagine generata, perché in quel
+caso la scelta è dichiaratamente del docente, non un artefatto di una
+singola chiamata automatica (§7.5, invariato).
 
 ### 7.5 Ordine di inserimento nella pagina — invariato dalla revisione 1
 
@@ -737,7 +1164,7 @@ Azioni → «Arricchisci» (unico ingresso, §11.1)
 └──────┬────────┘  un fallimento non tocca gli altri slot (§8.5)
        │
        │ retry di un singolo slot fallito: stessa prenotazione,
-       │ fino a VISUAL_PLAN_MAX_GENERATION_ATTEMPTS_PER_SLOT tentativi
+       │ fino a VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT tentativi
        ▼
 ┌───────────────┐  il docente approva slot per slot, o «Applica tutte»
 │ APPROVAZIONE  │  (N transazioni indipendenti in sequenza, §8.6)
@@ -845,15 +1272,28 @@ indipendentemente dagli altri: `pending → generating → ready | failed`.
   sono toccati**: sono ancora lì, ancora approvabili, indipendentemente da
   che cosa succede agli altri. Il retry di uno slot fallito rigenera **solo
   quello slot**, riusa la prenotazione già fatta per quello slot specifico
-  (fino a `VISUAL_PLAN_MAX_GENERATION_ATTEMPTS_PER_SLOT = 2` tentativi
-  totali), e non tocca né il canonico esistente della lezione (se
+  (fino a `VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT = 2` tentativi
+  totali, **già inclusi nel tetto autorizzato una sola volta all'inizio**,
+  §5.5, §12.1 — nessuna nuova conferma di costo, nemmeno al secondo
+  tentativo), e non tocca né il canonico esistente della lezione (se
   quell'immagine sta sostituendo un'immagine già approvata) né gli altri
   slot del piano.
-- **Oltre il tetto di tentativi**, lo slot resta `failed` in modo terminale
-  per questo piano: il docente può modificare il `subject` e riprovare, ma
-  quel nuovo tentativo è trattato come un nuovo slot con una **propria,
-  singola** conferma di costo aggiuntiva limitata a quel solo slot — mai
-  una riautorizzazione dell'intero piano.
+- **Oltre il tetto di tentativi, lo slot è terminale per questo piano —
+  correzione esplicita rispetto alla revisione 2.** La versione precedente
+  proponeva, a questo punto, «una propria, singola conferma di costo
+  aggiuntiva limitata a quel solo slot»: la review l'ha respinta
+  correttamente, perché è una seconda autorizzazione economica dentro lo
+  stesso piano, esattamente ciò che il principio di autorizzazione unica
+  (§2, §8.3) vieta. La regola corretta, congelata: **un ulteriore
+  tentativo su quello slot non è possibile all'interno di questo piano, in
+  nessuna forma.** Lo slot resta `failed`, contribuisce alla derivazione
+  dello stato del piano (§8.7) come se fosse stato abbandonato, e l'unico
+  modo per riprovare quell'immagine è chiudere questo piano (che sia
+  `completed`, `partially_completed` o esplicitamente abbandonato, §8.7) e
+  avviarne uno **nuovo** dallo stesso selettore di quantità di §8.2 — con
+  la propria, singola, piena autorizzazione iniziale (§8.3), non una
+  conferma parziale. Non è un'eccezione al principio di autorizzazione
+  unica: è la sua applicazione più stretta possibile.
 
 ### 8.6 Approvazione e promozione — per slot, mai un'unica transazione multi-immagine
 
@@ -889,8 +1329,12 @@ type VisualPromotionMode =
    `assetId`;
 6. scrive `LessonDoc.visuals` con l'array risultante;
 7. **se e solo se** `completed === true`: scrive `publicLessons.visuals` e
-   aggiorna `publicLessonVisuals/{id}.bytes[assetId]` — in `replace`, la
-   stessa scrittura rimuove anche la chiave del vecchio `assetId`;
+   aggiorna `publicLessonVisuals/{id}` — imposta/conferma
+   `publicLessonId`/`programId`/`importId` (§5.4, invariati se il
+   documento esiste già) e scrive `bytes[assetId]` con `dataUri`,
+   `mimeType` **e** `width`/`height` copiati dallo stesso manifest appena
+   scritto, mai ricalcolati una seconda volta — in `replace`, la stessa
+   scrittura rimuove anche la chiave del vecchio `assetId`;
 8. elimina lo staging di quello slot e, in `replace`, pianifica (dopo il
    commit) la cancellazione del vecchio oggetto Storage canonico;
 9. aggiorna `VisualPlanRun.slots[slotIndex].state = 'promoted'` e
@@ -905,20 +1349,36 @@ canonico orfano.
 
 ### 8.7 Stato del piano — derivato, mai scritto direttamente da un'azione singola
 
-`VisualPlanRun.status` è ricalcolato a ogni transizione di slot:
+`VisualPlanRun.status` è ricalcolato a ogni transizione di slot. Uno slot è
+**terminale** quando è `promoted`, `abandoned`, oppure `failed` avendo
+esaurito `VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT` tentativi (§8.5) — questi tre
+casi sono equivalenti ai fini della derivazione dello stato del piano,
+anche se restano distinguibili nel consuntivo (§12) e nell'audit.
 
-- `completed`: tutti gli slot sono `promoted` o `abandoned`, e nessuno è
-  `pending`/`generating`/`ready`/`failed`-entro-i-tentativi;
-- `partially_completed`: almeno uno slot è `promoted`, e nessuno slot
-  richiede più un'azione (i rimanenti sono `abandoned` o `failed` oltre il
-  tetto di tentativi);
-- `abandoned`: il docente ha chiuso il piano prima che alcuno slot fosse
-  promosso — gli slot `ready` non ancora approvati vengono scartati **con
-  una conferma esplicita** (stessa disciplina di abbandono di VE §6.4,
-  generalizzata: «Le immagini generate in questo piano verranno eliminate.
-  Nessuna è stata applicata alla lezione.»);
-- `expired`: TTL 24 h raggiunto senza completamento — stessa politica di
-  cleanup dello staging di VE.
+- `completed`: **ogni** slot con `decision: 'image'` è `promoted` — nessuno
+  scartato, nessuno esaurito;
+- `partially_completed`: **almeno uno** slot è `promoted` e **almeno uno**
+  slot terminale non è `promoted` (abbandonato o esaurito) — il piano ha
+  prodotto *qualcosa*, ma non tutto ciò che aveva proposto;
+- `abandoned`: **nessuno** slot è `promoted` e tutti gli slot sono
+  terminali — sia perché il docente ha chiuso esplicitamente il piano
+  prima di promuovere alcunché (gli slot `ready` non ancora approvati
+  vengono scartati **con una conferma esplicita**, stessa disciplina di
+  abbandono di VE §6.4: «Le immagini generate in questo piano verranno
+  eliminate. Nessuna è stata applicata alla lezione.»), sia perché **tutti
+  gli slot hanno esaurito i tentativi senza che il docente ne abbia
+  promosso alcuno** — nessuna immagine è entrata nella lezione in entrambi
+  i casi, ed è questo che conta per lo stato del piano, non la ragione
+  specifica per cui ciascuno slot non è arrivato a `promoted`;
+- `expired`: TTL 24 h raggiunto senza che il piano abbia raggiunto uno
+  stato terminale — stessa politica di cleanup dello staging di VE.
+
+Un piano il cui ultimo slot diventa terminale senza un'azione esplicita del
+docente (per esempio, l'ultimo tentativo di generazione fallisce da solo)
+transita automaticamente allo stato derivato corrispondente (`completed`,
+`partially_completed` o `abandoned` secondo le regole sopra) — non resta
+mai bloccato in uno stato intermedio in attesa di un'azione che nessuno
+slot richiede più.
 
 ### 8.8 Recovery — riprendere un piano interrotto
 
@@ -952,6 +1412,163 @@ e stessa disciplina di corsa (§10.4) della revisione 1.
 ### 8.11 Passaggio svolta ⇄ non svolta — invariato dalla revisione 1
 
 Stessa struttura di VE §6.6, sull'intero array.
+
+### 8.12 Cleanup per cancellazione lezione/UDA/corso — generalizzazione di `aiVisualCleanupForDelete`
+
+**Nuovo in questa revisione.** VE-03B stabilisce un cleanup bulk per la
+cancellazione di lezione/UDA/corso, con un record di recovery
+`{ ownerUid, programId, importId, lessonId, publicLessonId, udaDir,
+assetId, storageRef, createdAt }` per **un** asset. Questo paragrafo lo
+generalizza a L lezioni, ciascuna con 0..3 asset, mantenendo intatta la
+disciplina di VE-03B (letture prima delle scritture, record di recovery
+persistito prima della delete Storage, record malformato fail-closed) e
+correggendo solo la cardinalità.
+
+#### 8.12.1 Record di recovery — un record per lezione, non per asset
+
+```ts
+export interface VisualCleanupRecoveryRecord {
+  ownerUid: string;
+  programId: string;
+  importId: string;
+  lessonId: string;
+  publicLessonId: string;
+  udaDir: string;
+  /** 1..3, stesso ordine di `LessonDoc.visuals.items` al momento della
+   *  lettura che ha preceduto la cancellazione. */
+  assetIds: string[];
+  /** Stessa lunghezza e stesso ordine di `assetIds` — un percorso
+   *  canonico per asset, mai un prefisso. */
+  storageRefs: string[];
+  createdAt: Timestamp;
+}
+```
+
+**Perché un record per lezione e non uno per asset.** Un record per asset
+moltiplicherebbe le scritture Firestore per N senza alcun beneficio: tutti
+gli asset di una stessa lezione condividono lo stesso destino (la lezione
+sta per sparire) e lo stesso momento di lettura. Un array dentro un unico
+record mantiene il conteggio delle scritture Firestore **indipendente da
+N** (§12.6) — solo il numero di cancellazioni Storage cresce con N, non il
+numero di record.
+
+#### 8.12.2 Letture prima delle scritture, per ciascuna lezione del gruppo
+
+Per ogni lezione coinvolta in una cancellazione lezione/UDA/corso:
+
+1. **rilettura** di `LessonDoc.visuals`/`visual` con lo stesso controllo di
+   co-presenza di §6.1. Se lo stato è `visual_legacy_conflict`,
+   `visuals_malformed` o `visual_legacy_malformed`, **quella lezione**
+   fallisce con lo stesso codice, **zero rimozioni di riferimenti e zero
+   cancellazioni Storage per quella lezione** — il resto del gruppo
+   procede indipendentemente (un conflitto di dati corrotti non deve
+   bloccare la cancellazione delle altre lezioni, né essere ignorato
+   silenziosamente per quella incriminata);
+2. se la lezione ha 0 asset (nessun `visuals`/`visual`), nessuna riga di
+   questa procedura la riguarda: il resto della cancellazione (testo,
+   metadati) procede per la sua strada già stabilita, fuori da questo
+   contratto;
+3. se la lezione ha 1..3 asset validi, si costruisce il
+   `VisualCleanupRecoveryRecord` di §8.12.1 dai dati appena letti;
+4. **nella stessa transazione**: si scrive il record di recovery, si
+   rimuovono i riferimenti Firestore (chiavi da
+   `publicLessonVisuals.bytes`, elemento da `publicLessons.visuals.items`,
+   elemento da `LessonDoc.visuals.items` — o l'intero campo se era l'unico
+   asset, §6.4) — **prima** di toccare Storage;
+5. **dopo** il commit, si cancellano **solo** gli `storageRefs` dimostrati
+   dal record appena scritto — mai un'enumerazione, mai un prefisso, un
+   `delete` esplicito per ciascun percorso.
+
+#### 8.12.3 Perché mai un delete per prefisso, a livello di lezione o di UDA
+
+Il percorso Storage canonico è
+`repository/{ownerUid}/{importId}/{udaDir}/visuals/{assetId}.webp` (VE
+§4): **tutte le lezioni della stessa UDA condividono la stessa cartella
+`visuals/`**, distinte solo dal nome file (`assetId`). Questo rende un
+delete per prefisso a livello di UDA **tecnicamente possibile** ma
+**contrattualmente vietato** in questo documento, con un'unica eccezione:
+
+- **cancellazione lezione** (la UDA sopravvive): mai un prefisso —
+  cancellerebbe anche gli asset delle lezioni sorelle nella stessa cartella
+  `visuals/`. Solo gli `storageRefs` dimostrati per **quella** lezione
+  (§8.12.2).
+- **cancellazione UDA** (L lezioni, la UDA sparisce): **ancora nessun
+  prefisso**, per lo stesso principio di dimostrazione esplicita — anche
+  se l'intera cartella `visuals/` sta per sparire, ogni lezione della UDA
+  attraversa comunque §8.12.2 individualmente, in blocchi (§8.12.4). La
+  ragione non è tecnica ma di auditabilità: un prefix-delete non produce
+  un record verificabile di *quali* asset sono stati cancellati, mentre
+  l'enumerazione esplicita sì — e un bug che allargasse per errore il
+  prefisso (per esempio un `importId` calcolato male) a UDA sarebbe un
+  incidente silenzioso, mentre lo stesso bug su un'enumerazione esplicita
+  fallirebbe rumorosamente (percorsi non trovati, non un prefisso troppo
+  ampio cancellato per intero).
+- **cancellazione corso/import**: **qui, e solo qui**, resta autorevole
+  `deleteImportPrefix` (SGW-02A), già stabilito da VE e non toccato da
+  questo contratto — l'intero prefisso dell'import, comprese tutte le
+  cartelle `visuals/` di tutte le sue UDA, viene rimosso come blob Storage
+  senza richiedere un'enumerazione preventiva dei riferimenti Firestore
+  (che sono comunque cancellati a parte, dalla cancellazione del corso
+  stessa). Nessuna cancellazione aggiuntiva da progettare a questo livello
+  — invariato da VE §1.
+
+#### 8.12.4 Chunking, replay, record malformato
+
+- **Chunking**: stesso limite di VE-03B, ≤ 100 lezioni per gruppo di
+  esecuzione. Una cancellazione UDA/corso con più di 100 lezioni procede a
+  blocchi, ciascuno con la propria transazione per lezione (§8.12.2) — non
+  una transazione unica per l'intero gruppo.
+- **Replay**: un retry dopo un commit Firestore riuscito ma prima che la
+  delete Storage sia confermata trova il record di recovery già scritto e
+  ripete **solo** la cancellazione Storage sugli `storageRefs` già lì
+  dichiarati — mai una seconda lettura di `LessonDoc`, che a quel punto
+  potrebbe già riflettere la cancellazione della lezione stessa.
+- **Record malformato**: un `VisualCleanupRecoveryRecord` che non supera il
+  validatore strutturale (lunghezze di `assetIds`/`storageRefs` diverse,
+  percorso fuori forma) è `corrupted_state` — stessa disciplina di §5.5:
+  non si tenta la cancellazione sulla base di un record di cui non ci si
+  può fidare. Lo stato tollerato è un blob Storage orfano (recuperabile in
+  futuro), mai un delete costruito su dati non verificati.
+
+#### 8.12.5 Costo — formule, non un numero fisso
+
+```
+cancellazione lezione, N asset (N = 0..3):
+  Firestore: 7R + 5W   — INVARIATO rispetto al baseline misurato di VE-03
+                          (§12.8), indipendente da N: un solo LessonDoc,
+                          un solo publicLessons, un solo byte doc, un solo
+                          record di recovery, qualunque sia N
+  Storage:   N delete  — 0 se N=0, fino a 3
+
+cancellazione UDA, L lezioni, N_i asset ciascuna (i = 1..L):
+  Firestore: L × (7R + 5W)     — lineare, coerente col baseline misurato
+                                  VE-03 di 3 lezioni monoimmagine
+                                  (21R/15W, cioè 7R/5W per lezione)
+  Storage:   Σ(i=1..L) N_i delete
+
+cancellazione corso/import:
+  fuori da questo conteggio — `deleteImportPrefix` (SGW-02A) resta
+  autorevole e non enumera asset per asset (§8.12.3)
+```
+
+**Etichettatura esplicita, per §12.8**: la parte Firestore di queste
+formule è **misurata** (eredita byte per byte il baseline di VE-03 per
+N=1, mai riverificato per N=2,3 in questo documento). La parte Storage è
+aritmetica diretta (un delete per asset dimostrato), non una stima nel
+senso di un'incognita — ma **nessuna** di queste righe è stata eseguita
+contro un Emulator in questa fase: sono derivazioni, non misure (§12.8,
+§19).
+
+#### 8.12.6 Test obbligatori — lezione, UDA, corso, legacy, array, stato corrotto
+
+Elencati per esteso in §19; qui il loro scopo: verificare che il
+conteggio Firestore resti costante al variare di N (non che sia
+"probabilmente" costante), che una lezione in stato incoerente (§6.1)
+fermi **solo se stessa** dentro una cancellazione UDA più ampia, che una
+lezione ancora in forma singolare (non adottata) sia cancellata
+correttamente attraverso lo stesso percorso di `adaptSingular` usato dalla
+lettura (§6.1) senza richiedere un'adozione preventiva, e che nessun delete
+per prefisso compaia mai nei log di una cancellazione lezione/UDA.
 
 ---
 
@@ -1168,16 +1785,20 @@ il retry tocca — è già fuori dal piano.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Genereremo una proposta coordinata e fino a 3 immagini.     │
+│  Genereremo una proposta coordinata e fino a 3 immagini,     │
+│  ciascuna con fino a 2 tentativi in caso di errore.          │
 │  Costo massimo di questa sessione:                           │
 │    proposta coordinata .......... € stimato_proposta         │
-│    fino a 3 generazioni ......... € stimato_generazione × 3  │
+│    fino a 3 immagini × 2 tentativi € stimato_generazione×3×2 │
 │    ───────────────────────────────────────────────────────  │
 │    tetto totale ................. € somma                   │
 │                                                                │
 │  Non è uno sconto: è la somma dei costi massimi di ciascuna  │
-│  fase. Il costo reale sarà pari o inferiore — ogni immagine  │
-│  non generata non viene addebitata.                          │
+│  fase e di ogni tentativo. Il costo reale sarà pari o        │
+│  inferiore — ogni tentativo non necessario non viene         │
+│  addebitato. Un ulteriore tentativo oltre i 2 per immagine    │
+│  richiede di chiudere questo piano e avviarne uno nuovo,      │
+│  con una propria autorizzazione.                              │
 │                                                                │
 │              [Annulla]      [Autorizza e continua]           │
 └─────────────────────────────────────────────────────────────┘
@@ -1201,53 +1822,115 @@ concluso.
 
 ## 12. Cost model
 
-Ogni riga distingue esplicitamente **fase** (pianificazione coordinata,
-generazione, upload, promozione, lettura, retry, cleanup) e **conteggio
-per immagine**, con formule chiuse per 0/1/2/3 immagini — non un numero
-vago.
+**Correzione rispetto alla revisione 2.** I conteggi Firestore della
+revisione precedente (per esempio «2 letture transazionali, 1 scrittura
+privata» per una promozione) erano stime scritte da zero, e contraddicevano
+i numeri **misurati** che `visual-enrichment-roadmap.md` §15.5 (VE-03C) già
+registra per la stessa classe di operazione a singola immagine, contro
+Firestore/Storage Emulator reali. La review ha correttamente respinto
+questa discrepanza. Questa sezione riparte dai numeri misurati di VE-03
+come **baseline**, citati testualmente in §12.0, e descrive ogni operazione
+di MULTI-VISUAL come **delta esplicito** su quel baseline — mai un numero
+nuovo inventato dove il baseline già misura il caso N=1. Ogni riga dichiara
+se è **misurata** (eredita byte per byte un numero di VE-03, Emulator
+reale) o **stimata** (derivazione di questo documento, non ancora
+verificata contro un Emulator per il caso multi — §17, §19).
 
-### 12.1 Autorizzazione e piano (fase unica, indipendente dal numero di slot generati davvero)
+### 12.0 Baseline misurato — VE-03, immagine singola, Firestore/Storage Emulator
+
+Riportato testualmente da `visual-enrichment-roadmap.md` §15.5, colonna per
+colonna (Letture FS, Scritture FS, Read/Write/Delete Storage). Provider:
+mock deterministico, costo zero — questi numeri riguardano **solo**
+Firestore/Storage, non il costo del provider IA.
+
+| Operazione (VE-03, N=1 immagine) | Letture FS | Scritture FS | Read Storage | Write Storage | Delete Storage |
+|---|---|---|---|---|---|
+| bind (ticket `aiVisualCandidates`) | 4 | 1 | 0 | 0 | 0 |
+| **promozione** | **9** | **3** | 1 | 1 | 1 |
+| promozione (replay) | 1 | 0 | 0 | 0 | 0 |
+| completed `true` senza visual | 5 | 4 | 0 | 0 | 0 |
+| completed `true` con visual | 5 | 4 | 1 | 0 | 0 |
+| completed `false` | 5 | 4 | 0 | 0 | 0 |
+| **rimozione** | **7** | **6** | 0 | 0 | 1 |
+| abbandono | 4 | 2 | 0 | 0 | 1 |
+| **delete lezione** | **7** | **5** | 0 | 0 | 1 |
+| **delete UDA, 3 lezioni** | **21** | **15** | 0 | 0 | 3 |
+
+Questi dieci numeri sono la base di riferimento di ogni tabella sotto:
+dove un'operazione MULTI-VISUAL è strutturalmente la stessa classe di
+operazione di VE-03 applicata a **uno** slot alla volta (promozione,
+rimozione, delete lezione/UDA — §8.6, §8.9, §8.12), il numero Firestore
+resta **quello misurato**, perché l'architettura di questo contratto
+promuove/rimuove sempre un asset alla volta (§8.6: «mai un'unica
+transazione Firestore multi-immagine»). Dove MULTI-VISUAL introduce
+un'operazione che VE-03 non ha (il piano coordinato, §8.3–§8.5), il
+conteggio è **nuovo e dichiarato stimato**.
+
+### 12.1 Autorizzazione e piano (fase unica, indipendente dal numero di slot generati davvero) — STIMATO
+
+Nessuna riga di questa sottosezione esiste in VE-03 (che non ha un piano
+coordinato): ogni numero è una stima di questo documento, non ancora
+verificata in Emulator (§17, §19).
 
 | Momento | Provider | Firestore | Storage | Function |
 |---|---|---|---|---|
-| **Autorizzazione del piano** (1 per sessione, qualunque `ceiling`) | 0 | 1 scrittura `VisualPlanRun` + 1 prenotazione budget (`totalReserved`) | 0 | 1 |
-| **Proposta coordinata** (1 per piano, mai N) | 1 chiamata testo, `quality`, indipendente da `ceiling` nel numero di chiamate (una sola, con `ceiling` nel prompt) | 1 aggiornamento `VisualPlanRun.slots` + `settlement.proposalActualCost` | 0 | 1 |
+| **Autorizzazione del piano** (1 per sessione, qualunque `ceiling`) | 0 | **2W**: 1 scrittura `VisualPlanRun` + 1 scrittura sul ledger mensile di budget (riuso AIGEN, `ai-content-budget/v1` — la stessa prenotazione già scritta oggi per ogni `AiContentRequest`, non un meccanismo nuovo) | 0 | 1 |
+| **Proposta coordinata** (1 per piano, mai N) | 1 chiamata testo, `quality`, indipendente da `ceiling` nel numero di chiamate | **2W**: 1 aggiornamento `VisualPlanRun.slots`+`settlement.proposalActualCost`, 1 settlement sul ledger mensile (stessa disciplina già in vigore per `lesson`/`pool`/`concept_map`/`visual_proposal`) | 0 | 1 |
 | **Rilascio della quota non usata** (`ceiling − slot con decision:'image'`) | 0 | incluso nell'aggiornamento sopra — nessuna scrittura aggiuntiva | 0 | 0 |
 
-**Formula del tetto iniziale**, esplicita:
+**Perché prenotazione e run sono scritture distinte.** La revisione 2
+contava «1 scrittura» per l'autorizzazione, collassando `VisualPlanRun` e
+la prenotazione di budget come se fossero la stessa cosa. Non lo sono: il
+ledger mensile (`ai-content-budget/v1`) è un documento **separato**,
+condiviso fra tutte le richieste IA della stessa finestra mensile — riusato
+qui, non duplicato — mentre `VisualPlanRun` è il documento **di questo
+piano**. Sono due scritture perché sono due documenti, esattamente come lo
+sono già oggi per una singola richiesta `AiContentRequest` esistente
+(VE-02 §8.1: «il run è scritto prima della chiamata al provider, con
+prenotazione di budget»).
+
+**Formula del tetto iniziale**, corretta rispetto alla revisione 2 —
+include i tentativi:
 
 ```
-totalReserved(ceiling) = proposalCap + perSlotGenerationCap × ceiling
+totalReserved(ceiling) = proposalCap + generationCap × ceiling × maxAttemptsPerSlot
+
+maxAttemptsPerSlot = VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT = 2 (§5.6)
 
 ceiling = 0 (nessuno slot libero)  →  «Arricchisci»→generazione disabilitato, nessuna riga
-ceiling = 1                        →  totalReserved = proposalCap + 1 × perSlotGenerationCap
-ceiling = 2                        →  totalReserved = proposalCap + 2 × perSlotGenerationCap
-ceiling = 3                        →  totalReserved = proposalCap + 3 × perSlotGenerationCap
+ceiling = 1  →  totalReserved = proposalCap + generationCap × 1 × 2 = proposalCap + 2 × generationCap
+ceiling = 2  →  totalReserved = proposalCap + generationCap × 2 × 2 = proposalCap + 4 × generationCap
+ceiling = 3  →  totalReserved = proposalCap + generationCap × 3 × 2 = proposalCap + 6 × generationCap
 ```
 
 Il tetto **non dipende** da quante proposte risulteranno `decision:
-'image'`: è calcolato sul massimo possibile (`ceiling`) e la parte non
-usata è rilasciata al termine della proposta coordinata (riga sopra), mai
-addebitata (§8.2).
+'image'` né da quanti tentativi saranno davvero necessari: è calcolato sul
+massimo possibile (`ceiling` slot, `maxAttemptsPerSlot` tentativi ciascuno)
+e la parte non usata è rilasciata al termine della proposta coordinata e a
+ogni slot che va a buon fine al primo tentativo, mai addebitata (§8.2,
+§8.5). Il settlement reale (§5.5, invariante verificato) non supera mai
+`totalReserved` — è una somma di costi effettivamente sostenuti, ciascuno
+≤ del proprio cap, su un numero di eventi ≤ `ceiling × maxAttemptsPerSlot`.
 
-### 12.2 Generazione, per slot (0..3 righe per sessione, secondo quanti slot hanno `decision: 'image'`)
+### 12.2 Generazione, per slot (0..3 righe per sessione, secondo quanti slot hanno `decision: 'image'`) — STIMATO
 
 | Momento | Provider | Firestore | Storage | Function |
 |---|---|---|---|---|
-| **Generazione di uno slot** (per slot con `decision: 'image'`) | 1 chiamata immagine, `quality` | 1 aggiornamento `slots[i]` | 1 scrittura staging | 1 |
-| **Retry di uno slot fallito** (entro il tetto di 2 tentativi) | 1 chiamata immagine | 1 aggiornamento `slots[i].attempts` | 1 riscrittura staging (stesso `opaqueSlotRunId`) | 1 |
+| **Generazione di uno slot** (per slot con `decision: 'image'`, primo tentativo) | 1 chiamata immagine, `quality` | **2W**: 1 aggiornamento `slots[i]`, 1 settlement sul ledger mensile | 1 scrittura staging | 1 |
+| **Retry di uno slot fallito** (2° tentativo, entro `maxAttemptsPerSlot`) | 1 chiamata immagine | **2W**: 1 aggiornamento `slots[i].attempts`, 1 settlement | 1 riscrittura staging (stesso `opaqueSlotRunId`) | 1 |
 | **Replay** (risposta persa, stesso `opaquePlanId`+`slotIndex`) | **0** | 1 lettura | 0 | 1 |
 
-**Conteggio per lezione**, esplicito:
+**Conteggio per lezione**, esplicito — aggiornato per riflettere fino a 2
+tentativi per slot, non più un numero indefinito:
 
 ```
 0 immagini generate → 0 righe di questa tabella (piano con soli slot 'none' o abbandonati)
-1 immagine generata → 1 riga «Generazione», 0..1 righe «Retry»
-2 immagini generate → 2 righe «Generazione», 0..2 righe «Retry» (indipendenti)
-3 immagini generate → 3 righe «Generazione», 0..3 righe «Retry» (indipendenti)
+1 immagine generata → 1..2 righe «Generazione/Retry» (mai più di maxAttemptsPerSlot per slot)
+2 immagini generate → 2..4 righe, indipendenti per slot
+3 immagini generate → 3..6 righe, indipendenti per slot
 ```
 
-### 12.3 Upload (per immagine, zero provider in ogni caso)
+### 12.3 Upload (per immagine, zero provider in ogni caso) — STIMATO, nessun equivalente in VE-03
 
 | Momento | Provider | Firestore | Storage | Function |
 |---|---|---|---|---|
@@ -1256,12 +1939,18 @@ addebitata (§8.2).
 
 ### 12.4 Promozione — individuale o in blocco, mai una transazione multi-immagine
 
-| Momento | Provider | Firestore | Storage | Function |
+**Il numero Firestore per una singola promozione è quello misurato di
+VE-03 (§12.0): 9R/3W, + Storage 1R/1W/1D.** L'architettura di §8.6 promuove
+sempre un asset alla volta — la stessa classe di operazione che VE-03 ha
+già misurato, non una nuova. Il delta di MULTI-VISUAL è **dichiarato ed
+esplicito**, non nascosto dentro il numero:
+
+| Momento | Provider | Firestore (VE-03 misurato + delta) | Storage | Function |
 |---|---|---|---|---|
-| **Promozione — modalità `add`** (per immagine) | 0 | 2 letture transazionali, 1 scrittura privata, +1 pubblica e +1 aggiornamento mappa byte solo se svolta, 1 audit | 1 copia + 1 delete staging | 1 |
-| **Promozione — modalità `replace`** (per immagine) | 0 | come `add`, + 1 rimozione chiave mappa byte se svolta | 1 copia + 1 delete staging + 1 delete canonico precedente (dopo commit) | 1 |
-| **«Applica tutte»** (N slot `ready`) | 0 | **N ×** le righe sopra, eseguite in sequenza — mai un'unica transazione | **N ×** le righe sopra | **N** |
-| **Adozione da manifest singolo** (una tantum per lezione) | 0 | inclusa nella transazione di promozione che la innesca — nessuna scrittura aggiuntiva | 0 | 0 |
+| **Promozione — modalità `add`** (1 asset) | 0 | **9R/3W** (misurato, VE-03) **+ 1R/1W stimato** (rilettura `VisualPlanRun` per verifica `sourceBodyHash`/anchor, §8.6 passi 1 e 3; aggiornamento `slots[i].state`/`settlement`, §8.6 passo 9) | 1 copia + 1 delete staging (misurato) | 1 |
+| **Promozione — modalità `replace`** (1 asset) | 0 | come `add` **+ 1W stimato** (rimozione chiave mappa byte del vecchio `assetId`, se svolta) | 1 copia + 1 delete staging + 1 delete canonico precedente dopo commit (misurato) | 1 |
+| **«Applica tutte»** (N slot `ready`, N = 1..3) | 0 | **N ×** (9R/3W misurato + 1-2R/1-2W stimato), eseguite in sequenza — mai un'unica transazione | **N ×** le righe sopra | **N** |
+| **Adozione da manifest singolo** (una tantum per lezione) | 0 | inclusa nella transazione di promozione che la innesca (§6.2) — nessuna scrittura aggiuntiva oltre a quella già contata sopra | 0 | 0 |
 
 **Perché «Applica tutte» costa esattamente N volte, non meno.** Non esiste
 uno sconto di batch sulla scrittura, per lo stesso motivo per cui non ne
@@ -1269,7 +1958,7 @@ esiste uno sulla generazione (§12.1): ogni immagine ha il proprio commit,
 la propria copia Storage, il proprio audit. «Applica tutte» è una comodità
 di interazione, non un'ottimizzazione di costo.
 
-### 12.5 Lettura studente e liste — invariato dalla revisione 1
+### 12.5 Lettura studente e liste — invariato dalla revisione 1, indipendente da VE-03 (nessuna lettura, nessun equivalente da misurare)
 
 | Momento | Firestore |
 |---|---|
@@ -1277,25 +1966,43 @@ di interazione, non un'ottimizzazione di costo.
 | **Lezione con 1, 2 o 3 immagini** | **1 lettura puntuale** (indipendente dal conteggio, §5.4), all'apertura |
 | **Elenchi / card, qualunque conteggio** | **0** |
 
-### 12.6 Riordino, rimozione, cleanup — invariato dalla revisione 1
+### 12.6 Riordino, rimozione — rimozione ancorata al baseline misurato
 
 | Momento | Firestore | Storage |
 |---|---|---|
-| **Riordino** | 2 letture transazionali, ≤ 2 scritture | **0** |
-| **Rimozione** (per immagine) | 3 eliminazioni/aggiornamenti transazionali, 1 audit | 1 delete |
-| **Cleanup piano scaduto (TTL 24h)** | 1 delete `VisualPlanRun` | 1 delete per slot con staging residuo |
+| **Riordino** (STIMATO — nessun equivalente in VE-03, VE non ha un ordine da riordinare) | 2 letture transazionali, ≤ 2 scritture | **0** |
+| **Rimozione** (1 asset) | **7R/6W** — **misurato**, VE-03 (§12.0); MULTI-VISUAL rimuove un elemento dell'array con la stessa transazione, stesso conteggio | 1 delete — misurato |
 
-### 12.7 Invarianti di costo, riverificate
+### 12.7 Cleanup — piano scaduto (stimato) e cancellazione lezione/UDA/corso (§8.12, misurato+delta)
+
+| Momento | Firestore | Storage |
+|---|---|---|
+| **Cleanup piano scaduto** (TTL 24h, STIMATO — nessun equivalente in VE-03) | 1 delete `VisualPlanRun` | 1 delete per slot con staging residuo |
+| **Delete lezione**, N=0..3 asset | **7R/5W** — **misurato**, VE-03 (§12.0), **costante al variare di N** (§8.12.5) | N delete |
+| **Delete UDA**, L lezioni, N_i asset ciascuna | **L × (7R/5W)** — **misurato per L=3** (VE-03: 21R/15W), lineare per costruzione | Σ N_i delete |
+| **Delete corso/import** | fuori da questo conteggio — `deleteImportPrefix` (SGW-02A), autorevole e invariato (§8.12.3) | prefisso, non enumerato |
+
+### 12.8 Invarianti di costo, riverificate
 
 - **zero** listener, **zero** polling, **zero** indici nuovi;
 - **zero** letture per card, indipendentemente dal numero di immagini;
 - **zero** costo su ogni lezione priva di immagini;
 - **il costo di lettura studente non cresce con il numero di immagini**
   (1 lettura per 1, 2 o 3);
-- **un'unica autorizzazione economica per piano**, mai una per immagine;
+- **il costo Firestore di promozione/rimozione/delete-lezione non cresce
+  con il numero di immagini già presenti nella lezione** — cresce solo
+  con il numero di asset **toccati** dall'operazione (1 per promozione/
+  rimozione individuale, N per delete-lezione/UDA, mai l'intero array per
+  un'operazione che ne riguarda una parte);
+- **un'unica autorizzazione economica per piano**, mai una per immagine,
+  e il tetto copre esplicitamente i tentativi di retry (§12.1);
 - l'upload **non** ha mai un costo di provider;
 - il consuntivo (`VisualPlanRun.settlement`) è sempre disponibile per fase
-  e per asset, anche quando l'autorizzazione a monte è stata unica.
+  e per asset, e non supera mai il tetto prenotato;
+- **nessuna riga di questa sezione riguardante il piano, la generazione o
+  il cleanup è stata eseguita contro un Emulator reale in questa fase** —
+  sono derivazioni dal baseline misurato di VE-03, dichiarate come stime,
+  non misure (§17, §19).
 
 ---
 
@@ -1340,16 +2047,123 @@ secondo ingresso. Mostra le 0–3 immagini in ordine, badge di provenienza
 ancoraggio o avviso di ancora persa, azioni sostituisci/rimuovi/riancora
 per elemento, controllo di riordino.
 
-**Export ZIP — nessuna modifica al formato.** I sidecar di VE-03C
-(`visuals/{assetId}.json`, `visuals/{assetId}.webp`) sono già chiavati per
-`assetId`: un archivio con 0, 1, 2 o 3 file per lezione è già
-rappresentabile senza modifiche.
+### 14.1 Export — formato ZIP dei sidecar, invariato
 
-**`aiVisualExportBatch` — criterio di dimensionamento dinamico.** Invariato
-dalla revisione 1: il client accumula lezioni nel batch corrente sommando
+I sidecar di VE-03C (`visuals/{assetId}.json`, `visuals/{assetId}.webp`)
+sono già chiavati per `assetId`, non per lezione: un archivio con 0, 1, 2 o
+3 file per lezione resta rappresentabile senza modifiche al **formato**
+dello ZIP. Quello che deve cambiare — ed è la correzione di questa
+revisione — è il **contratto della callable e del composer** che
+riempiono quel formato: dire «il formato non cambia» non basta se la
+callable restituisce un solo asset per `lessonId` e il composer web scrive
+un solo sidecar, perché in quel caso il secondo e il terzo asset di una
+lezione multi-immagine non arrivano mai nello ZIP, indipendentemente da
+quanto il formato dei file sarebbe capace di rappresentare.
+
+### 14.2 `aiVisualExportBatch` — contratto v2, chiuso, davvero multi-asset
+
+**Correzione rispetto alla revisione 2.** Il runtime reale descritto da
+`visual-enrichment-roadmap.md` §15.5 (VE-03C) restituisce un solo asset per
+`lessonId`, perché VE è a singola immagine: `aiVisualExportBatch` non ha
+mai avuto bisogno di restituirne di più. Questo paragrafo specifica la
+forma v2 che lo generalizza, mantenendo intatto tutto ciò che VE-03C ha già
+stabilito (owner-only, nessun percorso libero, fail-closed sull'archivio,
+Storage chiuso anche al proprietario) e correggendo solo la cardinalità.
+
+**Input — invariato nella forma, il significato di `lessonIds` non
+cambia:**
+
+```ts
+export interface AiVisualExportBatchInput {
+  programId: string;
+  importId: string;
+  lessonIds: string[]; // dimensionamento dinamico del batch, §14.3
+}
+```
+
+**Output v2 — chiuso, per `lessonId`, 1..3 asset nell'ordine del
+manifest:**
+
+```ts
+export type AiVisualExportBatchResult = {
+  [lessonId: string]: AiVisualExportLessonResult;
+};
+
+export type AiVisualExportLessonResult =
+  | { status: 'absent' } // nessun manifest — caso normale, la maggioranza
+  | { status: 'present'; assets: AiVisualExportAsset[] }; // 1..3, ordine di LessonDoc.visuals.items
+
+export interface AiVisualExportAsset {
+  assetId: string;
+  /** JSON serializzato di `LessonVisualItem` (§5.1) — un file per asset,
+   *  mai un manifest cumulativo per lezione: coerente con VE-03C, dove i
+   *  sidecar sono già chiavati per assetId. */
+  manifestJson: string;
+  /** Byte canonici WebP, base64. */
+  base64: string;
+  /** Byte length dei byte canonici PRIMA della codifica base64 —
+   *  verificato contro `sha256`/`byteLength` del manifest prima di essere
+   *  incluso: un asset che non supera la verifica non entra nella
+   *  risposta (vedi «all-or-nothing» sotto). */
+  byteLength: number;
+}
+```
+
+**Validazione all-or-nothing, per lezione — generalizzazione diretta di
+VE-03C.** VE-03C stabilisce che una lezione che *dichiara* un visual non
+recuperabile o non verificabile ferma l'intero export, perché un archivio a
+cui manca in silenzio una figura sembra completo. Con N asset possibili per
+lezione, la stessa regola si applica **all'insieme**, non asset per asset:
+se una lezione dichiara 3 immagini e anche una sola delle tre non supera la
+verifica (Storage assente, hash non corrispondente, conteggio diverso da
+quello del manifest), **l'intera lezione** fallisce con un errore tipizzato
+— mai una risposta con 2 asset su 3 che lascerebbe intendere un successo
+parziale silenzioso.
+
+**Collisioni e dedup — generalizzazione diretta di VE-03C.** VE-03C
+stabilisce che due lezioni con lo stesso `assetId` producono un errore
+invece di un archivio con una figura in meno (`JSZip.file()` sovrascrive
+senza dire niente). Con più asset per lezione, il controllo di unicità
+copre **tutti** gli `assetId` dell'intero batch — fino a 3 per lezione,
+fino a 13 lezioni nel caso peggiore (§14.3) — non solo un assetId per
+lezione: un `Set` costruito sull'intero batch, verificato prima di scrivere
+qualunque file, con la stessa politica di errore invece di sovrascrittura
+silenziosa.
+
+**Ordine — nuovo requisito esplicito, assente in VE-03C perché lì
+irrilevante con un solo asset.** `assets` è nello **stesso ordine**
+dell'array `LessonDoc.visuals.items` (o dell'array a un elemento prodotto
+da `adaptSingular` per una lezione non ancora adottata, sotto) al momento
+dell'export — l'ordine scelto dal docente nella galleria (§7.5) si
+riflette nell'ordine dei file nello ZIP, non un ordine arbitrario di
+scrittura o di lettura da Storage.
+
+**Compatibilità con la forma singolare — nessun secondo formato.** Una
+lezione non ancora adottata (`LessonDoc.visual` singolare, §6.1) produce
+`{ status: 'present', assets: [unAsset] }` — **lo stesso identico formato
+v2**, con un array a un elemento ottenuto applicando `adaptSingular` in
+lettura, esattamente come fa il renderer (§6.1). L'export **non forza
+un'adozione**: leggere per esportare non è una scrittura, e la lezione
+resta nella sua forma originale dopo l'export quanto lo era prima.
+
+**Composer web — deve iterare `assets` per intero.** Il composer che
+costruisce lo ZIP deve scrivere, per **ciascun** elemento di `assets` (non
+solo il primo): `visuals/{assetId}.json` (da `manifestJson`) e
+`visuals/{assetId}.webp` (da `base64`, decodificato). Un composer che si
+fermasse al primo elemento produrrebbe uno ZIP strutturalmente valido ma
+silenziosamente incompleto — esattamente il tipo di difetto che la
+validazione all-or-nothing lato callable esiste per impedire lato server, e
+che il composer deve non reintrodurre lato client.
+
+### 14.3 Batching — dimensionamento dinamico, invariato dalla revisione 2
+
+Il client accumula lezioni nel batch corrente sommando
 `min(itemCount, 3) × 204_800` byte worst-case; prima di superare
 `8_000_000`, chiude il batch. Caso peggiore assoluto: 13 lezioni a 3
-immagini ciascuna al cap rigido (`8_000_000 ÷ 614_400 = 13,02`).
+immagini ciascuna al cap rigido (`8_000_000 ÷ 614_400 = 13,02`). Questo
+criterio non cambia con la forma v2 dell'output: il dimensionamento
+riguarda quanti byte la **risposta** può contenere, non la forma con cui
+sono organizzati al suo interno.
 
 ---
 
@@ -1437,11 +2251,14 @@ Nuovi in questa revisione:
 
 ## 17. Rischi residui
 
-1. **Il vincolo di diversità del piano (§7.4) è strutturale, non
-   semantico.** Impedisce duplicati sulla stessa ancora con lo stesso
-   soggetto testuale, non ogni sovrapposizione concettuale più sottile fra
-   soggetti diversi. È un compromesso dichiarato fra rigore e semplicità
-   del meccanismo.
+1. **Il vincolo di diversità del piano (§7.4) è lessicale, non
+   semantico.** Impedisce duplicati con lo stesso soggetto o la stessa
+   utilità dichiarata (testualmente, dopo normalizzazione), indipendente
+   dall'ancora — non ogni sovrapposizione concettuale più sottile fra
+   soggetti descritti con parole diverse. Il backstop reale contro questo
+   limite è la revisione gratuita del piano (§8.4), dove il docente vede
+   tutti gli slot insieme prima di spendere qualunque generazione. È un
+   compromesso dichiarato fra rigore e semplicità del meccanismo.
 2. **Il cap di upload a 2 MB (§9.2) è più stretto della dimensione tipica
    di una foto scattata da un telefono moderno**, che spesso supera questo
    valore. È un valore dato dal mandato, non derivato in questo documento:
@@ -1498,16 +2315,32 @@ Nuovi in questa revisione:
   `items.length` in `1..3`, `contractVersion` letterale, unione chiusa di
   `styleVersion` coerente con `source`; `VisualPlanRun`/`VisualPlanSlot` a
   chiavi chiuse, `quantity.ceiling` in `1..3`.
-- **Vincolo di diversità del piano (§7.4)**: caso negativo con due slot
-  sullo stesso `anchorHeadingIndex` ⇒ `provider_invalid_output`; caso
-  negativo con due `subject` normalizzati identici ⇒ stesso esito; caso
-  positivo con ancore e subject distinti ⇒ accettato.
-- **Risoluzione dell'ancora a indice+testo (§7.2, §7.3)**: caso con due
-  heading testualmente identici, verifica che i due indici
-  risolvano a slug distinti (`reti`, `reti-2`) indipendentemente da quale
-  dei due sia stato scelto; caso di indice fuori range dopo modifica del
-  corpo ⇒ fallback di coda, non un'invenzione; caso di testo non
-  corrispondente all'indice dopo riordino degli heading ⇒ stesso fallback.
+- **Vincolo di diversità del piano (§7.4)** — corretto rispetto alla
+  revisione 2: caso **positivo** con due slot sullo **stesso**
+  `anchorHeadingIndex` ma `subject`/`rationale` genuinamente distinti ⇒
+  **accettato** (il caso che il prototipo già mostra, `page-teacher-2`);
+  caso negativo con due `subject` normalizzati identici, ancora uguale o
+  diversa ⇒ `provider_invalid_output`; caso negativo con due `rationale`
+  normalizzati identici anche a `subject` diversi ⇒ stesso esito; verifica
+  esplicita che l'uguaglianza di `anchorHeadingIndex` **da sola**, con
+  `subject`/`rationale` distinti, non produca mai un rifiuto.
+- **Risoluzione dell'ancora a indice+testo (§7.2, §7.3)** — corretto
+  rispetto alla revisione 2, due gruppi di casi distinti:
+  - **alla promozione/riancoraggio (§7.2.1)**: caso con due heading
+    testualmente identici, verifica che i due indici risolvano a slug
+    distinti (`reti`, `reti-2`) indipendentemente da quale dei due sia
+    stato scelto, quando indice e testo concordano col corpo fresco; caso
+    di indice fuori range dopo modifica del corpo ⇒
+    `visual_promotion_anchor_stale`, **zero scritture**, slot non
+    promosso, non un'invenzione né un fallback in coda; caso di testo non
+    corrispondente all'indice dopo riordino degli heading ⇒ stesso esito
+    fail-closed; caso positivo di retry dopo che il docente ha scelto
+    un'ancora aggiornata ⇒ promozione riuscita, zero rigenerazione;
+  - **al rendering, dopo una promozione già avvenuta (§7.2.2)**: un
+    `headingSlug` persistito che smette di risolvere per una modifica
+    *successiva* del corpo ⇒ fallback di coda, `anchorResolved:
+    'fallback'` a runtime, mai persistito — questo è l'unico caso in cui il
+    test deve aspettarsi un fallback, non una promozione.
 - **`adaptSingular`** — equivalenza campo per campo fra la lettura
   compatibile e un `LessonVisualsManifest` a un elemento scritto a mano.
 - **Adozione transazionale su dataset legacy popolato (§6.3)**: batch di
@@ -1525,14 +2358,61 @@ Nuovi in questa revisione:
   approvabili indipendentemente dal retry del terzo, fino al tetto di 2
   tentativi.
 - **Formula del tetto (§12.1)**: `totalReserved` calcolato correttamente
-  per `ceiling` 1/2/3 e rilascio della quota non usata dopo la proposta
-  coordinata, verificato contro un ledger di budget reale (Emulator).
+  per `ceiling` 1/2/3 **includendo il fattore `maxAttemptsPerSlot`**
+  (`proposalCap + generationCap × ceiling × maxAttemptsPerSlot`, non più
+  `× ceiling` da solo); rilascio della quota non usata dopo la proposta
+  coordinata e a ogni slot riuscito al primo tentativo; verificato contro
+  un ledger di budget reale (Emulator); caso negativo esplicito: un
+  settlement che tentasse di superare `totalReserved` (per esempio un
+  terzo tentativo oltre `maxAttemptsPerSlot`) è strutturalmente impossibile
+  da rappresentare, non solo respinto a runtime.
 - **Upload — cap e formati (§9.2)**: file oltre 2.000.000 byte rifiutato
   prima della decodifica; SVG e GIF rifiutati dall'allowlist; WebP animato
   rifiutato nonostante lo sniffing positivo; PNG con canale alfa
   normalizzato su sfondo opaco `#f7f5f0`.
+- **Rules su `publicLessonVisuals`/`publicLessons.visuals` (§5.4.1),
+  contro Firestore Emulator — nuovo in questa revisione**:
+  - **aggiunta**: dopo una promozione `add` su lezione svolta, lo studente
+    autorizzato legge il byte doc e il nuovo `assetId` è fra le chiavi;
+  - **rimozione**: dopo `§8.9`, il byte doc non contiene più la chiave
+    rimossa (o il documento non esiste più se era l'ultima);
+  - **sostituzione**: dopo `replace` (§8.6), la vecchia chiave è assente e
+    la nuova presente nello stesso aggiornamento — mai un istante in cui
+    coesistono entrambe o nessuna delle due;
+  - **chiave extra**: un byte doc con un `assetId` nella mappa `bytes` che
+    non compare in `publicLessons.visuals.items` ⇒ lettura studente
+    **negata** (condizione 5 di §5.4.1);
+  - **chiave mancante**: un `assetId` nel manifest pubblico assente dalla
+    mappa `bytes` ⇒ lettura studente **negata**, stessa condizione;
+  - **asset estraneo**: un byte doc il cui contenuto dichiara
+    `programId`/`importId` diversi da quelli del `publicLessons`
+    corrispondente ⇒ lettura studente **negata** (condizione 4);
+  - **`completed: false`**: byte doc e manifest esistono ma la lezione non
+    è svolta ⇒ lettura studente **negata** (condizione 3) — indipendente
+    dal fatto che il docente veda comunque i propri dati;
+  - **import inattivo**: le stesse guardie di scoperta di `publicLessons`
+    negano l'accesso quando l'import non è quello attivo (condizione 1),
+    verificato che il byte doc non sia un'eccezione a quella regola;
+  - **identità divergente**: dimensioni dichiarate nel manifest pubblico
+    diverse da quelle nel byte doc per lo stesso `assetId` ⇒ lettura
+    studente **negata** (condizione 6) — anche se le altre condizioni
+    passerebbero;
+  - **scrittura client, in ogni caso sopra**: sempre negata, anche per
+    l'owner autenticato.
 - **Test del limite matematico di §4**, invariato dalla revisione 1.
 - **Test del criterio di batching dinamico dell'export**, invariato.
+- **Export v2 — davvero multi-asset (§14.2), nuovo in questa revisione,
+  end-to-end contro Emulator**: lezione con 0/1/2/3 asset ⇒ `assets` della
+  lunghezza corrispondente, nello **stesso ordine** di
+  `LessonDoc.visuals.items`; lezione non adottata (manifest singolare) ⇒
+  `assets` a un elemento via `adaptSingular`, stesso formato v2; **tutto-o-
+  niente**: una lezione con 3 asset dichiarati di cui uno con hash non
+  corrispondente ⇒ l'intera lezione fallisce, zero asset restituiti per
+  quella lezione, le altre lezioni del batch non sono toccate; **collisione
+  di `assetId`** fra due lezioni diverse dello stesso batch ⇒ errore,
+  nessuno ZIP parziale; **composer web**: dato un risultato v2 con 3 asset
+  per una lezione, verifica che il composer scriva tutti e tre i sidecar
+  `visuals/{assetId}.json`/`.webp`, non solo il primo.
 - **Test del renderer N-way**, invariato.
 - **Sequenza testo-poi-immagini (§11.3)**: simulazione di un fallimento del
   piano visivo dopo un salvataggio di testo riuscito, verifica che
@@ -1547,6 +2427,27 @@ Nuovi in questa revisione:
   ripristino del focus verificati con eventi da tastiera reali — mai
   dichiarato PASS su una metrica non raccolta (`evidenze/multi-visual-00-
   review.md` §4).
+- **Cleanup per cancellazione (§8.12), nuovo in questa revisione, contro
+  Emulator**:
+  - **lezione**, N=0/1/2/3 asset: conteggio Firestore 7R/5W costante al
+    variare di N, delete Storage esattamente N;
+  - **UDA**, L lezioni con N_i asset ciascuna: conteggio Firestore lineare
+    in L (`L × (7R+5W)`), delete Storage pari a `Σ N_i`, mai un delete per
+    prefisso nei log;
+  - **corso/import**: verificato che il conteggio non passi dal percorso
+    di §8.12 — resta `deleteImportPrefix`, invariato da VE;
+  - **legacy singolare**: una lezione con `LessonDoc.visual` non ancora
+    adottato, dentro una cancellazione UDA, è ripulita correttamente
+    tramite `adaptSingular` in lettura, senza adozione preventiva né
+    scrittura su `visuals`;
+  - **forma array**: una lezione con 2-3 asset già promossi è ripulita con
+    un solo record di recovery contenente l'intero array, non N record;
+  - **stato corrotto**: una lezione in `visual_legacy_conflict` dentro un
+    gruppo di cancellazione UDA da 5 lezioni ferma **solo quella lezione**
+    (zero riferimenti rimossi, zero Storage cancellato per lei), mentre le
+    altre 4 procedono; un `VisualCleanupRecoveryRecord` malformato prodotto
+    da un'esecuzione precedente ⇒ `corrupted_state`, nessun tentativo di
+    cancellazione basato su quel record.
 - **Test di rollback (§15.4)**, invariato.
 
 ---
@@ -1588,3 +2489,90 @@ Sintesi puntuale per la review, senza dover ricostruire il diff:
 10. **Deliverable e cost model** — file rinominato
     `documentazione/prototipi/lesson-multi-visual.html`, tutti i link
     aggiornati; §12 con formule e conteggi espliciti per 0/1/2/3 immagini.
+
+---
+
+## 21. Correzioni rispetto alla revisione 2 — blocker per blocker
+
+La seconda review Codex ha approvato l'esito UX della revisione 2 ma
+respinto dieci blocker architetturali. Sintesi puntuale, senza dover
+ricostruire il diff:
+
+1. **Migrazione fail-closed** — §6.1: la coesistenza di `visuals` e
+   `visual` non è più ignorata in silenzio. Nuovo esito
+   `visual_legacy_conflict`, zero rendering/scritture automatiche, mai una
+   scelta silenziosa fra i due. Matrice completa 3×3 (assente/valido/
+   malformato per ciascun campo) esplicitata in una tabella; l'adozione
+   (§6.2) applica lo stesso controllo come passo 0, prima di ogni altra
+   cosa, e non ripara — rifiuta.
+2. **Forma chiusa del piano** — §5.5: `VisualPlanRun` ora dichiara
+   `ownerUid`, `programId`, `importId`, `lessonId`, `publicLessonId`,
+   `udaDir`, `requestId`, `planHash`, oltre ai campi già presenti, ciascuno
+   con la propria fonte autorevole documentata (mai il payload client
+   nudo). Percorso del documento dichiarato
+   (`visualPlanRuns/{opaquePlanId}`). Un record presente ma divergente o
+   malformato è `corrupted_state`, mai trattato come assenza (che
+   duplicherebbe il piano) né come replay (che restituirebbe dati non
+   verificati). `planHash` esteso a coprire esplicitamente destinazione
+   (owner+programma+import+lezione+publicLessonId), quantità e stato
+   iniziale.
+3. **Budget e retry riconciliati** — §5.5, §8.5, §8.7, §12.1: il tetto
+   iniziale ora è `proposalCap + generationCap × ceiling ×
+   maxAttemptsPerSlot`, coprendo esplicitamente i due tentativi ammessi per
+   slot. Rimossa la «conferma singola aggiuntiva dopo il tetto» della
+   revisione 2, che violava l'autorizzazione unica: oltre il tetto di
+   tentativi lo slot è terminale **per questo piano**, e un ulteriore
+   tentativo richiede chiudere il piano e avviarne uno nuovo con la propria
+   autorizzazione. Derivazione dello stato del piano corretta per il caso
+   «tutti gli slot esauriti, zero promossi» (confluisce in `abandoned`).
+   Invariante esplicito: il settlement non supera mai la prenotazione.
+4. **Race body/ancora** — §7.2, riorganizzato in 7.2.1 (promozione/
+   riancoraggio: fail-closed, `visual_promotion_anchor_stale`, zero
+   scritture, nessun fallback) e 7.2.2 (dopo una promozione già avvenuta:
+   la coda di VE §5.3 resta l'unica politica corretta). I test di §19
+   corretti di conseguenza: il fallback non è più atteso alla promozione.
+5. **Documento byte pubblico e Rules** — §5.4: `PublicLessonVisualBytesDoc`
+   ora porta `publicLessonId`/`programId`/`importId` e, per asset,
+   `width`/`height` oltre a `dataUri`/`mimeType`. Nuovo §5.4.1: Rules
+   congelate in pseudocodice per `publicLessonVisuals` e
+   `publicLessons.visuals` — owner-only per il docente, per lo studente
+   solo con guardie di scoperta + `completed:true` + manifest valido +
+   **corrispondenza esatta dell'insieme di chiavi** `bytes` con gli
+   `assetId` pubblici + identità e dimensioni coerenti; scrittura client
+   sempre negata. Elenco di test Emulator dedicato in §19.
+6. **Export davvero multi** — nuovo §14.2: contratto v2 chiuso di
+   `aiVisualExportBatch`, `assets: AiVisualExportAsset[]` (1..3, ordine del
+   manifest) invece di un solo asset per lezione; validazione all-or-
+   nothing estesa all'insieme, dedup sull'intero batch, percorso
+   compatibile per la forma singolare senza forzare un'adozione; il
+   composer deve iterare `assets` per intero, non fermarsi al primo.
+7. **Cleanup lezione/UDA/corso** — nuovo §8.12: `VisualCleanupRecoveryRecord`
+   chiuso (un record per lezione, array di asset), letture prima delle
+   scritture, cancellazione Storage limitata agli `storageRefs` dimostrati
+   (mai un prefisso a livello di lezione o UDA — solo corso/import restano
+   autorevoli su `deleteImportPrefix`), chunking ≤100 lezioni, replay,
+   record malformato ⇒ `corrupted_state`. Formule di costo per lesson/UDA
+   con delta esplicito sul baseline misurato di VE-03.
+8. **Cost model riconciliato con VE-03** — nuovo §12.0: baseline misurato
+   riportato testualmente (promozione 9R/3W+1R/1W/1D Storage; rimozione
+   7R/6W+1D; delete lezione 7R/5W+1D; delete UDA 3 lezioni 21R/15W+3D).
+   Ogni riga successiva dichiara se è misurata (eredita il baseline) o
+   stimata (piano, generazione, cleanup — nessun equivalente in VE-03).
+   Prenotazione e run del piano contati come 2 scritture distinte
+   (`VisualPlanRun` + ledger mensile di budget), non più collassati in 1.
+9. **Diversità didattica** — §7.4: `anchorHeadingIndex` uguale **non è più**
+   da solo un blocco strutturale — due immagini sulla stessa ancora restano
+   legittime quando `subject` e `rationale` sono genuinamente distinti,
+   esattamente il caso che il prototipo (`page-teacher-2`) già mostrava.
+   Il controllo lessicale si sposta interamente su `subject` **e**
+   `rationale` (nuovo), indipendenti dall'ancora; la revisione gratuita del
+   piano (§8.4) resta il backstop reale contro i duplicati che i controlli
+   lessicali non colgono.
+10. **Evidenza e smoke** — `evidenze/multi-visual-00-review.md` §3 (nuova
+    sezione per la revisione 3): filename/link riverificati, `format:check`
+    e `git diff --check` rieseguiti, prototipo confermato bit-per-bit
+    invariato rispetto al commit precedente (nessuna modifica di UI
+    richiesta da questa revisione, quindi nessun nuovo smoke necessario —
+    verificato con un diff, non assunto); costi runtime multi e Rules
+    future marcati esplicitamente come non misurati finché non esistono
+    test Emulator (§12, §17 di questo contratto).
