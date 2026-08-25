@@ -19,9 +19,16 @@ import {
 } from './aiContentCore.js';
 import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
 import { isValidStoredVisualProposalOutput } from './aiContentVisualProposal.js';
+import { isValidStoredVisualPlanProposalOutput } from './aiContentVisualPlanProposal.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
-const RUN_KINDS = new Set(['pool', 'lesson', 'concept_map', 'visual_proposal']);
+const RUN_KINDS = new Set([
+  'pool',
+  'lesson',
+  'concept_map',
+  'visual_proposal',
+  'visual_plan_proposal',
+]);
 const RUN_STATUSES = new Set(['running', 'completed', 'failed']);
 
 /** Serializza il run con i quattro istanti come `Timestamp` Firestore. */
@@ -92,6 +99,9 @@ function isCoherentCompletedOutput(kind: StoredAiContentRun['kind'], output: unk
   // VISUAL-ENRICHMENT-01 — un run `visual_proposal` completato deve portare un
   // esito valido dell'union chiusa, non un output di un altro kind.
   if (kind === 'visual_proposal') return isValidStoredVisualProposalOutput(o);
+  // MULTI-VISUAL-02 — un run `visual_plan_proposal` completato deve portare
+  // un array valido di decisioni (0..3), avvolto in `{ decisions }`.
+  if (kind === 'visual_plan_proposal') return isValidStoredVisualPlanProposalOutput(o);
   // kind === 'pool'
   if ('body' in o || 'conceptMapMarkdown' in o) return false;
   return Array.isArray(o.questions) && o.questions.length > 0;

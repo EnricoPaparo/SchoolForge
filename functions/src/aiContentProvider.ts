@@ -106,6 +106,18 @@ class MockContentProvider implements ContentProvider {
         priorBillingRisk: false,
       };
     }
+    if (request.kind === 'visual_plan_proposal') {
+      // MULTI-VISUAL-02 — il mock sceglie deliberatamente l'array vuoto:
+      // esito legittimo (nessuno slot immagine) che un mock non può sbagliare
+      // inventando soggetti plausibili, stessa scelta della proposta singola.
+      return {
+        status: 'ok',
+        output: { decisions: [] },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
+    }
     if (request.kind === 'visual_proposal') {
       // VISUAL-ENRICHMENT-01 — il mock sceglie deliberatamente `none`: è l'esito
       // che il contratto considera legittimo e frequente, ed è quello che un
