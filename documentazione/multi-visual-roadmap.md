@@ -1,9 +1,17 @@
 # MULTI-VISUAL — Arricchimento visivo multi-immagine (contratto e roadmap)
 
-> **Stato: MULTI-VISUAL-00 — contratto e prototipo. Nessun runtime, nessuna
-> dipendenza, nessuna Rule, nessun deploy.** Pilota di
-> `AGENT-ORCHESTRATOR` (`agent-orchestrator-roadmap.md` §12), eseguito sul
-> task manifest `MULTI-VISUAL-00`. **Gate GMULTI: PENDING.**
+> **Stato: MULTI-VISUAL-01 — tipi e validatori puri implementati.**
+> MULTI-VISUAL-00 (contratto e prototipo) chiuso con PR #423. MULTI-VISUAL-01
+> aggiunge, in `functions/src/aiVisualMulti{Core,Manifest,Anchor,Plan}.ts`,
+> i tipi chiusi e i validatori fail-closed di `LessonVisualsManifest`,
+> `LessonVisualItem`/`PublicLessonVisualItem`, la matrice di lettura legacy
+> (§6.1), `adaptSingular`, il risolutore d'ancora indice+testo (§7.2,
+> riuso di `resolveAnchorByIndex`/`listAnchorableHeadings` di VE), il
+> vincolo di diversità (§7.4) e `VisualPlanRun`/`VisualPlanSlot` (§5.5).
+> **Nessuna Function, Rule, UI o chiamata provider**: nessun runtime, nessuna
+> dipendenza, nessun deploy — invariato da MULTI-VISUAL-00 su questi punti.
+> Pilota di `AGENT-ORCHESTRATOR` (`agent-orchestrator-roadmap.md` §12).
+> **Gate GMULTI: PENDING** (resta condizionato a MULTI-VISUAL-02→05).
 >
 > **Revisione 2 (25 agosto 2026).** La prima review Codex ha respinto la
 > revisione 1 con dieci blocker UX/workflow. Corretti tutti — modello
@@ -2856,7 +2864,7 @@ Nuovi in questa revisione:
 | Pacchetto | Sintesi | Dipendenze | Stato |
 |---|---|---|---|
 | **MULTI-VISUAL-00** | **Contratto e prototipo**, revisione 2: piano coordinato ad autorizzazione unica, selettore di quantità, identità di ancoraggio indice+testo, cap upload 2 MB, ingresso unico «Arricchisci», integrazione col flusso di generazione della lezione, manifest pubblico minimizzato, cost model per fase e asset. | VE-00→05A (documentali), `agent-orchestrator-roadmap.md` §12 | **Questo documento.** Nessun runtime. Gate GMULTI: PENDING. |
-| **MULTI-VISUAL-01** | **Tipi e validatori puri.** `LessonVisualsManifest`, `LessonVisualItem` (con `source` privato), `PublicLessonVisualItem` (senza `source`), `VisualAnchorSelector`, `VisualPlanRun`/`VisualPlanSlot`, validatore del vincolo di diversità (§7.4), risolutore d'ancora a indice+testo (§7.2) con test di collisione (§7.3), `adaptSingular` puro, costanti incluso `MAX_VISUAL_UPLOAD_INPUT_BYTES = 2_000_000`. Nessuna Function, nessuna UI, nessun provider. | MULTI-VISUAL-00 | Aperto. |
+| **MULTI-VISUAL-01** | **Tipi e validatori puri.** `LessonVisualsManifest`, `LessonVisualItem` (con `source` privato), `PublicLessonVisualItem` (senza `source`), `VisualAnchorSelector`, `VisualPlanRun`/`VisualPlanSlot`, validatore del vincolo di diversità (§7.4), risolutore d'ancora a indice+testo (§7.2) con test di collisione (§7.3), `adaptSingular` puro, costanti incluso `MAX_VISUAL_UPLOAD_INPUT_BYTES = 2_000_000`. Nessuna Function, nessuna UI, nessun provider. | MULTI-VISUAL-00 | **Implementato** — `functions/src/aiVisualMultiCore.ts`, `aiVisualMultiManifest.ts`, `aiVisualMultiAnchor.ts`, `aiVisualMultiPlan.ts` (92 test, PR draft verso `main`). Il risolutore d'ancora riusa `resolveAnchorByIndex`/`listAnchorableHeadings` di VE (`aiVisualPromotion.ts`), nessun parser Markdown parallelo. Upload binario, proposta coordinata, persistenza/lifecycle e UI restano fuori scope (MULTI-VISUAL-02→04). |
 | **MULTI-VISUAL-02** | **Catena binaria dell'upload** (cap 2 MB, allowlist PNG/JPEG/WebP non animati, `background=opaque`) e **proposta coordinata** (`kind: 'visual_plan_proposal'`, Structured Output ad array, vincolo di diversità applicato server-side). Nessuna UI, nessuna proiezione studente. | MULTI-VISUAL-01 | Aperto. |
 | **MULTI-VISUAL-03** | **Persistenza e lifecycle del piano.** `VisualPlanRun` con autorizzazione unica e prenotazione a somma di cap, transazione di adozione, promozione `add`/`replace` per slot, riordino, rimozione, Rules Firestore su `publicLessons.visuals`/`publicLessonVisuals`, criterio di batching dell'export. | MULTI-VISUAL-02 | Aperto. |
 | **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, upload, galleria con riordino da tastiera, integrazione col flusso «Genera lezione» (testo salvato prima del piano visivo), rendering N-way, responsive desktop/mobile con semantica modale reale (focus trap, Escape, ripristino del focus). | MULTI-VISUAL-03 | Aperto. |

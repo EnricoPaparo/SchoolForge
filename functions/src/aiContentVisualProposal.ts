@@ -590,7 +590,13 @@ export function validateLessonVisualManifest(value: unknown): LessonVisualManife
   };
 }
 
-function assertManifestText(value: unknown, label: string, maxChars: number): string {
+/**
+ * Esportata per MULTI-VISUAL-01: `LessonVisualItem.caption`/`altText` seguono
+ * esattamente questa stessa disciplina (nessuna correzione, nessuna seconda
+ * definizione delle regole su spazi/controllo/HTML/fence). Comportamento
+ * invariato: solo la visibilità del simbolo cambia.
+ */
+export function assertManifestText(value: unknown, label: string, maxChars: number): string {
   if (
     typeof value !== 'string' ||
     value.length === 0 ||
@@ -621,7 +627,13 @@ function assertManifestText(value: unknown, label: string, maxChars: number): st
  * verifica dei byte in fase di promozione (§4.1) controllerebbe l'uno mentre la
  * proiezione userebbe l'altro.
  */
-function assertCanonicalStorageRef(value: unknown, assetId: string): string {
+/**
+ * Esportata per MULTI-VISUAL-01: `LessonVisualItem.storageRef` (roadmap §5.1)
+ * ha la stessa forma canonica di `LessonVisualManifest.storageRef` — «Identico
+ * per forma a VE §4» — e la verifica non può avere una seconda definizione.
+ * Comportamento invariato: solo la visibilità del simbolo cambia.
+ */
+export function assertCanonicalStorageRef(value: unknown, assetId: string): string {
   if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) {
     invalidManifest('storageRef non valido.');
   }
