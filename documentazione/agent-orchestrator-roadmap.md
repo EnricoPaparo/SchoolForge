@@ -287,7 +287,7 @@ costo monetario per l'uso incluso negli abbonamenti.
 | ORCHESTRATOR-01 | Adapter Claude CLI subscription-first, parser output e checkpoint. | Simulazione senza modello. **Implementato in `tools/agent-orchestrator/`, 73 test `node:test` con porte finte e preflight verificato contro Claude Code 2.1.231 autenticato via Pro.** |
 | ORCHESTRATOR-02 | Registro GitHub, label, commenti di stato e CI watcher. | Repository sandbox. |
 | ORCHESTRATOR-03 | Ciclo Codex review → Claude fix con massimo quattro iterazioni. | Fault injection. |
-| ORCHESTRATOR-04 | Pilot reale su `MULTI-VISUAL-00`, solo documentazione/prototipo. | Gate umano UI. |
+| ORCHESTRATOR-04 | Pilot reale su `MULTI-VISUAL-00`, solo documentazione/prototipo. | Gate umano UI. **Deliverable pronti** (`multi-visual-roadmap.md`, prototipo, [evidenze/multi-visual-00-review.md](evidenze/multi-visual-00-review.md)); PR draft aperta; ciclo automatico fermo a `gate:human`. |
 | GORCH | Valutazione affidabilità, costi, recovery e qualità dei passaggi. | PASS umano. |
 
 ## 12. Pilot MULTI-VISUAL-00
@@ -303,6 +303,14 @@ Il primo task non modifica runtime, Firebase o dipendenze. Deve produrre:
 
 Il ciclo automatico termina a `gate:human`; solo il docente giudica il
 prototipo. Il pilot non autorizza implementazione, merge runtime o deploy.
+
+**Deliverable prodotti:** contratto
+[`multi-visual-roadmap.md`](multi-visual-roadmap.md), prototipo
+[`prototipi/lesson-visual-enrichment-multi.html`](prototipi/lesson-visual-enrichment-multi.html)
+e review di fase
+[`evidenze/multi-visual-00-review.md`](evidenze/multi-visual-00-review.md).
+Ciclo fermo a `gate:human`; nessuna implementazione, merge o deploy
+eseguiti.
 
 ## 13. Definition of Done di ORCHESTRATOR-00
 
