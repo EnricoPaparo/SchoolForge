@@ -746,10 +746,180 @@ Ereditati da §6 (revisione 2) e da `multi-visual-roadmap.md` §17, più:
 
 ---
 
-## 11. Stato dichiarato — dopo la revisione 3
+## 11. Stato dichiarato (dopo la revisione 3)
 
 | Elemento | Stato |
 |---|---|
 | MULTI-VISUAL-00 (revisione 3) | **Contratto corretto su tutti i dieci blocker architetturali della seconda review; prototipo confermato invariato (zero modifiche richieste); nessuna verifica Emulator eseguita in questa fase — dichiarato esplicitamente, non nascosto** |
+| MULTI-VISUAL-01→05 | Aperte |
+| Gate GMULTI | **PENDING** |
+
+---
+
+## 12. Revisione 4 — coerenza e idempotenza, correzione e prova
+
+La terza review Codex ha trovato **sei difetti di coerenza/idempotenza**
+sopravvissuti alla revisione 3 — tutti sul contratto, nessuno sul
+prototipo (confermato in §13.1). Correzione e prova per ciascuno,
+riferimento a `multi-visual-roadmap.md` §22 per la sintesi puntuale.
+
+### Punto 1 — Replay del piano dopo le sue stesse promozioni
+
+**Correzione.** §10.1 riscritto: `planHash` calcolato una sola volta, alla
+creazione, da destinazione completa + stato iniziale; mai ricalcolato
+contro il mondo attuale. Un replay valida identità persistita contro
+richiesta corrente. Nuovo §10.1.1 per la guardia sul mondo mutabile
+(coerenza dell'array), separata e applicata solo alla scrittura.
+
+**Prova.** `grep -n "planHash = SHA-256" documentazione/multi-visual-
+roadmap.md` mostra la formula con tutti e cinque i campi di destinazione
+(`ownerUid, programId, importId, lessonId, publicLessonId`) più
+`sourceBodyHash`/`existingItemAssetIds`/`quantity` iniziali — assenti
+nella formula (ma non nel commento) della revisione 3. Il paragrafo «Un
+record presente ma divergente...» dichiara esplicitamente: «il giudizio
+non confronta più nulla contro una rilettura del mondo attuale». Nuovo
+campo `VisualPlanSlot.promotedAssetId` verificabile in §5.5.
+
+### Punto 2 — Un solo piano attivo non era garantito
+
+**Correzione.** Nuovo §10.3: lease deterministico
+`visualPlanLeases/{SHA-256(ownerUid,lessonId)}`, mai derivato dal
+`requestId`. Acquisizione nella stessa transazione della prenotazione;
+Race A e Race B esplicite; riacquisizione condizionata per lease scaduto;
+`corrupted_state` per lease malformato.
+
+**Prova.** `grep -n "leaseId = SHA-256" documentazione/multi-visual-
+roadmap.md` conferma che il percorso dipende da `(ownerUid, lessonId)`,
+non da `requestId`. Il paragrafo «Perché questo, e non un campo su
+LessonDoc» e le due race esplicite («Race A», «Race B») sono presenti per
+nome in §10.3.
+
+### Punto 3 — Upload senza contratto di idempotenza
+
+**Correzione.** Nuovi §9.6–§9.9: `VisualUploadRun` indipendente dal piano,
+`requestId` stabile, replay/conflitto, promozione che riusa §8.6 producendo
+`source: 'uploaded'`/`styleVersion: 'uploaded/v1'`, cap combinato di tre,
+nessuna partecipazione al lease, abbandono senza conferma bloccante,
+cleanup TTL.
+
+**Prova.** `grep -n "interface VisualUploadRun" documentazione/multi-
+visual-roadmap.md` → forma chiusa presente in §9.6 con tutti i campi di
+identità, `rawBytesSha256`, `normalized`. §9.7 contiene sia il caso di
+replay sia `visual_upload_conflict` per byte/ancora divergenti sotto lo
+stesso `requestId`.
+
+### Punto 4 — Rules con primitive reali
+
+**Correzione.** §5.4.1 riscritto con `isOwner()` (globale, single-tenant)
+al posto di `isOwnerOfLesson`/`lessonIdOf` (inventate); guardie di
+scoperta espanse negli helper reali (`isApprovedStudent`, `isClassmateOf`,
+`activeImportId`, `examModeAppliesToClass`, citati da `sicurezza.md` §170).
+Nuovo §5.4.2: `bytesKeysAndDimsMatch` a rami espliciti 1/2/3. Nuovo §5.4.3:
+costo dichiarato dei `get()`.
+
+**Prova.** `grep -n "lessonIdOf\|assetIdsOf(.*\.toSet" documentazione/
+multi-visual-roadmap.md` → nessuna occorrenza fuori dalla cronaca delle
+correzioni (§22). `grep -c "items.size() =="
+documentazione/multi-visual-roadmap.md` → 3 occorrenze in §5.4.2, una per
+cardinalità.
+
+### Punto 5 — Export all-or-nothing del batch
+
+**Correzione.** §14.2 corretto: un asset invalido in una qualunque lezione
+aborte l'intera callable prima di produrre output. Procedura a due fasi.
+Composer corretto per attendere l'intero export multi-batch.
+
+**Prova.** Il paragrafo «Validazione all-or-nothing sull'INTERO batch, non
+lezione per lezione» dichiara esplicitamente il comportamento corretto e
+cita perché quello della revisione 3 era ambiguo. Il test dedicato in §19
+(«tre lezioni nel batch, un asset non recuperabile nella seconda») verifica
+che né la prima né la terza lezione compaiano in un output parziale.
+
+### Punto 6 — Test e costi delle nuove guardie
+
+**Correzione e prova**, in questa sezione e nella successiva (§13).
+
+---
+
+## 13. Gate eseguiti — revisione 4
+
+### 13.1 Prototipo — confermato bit-per-bit invariato, con hash
+
+**Corretto rispetto al metodo della revisione 3** (che si affidava solo a
+`git diff --stat`): questa volta anche uno SHA-256 indipendente dal diff.
+
+```
+$ git diff --stat -- documentazione/prototipi/lesson-multi-visual.html
+(nessun output)
+
+$ git show HEAD:documentazione/prototipi/lesson-multi-visual.html | sha256sum
+5af7553ae4f5ee7a2ec4d09182595db8062ece955e1da21035ff21777bcb5c2a *-
+
+$ sha256sum documentazione/prototipi/lesson-multi-visual.html
+5af7553ae4f5ee7a2ec4d09182595db8062ece955e1da21035ff21777bcb5c2a *documentazione/prototipi/lesson-multi-visual.html
+```
+
+Hash identico fra la copia già committata e quella sul disco: zero byte
+modificati. Nessuno dei sei difetti di questa revisione riguardava
+l'interfaccia — tutti architetturali sul contratto (identità del piano,
+lease, upload, Rules, export). Lo smoke reale della revisione 2 (§4) resta
+l'evidenza valida per il prototipo; non è stato rieseguito perché non ci
+sarebbe nulla di nuovo da misurare, e questa volta la prova non è solo un
+diff a zero righe ma anche una corrispondenza di hash indipendente.
+
+### 13.2 Gate testuali
+
+| Comando | Esito |
+|---|---|
+| `npx prettier --check` su `multi-visual-roadmap.md` e su questo file | **PASS** |
+| `git diff --cached --check` sull'intero diff della revisione 4 | **PASS** — nessuno spazio finale, nessun marcatore di conflitto |
+| Confronto SHA-256 del prototipo (§13.1) | **PASS** — hash identico |
+
+### 13.3 Che cosa NON è stato verificato in questa revisione
+
+Come nelle revisioni precedenti, nessuna riga ha eseguito codice contro un
+Firestore/Storage Emulator reale: tutte le correzioni sono al contratto.
+In aggiunta a quanto già dichiarato in §9.4:
+
+- **il lease (§10.3) non è stato eseguito contro un Emulator**: le due
+  race (A e B) sono descritte e testate *sulla carta* (§19 del contratto),
+  non misurate contro transazioni concorrenti reali;
+- **`VisualUploadRun` (§9.6–§9.9) non ha alcuna implementazione**: è un
+  contratto di interfaccia, come l'export v2 e il cleanup generalizzato
+  già dichiarati non implementati in §9.4;
+- **`bytesKeysAndDimsMatch` (§5.4.2) non è stato tradotto in
+  `firestore.rules` reali**: resta pseudocodice verificato per
+  leggibilità e assenza di primitive CEL impossibili, non per esecuzione.
+
+---
+
+## 14. Rischi residui — aggiornati dopo la revisione 4
+
+Ereditati da §10 (revisione 3), più:
+
+1. **Il lease deterministico (§10.3) introduce un nuovo singolo punto di
+   contesa per lezione**: ogni autorizzazione di piano, indipendentemente
+   da quante ce ne sono state prima, transita per lo stesso documento
+   `visualPlanLeases/{leaseId}`. Per un singolo docente con al più poche
+   sessioni simultanee (due schede) questo non è un collo di bottiglia
+   pratico, ma è un pattern di contesa deliberato, non incidentale — vale
+   la pena registrarlo come tale.
+2. **`VisualUploadRun` e il piano sono due contratti di idempotenza
+   paralleli, non unificati.** È una scelta esplicita (§9.6: mescolarli
+   avrebbe costretto il piano a contabilizzare operazioni a costo zero),
+   ma significa che un'implementazione futura mantiene due macchine a
+   stati invece di una, con superficie di test raddoppiata.
+3. **Nessuno dei meccanismi di questa revisione (lease, upload run, Rules
+   a rami) è stato eseguito contro un Emulator.** Restano contratti di
+   interfaccia verificati per coerenza interna e leggibilità, non per
+   comportamento a runtime.
+
+---
+
+## 15. Stato dichiarato — dopo la revisione 4
+
+| Elemento | Stato |
+|---|---|
+| MULTI-VISUAL-00 (revisione 4) | **Contratto corretto sui sei difetti di coerenza/idempotenza della terza review; prototipo confermato bit-per-bit invariato (diff vuoto + hash SHA-256 identico); nessuna verifica Emulator eseguita in questa fase — dichiarato esplicitamente** |
 | MULTI-VISUAL-01→05 | Aperte |
 | Gate GMULTI | **PENDING** |
