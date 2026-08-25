@@ -106,15 +106,25 @@ export interface VisualPlanSlot {
 }
 
 /**
- * Stati terminali di uno slot — usati solo per derivare lo status del piano
- * (§8.7, blocker 4). `ready` **non** è terminale: è «generato, in attesa di
- * promozione», ancora in corso.
+ * Uno slot è terminale — usato solo per derivare lo status del piano (§8.7,
+ * blocker 4) — quando non c'è più nulla che possa cambiarne l'esito senza
+ * un nuovo tentativo:
+ *
+ * - `promoted`/`abandoned` sono sempre terminali;
+ * - `ready` **non** è terminale: è «generato, in attesa di promozione»,
+ *   ancora in corso;
+ * - `failed` è terminale **solo** dopo l'ultimo tentativo consentito
+ *   (`attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT`, §8.7, review fix
+ *   round 2 blocker 1): un `failed` con retry ancora disponibili non ha
+ *   ancora detto l'ultima parola, e chiudere il piano a quel punto
+ *   scarterebbe un tentativo che il docente non ha ancora avuto la
+ *   possibilità di consumare.
  */
-const TERMINAL_SLOT_STATES: ReadonlySet<VisualPlanSlotState> = new Set([
-  'promoted',
-  'failed',
-  'abandoned',
-]);
+function isTerminalSlot(slot: VisualPlanSlot): boolean {
+  if (slot.state === 'promoted' || slot.state === 'abandoned') return true;
+  if (slot.state === 'failed') return slot.attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT;
+  return false;
+}
 
 const SLOT_STATES: readonly VisualPlanSlotState[] = [
   'pending',
@@ -244,6 +254,50 @@ function assertNullEditorialField(value: unknown, label: string): null {
 }
 
 /**
+ * **Review fix round 2 (blocker 2).** Relazioni esplicite di §8.4–§8.5 fra
+ * `decision`, `state` e `attempts` — non solo tetto massimo, ma anche
+ * minimo:
+ *
+ * - `decision: 'none'` ⇒ `state === 'abandoned'` e `attempts === 0`: uno
+ *   slot senza immagine non ha mai tentato nulla e non ha altro stato
+ *   sensato in cui stare;
+ * - `decision: 'image'`, `state === 'pending'` ⇒ `attempts === 0`: nessun
+ *   tentativo è ancora partito;
+ * - `decision: 'image'`, `state` in `generating|ready|failed|promoted` ⇒
+ *   `attempts >= 1`: nessuno di questi stati è raggiungibile senza aver
+ *   almeno tentato una generazione — uno `state: 'ready'` con `attempts: 0`
+ *   affermerebbe byte pronti che nessun tentativo ha mai prodotto;
+ * - `decision: 'image'`, `state === 'abandoned'` non ha un vincolo minimo:
+ *   il docente può abbandonare uno slot prima ancora di tentare (0) o dopo
+ *   uno o due tentativi falliti.
+ */
+function assertSlotAttemptsCoherentWithState(params: {
+  decision: VisualPlanSlotDecision;
+  state: VisualPlanSlotState;
+  attempts: number;
+}): void {
+  const { decision, state, attempts } = params;
+  if (decision === 'none') {
+    if (state !== 'abandoned') {
+      invalidSlot('decision "none" richiede state "abandoned".');
+    }
+    if (attempts !== 0) {
+      invalidSlot('decision "none" richiede attempts a zero.');
+    }
+    return;
+  }
+  if (state === 'pending' && attempts !== 0) {
+    invalidSlot('state "pending" richiede attempts a zero.');
+  }
+  if (
+    (state === 'generating' || state === 'ready' || state === 'failed' || state === 'promoted') &&
+    attempts < 1
+  ) {
+    invalidSlot(`state "${state}" richiede almeno un tentativo.`);
+  }
+}
+
+/**
  * Valida uno slot del piano, fail-closed, con le relazioni dichiarate dal
  * roadmap: `subject`/`rationale`/`anchor`/`caption`/`altText` popolati se e
  * solo se `decision === 'image'`, e in quel caso soggetti agli **stessi
@@ -254,9 +308,15 @@ function assertNullEditorialField(value: unknown, label: string): null {
  * `none` resta tutto nullo. `staged` presente solo quando `state === 'ready'`;
  * `promotedAssetId` non nullo solo quando `state === 'promoted'`;
  * `lastError` non nullo se e solo se `state === 'failed'` (review fix,
- * blocker 4); `attempts` entro `maxAttemptsPerSlot`.
+ * blocker 4); `attempts` entro `VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT` e coerente
+ * con `decision`/`state` (review fix round 2, blocker 2).
+ *
+ * **Nessun parametro di tetto.** La prima revisione accettava un
+ * `maxAttemptsPerSlot` esterno, aggirabile passando un valore arbitrario
+ * (per esempio 999) da un chiamante diretto. Il tetto v1 è unico e globale:
+ * questa funzione lo legge dalla costante, non da un argomento.
  */
-export function validateVisualPlanSlot(value: unknown, maxAttemptsPerSlot: number): VisualPlanSlot {
+export function validateVisualPlanSlot(value: unknown): VisualPlanSlot {
   const root = asRecord(value, 'Slot del piano visivo non valido.', 'corrupted_state');
   assertExactKeys(root, SLOT_KEYS, 'Slot del piano visivo', 'corrupted_state');
 
@@ -290,7 +350,10 @@ export function validateVisualPlanSlot(value: unknown, maxAttemptsPerSlot: numbe
     : assertNullEditorialField(root.anchor, 'anchor');
 
   const attempts = assertNonNegativeInt(root.attempts, 'attempts');
-  if (attempts > maxAttemptsPerSlot) invalidSlot('attempts oltre il tetto consentito per slot.');
+  if (attempts > VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT) {
+    invalidSlot('attempts oltre il tetto consentito per slot.');
+  }
+  assertSlotAttemptsCoherentWithState({ decision, state: state as VisualPlanSlotState, attempts });
 
   const lastErrorRaw = root.lastError;
   if (
@@ -492,13 +555,17 @@ function assertNullableNonNegativeInt(value: unknown, label: string): number | n
 }
 
 /**
- * **Review fix (blocker 4).** `attempts` non è più libero entro il tetto per
- * slot: deve coincidere **esattamente** con gli `attempts` dello slot
+ * **Review fix (blocker 4), completata al round 2 (blocker 2).** `attempts`
+ * deve coincidere **esattamente** con gli `attempts` dello slot
  * corrispondente del piano — un consuntivo che dichiara un numero di
  * tentativi diverso da quello che lo slot stesso riporta è una
  * contraddizione interna del documento, non un valore "anche plausibile".
- * E se `attempts === 0`, `actualCost` non può che essere `null`: non si può
- * aver speso senza aver tentato.
+ * Una voce non è ammessa affatto per uno slot con `attempts === 0`: nessuna
+ * spesa è mai stata sostenuta, quindi non c'è nulla da consuntivare — non
+ * un'unica forma canonica in più da documentare e testare, semplicemente
+ * assente. `actualCost: null` resta ammesso anche con `attempts > 0`: il
+ * costo reale può essere inconoscibile (per esempio un tentativo la cui
+ * risposta di fatturazione è andata persa).
  */
 function validateSettlementSlot(
   value: unknown,
@@ -511,20 +578,25 @@ function validateSettlementSlot(
   if (expectedAttempts === undefined) {
     invalidSlot('Il consuntivo referenzia uno slotIndex che non esiste nel piano.');
   }
+  if (expectedAttempts === 0) {
+    invalidSlot('Il consuntivo non ammette una voce per uno slot senza tentativi.');
+  }
   const attempts = assertNonNegativeInt(root.attempts, 'attempts del consuntivo');
   if (attempts !== expectedAttempts) {
     invalidSlot('attempts del consuntivo non corrisponde agli attempts dello slot.');
   }
   const actualCost = assertNullableNonNegativeInt(root.actualCost, 'actualCost dello slot');
-  if (attempts === 0 && actualCost !== null) {
-    invalidSlot('actualCost deve essere nullo quando lo slot non ha tentativi.');
-  }
   return { slotIndex, attempts, actualCost };
 }
 
 /**
  * Invariante relazionale (roadmap §5.5): la somma dei costi reali — proposta
  * più ciascuno slot — non supera mai `budgetCeiling.totalReserved`.
+ *
+ * **Review fix round 2 (blocker 2).** Completezza, non solo assenza di
+ * eccesso: ogni slot del piano con `attempts > 0` deve avere **esattamente
+ * una** voce nel consuntivo — un tentativo realmente avvenuto e mai
+ * consuntivato sarebbe un costo reale invisibile al tetto di budget.
  */
 function validateVisualPlanSettlement(
   value: unknown,
@@ -545,6 +617,13 @@ function validateVisualPlanSettlement(
   for (const slot of slots) {
     if (seenSlotIndexes.has(slot.slotIndex)) invalidSlot('slotIndex duplicato nel consuntivo.');
     seenSlotIndexes.add(slot.slotIndex);
+  }
+  for (const [slotIndex, attempts] of params.slotAttemptsByIndex) {
+    if (attempts > 0 && !seenSlotIndexes.has(slotIndex)) {
+      invalidSlot(
+        'Il consuntivo non è completo: manca la voce di uno slot con tentativi già avvenuti.',
+      );
+    }
   }
 
   const spent =
@@ -643,13 +722,23 @@ function assertTimestampLike(value: unknown, label: string): VisualTimestampLike
 }
 
 /**
- * **Review fix (blocker 4).** Un solo helper per la relazione dei tre
- * timestamp del piano: `createdAt ≤ updatedAt ≤ expireAt`, e
+ * Un solo helper per la relazione dei tre timestamp del piano.
  * `expireAt === createdAt + TTL` — lo stesso TTL di 24 h dello staging VE
  * (roadmap §5.5: «TTL 24 h come lo staging di VE»), riusato da
- * `VISUAL_STAGING_TTL_MS` e non ridichiarato come costante propria.
+ * `VISUAL_STAGING_TTL_MS` e non ridichiarato come costante propria — vale
+ * **sempre**, in ogni stato.
+ *
+ * **Review fix round 2 (blocker 3).** L'ordine fra `updatedAt` ed `expireAt`
+ * dipende dallo status: uno stato **diverso** da `expired` non ha ancora
+ * raggiunto il TTL, quindi `createdAt ≤ updatedAt ≤ expireAt`. Uno stato
+ * `expired`, per definizione, ci è arrivato — una transizione reale a
+ * expired scrive `updatedAt` al momento in cui l'orologio ha osservato
+ * `now >= expireAt`, quindi `updatedAt >= expireAt` (uguaglianza ammessa),
+ * mai il contrario: la guardia precedente rendeva `expired` impraticabile
+ * senza falsificare `updatedAt`.
  */
 function assertVisualPlanTimestampOrder(params: {
+  status: VisualPlanStatus;
   createdAt: VisualTimestampLike;
   updatedAt: VisualTimestampLike;
   expireAt: VisualTimestampLike;
@@ -660,11 +749,15 @@ function assertVisualPlanTimestampOrder(params: {
   if (createdMs === null || updatedMs === null || expireMs === null) {
     invalidSlot('Timestamp del piano non validi.');
   }
-  if (!(createdMs <= updatedMs && updatedMs <= expireMs)) {
-    invalidSlot('I timestamp del piano non rispettano createdAt ≤ updatedAt ≤ expireAt.');
-  }
   if (expireMs !== createdMs + VISUAL_STAGING_TTL_MS) {
     invalidSlot('expireAt non corrisponde a createdAt + TTL 24h (contratto v1).');
+  }
+  if (params.status === 'expired') {
+    if (updatedMs < expireMs) {
+      invalidSlot('status "expired" richiede updatedAt maggiore o uguale a expireAt.');
+    }
+  } else if (!(createdMs <= updatedMs && updatedMs <= expireMs)) {
+    invalidSlot('I timestamp del piano non rispettano createdAt ≤ updatedAt ≤ expireAt.');
   }
 }
 
@@ -686,23 +779,40 @@ function validateExistingItemAssetIds(value: unknown): string[] {
 }
 
 /**
- * **Review fix (blocker 4).** Le tre sole conclusioni di §8.7 derivabili
- * strutturalmente dagli stati degli slot, senza inventare relazioni per gli
- * stati intermedi (`authorized`…`awaiting_review`) che il roadmap non
- * determina qui:
+ * Le quattro conclusioni di §8.7 derivabili strutturalmente dagli stati
+ * degli slot, senza inventare relazioni per gli stati intermedi
+ * (`authorized`…`awaiting_review`) che il roadmap non determina qui:
  *
- * - `completed`: ogni slot è terminale e ogni slot "image" è `promoted`;
+ * - `completed`: ogni slot è terminale (`isTerminalSlot`, review fix round 2
+ *   blocker 1 — un `failed` con retry ancora disponibili non è terminale),
+ *   **almeno uno** slot "image" esiste ed è `promoted`, e nessuno slot
+ *   "image" resta non promosso — con **zero** slot "image" l'esito
+ *   strutturalmente coerente è `abandoned`, mai `completed` (review fix
+ *   round 2): non c'è nulla che sia stato "completato";
  * - `partially_completed`: ogni slot è terminale, almeno uno slot "image" è
  *   `promoted` e almeno uno slot "image" non lo è;
- * - `abandoned`: ogni slot è terminale e nessuno slot "image" è `promoted`.
+ * - `abandoned`: ogni slot è terminale e nessuno slot "image" è `promoted`
+ *   (include per costruzione il caso zero slot "image");
+ * - `expired`: **almeno uno** slot non è terminale (review fix round 2,
+ *   blocker 1/3) — un piano i cui slot sono già tutti risolti non è "scaduto
+ *   in corso", ha già una conclusione reale che deve essere dichiarata come
+ *   tale, non nascosta dietro `expired`.
  */
 function assertVisualPlanStatusMatchesSlots(
   status: VisualPlanStatus,
   slots: readonly VisualPlanSlot[],
 ): void {
+  const allTerminal = slots.every((slot) => isTerminalSlot(slot));
+
+  if (status === 'expired') {
+    if (allTerminal) {
+      invalidSlot('status "expired" richiede almeno uno slot non terminale.');
+    }
+    return;
+  }
+
   if (status !== 'completed' && status !== 'partially_completed' && status !== 'abandoned') return;
 
-  const allTerminal = slots.every((slot) => TERMINAL_SLOT_STATES.has(slot.state));
   if (!allTerminal) {
     invalidSlot(`status "${status}" richiede che ogni slot sia in uno stato terminale.`);
   }
@@ -711,8 +821,15 @@ function assertVisualPlanStatusMatchesSlots(
   const promotedCount = imageSlots.filter((slot) => slot.state === 'promoted').length;
   const nonPromotedCount = imageSlots.length - promotedCount;
 
-  if (status === 'completed' && nonPromotedCount > 0) {
-    invalidSlot('status "completed" richiede che ogni slot immagine sia promosso.');
+  if (status === 'completed') {
+    if (imageSlots.length === 0) {
+      invalidSlot(
+        'status "completed" richiede almeno uno slot immagine promosso; con zero slot immagine l\'esito è "abandoned".',
+      );
+    }
+    if (nonPromotedCount > 0) {
+      invalidSlot('status "completed" richiede che ogni slot immagine sia promosso.');
+    }
   }
   if (status === 'partially_completed' && (promotedCount === 0 || nonPromotedCount === 0)) {
     invalidSlot(
@@ -811,7 +928,7 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
   // stessa assunzione che il runtime fa indicizzando `slots[slotIndex]`.
   // Implica di per sé unicità e range — non servono due controlli separati.
   const slots = root.slots.map((slot: unknown, index: number) => {
-    const parsed = validateVisualPlanSlot(slot, budgetCeiling.maxAttemptsPerSlot);
+    const parsed = validateVisualPlanSlot(slot);
     if (parsed.slotIndex !== index) {
       invalidSlot("slotIndex non corrisponde alla propria posizione nell'array slots.");
     }
@@ -838,7 +955,12 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
   const createdAt = assertTimestampLike(root.createdAt, 'createdAt');
   const updatedAt = assertTimestampLike(root.updatedAt, 'updatedAt');
   const expireAt = assertTimestampLike(root.expireAt, 'expireAt');
-  assertVisualPlanTimestampOrder({ createdAt, updatedAt, expireAt });
+  assertVisualPlanTimestampOrder({
+    status: status as VisualPlanStatus,
+    createdAt,
+    updatedAt,
+    expireAt,
+  });
 
   return {
     contractVersion: VISUAL_PLAN_CONTRACT_VERSION,

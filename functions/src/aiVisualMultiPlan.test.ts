@@ -29,11 +29,17 @@ import {
  * diversità (§7.4): quantità, stati/decisioni coerenti, tentativi, tetto di
  * budget e consuntivo relazionali, chiavi extra rifiutate.
  *
- * **Review fix (Codex, PR #425, SHA c196ccf).** Sezioni aggiuntive per i
- * cinque blocker: identità/path canonici (1), limiti editoriali VE sugli
- * slot (2), staging legato al piano con cap binari (3), relazioni interne
- * complete del `VisualPlanRun` (4), tassonomia d'errore alla lettura di un
- * piano persistito (5).
+ * **Review fix round 1 (Codex, PR #425, SHA c196ccf).** Identità/path
+ * canonici, limiti editoriali VE, staging legato al piano, relazioni
+ * interne del piano, tassonomia d'errore alla lettura di un piano
+ * persistito.
+ *
+ * **Review fix round 2 (Codex, PR #425, SHA 1a8837a).** Tre correzioni
+ * residue: `failed` terminale solo dopo il tetto di tentativi (blocker 1),
+ * coerenza completa stato/decisione/tentativi e completezza del consuntivo
+ * (blocker 2), ordine dei timestamp specifico per `expired` (blocker 3).
+ * `validateVisualPlanSlot` non accetta più un tetto esterno: legge sempre
+ * `VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT`.
  */
 
 const OWNER = 'owner-uid';
@@ -44,8 +50,10 @@ const SOURCE_BODY_HASH = 'c'.repeat(64);
 const CREATED_AT_MS = 1_700_000_000_000;
 const CREATED_AT = { toMillis: () => CREATED_AT_MS };
 const UPDATED_AT = { toMillis: () => CREATED_AT_MS };
-const EXPIRE_AT = { toMillis: () => CREATED_AT_MS + VISUAL_STAGING_TTL_MS };
+const EXPIRE_AT_MS = CREATED_AT_MS + VISUAL_STAGING_TTL_MS;
+const EXPIRE_AT = { toMillis: () => EXPIRE_AT_MS };
 const OPAQUE_PLAN_ID = computeOpaqueVisualPlanId(OWNER, REQUEST_ID);
+const ASSET_ID = '11111111-2222-4333-8444-555555555555';
 
 function stagedFor(slotIndex: number, over: Partial<Record<string, unknown>> = {}) {
   return {
@@ -58,6 +66,9 @@ function stagedFor(slotIndex: number, over: Partial<Record<string, unknown>> = {
   };
 }
 
+/** Slot "image" di default: `pending`, zero tentativi — la sola combinazione
+ * valida per quello stato (review fix round 2, blocker 2). Chi vuole un
+ * altro `state` deve fornire `attempts` coerenti nel proprio `over`. */
 function imageSlot(slotIndex: number, over: Partial<Record<string, unknown>> = {}) {
   return {
     slotIndex,
@@ -76,6 +87,8 @@ function imageSlot(slotIndex: number, over: Partial<Record<string, unknown>> = {
   };
 }
 
+/** Slot "none": l'unica combinazione valida è `state: 'abandoned'`, zero
+ * tentativi (review fix round 2, blocker 2). */
 function noneSlot(slotIndex: number, over: Partial<Record<string, unknown>> = {}) {
   return {
     slotIndex,
@@ -138,11 +151,15 @@ function planOf(params: {
     slots: params.slots,
     settlement: {
       proposalActualCost: null,
-      slots: params.slots.map((slot) => ({
-        slotIndex: slot.slotIndex as number,
-        attempts: slot.attempts as number,
-        actualCost: null,
-      })),
+      // Review fix round 2 (blocker 2): il consuntivo non ammette una voce
+      // per uno slot senza tentativi — il default lo riflette filtrando.
+      slots: params.slots
+        .filter((slot) => (slot.attempts as number) > 0)
+        .map((slot) => ({
+          slotIndex: slot.slotIndex as number,
+          attempts: slot.attempts as number,
+          actualCost: null,
+        })),
     },
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
@@ -186,7 +203,7 @@ describe('validateVisualPlanQuantitySelection', () => {
   });
 });
 
-// ─── Blocker 1 — identità: id Firestore canonici, UUID, path ──────────────────
+// ─── Blocker 1 (round 1) — identità: id Firestore canonici, UUID, path ────────
 
 describe('blocker 1 — identità canoniche (isValidDocumentIdInput, UUID, SHA-256)', () => {
   function planWithOwner(ownerUid: string) {
@@ -246,78 +263,76 @@ describe('blocker 1 — identità canoniche (isValidDocumentIdInput, UUID, SHA-2
   it('rifiuta un promotedAssetId UUID in maiuscolo', () => {
     const slot = imageSlot(0, {
       state: 'promoted',
+      attempts: 1,
       promotedAssetId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'.toUpperCase(),
     });
-    expect(() => validateVisualPlanSlot(slot, 2)).toThrow(AiVisualMultiError);
+    expect(() => validateVisualPlanSlot(slot)).toThrow(AiVisualMultiError);
   });
 });
 
-// ─── Blocker 2 — limiti editoriali VE sugli slot (roadmap §8.3) ───────────────
+// ─── Blocker 2 (round 1) — limiti editoriali VE sugli slot (roadmap §8.3) ─────
 
-describe('blocker 2 — limiti editoriali VE sui campi dello slot', () => {
+describe('blocker 2 (round 1) — limiti editoriali VE sui campi dello slot', () => {
   it(`accetta subject esattamente a ${MAX_VISUAL_SUBJECT_CHARS} code point`, () => {
     const subject = 'a'.repeat(MAX_VISUAL_SUBJECT_CHARS);
-    expect(validateVisualPlanSlot(imageSlot(0, { subject }), 2).subject).toBe(subject);
+    expect(validateVisualPlanSlot(imageSlot(0, { subject })).subject).toBe(subject);
   });
 
   it(`rifiuta subject a ${MAX_VISUAL_SUBJECT_CHARS + 1} code point`, () => {
     const subject = 'a'.repeat(MAX_VISUAL_SUBJECT_CHARS + 1);
-    expect(() => validateVisualPlanSlot(imageSlot(0, { subject }), 2)).toThrow();
+    expect(() => validateVisualPlanSlot(imageSlot(0, { subject }))).toThrow();
   });
 
   it(`accetta rationale esattamente a ${MAX_VISUAL_RATIONALE_CHARS} code point`, () => {
     const rationale = 'a'.repeat(MAX_VISUAL_RATIONALE_CHARS);
-    expect(validateVisualPlanSlot(imageSlot(0, { rationale }), 2).rationale).toBe(rationale);
+    expect(validateVisualPlanSlot(imageSlot(0, { rationale })).rationale).toBe(rationale);
   });
 
   it(`rifiuta rationale a ${MAX_VISUAL_RATIONALE_CHARS + 1} code point`, () => {
     const rationale = 'a'.repeat(MAX_VISUAL_RATIONALE_CHARS + 1);
-    expect(() => validateVisualPlanSlot(imageSlot(0, { rationale }), 2)).toThrow();
+    expect(() => validateVisualPlanSlot(imageSlot(0, { rationale }))).toThrow();
   });
 
   it(`accetta caption esattamente a ${MAX_VISUAL_CAPTION_CHARS} code point`, () => {
     const caption = 'a'.repeat(MAX_VISUAL_CAPTION_CHARS);
-    expect(validateVisualPlanSlot(imageSlot(0, { caption }), 2).caption).toBe(caption);
+    expect(validateVisualPlanSlot(imageSlot(0, { caption })).caption).toBe(caption);
   });
 
   it(`rifiuta caption a ${MAX_VISUAL_CAPTION_CHARS + 1} code point`, () => {
     const caption = 'a'.repeat(MAX_VISUAL_CAPTION_CHARS + 1);
-    expect(() => validateVisualPlanSlot(imageSlot(0, { caption }), 2)).toThrow();
+    expect(() => validateVisualPlanSlot(imageSlot(0, { caption }))).toThrow();
   });
 
   it(`accetta altText esattamente a ${MAX_VISUAL_ALT_TEXT_CHARS} code point`, () => {
     const altText = 'a'.repeat(MAX_VISUAL_ALT_TEXT_CHARS);
-    expect(validateVisualPlanSlot(imageSlot(0, { altText }), 2).altText).toBe(altText);
+    expect(validateVisualPlanSlot(imageSlot(0, { altText })).altText).toBe(altText);
   });
 
   it(`rifiuta altText a ${MAX_VISUAL_ALT_TEXT_CHARS + 1} code point`, () => {
     const altText = 'a'.repeat(MAX_VISUAL_ALT_TEXT_CHARS + 1);
-    expect(() => validateVisualPlanSlot(imageSlot(0, { altText }), 2)).toThrow();
+    expect(() => validateVisualPlanSlot(imageSlot(0, { altText }))).toThrow();
   });
 
   it('rifiuta un subject vietato (imitazione di stile)', () => {
     expect(() =>
       validateVisualPlanSlot(
         imageSlot(0, { subject: 'Un disegno in the style of un noto illustratore' }),
-        2,
       ),
     ).toThrow();
   });
 
   it('rifiuta rationale con caratteri di controllo', () => {
     expect(() =>
-      validateVisualPlanSlot(imageSlot(0, { rationale: 'Motivo concontrollo' }), 2),
+      validateVisualPlanSlot(imageSlot(0, { rationale: 'Motivo concontrollo' })),
     ).toThrow();
   });
 
   it('rifiuta caption con markup HTML', () => {
-    expect(() =>
-      validateVisualPlanSlot(imageSlot(0, { caption: '<b>Didascalia</b>' }), 2),
-    ).toThrow();
+    expect(() => validateVisualPlanSlot(imageSlot(0, { caption: '<b>Didascalia</b>' }))).toThrow();
   });
 
   it('rifiuta altText con blocco di codice (fence)', () => {
-    expect(() => validateVisualPlanSlot(imageSlot(0, { altText: '```codice```' }), 2)).toThrow();
+    expect(() => validateVisualPlanSlot(imageSlot(0, { altText: '```codice```' }))).toThrow();
   });
 
   it('accetta apostrofi italiani legittimi in subject e rationale', () => {
@@ -326,20 +341,19 @@ describe('blocker 2 — limiti editoriali VE sui campi dello slot', () => {
         subject: "L'acqua e il suo ciclo naturale",
         rationale: "Mostra com'è distribuita l'acqua sulla superficie",
       }),
-      2,
     );
     expect(slot.subject).toContain("L'acqua");
     expect(slot.rationale).toContain("com'è");
   });
 });
 
-// ─── Blocker 3 — staging legato al piano, con cap binari (roadmap §5.5) ───────
+// ─── Blocker 3 (round 1) — staging legato al piano, con cap binari ────────────
 
-describe('blocker 3 — staging legato al piano e cap binari', () => {
+describe('blocker 3 (round 1) — staging legato al piano e cap binari', () => {
   it('accetta il path di staging ricostruito correttamente (caso positivo)', () => {
     const plan = planOf({
       ceiling: 1,
-      slots: [imageSlot(0, { state: 'ready', staged: stagedFor(0) })],
+      slots: [imageSlot(0, { state: 'ready', attempts: 1, staged: stagedFor(0) })],
     });
     expect(() => validateVisualPlanRun(plan)).not.toThrow();
   });
@@ -350,6 +364,7 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
       slots: [
         imageSlot(0, {
           state: 'ready',
+          attempts: 1,
           staged: stagedFor(0, { storageRef: `staging/altro-owner/${OPAQUE_PLAN_ID}/0.webp` }),
         }),
       ],
@@ -363,6 +378,7 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
       slots: [
         imageSlot(0, {
           state: 'ready',
+          attempts: 1,
           staged: stagedFor(0, { storageRef: `staging/${OWNER}/${'f'.repeat(64)}/0.webp` }),
         }),
       ],
@@ -372,7 +388,7 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
 
   it('rifiuta storageRef di staging con indice sbagliato (slot 0 che dichiara 2.webp)', () => {
     expect(() =>
-      validateVisualPlanSlot(imageSlot(0, { state: 'ready', staged: stagedFor(2) }), 2),
+      validateVisualPlanSlot(imageSlot(0, { state: 'ready', attempts: 1, staged: stagedFor(2) })),
     ).toThrow(AiVisualMultiError);
   });
 
@@ -381,9 +397,9 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
       validateVisualPlanSlot(
         imageSlot(0, {
           state: 'ready',
+          attempts: 1,
           staged: stagedFor(0, { storageRef: `staging/${OWNER}/${OPAQUE_PLAN_ID}/0.png` }),
         }),
-        2,
       ),
     ).toThrow(AiVisualMultiError);
   });
@@ -393,9 +409,9 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
       validateVisualPlanSlot(
         imageSlot(0, {
           state: 'ready',
+          attempts: 1,
           staged: stagedFor(0, { storageRef: `staging/../${OPAQUE_PLAN_ID}/0.webp` }),
         }),
-        2,
       ),
     ).toThrow(AiVisualMultiError);
   });
@@ -405,9 +421,9 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
       validateVisualPlanSlot(
         imageSlot(0, {
           state: 'ready',
+          attempts: 1,
           staged: stagedFor(0, { storageRef: `staging//${OPAQUE_PLAN_ID}/0.webp` }),
         }),
-        2,
       ),
     ).toThrow(AiVisualMultiError);
   });
@@ -415,14 +431,12 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
   it('rifiuta width/height 1201 in staging', () => {
     expect(() =>
       validateVisualPlanSlot(
-        imageSlot(0, { state: 'ready', staged: stagedFor(0, { width: 1201 }) }),
-        2,
+        imageSlot(0, { state: 'ready', attempts: 1, staged: stagedFor(0, { width: 1201 }) }),
       ),
     ).toThrow(AiVisualMultiError);
     expect(() =>
       validateVisualPlanSlot(
-        imageSlot(0, { state: 'ready', staged: stagedFor(0, { height: 1201 }) }),
-        2,
+        imageSlot(0, { state: 'ready', attempts: 1, staged: stagedFor(0, { height: 1201 }) }),
       ),
     ).toThrow(AiVisualMultiError);
   });
@@ -430,8 +444,11 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
   it('rifiuta byteLength 204801 in staging', () => {
     expect(() =>
       validateVisualPlanSlot(
-        imageSlot(0, { state: 'ready', staged: stagedFor(0, { byteLength: 204_801 }) }),
-        2,
+        imageSlot(0, {
+          state: 'ready',
+          attempts: 1,
+          staged: stagedFor(0, { byteLength: 204_801 }),
+        }),
       ),
     ).toThrow(AiVisualMultiError);
   });
@@ -440,9 +457,9 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
     const slot = validateVisualPlanSlot(
       imageSlot(0, {
         state: 'ready',
+        attempts: 1,
         staged: stagedFor(0, { width: 1200, height: 1200, byteLength: 204_800 }),
       }),
-      2,
     );
     expect(slot.staged?.width).toBe(1200);
   });
@@ -451,14 +468,14 @@ describe('blocker 3 — staging legato al piano e cap binari', () => {
 // ─── Slot — forma e relazioni generali ─────────────────────────────────────────
 
 describe('validateVisualPlanSlot', () => {
-  it('accetta uno slot "image" completo', () => {
-    const slot = validateVisualPlanSlot(imageSlot(0), 2);
+  it('accetta uno slot "image" completo (pending, zero tentativi)', () => {
+    const slot = validateVisualPlanSlot(imageSlot(0));
     expect(slot.decision).toBe('image');
     expect(slot.subject).not.toBeNull();
   });
 
   it('accetta uno slot "none" con tutti i campi editoriali nulli', () => {
-    const slot = validateVisualPlanSlot(noneSlot(0), 2);
+    const slot = validateVisualPlanSlot(noneSlot(0));
     expect(slot.decision).toBe('none');
     expect(slot.subject).toBeNull();
     expect(slot.anchor).toBeNull();
@@ -467,7 +484,7 @@ describe('validateVisualPlanSlot', () => {
   it('rifiuta decision "image" con subject nullo (provider_invalid_output)', () => {
     let thrown: unknown;
     try {
-      validateVisualPlanSlot(imageSlot(0, { subject: null }), 2);
+      validateVisualPlanSlot(imageSlot(0, { subject: null }));
     } catch (error) {
       thrown = error;
     }
@@ -476,34 +493,40 @@ describe('validateVisualPlanSlot', () => {
   });
 
   it('rifiuta decision "none" con subject valorizzato', () => {
-    expect(() => validateVisualPlanSlot(noneSlot(0, { subject: 'Qualcosa' }), 2)).toThrow(
+    expect(() => validateVisualPlanSlot(noneSlot(0, { subject: 'Qualcosa' }))).toThrow(
       AiVisualMultiError,
     );
   });
 
-  it('rifiuta attempts oltre VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT', () => {
-    expect(() => validateVisualPlanSlot(imageSlot(0, { attempts: 3 }), 2)).toThrow(
+  it('rifiuta attempts oltre VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT, indipendentemente da qualunque tetto esterno', () => {
+    expect(() => validateVisualPlanSlot(imageSlot(0, { attempts: 3 }))).toThrow(AiVisualMultiError);
+    expect(() => validateVisualPlanSlot(imageSlot(0, { attempts: 500 }))).toThrow(
       AiVisualMultiError,
     );
   });
 
-  it('accetta attempts fino al tetto', () => {
-    expect(validateVisualPlanSlot(imageSlot(0, { attempts: 2 }), 2).attempts).toBe(2);
+  it('accetta attempts fino al tetto (state "failed", terminale)', () => {
+    const slot = validateVisualPlanSlot(
+      imageSlot(0, { state: 'failed', lastError: 'transient_error', attempts: 2 }),
+    );
+    expect(slot.attempts).toBe(2);
   });
 
   it('rifiuta staged presente con state diverso da "ready"', () => {
-    expect(() => validateVisualPlanSlot(imageSlot(0, { staged: stagedFor(0) }), 2)).toThrow(
+    expect(() => validateVisualPlanSlot(imageSlot(0, { staged: stagedFor(0) }))).toThrow(
       AiVisualMultiError,
     );
   });
 
   it('accetta staged presente con state "ready"', () => {
-    const slot = validateVisualPlanSlot(imageSlot(0, { state: 'ready', staged: stagedFor(0) }), 2);
+    const slot = validateVisualPlanSlot(
+      imageSlot(0, { state: 'ready', attempts: 1, staged: stagedFor(0) }),
+    );
     expect(slot.staged).not.toBeNull();
   });
 
   it('rifiuta state "ready" senza staged', () => {
-    expect(() => validateVisualPlanSlot(imageSlot(0, { state: 'ready' }), 2)).toThrow(
+    expect(() => validateVisualPlanSlot(imageSlot(0, { state: 'ready', attempts: 1 }))).toThrow(
       AiVisualMultiError,
     );
   });
@@ -512,49 +535,151 @@ describe('validateVisualPlanSlot', () => {
     expect(() =>
       validateVisualPlanSlot(
         imageSlot(0, { promotedAssetId: '11111111-2222-4333-8444-555555555555' }),
-        2,
       ),
     ).toThrow(AiVisualMultiError);
   });
 
   it('accetta promotedAssetId presente con state "promoted"', () => {
     const slot = validateVisualPlanSlot(
-      imageSlot(0, { state: 'promoted', promotedAssetId: '11111111-2222-4333-8444-555555555555' }),
-      2,
+      imageSlot(0, { state: 'promoted', attempts: 1, promotedAssetId: ASSET_ID }),
     );
-    expect(slot.promotedAssetId).toBe('11111111-2222-4333-8444-555555555555');
+    expect(slot.promotedAssetId).toBe(ASSET_ID);
   });
 
   it('rifiuta state "promoted" senza promotedAssetId', () => {
-    expect(() => validateVisualPlanSlot(imageSlot(0, { state: 'promoted' }), 2)).toThrow(
+    expect(() => validateVisualPlanSlot(imageSlot(0, { state: 'promoted', attempts: 1 }))).toThrow(
       AiVisualMultiError,
     );
   });
 
   it('rifiuta chiavi extra', () => {
-    expect(() => validateVisualPlanSlot(imageSlot(0, { extra: true }), 2)).toThrow(
-      AiVisualMultiError,
-    );
+    expect(() => validateVisualPlanSlot(imageSlot(0, { extra: true }))).toThrow(AiVisualMultiError);
   });
 
   it('rifiuta state "failed" con lastError nullo', () => {
     expect(() =>
-      validateVisualPlanSlot(imageSlot(0, { state: 'failed', lastError: null }), 2),
+      validateVisualPlanSlot(imageSlot(0, { state: 'failed', attempts: 1, lastError: null })),
     ).toThrow(AiVisualMultiError);
   });
 
   it('accetta state "failed" con lastError tipizzato', () => {
     const slot = validateVisualPlanSlot(
-      imageSlot(0, { state: 'failed', lastError: 'transient_error' }),
-      2,
+      imageSlot(0, { state: 'failed', attempts: 1, lastError: 'transient_error' }),
     );
     expect(slot.lastError).toBe('transient_error');
   });
 
   it('rifiuta lastError presente con state diverso da "failed"', () => {
     expect(() =>
-      validateVisualPlanSlot(imageSlot(0, { state: 'pending', lastError: 'transient_error' }), 2),
+      validateVisualPlanSlot(imageSlot(0, { state: 'pending', lastError: 'transient_error' })),
     ).toThrow(AiVisualMultiError);
+  });
+});
+
+// ─── Blocker 2 (round 2) — coerenza completa decision/state/attempts ──────────
+
+describe('blocker 2 (round 2) — coerenza decision/state/attempts (§8.4–§8.5)', () => {
+  it('rifiuta decision "none" con state diverso da "abandoned"', () => {
+    expect(() => validateVisualPlanSlot(noneSlot(0, { state: 'pending' }))).toThrow(
+      AiVisualMultiError,
+    );
+  });
+
+  it('rifiuta decision "none" con attempts diverso da zero', () => {
+    expect(() => validateVisualPlanSlot(noneSlot(0, { attempts: 1 }))).toThrow(AiVisualMultiError);
+  });
+
+  it('rifiuta decision "image", state "pending" con attempts diverso da zero', () => {
+    expect(() => validateVisualPlanSlot(imageSlot(0, { state: 'pending', attempts: 1 }))).toThrow(
+      AiVisualMultiError,
+    );
+  });
+
+  it.each(['generating', 'ready', 'failed', 'promoted'] as const)(
+    'rifiuta decision "image", state "%s" con attempts a zero',
+    (state) => {
+      const over: Record<string, unknown> = { state, attempts: 0 };
+      if (state === 'failed') over.lastError = 'transient_error';
+      if (state === 'ready') over.staged = stagedFor(0);
+      if (state === 'promoted') over.promotedAssetId = ASSET_ID;
+      expect(() => validateVisualPlanSlot(imageSlot(0, over))).toThrow(AiVisualMultiError);
+    },
+  );
+
+  it('accetta decision "image", state "abandoned" con attempts a zero (mai tentato)', () => {
+    const slot = validateVisualPlanSlot(imageSlot(0, { state: 'abandoned', attempts: 0 }));
+    expect(slot.state).toBe('abandoned');
+  });
+
+  it('accetta decision "image", state "abandoned" dopo tentativi falliti (attempts 1 o 2)', () => {
+    expect(validateVisualPlanSlot(imageSlot(0, { state: 'abandoned', attempts: 1 })).attempts).toBe(
+      1,
+    );
+    expect(validateVisualPlanSlot(imageSlot(0, { state: 'abandoned', attempts: 2 })).attempts).toBe(
+      2,
+    );
+  });
+
+  it('validateVisualPlanSlot non accetta più un secondo argomento di tetto: legge sempre la costante', () => {
+    // @ts-expect-error — il parametro è stato rimosso deliberatamente (review fix round 2).
+    expect(() => validateVisualPlanSlot(imageSlot(0, { attempts: 500 }), 999)).toThrow(
+      AiVisualMultiError,
+    );
+  });
+
+  describe('completezza del consuntivo rispetto ai tentativi', () => {
+    it('rifiuta un piano con uno slot ad attempts > 0 privo di voce nel consuntivo', () => {
+      const plan = planOf({
+        ceiling: 1,
+        slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
+        over: { settlement: { proposalActualCost: null, slots: [] } },
+      });
+      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+    });
+
+    it('rifiuta una voce di consuntivo per uno slot con attempts a zero', () => {
+      const plan = planOf({
+        ceiling: 1,
+        slots: [imageSlot(0, { state: 'pending', attempts: 0 })],
+        over: {
+          settlement: {
+            proposalActualCost: null,
+            slots: [{ slotIndex: 0, attempts: 0, actualCost: null }],
+          },
+        },
+      });
+      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+    });
+
+    it('accetta actualCost: null per uno slot con attempts > 0 (costo inconoscibile)', () => {
+      const plan = planOf({
+        ceiling: 1,
+        slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
+      });
+      expect(() => validateVisualPlanRun(plan)).not.toThrow();
+    });
+
+    it('verifica per mutazione: rimuovere il controllo di completezza rende rosso il test di sopra', () => {
+      // Prova diretta: uno slot con attempts=1 e un consuntivo vuoto (nessuna
+      // voce) deve fallire. Se la guardia venisse rimossa, questo stesso
+      // scenario passerebbe silenziosamente — è esattamente il test che lo
+      // impedisce, eseguito qui una seconda volta con un piano a due slot per
+      // isolare quale slot manca.
+      const plan = planOf({
+        ceiling: 2,
+        slots: [
+          imageSlot(0, { state: 'generating', attempts: 1 }),
+          imageSlot(1, { state: 'generating', attempts: 1 }),
+        ],
+        over: {
+          settlement: {
+            proposalActualCost: null,
+            slots: [{ slotIndex: 0, attempts: 1, actualCost: null }],
+          },
+        },
+      });
+      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+    });
   });
 });
 
@@ -568,14 +693,12 @@ describe('validateVisualPlanDiversity', () => {
           subject: 'Precipitazione sul rilievo',
           rationale: 'Mostra da dove viene l’acqua',
         }),
-        2,
       ),
       validateVisualPlanSlot(
         imageSlot(1, {
           subject: 'Ruscellamento superficiale reale',
           rationale: 'Mostra dove va l’acqua',
         }),
-        2,
       ),
     ];
     expect(() => validateVisualPlanDiversity(slots)).not.toThrow();
@@ -583,8 +706,8 @@ describe('validateVisualPlanDiversity', () => {
 
   it('rifiuta due subject normalizzati identici, con la stessa ancora', () => {
     const slots: VisualPlanSlot[] = [
-      validateVisualPlanSlot(imageSlot(0, { subject: 'Il Bilancio idrico' }), 2),
-      validateVisualPlanSlot(imageSlot(1, { subject: 'il bilancio   idrico' }), 2),
+      validateVisualPlanSlot(imageSlot(0, { subject: 'Il Bilancio idrico' })),
+      validateVisualPlanSlot(imageSlot(1, { subject: 'il bilancio   idrico' })),
     ];
     expect(() => validateVisualPlanDiversity(slots)).toThrow(AiVisualMultiError);
   });
@@ -596,14 +719,12 @@ describe('validateVisualPlanDiversity', () => {
           subject: 'Stesso soggetto',
           anchor: { anchorHeadingIndex: 0, anchorHeadingText: 'A' },
         }),
-        2,
       ),
       validateVisualPlanSlot(
         imageSlot(1, {
           subject: 'stesso   soggetto',
           anchor: { anchorHeadingIndex: 1, anchorHeadingText: 'B' },
         }),
-        2,
       ),
     ];
     expect(() => validateVisualPlanDiversity(slots)).toThrow(AiVisualMultiError);
@@ -613,11 +734,9 @@ describe('validateVisualPlanDiversity', () => {
     const slots: VisualPlanSlot[] = [
       validateVisualPlanSlot(
         imageSlot(0, { subject: 'Soggetto uno', rationale: 'Mostra il ciclo dell’acqua' }),
-        2,
       ),
       validateVisualPlanSlot(
         imageSlot(1, { subject: 'Soggetto due', rationale: 'mostra   il ciclo dell’acqua' }),
-        2,
       ),
     ];
     expect(() => validateVisualPlanDiversity(slots)).toThrow(AiVisualMultiError);
@@ -628,15 +747,12 @@ describe('validateVisualPlanDiversity', () => {
     const slots: VisualPlanSlot[] = [
       validateVisualPlanSlot(
         imageSlot(0, { anchor: sameAnchor, subject: 'A', rationale: 'Motivo A' }),
-        2,
       ),
       validateVisualPlanSlot(
         imageSlot(1, { anchor: sameAnchor, subject: 'B', rationale: 'Motivo B' }),
-        2,
       ),
       validateVisualPlanSlot(
         imageSlot(2, { anchor: sameAnchor, subject: 'C', rationale: 'Motivo C' }),
-        2,
       ),
     ];
     expect(() => validateVisualPlanDiversity(slots)).not.toThrow();
@@ -657,11 +773,11 @@ describe('computeVisualPlanTotalReserved', () => {
   });
 });
 
-// ─── Blocker 4 — relazioni interne del VisualPlanRun ───────────────────────────
+// ─── Blocker 4 (round 1) — relazioni interne del VisualPlanRun ────────────────
 
-describe('blocker 4 — relazioni interne complete del piano', () => {
-  it('rifiuta maxAttemptsPerSlot arbitrario (es. 999) anche se attempts resterebbe entro quel tetto', () => {
-    const plan = planOf({ ceiling: 1, slots: [imageSlot(0, { attempts: 500 })] });
+describe('blocker 4 (round 1) — relazioni interne complete del piano', () => {
+  it('rifiuta un piano con maxAttemptsPerSlot diverso da 2 (contratto v1)', () => {
+    const plan = planOf({ ceiling: 1, slots: [imageSlot(0)] });
     (plan.budgetCeiling as Record<string, unknown>).maxAttemptsPerSlot = 999;
     (plan.budgetCeiling as Record<string, unknown>).totalReserved = computeVisualPlanTotalReserved({
       proposalCap: 1,
@@ -708,7 +824,7 @@ describe('blocker 4 — relazioni interne complete del piano', () => {
   it('rifiuta un consuntivo con attempts diverso da quello dello slot', () => {
     const plan = planOf({
       ceiling: 1,
-      slots: [imageSlot(0, { attempts: 1 })],
+      slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
       over: {
         settlement: {
           proposalActualCost: null,
@@ -719,10 +835,10 @@ describe('blocker 4 — relazioni interne complete del piano', () => {
     expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
   });
 
-  it('rifiuta un consuntivo con actualCost non nullo quando attempts è zero', () => {
+  it('rifiuta una voce di consuntivo per uno slot senza tentativi (attempts zero)', () => {
     const plan = planOf({
       ceiling: 1,
-      slots: [imageSlot(0, { attempts: 0 })],
+      slots: [imageSlot(0, { state: 'pending', attempts: 0 })],
       over: {
         settlement: {
           proposalActualCost: null,
@@ -737,7 +853,7 @@ describe('blocker 4 — relazioni interne complete del piano', () => {
     const budgetCeiling = budgetCeilingFor(1);
     const plan = planOf({
       ceiling: 1,
-      slots: [imageSlot(0, { attempts: 1 })],
+      slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
       over: {
         budgetCeiling,
         settlement: {
@@ -753,7 +869,7 @@ describe('blocker 4 — relazioni interne complete del piano', () => {
     const budgetCeiling = budgetCeilingFor(1);
     const plan = planOf({
       ceiling: 1,
-      slots: [imageSlot(0, { attempts: 1 })],
+      slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
       over: {
         budgetCeiling,
         settlement: {
@@ -772,7 +888,7 @@ describe('blocker 4 — relazioni interne complete del piano', () => {
       over: {
         settlement: {
           proposalActualCost: null,
-          slots: [{ slotIndex: 5, attempts: 0, actualCost: null }],
+          slots: [{ slotIndex: 5, attempts: 1, actualCost: null }],
         },
       },
     });
@@ -810,105 +926,195 @@ describe('blocker 4 — relazioni interne complete del piano', () => {
     (plan.budgetCeiling as Record<string, unknown>).totalReserved = 999;
     expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
   });
+});
 
-  describe('status derivato dagli stati degli slot (§8.7)', () => {
-    it('rifiuta status "completed" con uno slot ancora "pending"', () => {
-      const plan = planOf({
-        ceiling: 1,
-        slots: [imageSlot(0, { state: 'pending' })],
-        over: { status: 'completed' },
-      });
-      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
-    });
+// ─── Blocker 1 (round 2) — status derivato, failed terminale solo a tetto ─────
 
-    it('accetta status "completed" quando ogni slot immagine è promosso', () => {
-      const assetId = '11111111-2222-4333-8444-555555555555';
-      const plan = planOf({
-        ceiling: 1,
-        slots: [imageSlot(0, { state: 'promoted', promotedAssetId: assetId })],
-        over: {
-          status: 'completed',
-          settlement: {
-            proposalActualCost: null,
-            slots: [{ slotIndex: 0, attempts: 0, actualCost: null }],
-          },
-        },
-      });
-      expect(() => validateVisualPlanRun(plan)).not.toThrow();
+describe('blocker 1 (round 2) — status del piano derivato correttamente dagli slot (§8.7)', () => {
+  it('rifiuta status "completed" con uno slot ancora "pending"', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'pending' })],
+      over: { status: 'completed' },
     });
-
-    it('rifiuta status "partially_completed" senza alcuno slot promosso', () => {
-      const plan = planOf({
-        ceiling: 2,
-        slots: [imageSlot(0, { state: 'failed', lastError: 'transient_error' }), noneSlot(1)],
-        over: { status: 'partially_completed' },
-      });
-      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
-    });
-
-    it('accetta status "partially_completed" con un misto promosso/non promosso', () => {
-      const assetId = '11111111-2222-4333-8444-555555555555';
-      const plan = planOf({
-        ceiling: 2,
-        slots: [
-          imageSlot(0, { state: 'promoted', promotedAssetId: assetId }),
-          imageSlot(1, { state: 'failed', lastError: 'transient_error' }),
-        ],
-        over: { status: 'partially_completed' },
-      });
-      expect(() => validateVisualPlanRun(plan)).not.toThrow();
-    });
-
-    it('rifiuta status "abandoned" con uno slot promosso', () => {
-      const assetId = '11111111-2222-4333-8444-555555555555';
-      const plan = planOf({
-        ceiling: 1,
-        slots: [imageSlot(0, { state: 'promoted', promotedAssetId: assetId })],
-        over: { status: 'abandoned' },
-      });
-      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
-    });
-
-    it('accetta status "abandoned" quando nessuno slot immagine è promosso', () => {
-      const plan = planOf({
-        ceiling: 1,
-        slots: [imageSlot(0, { state: 'abandoned' })],
-        over: { status: 'abandoned' },
-      });
-      expect(() => validateVisualPlanRun(plan)).not.toThrow();
-    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
   });
 
-  describe('ordine e TTL dei timestamp', () => {
-    it('rifiuta updatedAt precedente a createdAt', () => {
-      const plan = planOf({
-        ceiling: 1,
-        slots: [noneSlot(0)],
-        over: { updatedAt: { toMillis: () => CREATED_AT_MS - 1 } },
-      });
-      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  it('accetta status "completed" quando ogni slot immagine è promosso', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'promoted', attempts: 1, promotedAssetId: ASSET_ID })],
+      over: { status: 'completed' },
     });
+    expect(() => validateVisualPlanRun(plan)).not.toThrow();
+  });
 
-    it('rifiuta expireAt diverso da createdAt + TTL 24h', () => {
-      const plan = planOf({
-        ceiling: 1,
-        slots: [noneSlot(0)],
-        over: { expireAt: { toMillis: () => CREATED_AT_MS + VISUAL_STAGING_TTL_MS - 1 } },
-      });
-      expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
-    });
+  it('rifiuta status "completed" con zero slot immagine (solo "none")', () => {
+    const plan = planOf({ ceiling: 1, slots: [noneSlot(0)], over: { status: 'completed' } });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
 
-    it('accetta expireAt esattamente createdAt + TTL 24h', () => {
-      expect(() =>
-        validateVisualPlanRun(planOf({ ceiling: 1, slots: [noneSlot(0)] })),
-      ).not.toThrow();
+  it('accetta status "abandoned" con zero slot immagine (solo "none")', () => {
+    const plan = planOf({ ceiling: 1, slots: [noneSlot(0)], over: { status: 'abandoned' } });
+    expect(() => validateVisualPlanRun(plan)).not.toThrow();
+  });
+
+  it('rifiuta status "partially_completed"/"abandoned" con uno slot "failed" ad attempts 0 (non terminale)', () => {
+    const plan = planOf({
+      ceiling: 2,
+      slots: [
+        imageSlot(0, { state: 'failed', lastError: 'transient_error', attempts: 0 }),
+        noneSlot(1),
+      ],
+      over: { status: 'abandoned' },
     });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('rifiuta status "partially_completed"/"abandoned" con uno slot "failed" ad attempts 1 (non terminale)', () => {
+    const plan = planOf({
+      ceiling: 2,
+      slots: [
+        imageSlot(0, { state: 'failed', lastError: 'transient_error', attempts: 1 }),
+        noneSlot(1),
+      ],
+      over: { status: 'abandoned' },
+    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('rifiuta status "partially_completed" senza alcuno slot promosso (con failed terminale)', () => {
+    const plan = planOf({
+      ceiling: 2,
+      slots: [
+        imageSlot(0, { state: 'failed', lastError: 'transient_error', attempts: 2 }),
+        noneSlot(1),
+      ],
+      over: { status: 'partially_completed' },
+    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('accetta status "partially_completed" con un misto promosso/non promosso, entrambi terminali', () => {
+    const plan = planOf({
+      ceiling: 2,
+      slots: [
+        imageSlot(0, { state: 'promoted', attempts: 1, promotedAssetId: ASSET_ID }),
+        imageSlot(1, { state: 'failed', lastError: 'transient_error', attempts: 2 }),
+      ],
+      over: { status: 'partially_completed' },
+    });
+    expect(() => validateVisualPlanRun(plan)).not.toThrow();
+  });
+
+  it('rifiuta status "abandoned" con uno slot promosso', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'promoted', attempts: 1, promotedAssetId: ASSET_ID })],
+      over: { status: 'abandoned' },
+    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('accetta status "abandoned" quando nessuno slot immagine è promosso', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'abandoned', attempts: 0 })],
+      over: { status: 'abandoned' },
+    });
+    expect(() => validateVisualPlanRun(plan)).not.toThrow();
+  });
+
+  it('rifiuta status "expired" quando ogni slot è già terminale', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'promoted', attempts: 1, promotedAssetId: ASSET_ID })],
+      over: { status: 'expired', updatedAt: { toMillis: () => EXPIRE_AT_MS } },
+    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('accetta status "expired" quando almeno uno slot resta non terminale', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
+      over: { status: 'expired', updatedAt: { toMillis: () => EXPIRE_AT_MS } },
+    });
+    expect(() => validateVisualPlanRun(plan)).not.toThrow();
   });
 });
 
-// ─── Blocker 5 — tassonomia d'errore alla lettura di un piano persistito ──────
+// ─── Blocker 3 (round 2) — ordine dei timestamp specifico per "expired" ───────
 
-describe('blocker 5 — corrupted_state per qualunque errore annidato in validateVisualPlanRun', () => {
+describe('blocker 3 (round 2) — ordine dei timestamp e "expired"', () => {
+  function expiredPlanWithUpdatedAt(updatedAtMs: number) {
+    return planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
+      over: { status: 'expired', updatedAt: { toMillis: () => updatedAtMs } },
+    });
+  }
+
+  it('rifiuta "expired" con updatedAt precedente a expireAt', () => {
+    expect(() => validateVisualPlanRun(expiredPlanWithUpdatedAt(EXPIRE_AT_MS - 1))).toThrow(
+      AiVisualMultiError,
+    );
+  });
+
+  it('accetta "expired" con updatedAt esattamente uguale a expireAt', () => {
+    expect(() => validateVisualPlanRun(expiredPlanWithUpdatedAt(EXPIRE_AT_MS))).not.toThrow();
+  });
+
+  it('accetta "expired" con updatedAt successivo a expireAt', () => {
+    expect(() => validateVisualPlanRun(expiredPlanWithUpdatedAt(EXPIRE_AT_MS + 1))).not.toThrow();
+  });
+
+  it('rifiuta uno status non-expired con updatedAt successivo a expireAt', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [noneSlot(0)],
+      over: { status: 'awaiting_review', updatedAt: { toMillis: () => EXPIRE_AT_MS + 1 } },
+    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('rifiuta updatedAt precedente a createdAt (status non-expired)', () => {
+    const plan = planOf({
+      ceiling: 1,
+      slots: [noneSlot(0)],
+      over: { updatedAt: { toMillis: () => CREATED_AT_MS - 1 } },
+    });
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('rifiuta expireAt diverso da createdAt + TTL 24h, in ogni status', () => {
+    const nonExpired = planOf({
+      ceiling: 1,
+      slots: [noneSlot(0)],
+      over: { expireAt: { toMillis: () => EXPIRE_AT_MS - 1 } },
+    });
+    expect(() => validateVisualPlanRun(nonExpired)).toThrow(AiVisualMultiError);
+
+    const expired = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
+      over: {
+        status: 'expired',
+        expireAt: { toMillis: () => EXPIRE_AT_MS - 1 },
+        updatedAt: { toMillis: () => EXPIRE_AT_MS },
+      },
+    });
+    expect(() => validateVisualPlanRun(expired)).toThrow(AiVisualMultiError);
+  });
+
+  it('accetta expireAt esattamente createdAt + TTL 24h (status non-expired)', () => {
+    expect(() => validateVisualPlanRun(planOf({ ceiling: 1, slots: [noneSlot(0)] }))).not.toThrow();
+  });
+});
+
+// ─── Blocker 5 (round 1) — tassonomia d'errore alla lettura di un piano ───────
+
+describe('blocker 5 (round 1) — corrupted_state per qualunque errore annidato in validateVisualPlanRun', () => {
   it('ancora malformata in uno slot ⇒ corrupted_state, non invalid_input', () => {
     const plan = planOf({
       ceiling: 1,
@@ -973,8 +1179,8 @@ describe('blocker 5 — corrupted_state per qualunque errore annidato in validat
 
   it('validateVisualPlanDiversity resta provider_invalid_output — non è chiamata da validateVisualPlanRun', () => {
     const slots: VisualPlanSlot[] = [
-      validateVisualPlanSlot(imageSlot(0, { subject: 'Stesso soggetto' }), 2),
-      validateVisualPlanSlot(imageSlot(1, { subject: 'stesso   soggetto' }), 2),
+      validateVisualPlanSlot(imageSlot(0, { subject: 'Stesso soggetto' })),
+      validateVisualPlanSlot(imageSlot(1, { subject: 'stesso   soggetto' })),
     ];
     let thrown: unknown;
     try {
