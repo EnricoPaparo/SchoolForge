@@ -87,7 +87,15 @@ export type AiVisualMultiErrorCode =
   | 'visual_legacy_malformed'
   | 'visual_legacy_conflict'
   | 'provider_invalid_output'
-  | 'visual_promotion_anchor_stale';
+  | 'visual_promotion_anchor_stale'
+  // MULTI-VISUAL-02 — vocabolario proprio della catena binaria dell'upload
+  // (roadmap §9.2, §9.7): distinti dai codici di VE (`AiVisualErrorCode`),
+  // che restano quelli del flusso di generazione, mai riusati qui per non
+  // confondere «byte troppo grandi/formato non ammesso in un upload del
+  // docente» con «byte prodotti da un provider IA».
+  | 'visual_upload_too_large'
+  | 'visual_upload_unsupported_format'
+  | 'visual_upload_conflict';
 
 export class AiVisualMultiError extends Error {
   readonly code: AiVisualMultiErrorCode;

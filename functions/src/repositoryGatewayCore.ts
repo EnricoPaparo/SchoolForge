@@ -326,7 +326,7 @@ export function isStorageNotFound(err: unknown): boolean {
 export interface FileLike {
   download(): Promise<[Uint8Array]>;
   save(data: Uint8Array, options?: unknown): Promise<unknown>;
-  delete(): Promise<unknown>;
+  delete(options?: unknown): Promise<unknown>;
 }
 export interface BucketLike {
   file(path: string): FileLike;

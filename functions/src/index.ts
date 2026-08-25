@@ -25,6 +25,11 @@ export {
   aiVisualReanchor,
   visualRunCleanup,
 } from './aiVisualGateway.js';
+// MULTI-VISUAL-02 — catena binaria dell'upload docente: accettazione owner-
+// only (cap 2 MB, allowlist PNG/JPEG/WebP, normalizzazione Sharp condivisa
+// con VE, staging deterministico), abbandono e cleanup TTL. Zero provider,
+// zero budget IA, zero secret. Nessuna promozione: resta MULTI-VISUAL-03.
+export { aiVisualUploadAccept, aiVisualUploadAbandon } from './aiVisualUploadGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.
