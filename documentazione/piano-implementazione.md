@@ -1265,12 +1265,14 @@ Orchestrazione di sviluppo Codex→Claude→CI→review con GitHub come registro
 durevole. Contratto completo in
 [agent-orchestrator-roadmap.md](agent-orchestrator-roadmap.md); audit iniziale
 in
-[evidenze/agent-orchestrator-00-review.md](evidenze/agent-orchestrator-00-review.md).
+[evidenze/agent-orchestrator-00-review.md](evidenze/agent-orchestrator-00-review.md);
+evidenza dell'adapter in
+[evidenze/agent-orchestrator-01-review.md](evidenze/agent-orchestrator-01-review.md).
 
 | Pacchetto | Sintesi | Dipendenze | Stato |
 |---|---|---|---|
 | ORCHESTRATOR-00 | Ruoli, task manifest chiuso, macchina degli stati, protocollo di review, quote/recovery, sicurezza e pilot. | CI GitHub esistente | **Implementato come contratto.** Nessuna integrazione o chiamata agente. |
-| ORCHESTRATOR-01 | Adapter Claude Code CLI subscription-first, output strutturato, session resume e checkpoint. | ORCHESTRATOR-00 | **Aperto.** |
+| ORCHESTRATOR-01 | Adapter Claude Code CLI subscription-first, output strutturato, session resume e checkpoint. | ORCHESTRATOR-00 | **Implementato.** `tools/agent-orchestrator/` (Node ESM, zero dipendenze): preflight subscription-only, invocazione non interattiva senza flag pericolosi, checkpoint atomico fail-closed, cinque esiti classificati separatamente, resume, CLI `preflight/run/resume/status`. 73 test `node:test` con porte finte; preflight verificato contro Claude Code 2.1.231 autenticato via piano Pro. |
 | ORCHESTRATOR-02 | Registro GitHub, label, commenti di stato e watcher CI event-driven. | ORCHESTRATOR-01 | **Aperto.** |
 | ORCHESTRATOR-03 | Ciclo Codex review→Claude fix, massimo quattro iterazioni, fault injection e arresto fail-closed. | ORCHESTRATOR-02 | **Aperto.** |
 | ORCHESTRATOR-04 | Pilot reale `MULTI-VISUAL-00`, limitato a documentazione e prototipo. | ORCHESTRATOR-03 | **Aperto.** |

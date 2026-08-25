@@ -247,8 +247,10 @@ in attesa. È vietato eseguire Codex e Claude in parallelo sullo stesso task.
 - nessun fallback automatico verso crediti API.
 
 Vantaggi: usa il piano esistente e rispetta i suoi limiti. Limite: richiede il
-PC acceso e un login locale; oggi il comando `claude` non è installato su
-questa macchina.
+PC acceso e un login locale. Claude Code 2.1.231 è installato e autenticato
+con un piano Pro; l'adapter è implementato in `tools/agent-orchestrator/` e il
+preflight subscription-only è stato verificato contro il binario reale (vedi
+[evidenze/agent-orchestrator-01-review.md](evidenze/agent-orchestrator-01-review.md)).
 
 ### ORCH-ALT — Claude GitHub Action
 
@@ -282,7 +284,7 @@ costo monetario per l'uso incluso negli abbonamenti.
 | Pacchetto | Contenuto | Gate |
 |---|---|---|
 | ORCHESTRATOR-00 | Contratto, stati, quota/recovery, sicurezza e pilot. | Review documentale. |
-| ORCHESTRATOR-01 | Adapter Claude CLI subscription-first, parser output e checkpoint. | Simulazione senza modello. |
+| ORCHESTRATOR-01 | Adapter Claude CLI subscription-first, parser output e checkpoint. | Simulazione senza modello. **Implementato in `tools/agent-orchestrator/`, 73 test `node:test` con porte finte e preflight verificato contro Claude Code 2.1.231 autenticato via Pro.** |
 | ORCHESTRATOR-02 | Registro GitHub, label, commenti di stato e CI watcher. | Repository sandbox. |
 | ORCHESTRATOR-03 | Ciclo Codex review → Claude fix con massimo quattro iterazioni. | Fault injection. |
 | ORCHESTRATOR-04 | Pilot reale su `MULTI-VISUAL-00`, solo documentazione/prototipo. | Gate umano UI. |
@@ -319,4 +321,3 @@ prototipo. Il pilot non autorizza implementazione, merge runtime o deploy.
 - Codex App Server e SDK: https://learn.chatgpt.com/docs/app-server
 - Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code/cli-usage
 - Claude Code GitHub Actions: https://code.claude.com/docs/it/github-actions
-
