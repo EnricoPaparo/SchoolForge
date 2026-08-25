@@ -1,13 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { AiVisualMultiError, asRecord, assertExactKeys } from './aiVisualMultiCore.js';
+import {
+  AiVisualMultiError,
+  asRecord,
+  assertExactKeys,
+  computeOpaqueVisualPlanId,
+  isSha256Hex,
+  isUuidV4,
+} from './aiVisualMultiCore.js';
 import {
   assertCanonicalStorageRef,
   assertManifestText,
+  assertProposalField,
   VISUAL_STYLE_VERSION,
 } from './aiContentVisualProposal.js';
 import { canonicalVisualStorageRef } from './aiVisualManifest.js';
+import { sha256Hex, canonicalTuple } from './aiVisualCore.js';
 
 /**
  * MULTI-VISUAL-01 — test strutturale di purezza/no-I/O e non-regressione sul
@@ -41,6 +50,72 @@ describe('purezza strutturale dei moduli MULTI-VISUAL-01', () => {
     const path = fileURLToPath(new URL(`./${fileName}`, import.meta.url));
     const source = readFileSync(path, 'utf8');
     expect(FORBIDDEN_RUNTIME_IMPORT_RE.test(source)).toBe(false);
+  });
+});
+
+/**
+ * Review fix (blocker 1) — test strutturale che impedisce la reintroduzione
+ * delle regex UUID/SHA-256 duplicate: `aiVisualMultiManifest.ts` e
+ * `aiVisualMultiPlan.ts` devono importarle da `aiVisualMultiCore.ts`, mai
+ * ridichiararle localmente. Un futuro `const UUID_V4_RE = /…/` in uno dei due
+ * file fa fallire questo test.
+ */
+describe('blocker 1 — nessuna regex UUID/SHA-256 duplicata nei moduli MULTI-VISUAL', () => {
+  const FILES_THAT_MUST_NOT_DECLARE_LOCALLY = ['aiVisualMultiManifest.ts', 'aiVisualMultiPlan.ts'];
+  const LOCAL_REDECLARATION_RE = /\b(?:const|let)\s+(?:UUID_V4_RE|SHA256_HEX_RE)\s*=/;
+
+  it.each(FILES_THAT_MUST_NOT_DECLARE_LOCALLY)(
+    '%s non ridichiara UUID_V4_RE/SHA256_HEX_RE',
+    (fileName) => {
+      const path = fileURLToPath(new URL(`./${fileName}`, import.meta.url));
+      const source = readFileSync(path, 'utf8');
+      expect(LOCAL_REDECLARATION_RE.test(source)).toBe(false);
+    },
+  );
+
+  it('aiVisualMultiCore.ts resta l’unica definizione', () => {
+    const path = fileURLToPath(new URL('./aiVisualMultiCore.ts', import.meta.url));
+    const source = readFileSync(path, 'utf8');
+    expect(/export const UUID_V4_RE\s*=/.test(source)).toBe(true);
+    expect(/export const SHA256_HEX_RE\s*=/.test(source)).toBe(true);
+  });
+});
+
+describe('isUuidV4 / isSha256Hex', () => {
+  it('accettano la forma canonica minuscola', () => {
+    expect(isUuidV4('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')).toBe(true);
+    expect(isSha256Hex('a'.repeat(64))).toBe(true);
+  });
+
+  it('rifiutano la forma maiuscola (nessuna coercizione di case)', () => {
+    expect(isUuidV4('AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE')).toBe(false);
+    expect(isSha256Hex('A'.repeat(64))).toBe(false);
+  });
+
+  it('rifiutano valori non stringa', () => {
+    expect(isUuidV4(123)).toBe(false);
+    expect(isSha256Hex(null)).toBe(false);
+  });
+});
+
+describe('computeOpaqueVisualPlanId (roadmap §10.1)', () => {
+  it("è la tupla canonica ['visual-plan/v1', ownerUid, requestId] sotto SHA-256", () => {
+    const ownerUid = 'owner-uid';
+    const requestId = '11111111-2222-4333-8444-555555555555';
+    const expected = sha256Hex(canonicalTuple(['visual-plan/v1', ownerUid, requestId]));
+    expect(computeOpaqueVisualPlanId(ownerUid, requestId)).toBe(expected);
+  });
+
+  it('è deterministico: stessa coppia ⇒ stesso id', () => {
+    const a = computeOpaqueVisualPlanId('owner-uid', '11111111-2222-4333-8444-555555555555');
+    const b = computeOpaqueVisualPlanId('owner-uid', '11111111-2222-4333-8444-555555555555');
+    expect(a).toBe(b);
+  });
+
+  it('owner o requestId diversi producono id diversi', () => {
+    const a = computeOpaqueVisualPlanId('owner-uid-1', '11111111-2222-4333-8444-555555555555');
+    const b = computeOpaqueVisualPlanId('owner-uid-2', '11111111-2222-4333-8444-555555555555');
+    expect(a).not.toBe(b);
   });
 });
 
@@ -80,6 +155,14 @@ describe('non-regressione sul flusso visual singolo', () => {
 
   it('VISUAL_STYLE_VERSION resta "schoolforge-sketch/v1", invariata', () => {
     expect(VISUAL_STYLE_VERSION).toBe('schoolforge-sketch/v1');
+  });
+
+  it('assertProposalField (ora esportata) accetta ancora testo canonico', () => {
+    expect(assertProposalField('Testo valido.', 'Campo', 500)).toBe('Testo valido.');
+  });
+
+  it('assertProposalField (ora esportata) rifiuta ancora un blocco di codice (fence)', () => {
+    expect(() => assertProposalField('```codice```', 'Campo', 500)).toThrow();
   });
 });
 

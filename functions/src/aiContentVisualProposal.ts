@@ -183,7 +183,14 @@ export function inspectVisualAuthorizedLabels(subject: string): VisualAuthorized
  * canonico viene rifiutato, non aggiustato. Un campo corretto in silenzio non
  * è più né ciò che il modello ha prodotto né ciò che il docente approverà.
  */
-function assertProposalField(value: unknown, label: string, maxChars: number): string {
+/**
+ * Esportata per MULTI-VISUAL-01: i campi editoriali di uno slot del piano
+ * (`subject`/`rationale`/`caption`/`altText`, §8.3) sono testo di **proposta**
+ * — non ancora il manifest finale — e seguono questa stessa disciplina
+ * (fence Markdown incluso), non quella più permissiva di `assertManifestText`.
+ * Comportamento invariato: solo la visibilità del simbolo cambia.
+ */
+export function assertProposalField(value: unknown, label: string, maxChars: number): string {
   if (typeof value !== 'string') {
     invalidOutput(`${label}: valore mancante o non testuale.`);
   }

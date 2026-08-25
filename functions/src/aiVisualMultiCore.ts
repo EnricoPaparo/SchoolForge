@@ -10,8 +10,15 @@
  * importato da lì, mai duplicato: vedi `aiVisualMultiManifest.ts` e
  * `aiVisualMultiAnchor.ts`.
  *
+ * **Review fix (blocker 1).** UUID v4 e SHA-256 esadecimale avevano una
+ * ridefinizione locale in `aiVisualMultiManifest.ts` e in
+ * `aiVisualMultiPlan.ts`. Questo modulo è ora la sola definizione raggiunta
+ * da entrambi — nessun'altra regex privata equivalente nei due file.
+ *
  * Puro: nessuna rete, nessun I/O, nessuna dipendenza Firebase.
  */
+
+import { canonicalTuple, sha256Hex } from './aiVisualCore.js';
 
 // ─── Costanti (roadmap §5.6, §9) ───────────────────────────────────────────────
 
@@ -34,6 +41,35 @@ export const VISUAL_PLAN_CONTRACT_VERSION = 'visual-plan/v1' as const;
 
 /** `styleVersion` di un'immagine caricata dal docente — nessuna verifica di stile. */
 export const UPLOADED_VISUAL_STYLE_VERSION = 'uploaded/v1' as const;
+
+// ─── Identità: UUID v4 e SHA-256 — un'unica definizione (blocker 1) ────────────
+
+export const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+/** Minuscolo, forma canonica: nessuna coercizione di maiuscole in fase di lettura. */
+export function isUuidV4(value: unknown): value is string {
+  return typeof value === 'string' && UUID_V4_RE.test(value);
+}
+
+export function isSha256Hex(value: unknown): value is string {
+  return typeof value === 'string' && SHA256_HEX_RE.test(value);
+}
+
+// ─── Identità del piano (roadmap §10.1) ────────────────────────────────────────
+
+/**
+ * `opaquePlanId`, derivato server-side dalla tupla canonica
+ * `['visual-plan/v1', ownerUid, requestId]` (roadmap §10.1) — stesso schema
+ * di `computeVisualRunId`/`computeVisualBudgetReservationKey` di VE
+ * (`aiVisualCore.ts`), riusato e non reinventato. Determinismo: stessa
+ * coppia ⇒ stesso id, così un `VisualPlanRun` persistito può essere
+ * riconciliato con il percorso di staging che dichiara senza fidarsi del
+ * solo valore scritto nel documento (blocker 3).
+ */
+export function computeOpaqueVisualPlanId(ownerUid: string, requestId: string): string {
+  return sha256Hex(canonicalTuple([VISUAL_PLAN_CONTRACT_VERSION, ownerUid, requestId]));
+}
 
 // ─── Errore tipizzato ───────────────────────────────────────────────────────────
 

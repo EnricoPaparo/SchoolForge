@@ -36,6 +36,8 @@ import {
   AiVisualMultiError,
   asRecord,
   assertExactKeys,
+  isSha256Hex,
+  isUuidV4,
 } from './aiVisualMultiCore.js';
 
 // ─── Forme dati (roadmap §5.1–§5.3) ────────────────────────────────────────────
@@ -98,9 +100,6 @@ const ITEM_KEYS = [
   'approvedAt',
 ] as const;
 
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
-
 function invalid(message: string): never {
   throw new AiVisualMultiError('invalid_input', message);
 }
@@ -126,8 +125,7 @@ export function validateLessonVisualItem(value: unknown): LessonVisualItem {
   assertExactKeys(root, ITEM_KEYS, 'Immagine della lezione');
 
   const assetIdRaw = root.assetId;
-  if (typeof assetIdRaw !== 'string' || !UUID_V4_RE.test(assetIdRaw))
-    invalid('assetId non valido.');
+  if (!isUuidV4(assetIdRaw)) invalid('assetId non valido.');
   const assetId = assetIdRaw;
 
   const storageRef = assertCanonicalStorageRef(root.storageRef, assetId);
@@ -142,7 +140,7 @@ export function validateLessonVisualItem(value: unknown): LessonVisualItem {
   const byteLength = assertPositiveInt(root.byteLength, 'Dimensione', MAX_VISUAL_BYTES);
 
   const sha256 = root.sha256;
-  if (typeof sha256 !== 'string' || !SHA256_HEX_RE.test(sha256)) invalid('sha256 non valido.');
+  if (!isSha256Hex(sha256)) invalid('sha256 non valido.');
   if (root.mimeType !== 'image/webp') invalid('mimeType non ammesso.');
 
   const source = root.source;
@@ -157,7 +155,7 @@ export function validateLessonVisualItem(value: unknown): LessonVisualItem {
   }
 
   const sourceBodyHash = root.sourceBodyHash;
-  if (typeof sourceBodyHash !== 'string' || !SHA256_HEX_RE.test(sourceBodyHash)) {
+  if (!isSha256Hex(sourceBodyHash)) {
     invalid('sourceBodyHash non valido.');
   }
 
@@ -244,7 +242,7 @@ export function validatePublicLessonVisualItem(value: unknown): PublicLessonVisu
   assertExactKeys(root, PUBLIC_VISUAL_ITEM_KEYS, 'Immagine pubblica della lezione');
 
   const assetId = root.assetId;
-  if (typeof assetId !== 'string' || !UUID_V4_RE.test(assetId)) invalid('assetId non valido.');
+  if (!isUuidV4(assetId)) invalid('assetId non valido.');
 
   const width = assertPositiveInt(root.width, 'Larghezza', MAX_VISUAL_LONG_EDGE);
   const height = assertPositiveInt(root.height, 'Altezza', MAX_VISUAL_LONG_EDGE);
