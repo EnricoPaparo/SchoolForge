@@ -1256,3 +1256,22 @@ profilo `economy`; import di immagini da ZIP.
 > è testuale per contratto è un unico problema con un'unica superficie di
 > rischio; spezzarlo a metà consegnerebbe VE-02 con un percorso binario non
 > verificabile end-to-end. Il resto della suddivisione resta invariato.
+
+---
+
+## Appendice G — AGENT-ORCHESTRATOR
+
+Orchestrazione di sviluppo Codex→Claude→CI→review con GitHub come registro
+durevole. Contratto completo in
+[agent-orchestrator-roadmap.md](agent-orchestrator-roadmap.md); audit iniziale
+in
+[evidenze/agent-orchestrator-00-review.md](evidenze/agent-orchestrator-00-review.md).
+
+| Pacchetto | Sintesi | Dipendenze | Stato |
+|---|---|---|---|
+| ORCHESTRATOR-00 | Ruoli, task manifest chiuso, macchina degli stati, protocollo di review, quote/recovery, sicurezza e pilot. | CI GitHub esistente | **Implementato come contratto.** Nessuna integrazione o chiamata agente. |
+| ORCHESTRATOR-01 | Adapter Claude Code CLI subscription-first, output strutturato, session resume e checkpoint. | ORCHESTRATOR-00 | **Aperto.** |
+| ORCHESTRATOR-02 | Registro GitHub, label, commenti di stato e watcher CI event-driven. | ORCHESTRATOR-01 | **Aperto.** |
+| ORCHESTRATOR-03 | Ciclo Codex review→Claude fix, massimo quattro iterazioni, fault injection e arresto fail-closed. | ORCHESTRATOR-02 | **Aperto.** |
+| ORCHESTRATOR-04 | Pilot reale `MULTI-VISUAL-00`, limitato a documentazione e prototipo. | ORCHESTRATOR-03 | **Aperto.** |
+| Gate GORCH | Verifica recovery quote/crash, rispetto scope, qualità review e corretto arresto al gate umano. | ORCHESTRATOR-04 | **PENDING.** |
