@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AiContentError,
+  assertGenericAiContentCallableKind,
   canonicalRequest,
   computeInputHash,
   validateAiContentRequest,
@@ -28,6 +31,17 @@ import {
 } from './aiContentPayload.js';
 import { parseStoredRunDocument, serializeRun } from './aiContentRunDoc.js';
 import { createContentProvider } from './aiContentProvider.js';
+import {
+  AI_CONTENT_LEASE_TTL_MS,
+  generateContent,
+  type AiContentPorts,
+  type StoredAiContentRun,
+} from './aiContentEngine.js';
+import {
+  OPENAI_RUNTIME_LUNA_MODEL,
+  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+} from './aiCorrectionCost.js';
+import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import { DEFAULT_OPENAI_RETRY_POLICY, type OpenAiTransport } from './openAiGrader.js';
 import {
   VISUAL_PLAN_PROPOSAL_ENVELOPE_KEY,
@@ -37,7 +51,6 @@ import {
   validateVisualPlanProposalEnvelope,
   type VisualPlanProposalDecision,
 } from './aiContentVisualPlanProposal.js';
-import type { StoredAiContentRun } from './aiContentEngine.js';
 
 /**
  * MULTI-VISUAL-02 — la proposta coordinata generalizza la proposta visuale
@@ -178,6 +191,44 @@ describe('payload della proposta coordinata', () => {
     expect(() => validateAiContentRequest(planPayload({ lessonBody: '   ' }))).toThrow(
       AiContentError,
     );
+  });
+});
+
+describe('confine delle callable generiche', () => {
+  it('rifiuta il kind interno senza rimuoverlo dal validator/engine', () => {
+    const request = planRequest();
+    expect(request.kind).toBe('visual_plan_proposal');
+    expect(() => assertGenericAiContentCallableKind(request)).toThrow(
+      expect.objectContaining({ code: 'invalid_input' }),
+    );
+  });
+
+  it('blocca preview e generate prima di config, budget, provider o scritture', () => {
+    const source = readFileSync(new URL('./aiContentGateway.ts', import.meta.url), 'utf8');
+    for (const [startMarker, endMarker] of [
+      ['export const aiContentPreview', 'export const aiContentGenerate'],
+      ['export const aiContentGenerate', null],
+    ] as const) {
+      const start = source.indexOf(startMarker);
+      const end = endMarker ? source.indexOf(endMarker, start + startMarker.length) : source.length;
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      const block = source.slice(start, end);
+      const validation = block.indexOf('validateAiContentRequest(request.data)');
+      const guard = block.indexOf('assertGenericAiContentCallableKind(validated)');
+      expect(validation).toBeGreaterThanOrEqual(0);
+      expect(guard).toBeGreaterThan(validation);
+      for (const effect of [
+        'loadRuntimeConfig(database)',
+        'readOpenAiSecret()',
+        'createPorts(',
+        'previewContent(',
+        'generateContent(',
+      ]) {
+        const position = block.indexOf(effect);
+        if (position >= 0) expect(guard).toBeLessThan(position);
+      }
+    }
   });
 });
 
@@ -542,7 +593,7 @@ describe('documento run', () => {
     model: 'gpt-5.6-luna',
     priceListVersion: 'v5-2026-07-20-luna-dev',
     estimatedInputTokens: 100,
-    maxOutputTokens: 3_000,
+    maxOutputTokens: 9_000,
     actualInputTokens: 100,
     actualOutputTokens: 200,
     estimatedCostMicroUsd: 10,
@@ -587,6 +638,120 @@ describe('documento run', () => {
     expect(parseStoredRunDocument(storedRun(output))).toBeNull();
   });
 
+  it('lega la cardinalità al ceiling codificato nel tetto token del run', () => {
+    const twoDecisions = { decisions: [noneDecision(), imageDecision()] };
+    expect(
+      parseStoredRunDocument({
+        ...storedRun(twoDecisions),
+        maxOutputTokens: 3_000,
+      }),
+    ).toBeNull();
+    expect(
+      parseStoredRunDocument({
+        ...storedRun(twoDecisions),
+        maxOutputTokens: 6_000,
+      }),
+    ).not.toBeNull();
+    expect(
+      parseStoredRunDocument({
+        ...storedRun({ decisions: [] }),
+        maxOutputTokens: 4_500,
+      }),
+    ).toBeNull();
+  });
+
+  it('rifiuta in lettura subject o rationale duplicati dopo normalizzazione', () => {
+    const first = imageDecision();
+    const duplicateSubject = secondDistinctImageDecision({
+      subject: '  SCHEMA   DEL BILANCIO IDRICO CON PRECIPITAZIONE E RUSCELLAMENTO SU UN RILIEVO  ',
+    });
+    const duplicateRationale = secondDistinctImageDecision({
+      rationale:
+        '  MOSTRA IN UN COLPO D’OCCHIO LA RELAZIONE SPAZIALE CHE IL TESTO DESCRIVE A PAROLE. ',
+    });
+    expect(parseStoredRunDocument(storedRun({ decisions: [first, duplicateSubject] }))).toBeNull();
+    expect(
+      parseStoredRunDocument(storedRun({ decisions: [first, duplicateRationale] })),
+    ).toBeNull();
+  });
+
+  it('il replay riapplica ceiling e diversità prima di restituire l’output', async () => {
+    const callProvider = vi.fn();
+    const config: AiRuntimeConfig = {
+      enabled: true,
+      provider: 'openai',
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      environment: 'dev',
+      limits: {
+        maxSubmissionsPerOperation: 30,
+        maxOpenQuestionsPerSubmission: 20,
+        maxEstimatedTokensPerSubmission: 10_000,
+        maxEstimatedTokensPerOperation: 300_000,
+        maxProviderConcurrency: 3,
+        attemptTimeoutMs: 60_000,
+        maxApplicationRetries: 1,
+      },
+      maxOperationCostMicroUsd: 250_000,
+      dailyBudgetMicroUsd: 1_000_000,
+      monthlyBudgetMicroUsd: 5_000_000,
+      configVersion: 'test',
+      priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    };
+    const unused = async () => {
+      throw new Error('I/O inatteso dopo il replay.');
+    };
+    const cases = [
+      {
+        request: planRequest({ quantity: { mode: 'exact', requested: 1, ceiling: 1 } }),
+        output: { decisions: [imageDecision(), secondDistinctImageDecision()] },
+      },
+      {
+        request: planRequest({ quantity: { mode: 'exact', requested: 2, ceiling: 2 } }),
+        output: {
+          decisions: [
+            imageDecision(),
+            secondDistinctImageDecision({
+              subject:
+                ' SCHEMA DEL BILANCIO IDRICO CON PRECIPITAZIONE E RUSCELLAMENTO SU UN RILIEVO ',
+            }),
+          ],
+        },
+      },
+    ];
+    for (const { request, output } of cases) {
+      const invalidReplayRun: StoredAiContentRun = {
+        ...SAMPLE_RUN,
+        inputHash: computeInputHash(request),
+        maxOutputTokens: request.quantity.ceiling * 3_000,
+        output,
+      };
+      const ports: AiContentPorts = {
+        loadRuntimeConfig: async () => config,
+        readAvailableBudgetMicroUsd: unused,
+        loadRun: unused,
+        reserveRunAndBudget: async () => ({ kind: 'replay_completed', run: invalidReplayRun }),
+        markProviderPending: unused,
+        callProvider,
+        finalizeRun: unused,
+        failRun: unused,
+      } as AiContentPorts;
+      await expect(
+        generateContent(
+          request,
+          {
+            authenticatedOwnerUid: 'owner-1',
+            nowMs: 1_000,
+            executionId: 'exec-1',
+            mode: 'mock',
+            leaseMs: AI_CONTENT_LEASE_TTL_MS,
+          },
+          ports,
+        ),
+      ).rejects.toMatchObject({ code: 'provider_invalid_output' });
+    }
+    expect(callProvider).not.toHaveBeenCalled();
+  });
+
   it('rifiuta un elemento non canonico che prima sarebbe passato', () => {
     expect(parseStoredRunDocument(storedRun({ decisions: [{ decision: 'none' }] }))).toBeNull();
   });
@@ -604,6 +769,15 @@ describe('documento run', () => {
 describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', () => {
   const POOL_INPUT_HASH = '0938486c38232b6c997e4bb365bbaa8764dddedeb4de58db5e1a2f9fa528967f';
   const LESSON_INPUT_HASH = '2c0dacd58d9ed5304fd964ed973e8c21a370824ef973ab367ed79ba64485798f';
+  const CONCEPT_MAP_INPUT_HASH = '9448ae62cfe2d0bf931782da100023dc19b2a03baec844dbfb5d16401d1effc0';
+  const VISUAL_PROPOSAL_INPUT_HASH =
+    'ac06611e2358280f483b44ad1cce3df8825a14f59e0cddb753d4f073c686f2e8';
+  const STRUCTURED_REQUEST_SHA256 = {
+    pool: 'c9e5c6d6178b5ecb24eee81f0bf571d9f1412f1652defcbd3755cbdf9ab994f8',
+    lesson: 'e7e1bd0157eb72c13381f887a085e95906288ff33dcb6222b7f5e09dfc3a62b0',
+    concept_map: '08dfe67c9c308a8e37fdbcb3bdf7e41041f33e2ebd960f7aa23ffc9bcbf8a6be',
+    visual_proposal: 'f87bdcf4b57ce832e1087d72fed862e5cec5c6538a457f0b994f8af3f4d6e0c4',
+  } as const;
 
   function poolRequest(): AiContentRequest {
     return validateAiContentRequest({
@@ -676,9 +850,11 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     });
   }
 
-  it('l’inputHash congelato di pool e lezione è invariato', () => {
+  it('gli inputHash congelati su main 5171859 dei quattro kind sono invariati', () => {
     expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
     expect(computeInputHash(lessonRequest())).toBe(LESSON_INPUT_HASH);
+    expect(computeInputHash(conceptMapRequest())).toBe(CONCEPT_MAP_INPUT_HASH);
+    expect(computeInputHash(visualProposalRequest())).toBe(VISUAL_PROPOSAL_INPUT_HASH);
   });
 
   it('la forma canonica dei quattro kind non contiene traccia del nuovo', () => {
@@ -695,7 +871,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     }
   });
 
-  it('prompt, schema e tetto di output dei quattro kind sono byte-identici', () => {
+  it('prompt, schema e tetto di output dei quattro kind sono byte-identici a main 5171859', () => {
     const snapshots = {
       pool: JSON.stringify(buildContentStructuredRequest(poolRequest(), 'gpt-5.6-luna')),
       lesson: JSON.stringify(buildContentStructuredRequest(lessonRequest(), 'gpt-5.6-luna')),
@@ -707,6 +883,10 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
       ),
     };
     for (const [kind, snapshot] of Object.entries(snapshots)) {
+      const digest = createHash('sha256').update(snapshot, 'utf8').digest('hex');
+      expect(digest).toBe(
+        STRUCTURED_REQUEST_SHA256[kind as keyof typeof STRUCTURED_REQUEST_SHA256],
+      );
       expect(snapshot).not.toContain('visual_plan_proposal');
       expect(snapshot).not.toContain('"decisions"');
       expect(snapshot).not.toContain(AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION);

@@ -196,6 +196,16 @@ export function assertVisualPlanProposalMatchesRequest(
       throw error;
     }
   }
+  assertVisualPlanProposalDiversity(decisions);
+  return [...decisions];
+}
+
+/**
+ * Vincolo relazionale self-contained dell'array. A differenza dell'ancora,
+ * non dipende dal corpo della richiesta e deve quindi essere riapplicato anche
+ * quando un output persistito viene letto per il replay.
+ */
+function assertVisualPlanProposalDiversity(decisions: readonly VisualPlanProposalDecision[]): void {
   try {
     checkVisualDecisionDiversity(
       decisions.map((decision) =>
@@ -210,7 +220,6 @@ export function assertVisualPlanProposalMatchesRequest(
     }
     throw error;
   }
-  return [...decisions];
 }
 
 /**
@@ -229,25 +238,31 @@ export function assertVisualPlanProposalMatchesRequest(
  */
 export function validateStoredVisualPlanProposalOutput(
   output: unknown,
+  ceiling: 1 | 2 | 3 = MAX_VISUALS_PER_LESSON,
 ): VisualPlanProposalDecision[] {
   const root = asObject(output, 'Struttura della proposta coordinata non valida.');
   const raw = root.decisions;
   if (!Array.isArray(raw)) {
     invalidOutput('decisions non è un array.');
   }
-  if (raw.length > MAX_VISUALS_PER_LESSON) {
-    invalidOutput('La proposta coordinata eccede il tetto assoluto di tre immagini.');
+  if (raw.length > ceiling) {
+    invalidOutput('La proposta coordinata eccede il tetto autorizzato.');
   }
   if (Object.keys(root).length !== 1) {
     invalidOutput('La proposta coordinata persistita contiene campi non ammessi.');
   }
-  return raw.map((item: unknown) => validateVisualPlanProposalDecision(item));
+  const decisions = raw.map((item: unknown) => validateVisualPlanProposalDecision(item));
+  assertVisualPlanProposalDiversity(decisions);
+  return decisions;
 }
 
 /** Predicato senza eccezioni, per i parser fail-closed che restituiscono `null`. */
-export function isValidStoredVisualPlanProposalOutput(output: unknown): boolean {
+export function isValidStoredVisualPlanProposalOutput(
+  output: unknown,
+  ceiling: 1 | 2 | 3 = MAX_VISUALS_PER_LESSON,
+): boolean {
   try {
-    validateStoredVisualPlanProposalOutput(output);
+    validateStoredVisualPlanProposalOutput(output, ceiling);
     return true;
   } catch {
     return false;

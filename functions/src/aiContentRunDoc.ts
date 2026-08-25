@@ -20,6 +20,7 @@ import {
 import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
 import { isValidStoredVisualProposalOutput } from './aiContentVisualProposal.js';
 import { isValidStoredVisualPlanProposalOutput } from './aiContentVisualPlanProposal.js';
+import { VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT } from './aiContentPayload.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
 const RUN_KINDS = new Set([
@@ -80,7 +81,11 @@ const tsToMillis = timestampToMillis;
  * (completed richiede output oggetto non nullo). Legacy/malformato/incoerente ⇒
  * `null`.
  */
-function isCoherentCompletedOutput(kind: StoredAiContentRun['kind'], output: unknown): boolean {
+function isCoherentCompletedOutput(
+  kind: StoredAiContentRun['kind'],
+  output: unknown,
+  maxOutputTokens: number,
+): boolean {
   if (typeof output !== 'object' || output === null || Array.isArray(output)) return false;
   const o = output as Record<string, unknown>;
   if (kind === 'lesson') {
@@ -101,7 +106,11 @@ function isCoherentCompletedOutput(kind: StoredAiContentRun['kind'], output: unk
   if (kind === 'visual_proposal') return isValidStoredVisualProposalOutput(o);
   // MULTI-VISUAL-02 — un run `visual_plan_proposal` completato deve portare
   // un array valido di decisioni (0..3), avvolto in `{ decisions }`.
-  if (kind === 'visual_plan_proposal') return isValidStoredVisualPlanProposalOutput(o);
+  if (kind === 'visual_plan_proposal') {
+    const ceiling = maxOutputTokens / VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT;
+    if (ceiling !== 1 && ceiling !== 2 && ceiling !== 3) return false;
+    return isValidStoredVisualPlanProposalOutput(o, ceiling);
+  }
   // kind === 'pool'
   if ('body' in o || 'conceptMapMarkdown' in o) return false;
   return Array.isArray(o.questions) && o.questions.length > 0;
@@ -148,7 +157,12 @@ export function parseStoredRunDocument(data: unknown): StoredAiContentRun | null
   // Coerenza output↔stato↔kind (AIGEN-01-REVIEW-FIX-2 §5): un run `completed` deve
   // avere un output **chiuso e coerente col kind**, altrimenti è rifiutato (mai
   // replay di output non validato). `running`/`failed` non vincolano l'output.
-  if (status === 'completed' && !isCoherentCompletedOutput(kind, output)) return null;
+  if (
+    status === 'completed' &&
+    !isCoherentCompletedOutput(kind, output, d.maxOutputTokens as number)
+  ) {
+    return null;
+  }
   return {
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
     kind,

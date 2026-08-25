@@ -347,6 +347,25 @@ export type AiContentRequest =
   | VisualProposalRequest
   | VisualPlanProposalRequest;
 
+/**
+ * Confine delle due callable generiche `aiContentPreview`/`aiContentGenerate`.
+ *
+ * `visual_plan_proposal` è un primitivo interno: MULTI-VISUAL-03 lo invocherà
+ * soltanto dopo avere letto il corpo autorevole, creato il piano e prenotato il
+ * budget coordinato. Lasciarlo raggiungibile dalla callable generica
+ * permetterebbe al client di saltare quell'autorizzazione usando un
+ * `lessonBody` scelto dal client. Il validator generale continua invece ad
+ * accettarlo, perché engine/provider devono poterlo usare internamente.
+ */
+export function assertGenericAiContentCallableKind(request: AiContentRequest): void {
+  if (request.kind === 'visual_plan_proposal') {
+    throw new AiContentError(
+      'invalid_input',
+      'La proposta visuale coordinata richiede un piano autorizzato server-side.',
+    );
+  }
+}
+
 // ─── Helpers puri ─────────────────────────────────────────────────────────────
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;

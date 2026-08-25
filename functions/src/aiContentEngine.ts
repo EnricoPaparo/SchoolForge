@@ -30,6 +30,7 @@ import {
 } from './aiContentVisualProposal.js';
 import {
   assertVisualPlanProposalMatchesRequest,
+  validateStoredVisualPlanProposalOutput,
   validateVisualPlanProposalEnvelope,
 } from './aiContentVisualPlanProposal.js';
 import { actualCostMicroUsd, normalizeUsageActual } from './aiCorrectionCost.js';
@@ -360,6 +361,9 @@ export async function generateContent(
   });
 
   if (outcome.kind === 'replay_completed') {
+    if (request.kind === 'visual_plan_proposal') {
+      validateStoredVisualPlanProposalOutput(outcome.run.output, request.quantity.ceiling);
+    }
     return {
       status: 'completed',
       kind: request.kind,
