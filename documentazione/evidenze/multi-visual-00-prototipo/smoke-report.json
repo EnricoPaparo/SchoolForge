@@ -1,0 +1,282 @@
+{
+  "overflowReport": [
+    {
+      "width": 1440,
+      "view": "plan-review",
+      "scrollW": 1425,
+      "innerW": 1440,
+      "overflowX": false
+    },
+    {
+      "width": 1440,
+      "view": "generating",
+      "scrollW": 1425,
+      "innerW": 1440,
+      "overflowX": false
+    },
+    {
+      "width": 1440,
+      "view": "gallery-3",
+      "scrollW": 1425,
+      "innerW": 1440,
+      "overflowX": false
+    },
+    {
+      "width": 1024,
+      "view": "gallery-2",
+      "scrollW": 1009,
+      "innerW": 1024,
+      "overflowX": false
+    },
+    {
+      "width": 1024,
+      "view": "slot-failed",
+      "scrollW": 1009,
+      "innerW": 1024,
+      "overflowX": false
+    },
+    {
+      "width": 390,
+      "view": "quantity",
+      "scrollW": 390,
+      "innerW": 390,
+      "overflowX": false
+    },
+    {
+      "width": 390,
+      "view": "upload",
+      "scrollW": 390,
+      "innerW": 390,
+      "overflowX": false
+    },
+    {
+      "width": 390,
+      "view": "recovery",
+      "scrollW": 390,
+      "innerW": 390,
+      "overflowX": false
+    },
+    {
+      "width": 320,
+      "view": "authorize",
+      "scrollW": 320,
+      "innerW": 320,
+      "overflowX": false
+    },
+    {
+      "width": 320,
+      "view": "gallery-1",
+      "scrollW": 320,
+      "innerW": 320,
+      "overflowX": false
+    },
+    {
+      "width": 320,
+      "view": "lesson-gen-step",
+      "scrollW": 320,
+      "innerW": 320,
+      "overflowX": false
+    }
+  ],
+  "targetSizeReport": [
+    {
+      "width": 1440,
+      "view": "plan-review",
+      "total": 7,
+      "violationCount": 0
+    },
+    {
+      "width": 1440,
+      "view": "generating",
+      "total": 1,
+      "violationCount": 0
+    },
+    {
+      "width": 1440,
+      "view": "gallery-3",
+      "total": 11,
+      "violationCount": 0
+    },
+    {
+      "width": 1024,
+      "view": "gallery-2",
+      "total": 8,
+      "violationCount": 0
+    },
+    {
+      "width": 1024,
+      "view": "slot-failed",
+      "total": 2,
+      "violationCount": 0
+    },
+    {
+      "width": 390,
+      "view": "quantity",
+      "total": 6,
+      "violationCount": 0
+    },
+    {
+      "width": 390,
+      "view": "upload",
+      "total": 5,
+      "violationCount": 0
+    },
+    {
+      "width": 390,
+      "view": "recovery",
+      "total": 1,
+      "violationCount": 0
+    },
+    {
+      "width": 320,
+      "view": "authorize",
+      "total": 2,
+      "violationCount": 0
+    },
+    {
+      "width": 320,
+      "view": "gallery-1",
+      "total": 4,
+      "violationCount": 0
+    },
+    {
+      "width": 320,
+      "view": "lesson-gen-step",
+      "total": 2,
+      "violationCount": 0
+    }
+  ],
+  "allTargetViolations": [],
+  "dialogViewportReport": [
+    {
+      "width": 1440,
+      "view": "plan-review",
+      "dialogWithinViewport": true,
+      "bodyHasInternalScroll": false,
+      "footerReachable": true,
+      "dialogRect": {},
+      "footerRect": {},
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      }
+    },
+    {
+      "width": 1024,
+      "view": "plan-review",
+      "dialogWithinViewport": true,
+      "bodyHasInternalScroll": false,
+      "footerReachable": true,
+      "dialogRect": {},
+      "footerRect": {},
+      "viewport": {
+        "w": 1024,
+        "h": 900
+      }
+    },
+    {
+      "width": 390,
+      "view": "plan-review",
+      "dialogWithinViewport": true,
+      "bodyHasInternalScroll": true,
+      "footerReachable": true,
+      "dialogRect": {},
+      "footerRect": {},
+      "viewport": {
+        "w": 390,
+        "h": 844
+      }
+    },
+    {
+      "width": 320,
+      "view": "plan-review",
+      "dialogWithinViewport": true,
+      "bodyHasInternalScroll": true,
+      "footerReachable": true,
+      "dialogRect": {},
+      "footerRect": {},
+      "viewport": {
+        "w": 320,
+        "h": 720
+      }
+    }
+  ],
+  "frameStabilityReport": [
+    {
+      "width": 1440,
+      "readySlot": {
+        "w": 282.65625,
+        "h": 176.65625
+      },
+      "generatingSlot": {
+        "w": 282.671875,
+        "h": 176.65625
+      },
+      "stable": true
+    },
+    {
+      "width": 1024,
+      "readySlot": {
+        "w": 279.65625,
+        "h": 174.78125
+      },
+      "generatingSlot": {
+        "w": 279.671875,
+        "h": 174.78125
+      },
+      "stable": true
+    },
+    {
+      "width": 390,
+      "readySlot": {
+        "w": 300,
+        "h": 187.5
+      },
+      "generatingSlot": {
+        "w": 300,
+        "h": 187.5
+      },
+      "stable": true
+    },
+    {
+      "width": 320,
+      "readySlot": {
+        "w": 230,
+        "h": 143.75
+      },
+      "generatingSlot": {
+        "w": 230,
+        "h": 143.75
+      },
+      "stable": true
+    }
+  ],
+  "focusTrapReport": [
+    {
+      "afterOpen": {
+        "open": true,
+        "activeInsideDialog": true,
+        "activeTag": "BUTTON"
+      },
+      "trapHeldAcross8Tabs": true,
+      "afterEscape": {
+        "open": false,
+        "activeTag": "BUTTON",
+        "activeIsTrigger": true
+      }
+    }
+  ],
+  "escapeInterceptDomPath": {
+    "defaultPrevented": true,
+    "stillOpen": true,
+    "titleText": "Abbandonare il piano?"
+  },
+  "escapeInterceptCdpInput": {
+    "stillOpen": false,
+    "titleText": "Abbandonare il piano?"
+  },
+  "backdropClick": {
+    "stillOpen": true
+  },
+  "consoleIssues": []
+}
