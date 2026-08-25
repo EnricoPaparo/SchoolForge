@@ -306,7 +306,7 @@ prototipo. Il pilot non autorizza implementazione, merge runtime o deploy.
 
 **Deliverable prodotti:** contratto
 [`multi-visual-roadmap.md`](multi-visual-roadmap.md), prototipo
-[`prototipi/lesson-visual-enrichment-multi.html`](prototipi/lesson-visual-enrichment-multi.html)
+[`prototipi/lesson-multi-visual.html`](prototipi/lesson-multi-visual.html)
 e review di fase
 [`evidenze/multi-visual-00-review.md`](evidenze/multi-visual-00-review.md).
 Ciclo fermo a `gate:human`; nessuna implementazione, merge o deploy
