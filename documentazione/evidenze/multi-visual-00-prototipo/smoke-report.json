@@ -1,0 +1,104 @@
+{
+  "report": [
+    {
+      "width": 1440,
+      "state": "s1",
+      "scrollW": 1440,
+      "innerW": 1440,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "1440-s1.png"
+    },
+    {
+      "width": 1440,
+      "state": "s5",
+      "scrollW": 1425,
+      "innerW": 1440,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "1440-s5.png"
+    },
+    {
+      "width": 1440,
+      "state": "s10",
+      "scrollW": 1425,
+      "innerW": 1440,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "1440-s10.png"
+    },
+    {
+      "width": 1024,
+      "state": "s5",
+      "scrollW": 1009,
+      "innerW": 1024,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "1024-s5.png"
+    },
+    {
+      "width": 1024,
+      "state": "s11",
+      "scrollW": 1009,
+      "innerW": 1024,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "1024-s11.png"
+    },
+    {
+      "width": 390,
+      "state": "s0",
+      "scrollW": 390,
+      "innerW": 390,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "390-s0.png"
+    },
+    {
+      "width": 390,
+      "state": "s3",
+      "scrollW": 390,
+      "innerW": 390,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "390-s3.png"
+    },
+    {
+      "width": 390,
+      "state": "s8",
+      "scrollW": 390,
+      "innerW": 390,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "390-s8.png"
+    },
+    {
+      "width": 320,
+      "state": "s1",
+      "scrollW": 320,
+      "innerW": 320,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "320-s1.png"
+    },
+    {
+      "width": 320,
+      "state": "s5",
+      "scrollW": 320,
+      "innerW": 320,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "320-s5.png"
+    },
+    {
+      "width": 320,
+      "state": "s9",
+      "scrollW": 320,
+      "innerW": 320,
+      "overflowX": false,
+      "panelVisibleCount": 1,
+      "file": "320-s9.png"
+    }
+  ],
+  "consoleIssues": []
+}
