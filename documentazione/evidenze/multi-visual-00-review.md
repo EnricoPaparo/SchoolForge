@@ -481,10 +481,275 @@ Ereditati da `multi-visual-roadmap.md` §17, più:
 
 ---
 
-## 7. Stato dichiarato
+## 7. Stato dichiarato (dopo la revisione 2)
 
 | Elemento | Stato |
 |---|---|
-| MULTI-VISUAL-00 (revisione 2) | **Contratto e prototipo corretti su tutti i dieci blocker; smoke reale con metriche misurate, non dichiarate** |
+| MULTI-VISUAL-00 (revisione 2) | **Contratto e prototipo corretti su tutti i dieci blocker UX/workflow; smoke reale con metriche misurate, non dichiarate** |
+| MULTI-VISUAL-01→05 | Aperte |
+| Gate GMULTI | **PENDING** |
+
+---
+
+## 8. Revisione 3 — blocker architetturali, correzione e prova
+
+La seconda review Codex ha approvato l'esito UX della revisione 2 (§1–§7)
+ma respinto **dieci blocker architetturali**, tutti sul contratto
+(`multi-visual-roadmap.md`): nessuno riguardava il prototipo, e infatti
+questa revisione non lo tocca (verificato in §9.2). Correzione e prova per
+ciascuno, con riferimento a `multi-visual-roadmap.md` §21 per la sintesi
+puntuale corrispondente.
+
+### Blocker 1 — Migrazione fail-closed
+
+**Correzione.** §6.1 riscritto: la coesistenza di `visuals` e `visual` non
+è più un caso ignorato in silenzio, ma `visual_legacy_conflict` — zero
+rendering, zero scritture automatiche, nessuna scelta euristica. Matrice
+completa 3×3 (assente/valido/malformato per ciascun campo) esplicitata in
+tabella. §6.2 aggiunge il controllo come passo 0 dell'adozione, prima di
+ogni altro passo.
+
+**Prova.** `grep -n "visual_legacy_conflict" documentazione/multi-visual-
+roadmap.md` → presente in §6.1 (definizione, matrice, effetti), §6.2 (passo
+0 dell'adozione), §6.3 (fail-closed su forma inattesa), §5.5
+(`corrupted_state` per il piano, stesso principio). La tabella della
+matrice in §6.1 elenca tutte e nove le celle esplicitamente, con le tre
+celle di conflitto marcate identiche indipendentemente dalla validità
+individuale dei campi.
+
+### Blocker 2 — Forma chiusa del piano
+
+**Correzione.** §5.5 riscritto: `VisualPlanRun` dichiara ora `ownerUid`,
+`programId`, `importId`, `lessonId`, `publicLessonId`, `udaDir`,
+`requestId`, `planHash`, ciascuno con un commento che ne dichiara la fonte
+autorevole (mai il payload client nudo). Percorso del documento dichiarato
+esplicitamente (`visualPlanRuns/{opaquePlanId}`). Nuovo paragrafo dedicato
+a «record presente ma divergente o malformato ⇒ `corrupted_state`, mai
+assenza o replay».
+
+**Prova.** Lettura diretta di §5.5: ogni campo di identità ha un commento
+`/** ... Fonte autorevole: ... */` che dichiara da dove viene e perché non
+è il payload grezzo. Il paragrafo finale di §5.5 enumera esplicitamente i
+quattro casi (assente / valido e coincidente / valido ma divergente /
+strutturalmente invalido) con l'esito distinto per ciascuno.
+
+### Blocker 3 — Budget e retry riconciliati
+
+**Correzione.** Costante rinominata `VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT`
+(era `VISUAL_PLAN_MAX_GENERATION_ATTEMPTS_PER_SLOT`). Formula del tetto in
+§12.1 corretta a `proposalCap + generationCap × ceiling ×
+maxAttemptsPerSlot`. §8.5 non propone più «una conferma singola aggiuntiva»
+oltre il tetto di tentativi: lo slot diventa terminale per quel piano, e un
+ulteriore tentativo richiede un piano nuovo. §8.7 corretto per il caso
+«tutti gli slot esauriti, zero promossi».
+
+**Prova.** `grep -n "maxAttemptsPerSlot\|totalReserved(ceiling)"
+documentazione/multi-visual-roadmap.md` mostra la formula corretta in §5.5
+e §12.1, con la tabella `ceiling = 1/2/3` ricalcolata (`× 2` per i
+tentativi). `grep -n "propria, singola.*conferma"` non trova più
+occorrenze nel testo attivo di §8.5 (resta solo nella frase che la
+descrive come **respinta** dalla review, dentro il paragrafo di
+correzione).
+
+### Blocker 4 — Race body/ancora
+
+**Correzione.** §7.2 diviso in 7.2.1 (promozione/riancoraggio: fail-closed,
+`visual_promotion_anchor_stale`, zero scritture) e 7.2.2 (dopo una
+promozione già avvenuta: coda invariata da VE §5.3). I test di §19
+corretti: il fallback non è più atteso alla promozione, solo al rendering
+successivo a una promozione riuscita.
+
+**Prova.** `grep -n "visual_promotion_anchor_stale"
+documentazione/multi-visual-roadmap.md` → presente in §7.2.1 e nel test
+corrispondente di §19. Il paragrafo §7.2.2 dichiara esplicitamente «Questo
+caso **non** rientra in §7.2.1: nessuna scrittura è in corso in quel
+momento».
+
+### Blocker 5 — Documento byte pubblico e Rules
+
+**Correzione.** §5.4: `PublicLessonVisualBytesDoc` porta ora
+`publicLessonId`/`programId`/`importId` a livello di documento e
+`width`/`height` per ogni asset. Nuovo §5.4.1 con le Rules in pseudocodice:
+owner-only per il docente; per lo studente, guardie di scoperta +
+`completed:true` + manifest valido + **corrispondenza esatta** delle
+chiavi `bytes` con gli assetId pubblici + identità e dimensioni coerenti;
+scrittura client sempre negata.
+
+**Prova.** Lettura di §5.4: l'interfaccia TypeScript include i tre campi di
+identità e, per asset, `width`/`height` accanto a `dataUri`/`mimeType`.
+§5.4.1 contiene un blocco Rules-like con le sei condizioni numerate per
+`isStudentAllowedToRead`. §19 elenca la lista di test Emulator richiesta
+dal blocker (aggiunta/rimozione/sostituzione, chiave extra, chiave
+mancante, asset estraneo, `completed:false`, import inattivo, identità
+divergente) — verificato che tutte e sette le voci siano presenti come
+punti elenco distinti.
+
+### Blocker 6 — Export davvero multi
+
+**Correzione.** Nuovo §14.2: `AiVisualExportBatchResult` chiuso, per
+lezione `{ status: 'absent' }` o `{ status: 'present', assets: [...] }`
+con `assets` da 1 a 3 elementi nell'ordine del manifest; validazione
+all-or-nothing estesa all'insieme; dedup sull'intero batch; compatibilità
+con la forma singolare via `adaptSingular`, senza forzare un'adozione;
+requisito esplicito che il composer web iteri `assets` per intero.
+
+**Prova.** `grep -n "AiVisualExportAsset\|status: 'present'"
+documentazione/multi-visual-roadmap.md` → tipi presenti in §14.2 con
+`assets: AiVisualExportAsset[]`. Il paragrafo «Composer web» dichiara
+esplicitamente: «Un composer che si fermasse al primo elemento
+produrrebbe uno ZIP strutturalmente valido ma silenziosamente
+incompleto».
+
+### Blocker 7 — Cleanup lezione/UDA/corso
+
+**Correzione.** Nuovo §8.12: `VisualCleanupRecoveryRecord` chiuso (un
+record per lezione, array di `assetIds`/`storageRefs`), procedura in
+cinque passi con letture sempre prima delle scritture, divieto esplicito
+di delete per prefisso a livello di lezione o UDA (motivato in §8.12.3,
+con l'unica eccezione dichiarata per corso/import via
+`deleteImportPrefix`), chunking ≤100 lezioni, formule di costo con delta
+esplicito sul baseline di VE-03.
+
+**Prova.** `grep -n "aiVisualCleanupForDelete\|nessun delete per prefisso"
+documentazione/multi-visual-roadmap.md` → §8.12 presente con la procedura
+completa. §8.12.3 («Perché mai un delete per prefisso») argomenta
+esplicitamente la distinzione fra lezione/UDA (sempre enumerazione
+esplicita) e corso/import (unica eccezione, già autorevole in VE).
+
+### Blocker 8 — Cost model basato sui numeri misurati VE
+
+**Correzione.** Nuovo §12.0: tabella con i dieci numeri misurati di
+VE-03 (`visual-enrichment-roadmap.md` §15.5), citati testualmente. Ogni
+tabella successiva di §12 dichiara se è misurata (promozione, rimozione,
+delete lezione/UDA — stesso conteggio del baseline, perché la stessa
+classe di operazione) o stimata (piano, generazione, upload, cleanup piano
+scaduto — nessun equivalente in VE-03). Prenotazione e run del piano
+contati come 2 scritture Firestore distinte.
+
+**Prova.** Confronto diretto fra la tabella di §12.0 e i numeri citati
+nella richiesta della review (promozione 9R/3W+1R/1W/1D; rimozione
+7R/6W+1D; delete lezione 7R/5W+1D; delete UDA 3 lezioni 21R/15W+3D) —
+identici, citati come tali. `grep -c "STIMATO\|misurato" documentazione/
+multi-visual-roadmap.md` conferma l'etichettatura sistematica presente in
+tutte le intestazioni di sottosezione di §12.
+
+### Blocker 9 — Diversità didattica
+
+**Correzione.** §7.4 riscritto: `anchorHeadingIndex` uguale non è più, da
+solo, un blocco strutturale. Il controllo lessicale si applica a `subject`
+**e** `rationale` (nuovo), indipendentemente dall'ancora. Il paragrafo apre
+riconoscendo esplicitamente che il prototipo (`page-teacher-2`) già
+mostrava due immagini sulla stessa ancora, e che vietarlo per costruzione
+avrebbe contraddetto il prototipo stesso.
+
+**Prova.** Lettura di §7.4: la frase «`anchorHeadingIndex` NON è più, da
+solo, un blocco» è esplicita. Il test corrispondente in §19 include ora un
+caso **positivo** con ancora condivisa e subject/rationale distinti,
+assente nella revisione 2.
+
+### Blocker 10 — Evidenza e smoke
+
+**Correzione e prova**, in questa sezione e nella successiva (§9).
+
+---
+
+## 9. Gate eseguiti — revisione 3
+
+### 9.1 Filename e link
+
+`grep -rn "lesson-visual-enrichment-multi" documentazione/` trova
+occorrenze **solo** dentro la cronaca della revisione 2 (questa stessa
+sezione §2 e le righe che citano l'output di `git status` della rinomina)
+— nessun link attivo residuo. Il prototipo resta
+`documentazione/prototipi/lesson-multi-visual.html`, referenziato
+correttamente dal contratto (intestazione e §21) e da questo documento.
+
+### 9.2 Prototipo — confermato invariato, non assunto
+
+```
+$ git diff --stat -- documentazione/prototipi/lesson-multi-visual.html
+(nessun output)
+```
+
+Zero byte modificati rispetto al commit della revisione 2. Nessuno dei
+dieci blocker architetturali di questa revisione richiedeva un cambiamento
+di interfaccia: sono tutti concentrati sul contratto (forme dati,
+transazioni, Rules, cost model). Di conseguenza **lo smoke Chromium/CDP
+reale della revisione 2 (§4) resta l'evidenza valida**: rieseguirlo contro
+un file bit-per-bit identico non misurerebbe nulla di nuovo, e ripeterlo
+solo per produrre un secondo screenshot identico sarebbe evidenza
+decorativa, non verifica. Questo paragrafo esiste per rendere quella
+scelta verificabile — un `git diff --stat` a zero righe, non un'asserzione.
+
+### 9.3 Gate testuali
+
+| Comando | Esito |
+|---|---|
+| `npx prettier --check` su `multi-visual-roadmap.md` e su questo file | **PASS** |
+| `git diff --cached --check` sull'intero diff della revisione 3 | **PASS** — nessuno spazio finale, nessun marcatore di conflitto |
+| Sanity check sui marcatori di sezione (`grep -c "^## "` / `"^### "`) | 21 sezioni di secondo livello, 62 di terzo — nessun errore di annidamento rilevato in lettura |
+
+### 9.4 Che cosa NON è stato verificato in questa revisione — dichiarato, non nascosto
+
+Nessuna riga di questa revisione ha eseguito codice contro un Firestore o
+Storage Emulator reale: tutte le correzioni sono a un contratto
+documentale, non a un'implementazione (§1 del contratto — nessun runtime
+in questo pilota). Di conseguenza:
+
+- **i numeri "STIMATO" di `multi-visual-roadmap.md` §12.1–§12.3, §12.7**
+  (piano, generazione, upload, cleanup del piano scaduto) restano stime
+  derivate dal baseline misurato di VE-03, **non misure**: nessuna riga di
+  questa revisione le ha eseguite contro un Emulator, e il contratto lo
+  dichiara esplicitamente in ogni intestazione di sottosezione, non solo
+  qui;
+- **le Rules di §5.4.1 sono pseudocodice congelato, non ancora tradotto in
+  `firestore.rules` reali né eseguito contro l'Emulator delle Rules**: i
+  sette test elencati in §19 del contratto sono **richiesti**, non
+  **eseguiti** — restano un impegno per MULTI-VISUAL-03, non un'evidenza di
+  questa fase;
+- **l'export v2 (§14.2) e il cleanup generalizzato (§8.12) sono contratti
+  di interfaccia, non implementazioni**: nessuna callable con questi nomi
+  esiste nel repository oggi.
+
+Questa sezione esiste perché la review ha esplicitamente chiesto di non
+sovradichiarare: i rischi residui aggiornati (§10) elencano queste stesse
+lacune come tali, non come dettagli minori.
+
+---
+
+## 10. Rischi residui — aggiornati dopo la revisione 3
+
+Ereditati da §6 (revisione 2) e da `multi-visual-roadmap.md` §17, più:
+
+1. **Nessuno dei numeri "STIMATO" del cost model (§12.1–§12.3, §12.7 del
+   contratto) è stato verificato contro un Emulator reale.** Sono
+   derivazioni disciplinate dal baseline misurato di VE-03, non misure
+   indipendenti — potrebbero rivelarsi imprecise una volta implementate
+   (per esempio se il ledger di budget AIGEN richiede più di una scrittura
+   per settlement).
+2. **Le Rules di §5.4.1 sono pseudocodice, non ancora eseguito contro
+   l'Emulator delle Rules.** I sette scenari di test elencati in §19 del
+   contratto sono un impegno per una fase implementativa, non un'evidenza
+   già raccolta.
+3. **Il vincolo di diversità didattica (§7.4 del contratto) resta
+   lessicale, non semantico**, anche dopo la correzione del Blocker 9: due
+   soggetti descritti con parole del tutto diverse ma la stessa idea
+   restano indistinguibili dai soli controlli su `subject`/`rationale`. Il
+   backstop dichiarato è la revisione gratuita del piano (§8.4), non un
+   meccanismo automatico.
+4. **Escape via automazione CDP non verificato in modo conclusivo**
+   (§4.8, ereditato dalla revisione 2, non toccato da questa).
+5. **Il cap di upload a 2 MB resta più stretto delle foto tipiche di uno
+   smartphone** (ereditato).
+6. **La divergenza sullo stato di VE resta dichiarata, non risolta**
+   (ereditata).
+
+---
+
+## 11. Stato dichiarato — dopo la revisione 3
+
+| Elemento | Stato |
+|---|---|
+| MULTI-VISUAL-00 (revisione 3) | **Contratto corretto su tutti i dieci blocker architetturali della seconda review; prototipo confermato invariato (zero modifiche richieste); nessuna verifica Emulator eseguita in questa fase — dichiarato esplicitamente, non nascosto** |
 | MULTI-VISUAL-01→05 | Aperte |
 | Gate GMULTI | **PENDING** |
