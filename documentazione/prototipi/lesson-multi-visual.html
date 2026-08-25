@@ -1,0 +1,1734 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SchoolForge — Prototipo Arricchimento visivo multi-immagine (MULTI-VISUAL-00, rev.2)</title>
+    <style>
+      /* ══════════════════════════════════════════════════════════════════
+         Design tokens — riuso della palette scura esistente di SchoolForge
+         (apps/web/src/index.css) e dei prototipi VE già approvati.
+         Nessun font, asset o CDN esterno.
+         ══════════════════════════════════════════════════════════════════ */
+      :root {
+        --color-primary: #4a8bf7;
+        --color-primary-hover: #60a5fa;
+        --color-brand-blue: #38bdf8;
+        --color-brand-orange: #fb923c;
+        --color-surface: #141a24;
+        --color-surface-subtle: #090d14;
+        --color-surface-raised: #1d2532;
+        --color-border: #334052;
+        --color-text: #e7ebf2;
+        --color-text-muted: #93a0b4;
+        --color-error: #f87171;
+        --color-error-bg: rgba(248, 113, 113, 0.12);
+        --color-error-border: #7f2b2b;
+        --color-success: #4ade80;
+        --color-success-bg: rgba(74, 222, 128, 0.12);
+        --color-success-border: #1f5c37;
+        --color-warning: #fbbf24;
+        --color-warning-bg: rgba(251, 191, 36, 0.12);
+        --color-warning-border: #6b4a12;
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-mono: ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+        --radius: 6px;
+        --radius-lg: 10px;
+        --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+        /* Target touch minimo — UNIVERSALE, anche sui controlli piccoli
+           della galleria (Blocker 8: 36px non è ammesso su alcun controllo
+           interattivo, coarse o fine che sia il puntatore). */
+        --touch: 44px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      img,
+      svg {
+        max-width: 100%;
+        height: auto;
+      }
+      :focus-visible {
+        outline: 2px solid var(--color-brand-orange);
+        outline-offset: 2px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      /* ── Barra demo — NON fa parte della UI di prodotto ────────────────── */
+      .demo-bar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        padding: 10px 16px 14px;
+        background: #05070c;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .demo-bar__label {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        margin-bottom: 8px;
+      }
+      .demo-bar__group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .demo-bar__group-label {
+        width: 100%;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-brand-blue);
+        margin: 6px 0 2px;
+      }
+      .demo-bar button {
+        min-height: var(--touch);
+        padding: 6px 10px;
+        font-family: inherit;
+        font-size: 11.5px;
+        color: var(--color-text-muted);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        cursor: pointer;
+      }
+      .demo-bar button:hover {
+        color: var(--color-text);
+        border-color: var(--color-primary);
+      }
+      .demo-bar button[aria-pressed='true'] {
+        color: #05070c;
+        background: var(--color-brand-blue);
+        border-color: var(--color-brand-blue);
+        font-weight: 600;
+      }
+
+      .stage {
+        padding: 16px 16px 72px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      .stage__caption {
+        font-size: 12px;
+        color: var(--color-text-muted);
+        border-left: 3px solid var(--color-brand-blue);
+        padding: 6px 0 6px 12px;
+        margin: 0 0 18px;
+      }
+      .page[hidden] {
+        display: none !important;
+      }
+
+      /* ── Bottoni — TUTTI >= 44px, coarse o fine che sia il puntatore ───── */
+      .btn {
+        min-height: var(--touch);
+        min-width: var(--touch);
+        padding: 10px 16px;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+        cursor: pointer;
+      }
+      .btn:hover {
+        border-color: var(--color-primary);
+      }
+      .btn--primary {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #05070c;
+      }
+      .btn--primary:hover {
+        background: var(--color-primary-hover);
+        border-color: var(--color-primary-hover);
+      }
+      .btn--danger {
+        color: var(--color-error);
+        border-color: var(--color-error-border);
+        background: var(--color-error-bg);
+      }
+      .btn--ghost {
+        background: transparent;
+        color: var(--color-text-muted);
+      }
+      .btn--compact {
+        padding: 6px 10px;
+        font-size: 12px;
+        /* min-height/min-width restano 44px: solo il padding è più denso. */
+      }
+      .btn--icon {
+        padding: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .btn[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .field {
+        margin-bottom: 14px;
+      }
+      .field__label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        margin-bottom: 6px;
+      }
+      .field__hint {
+        font-size: 12px;
+        color: var(--color-text-muted);
+        margin: 6px 0 0;
+      }
+      .field input[type='text'],
+      .field textarea,
+      .field select {
+        width: 100%;
+        min-height: var(--touch);
+        padding: 10px 12px;
+        font-family: inherit;
+        font-size: 14px;
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        resize: vertical;
+      }
+      .field textarea {
+        min-height: 64px;
+        line-height: 1.5;
+      }
+
+      .note {
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        font-size: 13px;
+        margin: 0 0 14px;
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+      }
+      .note--info {
+        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.1);
+      }
+      .note--warn {
+        border-color: var(--color-warning-border);
+        background: var(--color-warning-bg);
+      }
+      .note--error {
+        border-color: var(--color-error-border);
+        background: var(--color-error-bg);
+      }
+      .note--ok {
+        border-color: var(--color-success-border);
+        background: var(--color-success-bg);
+      }
+      .note__title {
+        font-weight: 650;
+        margin: 0 0 4px;
+      }
+      .note p {
+        margin: 0;
+      }
+      .note p + p {
+        margin-top: 8px;
+      }
+
+      .cost-box {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface-subtle);
+        padding: 12px 14px;
+        margin: 0 0 14px;
+        font-size: 13px;
+      }
+      .cost-box table {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      .cost-box td {
+        padding: 3px 0;
+      }
+      .cost-box td:last-child {
+        text-align: right;
+      }
+      .cost-box tr.total td {
+        border-top: 1px solid var(--color-border);
+        padding-top: 6px;
+        font-weight: 700;
+      }
+
+      /* ── Selettore quantità ──────────────────────────────────────────── */
+      .qty {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 8px;
+        margin: 4px 0 16px;
+      }
+      .qty button {
+        min-height: 56px;
+      }
+
+      /* ── Griglia di slot / galleria ─────────────────────────────────── */
+      .slots,
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+        margin: 4px 0 14px;
+      }
+      .slot,
+      .gallery__item {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface-subtle);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .slot__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--color-text-muted);
+      }
+      .slot__state {
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border);
+      }
+      .slot__state--ready {
+        color: var(--color-success);
+        border-color: var(--color-success-border);
+        background: var(--color-success-bg);
+      }
+      .slot__state--generating {
+        color: var(--color-brand-blue);
+        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.1);
+      }
+      .slot__state--failed {
+        color: var(--color-error);
+        border-color: var(--color-error-border);
+        background: var(--color-error-bg);
+      }
+      .slot__state--pending {
+        color: var(--color-text-muted);
+      }
+
+      /* Riquadro immagine — dimensioni FISSE (aspect-ratio) sia da vuoto/
+         generazione sia da pronto: il frame non deve cambiare misura
+         quando l'immagine arriva (nessun layout shift, verificato dallo
+         smoke). */
+      .frame {
+        aspect-ratio: 16 / 10;
+        width: 100%;
+        border-radius: 4px;
+        background: #f7f5f0;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .frame > svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .frame--skeleton {
+        background: linear-gradient(
+          100deg,
+          var(--color-surface-raised) 30%,
+          #2a3547 50%,
+          var(--color-surface-raised) 70%
+        );
+        background-size: 220% 100%;
+        animation: shimmer 1.6s ease-in-out infinite;
+      }
+      @keyframes shimmer {
+        0% {
+          background-position: 120% 0;
+        }
+        100% {
+          background-position: -20% 0;
+        }
+      }
+      .frame--photo {
+        background: linear-gradient(160deg, #33465e 0%, #22303f 55%, #16202b 100%);
+      }
+      .frame__spinner {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 3px solid var(--color-border);
+        border-top-color: var(--color-brand-blue);
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .frame__label {
+        position: absolute;
+        bottom: 6px;
+        left: 8px;
+        right: 8px;
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(231, 235, 242, 0.8);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border: 1px solid var(--color-border);
+        white-space: nowrap;
+      }
+      .badge--generated {
+        color: var(--color-brand-blue);
+        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.1);
+      }
+      .badge--uploaded {
+        color: var(--color-brand-orange);
+        border-color: rgba(251, 146, 60, 0.4);
+        background: rgba(251, 146, 60, 0.12);
+      }
+
+      .slot__meta {
+        font-size: 12px;
+        color: var(--color-text-muted);
+      }
+      .slot__meta strong {
+        color: var(--color-text);
+        font-weight: 600;
+      }
+      .slot__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .reorder {
+        display: inline-flex;
+        gap: 2px;
+        margin-left: auto;
+      }
+      .progress-line {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--color-surface-raised);
+        overflow: hidden;
+      }
+      .progress-line__bar {
+        height: 100%;
+        width: 42%;
+        background: var(--color-brand-blue);
+        animation: slide 1.4s ease-in-out infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+      .compare {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════
+         Dialog reale — elemento <dialog> nativo. showModal() del browser
+         fornisce focus trap e ripristino del focus reali: non è simulato
+         in JavaScript. Un solo elemento, il contenuto interno cambia vista.
+         ══════════════════════════════════════════════════════════════════ */
+      dialog#arricchisci {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+        background: var(--color-surface);
+        color: var(--color-text);
+        padding: 0;
+        width: min(720px, calc(100% - 32px));
+        max-height: calc(100dvh - 32px);
+        display: flex;
+        flex-direction: column;
+      }
+      dialog#arricchisci::backdrop {
+        background: rgba(4, 6, 10, 0.72);
+      }
+      dialog#arricchisci[data-wide] {
+        width: min(980px, calc(100% - 32px));
+      }
+      .dlg__title {
+        margin: 0;
+        padding: 16px 20px;
+        font-size: 16px;
+        font-weight: 650;
+        border-bottom: 1px solid var(--color-border);
+        flex: 0 0 auto;
+      }
+      .dlg__subtitle {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--color-text-muted);
+      }
+      .dlg__body {
+        padding: 18px 20px;
+        overflow-y: auto;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      .dlg__footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        padding: 14px 20px;
+        border-top: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        flex: 0 0 auto;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════
+         Vista lezione (pagina, non dialog)
+         ══════════════════════════════════════════════════════════════════ */
+      .lesson {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .lesson__bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        font-size: 12px;
+        color: var(--color-text-muted);
+        position: relative;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid var(--color-border);
+      }
+      .pill--done {
+        color: var(--color-success);
+        border-color: var(--color-success-border);
+        background: var(--color-success-bg);
+      }
+      .pill--todo {
+        color: var(--color-text-muted);
+      }
+      .pill--role {
+        color: var(--color-brand-blue);
+        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.1);
+      }
+
+      /* Menu Azioni — l'UNICO ingresso all'arricchimento visivo. */
+      .actions {
+        margin-left: auto;
+        position: relative;
+      }
+      .actions__menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 6px);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+        min-width: 220px;
+        padding: 6px;
+        z-index: 5;
+      }
+      .actions__menu[hidden] {
+        display: none;
+      }
+      .actions__menu button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        min-height: var(--touch);
+        padding: 8px 10px;
+        font-family: inherit;
+        font-size: 13px;
+        color: var(--color-text);
+        background: transparent;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .actions__menu button:hover,
+      .actions__menu button:focus-visible {
+        background: var(--color-surface-raised);
+      }
+
+      .lesson__body {
+        padding: 22px 20px 30px;
+      }
+      .prose {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+      .prose h1 {
+        font-size: 1.7rem;
+        line-height: 1.2;
+        margin: 0 0 4px;
+      }
+      .prose .sub {
+        color: var(--color-text-muted);
+        margin: 0 0 24px;
+      }
+      .prose h2 {
+        font-size: 1.3rem;
+        color: var(--color-brand-blue);
+        border-bottom: 1px solid var(--color-border);
+        padding-bottom: 6px;
+        margin: 2.5rem 0 0.75rem;
+      }
+      .prose h2:first-of-type {
+        margin-top: 0;
+      }
+      .prose p {
+        margin: 0 0 1rem;
+      }
+      .prose ul {
+        margin: 0 0 1rem;
+        padding-left: 20px;
+      }
+      .prose li::marker {
+        color: var(--color-brand-blue);
+      }
+
+      figure.lv {
+        margin: 1.4rem 0 1.6rem;
+        padding: 0;
+      }
+      figure.lv > .frame {
+        border: 1px solid var(--color-border);
+      }
+      figure.lv > figcaption {
+        margin-top: 8px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--color-text-muted);
+        border-left: 2px solid var(--color-brand-blue);
+        padding-left: 10px;
+      }
+      figure.lv + figure.lv {
+        margin-top: -0.6rem;
+      }
+      .anchor-warning {
+        margin: -0.4rem 0 1.2rem;
+        font-size: 12px;
+        color: var(--color-warning);
+        border-left: 2px solid var(--color-warning-border);
+        padding-left: 10px;
+      }
+      .teacher-hint {
+        max-width: 42rem;
+        margin: 0 auto 18px;
+      }
+
+      /* ── Mobile ───────────────────────────────────────────────────────── */
+      @media (max-width: 640px) {
+        .stage {
+          padding: 14px 12px 64px;
+        }
+        .dlg__body,
+        .dlg__title,
+        .dlg__footer {
+          padding-left: 14px;
+          padding-right: 14px;
+        }
+        .dlg__footer {
+          justify-content: stretch;
+        }
+        .dlg__footer .btn {
+          flex: 1 1 100%;
+        }
+        .lesson__body {
+          padding: 16px 14px 24px;
+        }
+        .prose h1 {
+          font-size: 1.35rem;
+        }
+        .prose h2 {
+          font-size: 1.1rem;
+        }
+        .slots,
+        .gallery,
+        .compare {
+          grid-template-columns: 1fr;
+        }
+        .qty {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .foot {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 20px 16px 40px;
+        border-top: 1px solid var(--color-border);
+        font-size: 12px;
+        color: var(--color-text-muted);
+      }
+      .foot code {
+        font-family: var(--font-mono);
+        color: var(--color-brand-blue);
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- SVG «SchoolForge Sketch v1» — simboli locali, inline. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="sketch-evaporazione" viewBox="0 0 480 260">
+          <rect width="480" height="260" fill="#f7f5f0" />
+          <g fill="none" stroke="#2a2f38" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="392" cy="54" r="18" stroke="#e07a2f" />
+            <g stroke="#e07a2f" stroke-width="1.7">
+              <path d="M392 24v-8M392 92v8M422 54h8M354 54h-8M414 32l6-6M370 76l-6 6M414 76l6 6M370 32l-6-6" />
+            </g>
+            <path d="M40 200h280" />
+            <path d="M56 214q13-8 26 0t26 0t26 0t26 0t26 0t26 0t26 0t26 0" stroke="#1c8fb8" stroke-width="1.6" />
+            <path d="M170 190c-6-30-2-56 8-80" stroke="#1c8fb8" />
+            <path d="M178 108l6 8 8-4" stroke="#1c8fb8" />
+            <path
+              d="M118 78c-13 0-23 9-23 19 0 12 10 19 23 19h84c14 0 24-9 24-20 0-11-10-19-23-19-4-14-17-24-32-24-17 0-30 11-33 25z"
+              stroke="#1c8fb8"
+            />
+          </g>
+          <g font-family="system-ui, sans-serif" font-size="13" fill="#2a2f38" text-anchor="middle">
+            <text x="146" y="100">nube</text>
+            <text x="200" y="152">evaporazione</text>
+          </g>
+        </symbol>
+        <symbol id="sketch-rilievo" viewBox="0 0 480 260">
+          <rect width="480" height="260" fill="#f7f5f0" />
+          <g fill="none" stroke="#2a2f38" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M28 206l68-92 40 54 24-31 56 69z" />
+            <g stroke="#1c8fb8" stroke-width="1.8">
+              <path d="M140 108l-8 24M168 108l-8 24M196 108l-8 24" />
+            </g>
+            <path
+              d="M118 60c-13 0-23 9-23 19 0 12 10 19 23 19h84c14 0 24-9 24-20 0-11-10-19-23-19-4-14-17-24-32-24-17 0-30 11-33 25z"
+              stroke="#1c8fb8"
+            />
+            <path d="M226 206q22 7 37 0" />
+            <path d="M263 206l-8-5m8 5l-8 5" />
+            <path d="M28 206h370" />
+          </g>
+          <g font-family="system-ui, sans-serif" font-size="13" fill="#2a2f38" text-anchor="middle">
+            <text x="164" y="90">precipitazione</text>
+            <text x="244" y="230">ruscellamento</text>
+          </g>
+        </symbol>
+      </defs>
+    </svg>
+
+    <!-- ── Barra demo — impalcatura di prototipo, NON UI di prodotto.
+         Apre esattamente le stesse funzioni JS del pulsante reale
+         «Arricchisci»: nessun percorso di focus-trap/Escape separato. ── -->
+    <nav class="demo-bar" aria-label="Selettore degli stati del prototipo">
+      <span class="demo-bar__label"
+        >Prototipo MULTI-VISUAL-00 (rev.2) — un solo ingresso «Arricchisci», piano coordinato, autorizzazione unica</span
+      >
+      <div class="demo-bar__group-label">Pagine lezione</div>
+      <div class="demo-bar__group">
+        <button type="button" data-page="page-teacher-0" aria-pressed="true">Docente · 0 immagini</button>
+        <button type="button" data-page="page-teacher-1">Docente · 1</button>
+        <button type="button" data-page="page-teacher-2">Docente · 2</button>
+        <button type="button" data-page="page-teacher-3">Docente · 3 (1 in coda)</button>
+        <button type="button" data-page="page-student-with">Studente · con immagini</button>
+        <button type="button" data-page="page-student-without">Studente · senza</button>
+        <button type="button" data-page="page-legacy">Legacy singola (non adottata)</button>
+      </div>
+      <div class="demo-bar__group-label">Dialog «Arricchisci» — pianificazione</div>
+      <div class="demo-bar__group">
+        <button type="button" data-view="quantity">Quantità (3 liberi)</button>
+        <button type="button" data-view="quantity-limited">Quantità (1 libero)</button>
+        <button type="button" data-view="full">3/3 pieno</button>
+        <button type="button" data-view="authorize">Autorizzazione unica</button>
+        <button type="button" data-view="proposing">Proposta in corso</button>
+        <button type="button" data-view="plan-review">Piano — revisione</button>
+      </div>
+      <div class="demo-bar__group-label">Dialog «Arricchisci» — generazione</div>
+      <div class="demo-bar__group">
+        <button type="button" data-view="generating">Generazione per asset</button>
+        <button type="button" data-view="slot-failed">Fallimento + retry (1 di 3)</button>
+        <button type="button" data-view="recovery">Recovery (piano ripreso)</button>
+      </div>
+      <div class="demo-bar__group-label">Dialog «Arricchisci» — upload e galleria</div>
+      <div class="demo-bar__group">
+        <button type="button" data-view="upload">Carica file</button>
+        <button type="button" data-view="upload-error">Errore upload (&gt;2MB)</button>
+        <button type="button" data-view="gallery-1">Galleria · 1</button>
+        <button type="button" data-view="gallery-2">Galleria · 2</button>
+        <button type="button" data-view="gallery-3">Galleria · 3</button>
+        <button type="button" data-view="replace">Sostituisci uno slot</button>
+        <button type="button" data-view="abandon-plan">Abbandona piano</button>
+      </div>
+      <div class="demo-bar__group-label">Flusso di generazione della lezione</div>
+      <div class="demo-bar__group">
+        <button type="button" data-view="lesson-gen-step">Passo «genera anche immagini?»</button>
+      </div>
+    </nav>
+
+    <main class="stage">
+      <!-- ═══════════════════ PAGINE (non modali) ═══════════════════ -->
+
+      <section class="page" id="page-teacher-0" aria-label="Pagina: lezione docente, zero immagini">
+        <p class="stage__caption">
+          <strong>Docente · 0 immagini.</strong> «Arricchisci» è l'unico ingresso, dentro il menu
+          Azioni. Nessun secondo pulsante nella scheda Contenuto.
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Docente</span>
+            <span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+            <div class="actions">
+              <button type="button" class="btn btn--compact actions-toggle" aria-haspopup="true" aria-expanded="false">
+                Azioni ▾
+              </button>
+              <div class="actions__menu" hidden role="menu">
+                <button type="button" role="menuitem">Rinomina</button>
+                <button type="button" role="menuitem">Duplica</button>
+                <button type="button" role="menuitem" class="js-open-arricchisci" data-open-view="quantity">
+                  Arricchisci
+                </button>
+                <button type="button" role="menuitem">Esporta</button>
+              </div>
+            </div>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Perché è un ciclo</h2>
+              <p>
+                L'acqua del pianeta non si consuma e non si crea: cambia stato e cambia posto.
+              </p>
+              <h2>Le quattro fasi</h2>
+              <ul>
+                <li><strong>Evaporazione</strong> — il calore solare porta l'acqua allo stato di vapore.</li>
+                <li><strong>Condensazione</strong> — salendo, il vapore si raffredda e forma le nubi.</li>
+                <li><strong>Precipitazione</strong> — l'acqua ricade come pioggia o neve.</li>
+                <li><strong>Ruscellamento</strong> — dai rilievi l'acqua torna al mare.</li>
+              </ul>
+              <h2>Il bilancio idrico</h2>
+              <p>
+                In un anno, la quantità d'acqua che evapora da un bacino tende a eguagliare quella
+                che vi precipita.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-teacher-1" hidden aria-label="Pagina: lezione docente, 1 immagine">
+        <p class="stage__caption"><strong>Docente · 1 immagine.</strong> Generata, ancorata a «Le quattro fasi».</p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Docente</span><span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Perché è un ciclo</h2>
+              <p>L'acqua del pianeta non si consuma e non si crea: cambia stato e cambia posto.</p>
+              <h2>Le quattro fasi</h2>
+              <figure class="lv">
+                <div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Schizzo dell'evaporazione dal mare e della formazione della nube."><use href="#sketch-evaporazione" /></svg></div>
+                <figcaption>Il calore solare porta l'acqua superficiale allo stato di vapore: è il primo passo del ciclo.</figcaption>
+              </figure>
+              <ul>
+                <li><strong>Evaporazione</strong> — il calore solare porta l'acqua allo stato di vapore.</li>
+                <li><strong>Condensazione</strong> — salendo, il vapore si raffredda e forma le nubi.</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-teacher-2" hidden aria-label="Pagina: lezione docente, 2 immagini sulla stessa ancora">
+        <p class="stage__caption">
+          <strong>Docente · 2 immagini.</strong> Condividono l'ancora «Il bilancio idrico»: si
+          impilano nell'ordine della galleria.
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Docente</span><span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Le quattro fasi</h2>
+              <p>Evaporazione, condensazione, precipitazione, ruscellamento.</p>
+              <h2>Il bilancio idrico</h2>
+              <p>In un anno, evaporazione e precipitazione tendono a compensarsi su un bacino.</p>
+              <figure class="lv">
+                <div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Schizzo della precipitazione sul rilievo."><use href="#sketch-rilievo" /></svg></div>
+                <figcaption>La precipitazione sul rilievo alimenta i corsi d'acqua.</figcaption>
+              </figure>
+              <figure class="lv">
+                <div class="frame frame--photo"><span class="frame__label">112 KB</span></div>
+                <figcaption>Un torrente reale che raccoglie l'acqua ruscellata da un versante, fotografato dal docente.</figcaption>
+              </figure>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-teacher-3" hidden aria-label="Pagina: lezione docente, 3 immagini, una in coda">
+        <p class="stage__caption">
+          <strong>Docente · 3 immagini.</strong> Due ancorate correttamente, una in coda con ancora
+          persa (avviso visibile solo al docente).
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Docente</span><span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <div class="teacher-hint">
+              <div class="note note--ok" style="margin: 0">
+                <p class="note__title">3 immagini applicate</p>
+                <p>2 ancorate correttamente · 1 in coda, ancora persa.</p>
+              </div>
+            </div>
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Le quattro fasi</h2>
+              <figure class="lv">
+                <div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Schizzo dell'evaporazione dal mare."><use href="#sketch-evaporazione" /></svg></div>
+                <figcaption>Il calore solare porta l'acqua superficiale allo stato di vapore.</figcaption>
+              </figure>
+              <h2>Il bilancio idrico</h2>
+              <figure class="lv">
+                <div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Schizzo della precipitazione sul rilievo."><use href="#sketch-rilievo" /></svg></div>
+                <figcaption>La precipitazione sul rilievo alimenta i corsi d'acqua.</figcaption>
+              </figure>
+              <p class="anchor-warning">Immagine in coda — ancora non trovata (visibile solo al docente):</p>
+              <figure class="lv">
+                <div class="frame frame--photo"><span class="frame__label">112 KB</span></div>
+                <figcaption>Un torrente reale fotografato dal docente durante un'uscita didattica.</figcaption>
+              </figure>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-student-with" hidden aria-label="Pagina: studente, con immagini">
+        <p class="stage__caption">
+          <strong>Studente · con immagini.</strong> Nessun badge di provenienza: il manifest
+          pubblico non porta il campo <code>source</code> (minimizzazione, §13 del contratto).
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Studente</span><span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Le quattro fasi</h2>
+              <figure class="lv">
+                <div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Schizzo dell'evaporazione dal mare."><use href="#sketch-evaporazione" /></svg></div>
+                <figcaption>Il calore solare porta l'acqua superficiale allo stato di vapore.</figcaption>
+              </figure>
+              <h2>Il bilancio idrico</h2>
+              <figure class="lv">
+                <div class="frame frame--photo"><span class="frame__label">112 KB</span></div>
+                <figcaption>Un torrente reale che raccoglie l'acqua ruscellata da un versante.</figcaption>
+              </figure>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-student-without" hidden aria-label="Pagina: studente, senza immagini">
+        <p class="stage__caption">
+          <strong>Studente · senza immagini.</strong> Nessun segnaposto: il documento leggibile
+          dallo studente non contiene alcuna immagine.
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Studente</span><span class="pill pill--todo">Non svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Le quattro fasi</h2>
+              <ul>
+                <li><strong>Evaporazione</strong> — il calore solare porta l'acqua allo stato di vapore.</li>
+                <li><strong>Ruscellamento</strong> — dai rilievi l'acqua torna al mare.</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-legacy" hidden aria-label="Pagina: compatibilità con il manifest singolo esistente">
+        <p class="stage__caption">
+          <strong>Compatibilità legacy.</strong> Una lezione scritta sotto il contratto VE
+          (manifest singolo, non ancora adottato) si comporta byte per byte come oggi — nessuna
+          migrazione finché il docente non aggiunge una seconda immagine (§6 del contratto).
+        </p>
+        <div class="lesson">
+          <div class="lesson__bar">
+            <span class="pill pill--role">Docente</span><span class="pill pill--done">Svolta</span>
+            <span>UDA 3 · Scienze della Terra</span>
+          </div>
+          <div class="lesson__body">
+            <div class="teacher-hint">
+              <div class="note note--info" style="margin: 0">
+                <p class="note__title">1 immagine — manifest singolo, non ancora adottato</p>
+                <p>Letta come un array a un elemento (§6.1), mai riscritta finché non ne aggiungi una seconda.</p>
+              </div>
+            </div>
+            <article class="prose">
+              <h1>Il ciclo dell'acqua</h1>
+              <p class="sub">Come l'acqua si muove fra mare, atmosfera e terra</p>
+              <h2>Le quattro fasi</h2>
+              <figure class="lv">
+                <div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Schizzo dell'evaporazione dal mare."><use href="#sketch-evaporazione" /></svg></div>
+                <figcaption>Il calore solare porta l'acqua superficiale allo stato di vapore.</figcaption>
+              </figure>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ═══════════════════ DIALOG REALE — un solo elemento ═══════════════════ -->
+    <dialog id="arricchisci" aria-labelledby="arricchisci-title">
+      <h2 class="dlg__title" id="arricchisci-title">
+        <span id="arricchisci-title-text">Arricchisci — Il ciclo dell'acqua</span>
+        <span class="dlg__subtitle" id="arricchisci-subtitle"></span>
+      </h2>
+      <div class="dlg__body" id="arricchisci-body"><!-- popolato da JS per vista --></div>
+      <div class="dlg__footer" id="arricchisci-footer"><!-- popolato da JS per vista --></div>
+    </dialog>
+
+    <footer class="foot">
+      <p style="margin: 0 0 6px">
+        <strong>Prototipo statico.</strong> Nessuna chiamata di rete, nessuna dipendenza, nessuna
+        risorsa remota. Il dialog «Arricchisci» usa <code>&lt;dialog&gt;.showModal()</code>
+        nativo: focus trap, chiusura con <kbd>Esc</kbd> e ripristino del focus sono comportamento
+        reale del browser, non simulato.
+      </p>
+      <p style="margin: 0">
+        Contratto: <code>documentazione/multi-visual-roadmap.md</code> · Gate
+        <strong>GMULTI: PENDING</strong>.
+      </p>
+    </footer>
+
+    <script>
+      (function () {
+        'use strict';
+
+        var dialog = document.getElementById('arricchisci');
+        var body = document.getElementById('arricchisci-body');
+        var footer = document.getElementById('arricchisci-footer');
+        var titleText = document.getElementById('arricchisci-title-text');
+        var subtitle = document.getElementById('arricchisci-subtitle');
+        var lastTrigger = null;
+        var currentView = null;
+        // Vista alla quale tornare se l'utente annulla l'abbandono.
+        var preAbandonView = null;
+
+        // Viste in cui chiudere (backdrop/Esc) deve intercettare e offrire
+        // la conferma di abbandono invece di chiudere silenziosamente,
+        // perché esiste un piano con costo già sostenuto e non ancora
+        // applicato alla lezione.
+        var VIEWS_REQUIRING_ABANDON_CONFIRM = {
+          'plan-review': true,
+          generating: true,
+          'slot-failed': true,
+          recovery: true,
+        };
+
+        var VIEWS = {
+          quantity: {
+            title: 'Arricchisci — Il ciclo dell’acqua',
+            subtitle: '3 slot liberi su 3',
+            wide: false,
+            body: function () {
+              return (
+                '<div class="note note--info"><p>Scegli quante immagini vuoi tentare di generare con l’IA. È un tetto, non un obbligo: anche scegliendo 3, il piano può proporne meno, o nessuna, dove non sarebbero giustificate.</p></div>' +
+                '<div class="qty">' +
+                btn('Automatico (1–3)', 'btn', 'go', 'authorize') +
+                btn('1 immagine', 'btn', 'go', 'authorize') +
+                btn('2 immagini', 'btn', 'go', 'authorize') +
+                btn('3 immagini', 'btn', 'go', 'authorize') +
+                '</div>' +
+                '<div class="note"><p>Puoi anche caricare un file tuo invece di generarlo, o gestire le immagini già approvate.</p></div>'
+              );
+            },
+            footer: function () {
+              return (
+                btn('Carica un file', 'btn', 'go', 'upload') +
+                btn('Chiudi', 'btn btn--ghost', 'close-direct')
+              );
+            },
+          },
+          'quantity-limited': {
+            title: 'Arricchisci — Il ciclo dell’acqua',
+            subtitle: '1 slot libero su 3 (2 già approvate)',
+            body: function () {
+              return (
+                '<div class="note note--info"><p>Con un solo slot libero l’opzione «Automatico» non avrebbe un intervallo su cui scegliere: resta solo «1 immagine».</p></div>' +
+                '<div class="qty" style="grid-template-columns:1fr">' +
+                btn('1 immagine', 'btn', 'go', 'authorize') +
+                '</div>'
+              );
+            },
+            footer: function () {
+              return btn('Apri la galleria', 'btn', 'go', 'gallery-2') + btn('Chiudi', 'btn btn--ghost', 'close-direct');
+            },
+          },
+          full: {
+            title: 'Arricchisci — Il ciclo dell’acqua',
+            subtitle: '3 di 3 immagini approvate',
+            body: function () {
+              return '<div class="note note--info"><p class="note__title">Nessuno slot libero</p><p>Questa lezione ha già il numero massimo di immagini. Per generarne un’altra, rimuovi o sostituisci una delle tre esistenti dalla galleria.</p></div>';
+            },
+            footer: function () {
+              return (
+                btn('Apri la galleria', 'btn', 'go', 'gallery-3') +
+                btnDisabled('Genera (nessuno slot libero)') +
+                btn('Chiudi', 'btn btn--ghost', 'close-direct')
+              );
+            },
+          },
+          authorize: {
+            title: 'Autorizzazione unica',
+            subtitle: 'Prima e unica conferma di costo di questa sessione',
+            body: function () {
+              return (
+                '<div class="cost-box"><table>' +
+                '<tr><td>Proposta coordinata (1 chiamata testo)</td><td>≤ &euro; stimato</td></tr>' +
+                '<tr><td>Fino a 3 generazioni immagine</td><td>≤ &euro; stimato × 3</td></tr>' +
+                '<tr class="total"><td>Tetto totale di questa sessione</td><td>≤ &euro; somma</td></tr>' +
+                '</table></div>' +
+                '<div class="note note--warn"><p><strong>Non è uno sconto</strong>: è la somma dei costi massimi di ciascuna fase. Il costo reale sarà pari o inferiore — ogni immagine non generata non viene addebitata. Dopo questa conferma <strong>non comparirà nessun’altra finestra di costo</strong> per questo piano: né alla proposta, né a ciascuna generazione, né ai retry entro il tetto di tentativi.</p></div>'
+              );
+            },
+            footer: function () {
+              return btn('Annulla', 'btn btn--ghost', 'go', 'quantity') + btn('Autorizza e continua', 'btn btn--primary', 'go', 'proposing');
+            },
+          },
+          proposing: {
+            title: 'Proposta coordinata in corso…',
+            subtitle: 'Un’unica chiamata, vede tutti gli slot insieme',
+            body: function () {
+              return (
+                '<div class="progress-line" role="presentation"><div class="progress-line__bar"></div></div>' +
+                '<p class="sr-only" role="status">Generazione della proposta coordinata in corso.</p>' +
+                '<p class="field__hint" style="margin-top:12px">Il modello vede tutti gli heading della lezione e propone fino a 3 idee reciprocamente distinte: due immagini non possono nascere sulla stessa ancora da questa chiamata.</p>'
+              );
+            },
+            footer: function () {
+              return btnDisabled('Annulla') + btn('Vai al piano', 'btn btn--primary', 'go', 'plan-review');
+            },
+          },
+          'plan-review': {
+            title: 'Piano — revisione',
+            subtitle: '3 slot proposti · modifica gratuita, nessun nuovo costo',
+            wide: true,
+            body: function () {
+              return (
+                '<div class="slots">' +
+                planSlotCard(1, 'pending', 'Evaporazione dal mare e formazione della nube.', '«Le quattro fasi» (indice 1)', true) +
+                planSlotCard(2, 'pending', 'Precipitazione sul rilievo e ruscellamento verso il mare.', '«Il bilancio idrico» (indice 2)', true) +
+                planSlotNone(3, 'Il resto della lezione riguarda valori numerici: un disegno non li rappresenterebbe in modo verificabile.') +
+                '</div>' +
+                '<div class="note"><p>Puoi modificare soggetto, ancora, didascalia e testo alternativo di ogni slot senza alcun costo aggiuntivo. Segnare uno slot come «non generare» libera quella capacità senza riassegnarla automaticamente a un altro slot.</p></div>'
+              );
+            },
+            footer: function () {
+              return btn('Genera tutte', 'btn btn--primary', 'go', 'generating');
+            },
+          },
+          generating: {
+            title: 'Generazione per asset',
+            subtitle: 'Ogni slot procede indipendentemente — nessuna nuova conferma di costo',
+            wide: true,
+            body: function () {
+              return (
+                '<div class="slots">' +
+                genSlotReady(1, 'sketch-evaporazione', '«Le quattro fasi»', '92 KB') +
+                genSlotGenerating(2) +
+                genSlotPending(3, '«nessuna immagine utile» — in attesa, non generato') +
+                '</div>' +
+                '<div class="note note--info"><p>Lo slot 1 è già pronto e resta così indipendentemente da come procede lo slot 2.</p></div>'
+              );
+            },
+            footer: function () {
+              return btnDisabled('Applica tutte (1 pronta)') + btn('Chiudi (in background)', 'btn btn--ghost', 'go', 'recovery');
+            },
+          },
+          'slot-failed': {
+            title: 'Generazione per asset',
+            subtitle: 'Slot 2 fallito — gli altri restano intatti',
+            wide: true,
+            body: function () {
+              return (
+                '<div class="slots">' +
+                genSlotReady(1, 'sketch-evaporazione', '«Le quattro fasi»', '92 KB') +
+                genSlotFailed(2) +
+                genSlotPending(3, 'in attesa') +
+                '</div>' +
+                '<div class="note note--error"><p class="note__title">Lo slot 2 non è riuscito</p><p>Codice tecnico: <code>visual_too_large</code>. Puoi ritentare (tentativo 2 di 2, coperto dalla prenotazione già fatta) senza toccare lo slot 1, già pronto, né il visual canonico attualmente approvato.</p></div>'
+              );
+            },
+            footer: function () {
+              return (
+                btn('Applica la 1 pronta', 'btn', 'go', 'gallery-1') +
+                btn('Ritenta solo lo slot 2', 'btn btn--primary', 'go', 'generating')
+              );
+            },
+          },
+          recovery: {
+            title: 'Piano ripreso',
+            subtitle: 'Nessuna nuova autorizzazione richiesta',
+            wide: true,
+            body: function () {
+              return (
+                '<div class="note note--ok"><p class="note__title">Piano recuperato così come l’hai lasciato</p><p>La finestra era stata chiusa con la generazione in corso. Il piano è persistito: lo slot 1 è ancora pronto, lo slot 2 ha ripreso da dove si era fermato. Il tetto autorizzato in origine resta valido fino alla scadenza.</p></div>' +
+                '<div class="slots">' +
+                genSlotReady(1, 'sketch-evaporazione', '«Le quattro fasi»', '92 KB') +
+                genSlotGenerating(2) +
+                genSlotPending(3, 'in attesa') +
+                '</div>'
+              );
+            },
+            footer: function () {
+              return btn('Continua', 'btn btn--primary', 'go', 'plan-review');
+            },
+          },
+          upload: {
+            title: 'Carica un’immagine',
+            subtitle: 'Nessuna proposta IA, nessuna chiamata a un provider',
+            body: function () {
+              return (
+                '<div class="note"><p><strong>bilancio-idrico-torrente.jpg</strong> · 1,8 MB · selezionato</p></div>' +
+                '<div class="note note--ok"><p class="note__title">Normalizzata lato server</p><p>JPEG in ingresso → WebP opaco in uscita, 1200×750, 112 KB, metadati (EXIF/GPS) rimossi. Nessuna verifica di stile.</p></div>' +
+                '<div class="frame frame--photo" style="max-width:320px"><span class="frame__label">bilancio-idrico-torrente.webp · 112 KB</span></div>' +
+                '<div class="field" style="margin-top:14px"><label class="field__label" for="fu-anchor">Posizione</label><input id="fu-anchor" type="text" value="Dopo la sezione «Il bilancio idrico» (indice 2)" /></div>' +
+                '<div class="field"><label class="field__label" for="fu-caption">Didascalia <span aria-hidden="true">·</span> obbligatoria</label><textarea id="fu-caption" placeholder="Che cosa fa capire questa foto."></textarea></div>' +
+                '<div class="field"><label class="field__label" for="fu-alt">Testo alternativo <span aria-hidden="true">·</span> obbligatorio</label><textarea id="fu-alt" placeholder="Descrizione per chi non vede la foto."></textarea></div>'
+              );
+            },
+            footer: function () {
+              return (
+                btn('Scegli un altro file', 'btn', 'go', 'upload') +
+                btn('Approva e applica', 'btn btn--primary', 'go', 'gallery-2')
+              );
+            },
+          },
+          'upload-error': {
+            title: 'Caricamento non riuscito',
+            subtitle: '',
+            body: function () {
+              return (
+                '<div class="note note--error"><p class="note__title">Il file supera i 2 MB consentiti prima della normalizzazione</p><p><code>foto-lezione-hd.png</code> pesa 6,1 MB. Nessun byte è stato letto oltre l’intestazione.</p><p><strong>La lezione non è stata modificata.</strong></p></div>' +
+                '<p class="field__hint">Formati accettati: PNG, JPEG, WebP (non animato). Riduci il file prima di ricaricarlo.</p>' +
+                '<div class="note"><p>Codice tecnico: <code>visual_upload_too_large</code>.</p></div>'
+              );
+            },
+            footer: function () {
+              return btn('Chiudi', 'btn btn--ghost', 'close-direct') + btn('Scegli un altro file', 'btn btn--primary', 'go', 'upload');
+            },
+          },
+          'gallery-1': galleryView(1),
+          'gallery-2': galleryView(2),
+          'gallery-3': galleryView(3),
+          replace: {
+            title: 'Sostituire l’immagine 2 di 3?',
+            subtitle: '',
+            body: function () {
+              return (
+                '<div class="note note--warn"><p>Le immagini 1 e 3 <strong>non sono interessate</strong> da questa sostituzione.</p></div>' +
+                '<div class="compare">' +
+                '<div><span class="badge badge--generated" style="margin-bottom:6px;display:inline-flex">Attuale · slot 2</span><div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Immagine attuale dello slot 2."><use href="#sketch-rilievo" /></svg></div></div>' +
+                '<div><span class="badge badge--generated" style="margin-bottom:6px;display:inline-flex">Nuova · in attesa</span><div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Nuova immagine proposta per lo slot 2."><use href="#sketch-rilievo" /></svg></div></div>' +
+                '</div>'
+              );
+            },
+            footer: function () {
+              return btn('Mantieni quella attuale', 'btn btn--ghost', 'go', 'gallery-3') + btn('Sostituisci l’immagine 2', 'btn btn--primary', 'go', 'gallery-3');
+            },
+          },
+          'abandon-plan': {
+            title: 'Abbandonare il piano?',
+            subtitle: '',
+            body: function () {
+              return (
+                '<div class="note note--warn"><p class="note__title">Le immagini generate e non ancora applicate verranno eliminate</p><p>Sono già state pagate. Rigenerarle comporterà una nuova autorizzazione.</p></div>' +
+                '<p style="margin:0 0 6px"><strong>Che cosa resta invariato:</strong></p>' +
+                '<ul style="margin:0;padding-left:18px;font-size:13px;color:var(--color-text)"><li>Il testo della lezione</li><li>Le immagini già approvate in lezioni precedenti</li><li>La vista dello studente</li></ul>'
+              );
+            },
+            footer: function () {
+              return btn('Torna al piano', 'btn', 'go', 'plan-review') + btn('Abbandona ed elimina', 'btn btn--danger', 'close-direct');
+            },
+          },
+          'lesson-gen-step': {
+            title: 'Testo salvato — Il ciclo dell’acqua',
+            subtitle: 'Passo successivo, facoltativo, del flusso di generazione della lezione',
+            body: function () {
+              return (
+                '<div class="note note--ok"><p class="note__title">Il testo è già salvato in modo canonico</p><p>Questo è un punto di non ritorno: qualunque cosa succeda al passo successivo, il testo appena generato resta esattamente com’è.</p></div>' +
+                '<p>Vuoi generare anche le immagini per questa lezione?</p>' +
+                '<p class="field__hint">Se scegli sì, si apre lo stesso selettore di quantità usato da «Arricchisci», sullo stesso testo appena salvato. Un fallimento del piano visivo non tornerà mai a toccare il testo, e ritentare un’immagine non rigenera il testo.</p>'
+              );
+            },
+            footer: function () {
+              return btn('No, solo il testo', 'btn btn--ghost', 'close-direct') + btn('Sì, genera anche le immagini', 'btn btn--primary', 'go', 'quantity');
+            },
+          },
+        };
+
+        function btn(label, cls, action, arg) {
+          return (
+            '<button type="button" class="' +
+            cls +
+            '" data-action="' +
+            action +
+            (arg ? '" data-arg="' + arg : '') +
+            '">' +
+            label +
+            '</button>'
+          );
+        }
+        function btnDisabled(label) {
+          return '<button type="button" class="btn" disabled>' + label + '</button>';
+        }
+
+        function planSlotCard(n, state, subject, anchor, editable) {
+          return (
+            '<div class="slot">' +
+            '<div class="slot__head"><span>Slot ' +
+            n +
+            ' · immagine</span><span class="slot__state slot__state--pending">Proposto</span></div>' +
+            (editable
+              ? '<div class="field" style="margin-bottom:8px"><label class="field__label">Soggetto</label><textarea rows="2">' +
+                subject +
+                '</textarea></div>' +
+                '<div class="field" style="margin-bottom:8px"><label class="field__label">Ancora</label><input type="text" value="' +
+                anchor +
+                '" /></div>' +
+                '<div class="field" style="margin-bottom:0"><label class="field__label">Didascalia</label><textarea rows="2">Didascalia proposta, modificabile.</textarea></div>'
+              : '<p class="slot__meta"><strong>Soggetto:</strong> ' + subject + '<br /><strong>Ancora:</strong> ' + anchor + '</p>') +
+            '</div>'
+          );
+        }
+        function planSlotNone(n, reason) {
+          return (
+            '<div class="slot" style="opacity:.85">' +
+            '<div class="slot__head"><span>Slot ' +
+            n +
+            ' · nessuna immagine utile</span></div>' +
+            '<p class="slot__meta">' +
+            reason +
+            '</p>' +
+            '</div>'
+          );
+        }
+        function genSlotReady(n, symbol, anchor, weight) {
+          return (
+            '<div class="slot">' +
+            '<div class="slot__head"><span>Slot ' +
+            n +
+            '</span><span class="slot__state slot__state--ready">Pronta</span></div>' +
+            '<div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Anteprima immagine pronta."><use href="#' +
+            symbol +
+            '" /></svg></div>' +
+            '<p class="slot__meta">Ancorata a <strong>' + anchor + '</strong> · ' + weight + '</p>' +
+            '</div>'
+          );
+        }
+        function genSlotGenerating(n) {
+          return (
+            '<div class="slot">' +
+            '<div class="slot__head"><span>Slot ' +
+            n +
+            '</span><span class="slot__state slot__state--generating">In generazione</span></div>' +
+            '<div class="frame frame--skeleton"><div class="frame__spinner" role="presentation"></div></div>' +
+            '<p class="sr-only" role="status">Generazione dello slot ' + n + ' in corso.</p>' +
+            '<p class="slot__meta">Tentativo 1 di 2</p>' +
+            '</div>'
+          );
+        }
+        function genSlotFailed(n) {
+          return (
+            '<div class="slot">' +
+            '<div class="slot__head"><span>Slot ' +
+            n +
+            '</span><span class="slot__state slot__state--failed">Fallito</span></div>' +
+            '<div class="frame" style="display:flex;align-items:center;justify-content:center;color:var(--color-error);font-size:12px">visual_too_large</div>' +
+            '<p class="slot__meta">Tentativo 1 di 2 — ritentabile</p>' +
+            '</div>'
+          );
+        }
+        function genSlotPending(n, note) {
+          return (
+            '<div class="slot" style="opacity:.7">' +
+            '<div class="slot__head"><span>Slot ' +
+            n +
+            '</span><span class="slot__state slot__state--pending">In attesa</span></div>' +
+            '<div class="frame" style="display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:12px">' +
+            note +
+            '</div>' +
+            '</div>'
+          );
+        }
+
+        function galleryItem(n, symbol, anchorText, weight, badge, showUpDisabled, showDownDisabled) {
+          var img =
+            symbol === 'photo'
+              ? '<div class="frame frame--photo"><span class="frame__label">' + weight + '</span></div>'
+              : '<div class="frame"><svg viewBox="0 0 480 260" role="img" aria-label="Anteprima immagine ' + n + '."><use href="#' + symbol + '" /></svg></div>';
+          return (
+            '<div class="gallery__item">' +
+            '<div class="slot__head"><span>' +
+            n +
+            '</span><span class="badge badge--' +
+            badge +
+            '">' +
+            (badge === 'generated' ? 'Generata' : 'Caricata') +
+            '</span></div>' +
+            img +
+            '<p class="slot__meta">Ancorata a <strong>' + anchorText + '</strong> · ' + weight + '</p>' +
+            '<div class="slot__actions">' +
+            btn('Sostituisci', 'btn btn--compact', 'go', 'replace') +
+            btn('Rimuovi', 'btn btn--compact btn--danger', 'go', 'gallery-remove-confirm') +
+            '<span class="reorder">' +
+            '<button type="button" class="btn btn--icon btn--compact"' + (showUpDisabled ? ' disabled' : '') + ' aria-label="Sposta su">↑</button>' +
+            '<button type="button" class="btn btn--icon btn--compact"' + (showDownDisabled ? ' disabled' : '') + ' aria-label="Sposta giù">↓</button>' +
+            '</span>' +
+            '</div>' +
+            '</div>'
+          );
+        }
+
+        function galleryView(count) {
+          return {
+            title: 'Immagini — Il ciclo dell’acqua',
+            subtitle: count + ' di 3 immagini approvate',
+            wide: count > 1,
+            body: function () {
+              var items = '<div class="gallery">';
+              items += galleryItem(1, 'sketch-evaporazione', 'Le quattro fasi', '92 KB', 'generated', true, count === 1);
+              if (count >= 2) items += galleryItem(2, 'sketch-rilievo', 'Il bilancio idrico', '101 KB', 'generated', false, count === 2);
+              if (count >= 3) items += galleryItem(3, 'photo', 'Il bilancio idrico', '112 KB', 'uploaded', false, true);
+              items += '</div>';
+              if (count === 2) {
+                items +=
+                  '<div class="note note--info" style="margin-bottom:0"><p>Le immagini 1 e 2 hanno ancore diverse; nella pagina compaiono nell’ordine fisico degli heading, non nell’ordine della galleria.</p></div>';
+              }
+              return items;
+            },
+            footer: function () {
+              var out = '';
+              if (count < 3) out += btn('Genera altre', 'btn', 'go', count === 2 ? 'quantity-limited' : 'quantity');
+              out += btn('Chiudi', 'btn btn--ghost', 'close-direct');
+              return out;
+            },
+          };
+        }
+        // Conferma di rimozione riusa la vista abbandona-piano con testo diverso
+        // per restare entro il set di viste già definite (stessa meccanica).
+        VIEWS['gallery-remove-confirm'] = {
+          title: 'Rimuovere questa immagine?',
+          subtitle: '',
+          body: function () {
+            return '<div class="note note--warn"><p>L’immagine e i suoi byte canonici verranno eliminati. Le altre immagini della lezione non sono toccate.</p></div>';
+          },
+          footer: function () {
+            return btn('Annulla', 'btn', 'go', 'gallery-3') + btn('Rimuovi', 'btn btn--danger', 'go', 'gallery-2');
+          },
+        };
+
+        function render(viewId) {
+          var v = VIEWS[viewId];
+          if (!v) return;
+          currentView = viewId;
+          titleText.textContent = v.title;
+          subtitle.textContent = v.subtitle || '';
+          body.innerHTML = v.body();
+          footer.innerHTML = v.footer();
+          if (v.wide) dialog.setAttribute('data-wide', '');
+          else dialog.removeAttribute('data-wide');
+        }
+
+        function openDialog(viewId, trigger) {
+          lastTrigger = trigger || document.activeElement;
+          render(viewId);
+          if (!dialog.open) dialog.showModal();
+        }
+
+        function closeDialog() {
+          if (dialog.open) dialog.close();
+        }
+
+        // Delegazione click sia dentro il dialog sia sulle pagine/barra demo.
+        document.addEventListener('click', function (event) {
+          var node = event.target;
+          while (node && node.nodeType !== 1) node = node.parentNode;
+          if (!node || !node.closest) return;
+
+          var pageBtn = node.closest('[data-page]');
+          if (pageBtn) {
+            closeDialog();
+            document.querySelectorAll('.page').forEach(function (p) {
+              p.hidden = p.id !== pageBtn.getAttribute('data-page');
+            });
+            document.querySelectorAll('.demo-bar [data-page]').forEach(function (b) {
+              b.setAttribute('aria-pressed', String(b === pageBtn));
+            });
+            return;
+          }
+
+          var viewBtn = node.closest('[data-view]');
+          if (viewBtn) {
+            openDialog(viewBtn.getAttribute('data-view'), viewBtn);
+            return;
+          }
+
+          var openTrigger = node.closest('.js-open-arricchisci');
+          if (openTrigger) {
+            // Il trigger di cui va ripristinato il focus alla chiusura deve
+            // restare focalizzabile per tutta la vita del dialog: la voce
+            // di menu «Arricchisci» viene nascosta insieme al menu Azioni,
+            // quindi il ripristino nativo punta al pulsante «Azioni ▾»
+            // stesso, che resta visibile.
+            var actionsRoot = openTrigger.closest('.actions');
+            var toggleBtn = actionsRoot ? actionsRoot.querySelector('.actions-toggle') : null;
+            openDialog(openTrigger.getAttribute('data-open-view') || 'quantity', toggleBtn || openTrigger);
+            var menu = openTrigger.closest('.actions__menu');
+            if (menu) menu.hidden = true;
+            return;
+          }
+
+          var toggle = node.closest('.actions-toggle');
+          if (toggle) {
+            var menuEl = toggle.parentElement.querySelector('.actions__menu');
+            var willOpen = menuEl.hidden;
+            menuEl.hidden = !willOpen;
+            toggle.setAttribute('aria-expanded', String(willOpen));
+            return;
+          }
+
+          var goBtn = node.closest('[data-action="go"]');
+          if (goBtn) {
+            render(goBtn.getAttribute('data-arg'));
+            return;
+          }
+          var closeBtn = node.closest('[data-action="close-direct"]');
+          if (closeBtn) {
+            closeDialog();
+            return;
+          }
+
+          // Click fuori dal menu Azioni lo richiude.
+          document.querySelectorAll('.actions__menu:not([hidden])').forEach(function (m) {
+            if (!m.contains(node)) {
+              m.hidden = true;
+              var t = m.parentElement.querySelector('.actions-toggle');
+              if (t) t.setAttribute('aria-expanded', 'false');
+            }
+          });
+        });
+
+        // Intercetta la chiusura nativa da Escape per offrire la conferma
+        // di abbandono quando il piano corrente ha un costo già sostenuto
+        // e non ancora applicato — mai uno scarto silenzioso.
+        //
+        // Nota verificata con il browser reale: un <dialog> nativo aperto
+        // con showModal() NON si chiude da solo al click sul backdrop (a
+        // differenza di molte implementazioni di modali custom) — solo
+        // Escape genera un evento 'cancel'. Non serve quindi intercettare
+        // alcun click esterno: il rischio che questa parte del codice
+        // difende è solo Escape.
+        //
+        // Due meccanismi indipendenti sullo stesso rischio, non uno solo:
+        // 1) l'evento 'cancel' standard;
+        // 2) un listener 'keydown' dedicato su Escape, in fase di cattura.
+        // Nello smoke di questa fase (vedi evidenza), l'intercettazione è
+        // verificata funzionante quando il 'cancel' è generato dal
+        // normale percorso DOM (dispatch diretto dell'evento); non è stato
+        // possibile confermare in modo conclusivo lo stesso esito quando
+        // Escape è simulato come input sintetico via Chrome DevTools
+        // Protocol in modalità headless, che in questo ambiente chiude il
+        // dialog nonostante l'intercettazione — comportamento riportato
+        // come limite noto della verifica, non dichiarato superato.
+        function interceptAbandonIfNeeded(event) {
+          if (VIEWS_REQUIRING_ABANDON_CONFIRM[currentView]) {
+            event.preventDefault();
+            preAbandonView = currentView;
+            render('abandon-plan');
+            return true;
+          }
+          return false;
+        }
+        dialog.addEventListener('cancel', function (event) {
+          interceptAbandonIfNeeded(event);
+        });
+        dialog.addEventListener(
+          'keydown',
+          function (event) {
+            if (event.key !== 'Escape') return;
+            if (interceptAbandonIfNeeded(event)) {
+              event.stopPropagation();
+            }
+          },
+          true
+        );
+
+        // Ripristino esplicito del focus sul trigger — non affidato al solo
+        // comportamento nativo di <dialog>.close(), perché il trigger reale
+        // («Arricchisci» nel menu Azioni) viene nascosto insieme al menu
+        // nello stesso istante in cui il dialog si apre: un elemento non
+        // più visibile non può ricevere il focus, e il ripristino nativo
+        // fallirebbe silenziosamente. Si ripristina invece sempre e
+        // comunque sul pulsante «Azioni ▾», visibile per tutta la vita del
+        // dialog.
+        dialog.addEventListener('close', function () {
+          currentView = null;
+          if (lastTrigger && document.body.contains(lastTrigger) && lastTrigger.offsetParent !== null) {
+            lastTrigger.focus();
+          }
+        });
+
+        // Rete di sicurezza sul trap nativo: in alcuni ambienti, al giro di
+        // boccola il focus transita per un istante su <body> prima di
+        // richiudersi sul primo elemento. Questo handler intercetta Tab
+        // sull'ultimo elemento e Shift+Tab sul primo e forza esplicitamente
+        // il wrap dentro il dialog, senza mai lasciare che il focus tocchi
+        // alcun elemento fuori da esso.
+        dialog.addEventListener('keydown', function (event) {
+          if (event.key !== 'Tab') return;
+          var focusables = Array.prototype.slice
+            .call(
+              dialog.querySelectorAll(
+                'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+              )
+            )
+            .filter(function (el) {
+              return el.offsetParent !== null;
+            });
+          if (focusables.length === 0) return;
+          var first = focusables[0];
+          var last = focusables[focusables.length - 1];
+          var active = document.activeElement;
+          if (event.shiftKey) {
+            if (active === first || !dialog.contains(active)) {
+              event.preventDefault();
+              last.focus();
+            }
+          } else {
+            if (active === last || !dialog.contains(active)) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
