@@ -65,6 +65,102 @@ export function validateVisualPlanQuantitySelection(value: unknown): VisualPlanQ
   return { mode: root.mode, ceiling: root.ceiling };
 }
 
+// ─── Input della callable di autorizzazione (roadmap §8.3), non persistito ─────
+
+/**
+ * MULTI-VISUAL-03A — payload chiuso di `aiVisualPlanAuthorize`. Solo i campi
+ * che il **gateway** deve conoscere prima di rileggere `LessonDoc` (identità
+ * di destinazione, quantità, `requestId`): `invalid_input`, non
+ * `corrupted_state` — questo non è un record persistito, è l'input di un
+ * client non fidato (a differenza di `validateVisualPlanQuantitySelection`,
+ * che valida un *record* già scritto).
+ *
+ * I campi editoriali del payload didattico (`titolo`/`sottotitolo`/…) restano
+ * a forma `unknown` qui: la loro validazione è delegata per intero a
+ * `validateAiContentRequest` nel momento in cui il gateway costruisce la
+ * richiesta `visual_plan_proposal` sintetica — nessuna seconda definizione
+ * dei limiti di lunghezza/forma già dichiarati in `aiContentCore.ts`.
+ */
+export interface VisualPlanAuthorizeInput {
+  requestId: string;
+  programId: string;
+  importId: string;
+  lessonId: string;
+  quantity: VisualPlanQuantitySelection;
+  titolo: unknown;
+  sottotitolo: unknown;
+  difficolta: unknown;
+  concettiChiave: unknown;
+  obiettivi: unknown;
+  udaTitle: unknown;
+  udaContext: unknown;
+}
+
+const AUTHORIZE_INPUT_KEYS = [
+  'requestId',
+  'programId',
+  'importId',
+  'lessonId',
+  'quantity',
+  'titolo',
+  'sottotitolo',
+  'difficolta',
+  'concettiChiave',
+  'obiettivi',
+  'udaTitle',
+  'udaContext',
+] as const;
+
+const AUTHORIZE_QUANTITY_KEYS = ['mode', 'ceiling'] as const;
+
+function invalidAuthorizeInput(message: string): never {
+  throw new AiVisualMultiError('invalid_input', message);
+}
+
+function parseAuthorizeQuantity(value: unknown): VisualPlanQuantitySelection {
+  const root = asRecord(value, 'Selezione di quantità non valida.');
+  assertExactKeys(root, AUTHORIZE_QUANTITY_KEYS, 'Selezione di quantità');
+  if (root.mode !== 'auto' && root.mode !== 'exact') {
+    invalidAuthorizeInput('mode della quantità non valido.');
+  }
+  if (root.ceiling !== 1 && root.ceiling !== 2 && root.ceiling !== 3) {
+    invalidAuthorizeInput('ceiling della quantità non valido.');
+  }
+  return { mode: root.mode, ceiling: root.ceiling };
+}
+
+export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuthorizeInput {
+  const root = asRecord(value, 'Richiesta di autorizzazione del piano non valida.');
+  assertExactKeys(root, AUTHORIZE_INPUT_KEYS, 'Richiesta di autorizzazione del piano');
+
+  const requestId = root.requestId;
+  if (!isUuidV4(requestId)) invalidAuthorizeInput('requestId non valido.');
+
+  const programId = root.programId;
+  if (!isValidDocumentIdInput(programId)) invalidAuthorizeInput('programId non valido.');
+  const importId = root.importId;
+  if (!isValidDocumentIdInput(importId)) invalidAuthorizeInput('importId non valido.');
+  const lessonId = root.lessonId;
+  if (!isValidDocumentIdInput(lessonId)) invalidAuthorizeInput('lessonId non valido.');
+
+  const quantity = parseAuthorizeQuantity(root.quantity);
+
+  return {
+    requestId,
+    programId,
+    importId,
+    lessonId,
+    quantity,
+    titolo: root.titolo,
+    sottotitolo: root.sottotitolo,
+    difficolta: root.difficolta,
+    concettiChiave: root.concettiChiave,
+    obiettivi: root.obiettivi,
+    udaTitle: root.udaTitle,
+    udaContext: root.udaContext,
+  };
+}
+
 // ─── Slot del piano (roadmap §5.5) ─────────────────────────────────────────────
 
 export type VisualPlanSlotState =
@@ -868,6 +964,33 @@ function assertVisualPlanStatusMatchesSlots(
   if (status === 'abandoned' && promotedCount > 0) {
     invalidSlot('status "abandoned" richiede che nessuno slot immagine sia stato promosso.');
   }
+}
+
+/**
+ * MULTI-VISUAL-03A — deriva lo stato terminale del piano dai suoi slot,
+ * quando **ogni** slot è già terminale (roadmap §8.7). Nucleo puro condiviso
+ * da chi scrive una transizione (`aiVisualPlanGateway.ts`, per esempio
+ * l'abbandono esplicito del piano) e da `assertVisualPlanStatusMatchesSlots`,
+ * che verifica — non calcola — la stessa relazione in lettura: nessuna
+ * seconda definizione della regola.
+ *
+ * Non decide `expired`: quello dipende dall'orologio, non dagli slot, ed è
+ * competenza esclusiva del chiamante (fuori scope in MULTI-VISUAL-03A, dove
+ * il TTL scheduler non è cablato).
+ */
+export function deriveVisualPlanTerminalStatus(
+  slots: readonly VisualPlanSlot[],
+): 'completed' | 'partially_completed' | 'abandoned' {
+  if (!slots.every((slot) => isTerminalSlot(slot))) {
+    invalidSlot('Impossibile derivare uno stato terminale: non ogni slot è terminale.');
+  }
+  const imageSlots = slots.filter((slot) => slot.decision === 'image');
+  const promotedCount = imageSlots.filter((slot) => slot.state === 'promoted').length;
+  const nonPromotedCount = imageSlots.length - promotedCount;
+
+  if (imageSlots.length === 0 || promotedCount === 0) return 'abandoned';
+  if (nonPromotedCount === 0) return 'completed';
+  return 'partially_completed';
 }
 
 /**

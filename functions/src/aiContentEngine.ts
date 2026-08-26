@@ -207,8 +207,16 @@ interface ResolvedCost {
   reservationCostMicroUsd: number;
 }
 
-/** Numero massimo di tentativi complessivi (1 + retry) dalla config runtime. */
-function maxAttemptsFromConfig(config: AiRuntimeConfig): number {
+/**
+ * Numero massimo di tentativi complessivi (1 + retry) dalla config runtime.
+ *
+ * Esportata per MULTI-VISUAL-03A (`aiVisualPlanGateway.ts`): il calcolo del
+ * `proposalCap` prenotato dal piano deve usare **esattamente** la stessa
+ * formula che questo motore userà internamente per la stessa richiesta
+ * (`enforceConfigAndLimits`), non una seconda definizione che potrebbe
+ * divergere.
+ */
+export function maxAttemptsFromConfig(config: AiRuntimeConfig): number {
   return 1 + Math.max(0, config.limits.maxApplicationRetries);
 }
 

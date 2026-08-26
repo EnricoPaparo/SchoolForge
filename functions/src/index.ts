@@ -30,6 +30,12 @@ export {
 // con VE, staging deterministico), abbandono e cleanup TTL. Zero provider,
 // zero budget IA, zero secret. Nessuna promozione: resta MULTI-VISUAL-03.
 export { aiVisualUploadAccept, aiVisualUploadAbandon } from './aiVisualUploadGateway.js';
+// MULTI-VISUAL-03A — autorizzazione owner-only del piano visivo coordinato:
+// lease deterministico un-piano-per-lezione, prenotazione unica del tetto
+// economico e proposta coordinata (kind: 'visual_plan_proposal') tramite il
+// motore AIGEN generico. Nessuna generazione per slot, promozione, upload-
+// adoption, riordino/rimozione o cleanup: resta MULTI-VISUAL-03B/03C.
+export { aiVisualPlanAuthorize } from './aiVisualPlanGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.
