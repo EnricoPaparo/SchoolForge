@@ -39,6 +39,10 @@ export const LESSON_VISUALS_CONTRACT_VERSION = 'lesson-visuals/v1' as const;
 /** Versione del contratto del piano coordinato. */
 export const VISUAL_PLAN_CONTRACT_VERSION = 'visual-plan/v1' as const;
 
+/** Versioni dei due record tecnici introdotti da MULTI-VISUAL-03B. */
+export const VISUAL_PLAN_SLOT_RUN_CONTRACT_VERSION = 'visual-plan-slot-run/v1' as const;
+export const VISUAL_PLAN_PROMOTION_CONTRACT_VERSION = 'visual-plan-promotion/v1' as const;
+
 /** `styleVersion` di un'immagine caricata dal docente — nessuna verifica di stile. */
 export const UPLOADED_VISUAL_STYLE_VERSION = 'uploaded/v1' as const;
 
@@ -69,6 +73,21 @@ export function isSha256Hex(value: unknown): value is string {
  */
 export function computeOpaqueVisualPlanId(ownerUid: string, requestId: string): string {
   return sha256Hex(canonicalTuple([VISUAL_PLAN_CONTRACT_VERSION, ownerUid, requestId]));
+}
+
+/**
+ * Identità stabile dell'esecuzione di uno slot. Non include il tentativo:
+ * entrambi i tentativi autorizzati sono una sola macchina a stati persistita,
+ * così un replay non può creare una seconda spesa sotto un altro documento.
+ */
+export function computeOpaqueVisualPlanSlotRunId(
+  ownerUid: string,
+  opaquePlanId: string,
+  slotIndex: number,
+): string {
+  return sha256Hex(
+    canonicalTuple(['visual-plan-slot/v1', ownerUid, opaquePlanId, String(slotIndex)]),
+  );
 }
 
 /**
@@ -141,6 +160,12 @@ export type AiVisualMultiErrorCode =
   // e la ripresa della proposta coordinata dopo una risposta persa.
   | 'visual_plan_already_active'
   | 'visual_plan_proposal_body_changed'
+  | 'visual_plan_expired'
+  | 'visual_plan_slot_not_generatable'
+  | 'visual_plan_slot_attempts_exhausted'
+  | 'visual_plan_external_mutation'
+  | 'visual_slot_full'
+  | 'visual_replace_target_missing'
   // MULTI-VISUAL-02 — vocabolario proprio della catena binaria dell'upload
   // (roadmap §9.2, §9.7): distinti dai codici di VE (`AiVisualErrorCode`),
   // che restano quelli del flusso di generazione, mai riusati qui per non

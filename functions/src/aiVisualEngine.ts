@@ -199,7 +199,7 @@ function responseFromRun(
   };
 }
 
-function usageSettlement(
+export function settleVisualProviderUsage(
   outcome: Extract<ImageProviderOutcome, { status: 'success' | 'billed_unusable' }>,
   reservationCap: number,
 ): {
@@ -340,7 +340,7 @@ export async function generateVisual(
     );
   }
 
-  const settlement = usageSettlement(outcome, cap);
+  const settlement = settleVisualProviderUsage(outcome, cap);
   if (outcome.status === 'billed_unusable') {
     await ports.failRun({
       opaqueRunId,

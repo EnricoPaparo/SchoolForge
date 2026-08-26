@@ -26,6 +26,10 @@ const TECHNICAL_DOCUMENTS = [
   // MULTI-VISUAL-03A — piano coordinato e lease per-lezione server-only.
   'visualPlanRuns/opaque-visual-plan-1',
   'visualPlanLeases/opaque-visual-plan-lease-1',
+  // MULTI-VISUAL-03B — tentativi, promozioni e recovery per-slot.
+  'visualPlanSlotRuns/opaque-slot-run-1',
+  'visualPlanPromotions/opaque-slot-promotion-1',
+  'visualPlanPromotionRecoveries/opaque-slot-recovery-1',
   'aiVisualCandidates/opaque-visual-run-1',
   'aiVisualPromotions/opaque-visual-run-1',
   'aiVisualAbandonments/opaque-visual-run-1',

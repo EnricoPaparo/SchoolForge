@@ -36,6 +36,12 @@ export { aiVisualUploadAccept, aiVisualUploadAbandon } from './aiVisualUploadGat
 // motore AIGEN generico. Nessuna generazione per slot, promozione, upload-
 // adoption, riordino/rimozione o cleanup: resta MULTI-VISUAL-03B/03C.
 export { aiVisualPlanAuthorize } from './aiVisualPlanGateway.js';
+// MULTI-VISUAL-03B — generazione/retry e promozione atomica add/replace
+// per singolo slot. Solo la generazione riceve OPENAI_API_KEY.
+export {
+  aiVisualPlanGenerateSlot,
+  aiVisualPlanPromoteSlot,
+} from './aiVisualPlanExecutionGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.
