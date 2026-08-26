@@ -1,6 +1,6 @@
 # MULTI-VISUAL — Arricchimento visivo multi-immagine (contratto e roadmap)
 
-> **Stato: MULTI-VISUAL-01 — tipi e validatori puri implementati.**
+> **Stato: MULTI-VISUAL-02 — proposta coordinata e upload binario implementati.**
 > MULTI-VISUAL-00 (contratto e prototipo) chiuso con PR #423. MULTI-VISUAL-01
 > aggiunge, in `functions/src/aiVisualMulti{Core,Manifest,Anchor,Plan}.ts`,
 > i tipi chiusi e i validatori fail-closed di `LessonVisualsManifest`,
@@ -8,8 +8,10 @@
 > (§6.1), `adaptSingular`, il risolutore d'ancora indice+testo (§7.2,
 > riuso di `resolveAnchorByIndex`/`listAnchorableHeadings` di VE), il
 > vincolo di diversità (§7.4) e `VisualPlanRun`/`VisualPlanSlot` (§5.5).
-> **Nessuna Function, Rule, UI o chiamata provider**: nessun runtime, nessuna
-> dipendenza, nessun deploy — invariato da MULTI-VISUAL-00 su questi punti.
+> MULTI-VISUAL-02 aggiunge il percorso IA interno
+> `visual_plan_proposal` e le callable owner-only `aiVisualUploadAccept` /
+> `aiVisualUploadAbandon`. Restano invariati Rules, UI, proiezioni studente,
+> provider reali, segreti e deploy.
 > Pilota di `AGENT-ORCHESTRATOR` (`agent-orchestrator-roadmap.md` §12).
 > **Gate GMULTI: PENDING** (resta condizionato a MULTI-VISUAL-02→05).
 >
@@ -2451,13 +2453,14 @@ non lo usa (§9.8).
 
 | Momento | Provider | Firestore | Storage | Function |
 |---|---|---|---|---|
-| **Accettazione file** (per immagine caricata, 1° tentativo) | **0** | 1 scrittura `VisualUploadRun` (`status: 'accepted'` → `'ready'`) | 1 scrittura staging | 1 (normalizzazione, cap input 2 MB) |
+| **Accettazione file** (per immagine caricata, 1° tentativo) | **0** | 4 letture puntuali / 2 scritture (`accepted`, poi `ready`) | 1 scrittura staging create-only | 1 (normalizzazione, cap input 2 MB) |
 | **Rifiuto pre-decodifica** (formato/peso non validi, §9.2) | 0 | 0 | 0 | 1 (termina al passo 0, nessuna scrittura) |
-| **Replay** (stesso `requestId`, stesso `rawBytesSha256`, §9.7) | 0 | 1 lettura — **nessuna seconda normalizzazione** | 0 | 1 |
-| **Conflitto** (stesso `requestId`, byte o ancora diversi, §9.7) | 0 | 1 lettura, **zero scritture** | 0 | 1 |
+| **Replay `ready`** (stesso `requestId`, stesso `rawBytesSha256`, §9.7) | 0 | 3 letture puntuali / 0 scritture — **nessuna seconda normalizzazione** | 0 | 1 |
+| **Recovery `accepted`** (crash prima/dopo lo staging) | 0 | 4 letture puntuali / 1 scrittura finale | 1 tentativo create-only; su 412, 1 lettura e confronto byte-per-byte | 1 |
+| **Conflitto** (stesso `requestId`, byte o ancora diversi, §9.7) | 0 | fino a 3 letture puntuali, **zero scritture** | 0 | 1 |
 | **Promozione di un upload** | 0 | **identica alla riga «Promozione» di §12.4** — l'upload riusa §8.6 senza una seconda procedura (§9.8) | identico a §12.4 | 1 |
-| **Abbandono** (non promosso) | 0 | 1 scrittura (`status: 'abandoned'`) | 1 delete staging | 1 |
-| **Cleanup TTL scaduto** | 0 | 1 scrittura (`status: 'expired'`) | 1 delete staging | 1 |
+| **Abbandono** (non promosso) | 0 | 1 lettura / 1 scrittura (`status: 'abandoned'`) | 1 metadata read + 1 delete condizionata alla generation, solo con prova di proprietà | 1 |
+| **Cleanup TTL scaduto** | 0 | 1 lettura / 1 scrittura (`status: 'expired'`) | 1 metadata read + 1 delete condizionata alla generation, solo con prova di proprietà | porta puntuale; wiring TTL rinviato a MULTI-VISUAL-03 |
 
 ### 12.4 Promozione — individuale o in blocco, mai una transazione multi-immagine
 
@@ -2865,7 +2868,7 @@ Nuovi in questa revisione:
 |---|---|---|---|
 | **MULTI-VISUAL-00** | **Contratto e prototipo**, revisione 2: piano coordinato ad autorizzazione unica, selettore di quantità, identità di ancoraggio indice+testo, cap upload 2 MB, ingresso unico «Arricchisci», integrazione col flusso di generazione della lezione, manifest pubblico minimizzato, cost model per fase e asset. | VE-00→05A (documentali), `agent-orchestrator-roadmap.md` §12 | **Questo documento.** Nessun runtime. Gate GMULTI: PENDING. |
 | **MULTI-VISUAL-01** | **Tipi e validatori puri.** `LessonVisualsManifest`, `LessonVisualItem` (con `source` privato), `PublicLessonVisualItem` (senza `source`), `VisualAnchorSelector`, `VisualPlanRun`/`VisualPlanSlot`, validatore del vincolo di diversità (§7.4), risolutore d'ancora a indice+testo (§7.2) con test di collisione (§7.3), `adaptSingular` puro, costanti incluso `MAX_VISUAL_UPLOAD_INPUT_BYTES = 2_000_000`. Nessuna Function, nessuna UI, nessun provider. | MULTI-VISUAL-00 | **Implementato** — `functions/src/aiVisualMultiCore.ts`, `aiVisualMultiManifest.ts`, `aiVisualMultiAnchor.ts`, `aiVisualMultiPlan.ts` (92 test, PR draft verso `main`). Il risolutore d'ancora riusa `resolveAnchorByIndex`/`listAnchorableHeadings` di VE (`aiVisualPromotion.ts`), nessun parser Markdown parallelo. Upload binario, proposta coordinata, persistenza/lifecycle e UI restano fuori scope (MULTI-VISUAL-02→04). |
-| **MULTI-VISUAL-02** | **Catena binaria dell'upload** (cap 2 MB, allowlist PNG/JPEG/WebP non animati, `background=opaque`) e **proposta coordinata** (`kind: 'visual_plan_proposal'`, Structured Output ad array, vincolo di diversità applicato server-side). Nessuna UI, nessuna proiezione studente. | MULTI-VISUAL-01 | Aperto. |
+| **MULTI-VISUAL-02** | **Catena binaria dell'upload** (cap 2 MB, allowlist PNG/JPEG/WebP non animati, `background=opaque`) e **proposta coordinata** (`kind: 'visual_plan_proposal'`, Structured Output ad array, vincolo di diversità applicato server-side). Nessuna UI, nessuna proiezione studente. | MULTI-VISUAL-01 | **Implementato.** Il nuovo kind è disponibile soltanto al motore interno: le callable IA generiche lo rifiutano prima di configurazione, budget, provider e scritture; MULTI-VISUAL-03 gli darà la porta autorizzata dal piano. L'upload persiste `VisualUploadRun`, normalizza con la pipeline Sharp condivisa, usa staging create-only e prova di proprietà nei metadati con delete condizionata alla generation. Cleanup TTL esposto come porta puntuale, senza scheduler o indice in questa fase. |
 | **MULTI-VISUAL-03** | **Persistenza e lifecycle del piano.** `VisualPlanRun` con autorizzazione unica e prenotazione a somma di cap, transazione di adozione, promozione `add`/`replace` per slot, riordino, rimozione, Rules Firestore su `publicLessons.visuals`/`publicLessonVisuals`, criterio di batching dell'export. | MULTI-VISUAL-02 | Aperto. |
 | **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, upload, galleria con riordino da tastiera, integrazione col flusso «Genera lezione» (testo salvato prima del piano visivo), rendering N-way, responsive desktop/mobile con semantica modale reale (focus trap, Escape, ripristino del focus). | MULTI-VISUAL-03 | Aperto. |
 | **MULTI-VISUAL-05** | **Qualità e rollout controllato.** Benchmark su lezioni con più immagini, verifica del margine di §4 su documenti reali, smoke DEV con flag in sequenza, verifica del percorso di rollback, verifica diretta su dati di produzione della domanda aperta di §17.3. | MULTI-VISUAL-04 | Aperto. |

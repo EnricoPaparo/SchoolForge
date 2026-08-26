@@ -406,9 +406,22 @@ export function validateVisualPlanSlot(value: unknown): VisualPlanSlot {
  * ciò che il roadmap chiama «normalizzazione» al §7.4, nient'altro (nessuno
  * stemming, nessuna rimozione di punteggiatura: un confronto più aggressivo
  * di questo non è ciò che il documento chiede).
+ *
+ * Esportata per MULTI-VISUAL-02: la proposta coordinata (`kind:
+ * 'visual_plan_proposal'`, `aiContentVisualPlanProposal.ts`) applica lo
+ * stesso vincolo di diversità a un output **non ancora persistito** (una
+ * proposta fresca dal provider, non uno `slot` di `VisualPlanRun`) — stessa
+ * regola di normalizzazione, nessuna seconda definizione.
  */
-function normalizeForDiversity(value: string): string {
+export function normalizeForDiversity(value: string): string {
   return value.trim().toLocaleLowerCase('it').replace(/\s+/g, ' ');
+}
+
+/** Sottoinsieme di campi su cui il vincolo di diversità (roadmap §7.4) agisce. */
+export interface VisualDecisionDiversityInput {
+  decision: VisualPlanSlotDecision;
+  subject: string | null;
+  rationale: string | null;
 }
 
 /**
@@ -417,31 +430,42 @@ function normalizeForDiversity(value: string): string {
  * la stessa ancora. `subject` e `rationale` devono essere a due a due
  * distinti dopo normalizzazione, **indipendentemente dall'ancora** — la
  * violazione produce `provider_invalid_output`, mai una struttura diversa.
- * Si applica solo agli slot con `decision === 'image'`: un caricamento del
- * docente (fuori dalla proposta coordinata) non è soggetto a questo vincolo
- * (§7.4, ultimo paragrafo) e comunque non produce mai slot con `decision ===
- * 'image'` di questo piano.
+ * Si applica solo agli elementi con `decision === 'image'`: un caricamento
+ * del docente (fuori dalla proposta coordinata) non è soggetto a questo
+ * vincolo (§7.4, ultimo paragrafo) e comunque non produce mai un elemento con
+ * `decision === 'image'` di questa proposta.
  *
- * **Confine (blocker 5).** Questa funzione resta fuori da
- * `validateVisualPlanRun`: è la validazione di una proposta **prima** della
- * persistenza, non la lettura di un piano già scritto. Il suo
+ * **Confine (blocker 5, esteso a MULTI-VISUAL-02).** Questa funzione resta
+ * fuori da `validateVisualPlanRun`: è la validazione di una proposta
+ * **prima** della persistenza, non la lettura di un piano già scritto. Il suo
  * `provider_invalid_output` non deve mai diventare `corrupted_state`.
+ *
+ * **Perché una funzione generica e non solo `VisualPlanSlot[]`.** La
+ * proposta coordinata (MULTI-VISUAL-02) valida un array di decisioni del
+ * provider **prima** che esista un `VisualPlanRun`: quelle decisioni non
+ * hanno `state`/`attempts`/`staged`/`promotedAssetId`, i campi che rendono
+ * `VisualPlanSlot` la forma **persistita** di uno slot. Duplicare qui il
+ * ciclo di confronto per una seconda forma di dato sarebbe esattamente la
+ * divergenza che questo modulo evita altrove: la funzione lavora sul
+ * sottoinsieme comune (`decision`/`subject`/`rationale`), che `VisualPlanSlot`
+ * soddisfa strutturalmente.
  */
-export function validateVisualPlanDiversity(slots: readonly VisualPlanSlot[]): void {
+export function checkVisualDecisionDiversity(items: readonly VisualDecisionDiversityInput[]): void {
   const seenSubjects = new Set<string>();
   const seenRationales = new Set<string>();
-  for (const slot of slots) {
-    if (slot.decision !== 'image') continue;
-    // La forma dello slot garantisce già subject/rationale non nulli qui
-    // (validateVisualPlanSlot); il controllo resta per sicurezza tipica.
-    if (slot.subject === null || slot.rationale === null) {
+  for (const item of items) {
+    if (item.decision !== 'image') continue;
+    // La forma del chiamante garantisce già subject/rationale non nulli qui
+    // (validateVisualPlanSlot o l'equivalente della proposta coordinata); il
+    // controllo resta per sicurezza tipica.
+    if (item.subject === null || item.rationale === null) {
       throw new AiVisualMultiError(
         'provider_invalid_output',
         'Uno slot "image" è privo di soggetto o utilità didattica.',
       );
     }
-    const subjectKey = normalizeForDiversity(slot.subject);
-    const rationaleKey = normalizeForDiversity(slot.rationale);
+    const subjectKey = normalizeForDiversity(item.subject);
+    const rationaleKey = normalizeForDiversity(item.rationale);
     if (seenSubjects.has(subjectKey)) {
       throw new AiVisualMultiError(
         'provider_invalid_output',
@@ -457,6 +481,11 @@ export function validateVisualPlanDiversity(slots: readonly VisualPlanSlot[]): v
     seenSubjects.add(subjectKey);
     seenRationales.add(rationaleKey);
   }
+}
+
+/** Invariata nel comportamento: delega al nucleo condiviso con `VisualPlanSlot[]`. */
+export function validateVisualPlanDiversity(slots: readonly VisualPlanSlot[]): void {
+  checkVisualDecisionDiversity(slots);
 }
 
 // ─── Tetto di budget (roadmap §5.5, §12.1) ─────────────────────────────────────

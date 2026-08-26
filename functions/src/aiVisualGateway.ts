@@ -136,9 +136,21 @@ const PUBLIC_LESSON_VISUALS = 'publicLessonVisuals';
 const VISUAL_REMOVALS = 'aiVisualRemovals';
 const VISUAL_ABANDONMENTS = 'aiVisualAbandonments';
 
-function lessonPath(programId: string, importId: string, lessonId: string): string {
-  return `programs/${programId}/imports/${importId}/lessons/${lessonId}`;
-}
+/**
+ * `lessonPath`/`requireOwner`/`authorizeVisualCaller`/`readAuthoritativeLesson`
+ * vivono in `aiVisualIdentity.ts` (MULTI-VISUAL-02): nessuna dipendenza da
+ * `onCall`/`HttpsError`, quindi riusabili da un secondo gateway
+ * (`aiVisualUploadGateway.ts`) senza trascinarsi dentro l'intera
+ * dichiarazione delle callable VE. Ri-esportate qui **senza** cambiare
+ * l'API pubblica di questo file: comportamento invariato per ogni
+ * chiamante esistente (inclusi i test che le importano da qui).
+ */
+export {
+  authorizeVisualCaller,
+  requireOwner,
+  readAuthoritativeLesson,
+} from './aiVisualIdentity.js';
+import { lessonPath, requireOwner, readAuthoritativeLesson } from './aiVisualIdentity.js';
 
 function database(): Firestore {
   if (getApps().length === 0) initializeApp();
@@ -147,26 +159,6 @@ function database(): Firestore {
 
 function visualMode(): AiVisualMode {
   return resolveAiVisualMode({ AI_VISUAL_MODE: process.env.AI_VISUAL_MODE });
-}
-
-async function requireOwner(request: CallableRequest<unknown>, db: Firestore): Promise<string> {
-  const uid = request.auth?.uid;
-  if (typeof uid !== 'string' || uid.length === 0) {
-    throw new AiVisualError('unauthenticated', 'Autenticazione richiesta.');
-  }
-  const ownerSnap = await db.doc('settings/owner').get();
-  const ownerUid = ownerSnap.exists ? ownerSnap.data()?.ownerUid : null;
-  return authorizeVisualCaller(uid, ownerUid);
-}
-
-export function authorizeVisualCaller(uid: unknown, ownerUid: unknown): string {
-  if (typeof uid !== 'string' || uid.length === 0) {
-    throw new AiVisualError('unauthenticated', 'Autenticazione richiesta.');
-  }
-  if (typeof ownerUid !== 'string' || ownerUid !== uid) {
-    throw new AiVisualError('not_owner', 'Accesso riservato al docente proprietario.');
-  }
-  return uid;
 }
 
 async function loadSharedRuntimeConfig(db: Firestore): Promise<AiRuntimeConfig | null> {
@@ -554,53 +546,6 @@ export const aiVisualGenerate = onCall(
 );
 
 // ─── VE-03A — bind del candidato alla lezione ────────────────────────────────
-
-/**
- * Legge la lezione e la sua proiezione, verifica che siano coerenti fra loro, e
- * restituisce i soli valori **autorevoli**: id pubblico, UDA, corpo salvato e
- * stato di svolgimento.
- *
- * Le due letture sono sequenziali di proposito. L'indirizzo della proiezione non
- * è quello ricevuto dal chiamante ma quello **derivato** dal documento tecnico,
- * quindi non può essere calcolato prima di aver letto il primo documento: un
- * `getAll` parallelo richiederebbe di fidarsi di un id che è esattamente ciò che
- * questo cancello rifiuta di considerare autorevole.
- */
-async function readAuthoritativeLesson(
-  db: Firestore,
-  params: { ownerUid: string; programId: string; importId: string; lessonId: string },
-): Promise<{
-  publicLessonId: string;
-  udaDir: string;
-  body: string;
-  completed: boolean;
-}> {
-  const { ownerUid, programId, importId, lessonId } = params;
-  const lessonSnap = await db.doc(lessonPath(programId, importId, lessonId)).get();
-  const lesson = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
-  const gate = checkLessonForVisual({ lesson, lessonId, ownerUid, importId });
-  if (!gate.ok) {
-    throw new AiVisualError('invalid_input', describeVisualBindingFailure(gate.failure));
-  }
-
-  const publicSnap = await db.doc(`publicLessons/${gate.publicLessonId}`).get();
-  const projectionGate = checkProjectionForVisual({
-    lesson: lesson as Record<string, unknown>,
-    publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
-    programId,
-    importId,
-    ownerUid,
-  });
-  if (!projectionGate.ok) {
-    throw new AiVisualError('invalid_input', describeVisualBindingFailure(projectionGate.failure));
-  }
-  return {
-    publicLessonId: gate.publicLessonId,
-    udaDir: gate.udaDir,
-    body: projectionGate.body,
-    completed: projectionGate.completed,
-  };
-}
 
 /**
  * Lega un `requestId` alla lezione da cui la proposta nasce.

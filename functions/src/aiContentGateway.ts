@@ -35,6 +35,7 @@ import {
 } from './aiCorrectionBudget.js';
 import {
   AiContentError,
+  assertGenericAiContentCallableKind,
   resolveAiContentMode,
   validateAiContentRequest,
   type AiContentMode,
@@ -414,6 +415,7 @@ export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, 
       throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
     }
     const validated = validateAiContentRequest(request.data);
+    assertGenericAiContentCallableKind(validated);
     const config = await loadRuntimeConfig(database);
     // La preview non costruisce il provider né legge il secret (withProvider=false).
     const ports = createPorts(database, config, mode, undefined, false);
@@ -448,6 +450,7 @@ export const aiContentGenerate = onCall(
         throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
       }
       const validated = validateAiContentRequest(request.data);
+      assertGenericAiContentCallableKind(validated);
       const config = await loadRuntimeConfig(database);
       // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
       const secret = mode === 'openai' ? readOpenAiSecret() : undefined;

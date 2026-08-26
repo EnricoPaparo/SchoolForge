@@ -28,6 +28,11 @@ import {
   assertVisualProposalMatchesRequest,
   validateVisualProposalEnvelope,
 } from './aiContentVisualProposal.js';
+import {
+  assertVisualPlanProposalMatchesRequest,
+  validateStoredVisualPlanProposalOutput,
+  validateVisualPlanProposalEnvelope,
+} from './aiContentVisualPlanProposal.js';
 import { actualCostMicroUsd, normalizeUsageActual } from './aiCorrectionCost.js';
 import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import type { ContentProviderOutcome } from './aiContentProvider.js';
@@ -356,6 +361,9 @@ export async function generateContent(
   });
 
   if (outcome.kind === 'replay_completed') {
+    if (request.kind === 'visual_plan_proposal') {
+      validateStoredVisualPlanProposalOutput(outcome.run.output, request.quantity.ceiling);
+    }
     return {
       status: 'completed',
       kind: request.kind,
@@ -512,7 +520,29 @@ export async function generateContent(
                 validateVisualProposalEnvelope(providerOutcome.output),
                 request.lessonBody,
               )
-            : validateLessonProposal(providerOutcome.output);
+            : request.kind === 'visual_plan_proposal'
+              ? /*
+                 * MULTI-VISUAL-02 — stessi due passaggi della proposta
+                 * singola, generalizzati all'array: l'envelope `{ decisions }`
+                 * è validato/estratto (cardinalità ≤ `quantity.ceiling`), poi
+                 * il controllo relazionale verifica ogni ancora indice+testo
+                 * sul corpo della richiesta **e** il vincolo di diversità
+                 * fra tutti gli slot immagine — prima di qualunque
+                 * persistenza, mai nel replay. `output` resta avvolto in
+                 * `{ decisions }` anche nel run persistito (la guardia
+                 * generica del documento run rifiuta un array alla radice
+                 * per ogni kind, `aiContentRunDoc.ts`).
+                 */
+                {
+                  decisions: assertVisualPlanProposalMatchesRequest(
+                    validateVisualPlanProposalEnvelope(
+                      providerOutcome.output,
+                      request.quantity.ceiling,
+                    ),
+                    request.lessonBody,
+                  ),
+                }
+              : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({
       opaqueRunId,

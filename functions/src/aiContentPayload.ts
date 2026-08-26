@@ -15,6 +15,7 @@ import {
   buildConceptMapPrompt,
   buildLessonPrompt,
   buildPoolPrompt,
+  buildVisualPlanProposalPrompt,
   buildVisualProposalPrompt,
 } from './aiContentPrompt.js';
 import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
@@ -30,6 +31,7 @@ import {
   codePointLength,
   extractAnchorableLessonHeadings,
 } from './aiContentVisualProposal.js';
+import { listMultiVisualAnchorableHeadings } from './aiVisualMultiAnchor.js';
 import type { OpenAiStructuredRequest } from './openAiGrader.js';
 
 /** Nome schema (distinto da `schoolforge_ai_grading` della correzione). */
@@ -99,6 +101,14 @@ export const CONCEPT_MAP_OUTPUT_TOKENS = 6_000;
 export const VISUAL_PROPOSAL_OUTPUT_TOKENS = 3_000;
 
 /**
+ * MULTI-VISUAL-02 — la proposta coordinata ripete lo stesso giudizio della
+ * proposta singola fino a `ceiling` volte: il tetto tecnico cresce
+ * linearmente col numero di slot da valutare, più lo stesso margine di
+ * ragionamento per slot della proposta singola.
+ */
+export const VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT = VISUAL_PROPOSAL_OUTPUT_TOKENS;
+
+/**
  * Hard `max_output_tokens` realmente trasmesso al provider per la richiesta: è il
  * **tetto** dell'output fatturabile e la base della componente output della
  * prenotazione.
@@ -114,6 +124,9 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
   }
   if (request.kind === 'concept_map') return CONCEPT_MAP_OUTPUT_TOKENS;
   if (request.kind === 'visual_proposal') return VISUAL_PROPOSAL_OUTPUT_TOKENS;
+  if (request.kind === 'visual_plan_proposal') {
+    return VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT * request.quantity.ceiling;
+  }
   return LESSON_OUTPUT_TOKENS[request.depth];
 }
 
@@ -126,6 +139,26 @@ export function estimateInputTokens(request: AiContentRequest): number {
     // Stessa regola degli altri kind: entra nella stima tutto ciò che entra nel
     // prompt effettivo, altrimenti una UDA con descrizione lunga costerebbe più
     // di quanto la stima lascia prevedere.
+    const chars =
+      request.lessonBody.length +
+      request.titolo.length +
+      (request.sottotitolo?.length ?? 0) +
+      request.difficolta.length +
+      request.concettiChiave.join('').length +
+      request.obiettivi.join('').length +
+      request.udaTitle.length +
+      (request.udaContext.descrizione?.length ?? 0) +
+      request.udaContext.competenze.join('').length +
+      request.udaContext.obiettivi.join('').length +
+      request.udaContext.lessons
+        .map((l) => l.titolo.length + (l.sottotitolo?.length ?? 0))
+        .reduce((a, b) => a + b, 0);
+    return Math.ceil(chars / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
+  }
+  if (request.kind === 'visual_plan_proposal') {
+    // Stessa regola di `visual_proposal`: entra nella stima tutto ciò che
+    // entra nel prompt effettivo. `quantity` non ha testo libero (solo enum
+    // chiusi), quindi non partecipa ai caratteri stimati.
     const chars =
       request.lessonBody.length +
       request.titolo.length +
@@ -403,6 +436,116 @@ export function buildVisualProposalOutputSchema(
   };
 }
 
+/**
+ * MULTI-VISUAL-02 — variante ad **array** dello schema della proposta
+ * visuale. L'ancora è l'oggetto `{anchorHeadingIndex, anchorHeadingText}`
+ * (roadmap §7.1, MULTI-VISUAL-01) invece del solo testo: l'elenco enumerato
+ * non è deduplicato, quindi due heading omonimi devono restare due indici
+ * scelti indipendentemente. `anchorHeadingText` resta comunque vincolato a
+ * un `enum` degli stessi testi ammessi — la disambiguazione fra occorrenze
+ * identiche spetta a `anchorHeadingIndex`, verificato server-side
+ * (`resolveVisualAnchorForWrite`), non allo schema.
+ */
+const VISUAL_PLAN_PROPOSAL_NONE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['decision', 'reason'],
+  properties: {
+    decision: { type: 'string', enum: ['none'] },
+    reason: {
+      type: 'string',
+      description: `Motivazione specifica in italiano, massimo ${MAX_VISUAL_REASON_CHARS} caratteri Unicode.`,
+    },
+  },
+};
+
+function buildVisualPlanProposalImageSchema(
+  anchorHeadingTexts: readonly string[],
+  maxIndex: number,
+) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['decision', 'subject', 'rationale', 'anchor', 'caption', 'altText'],
+    properties: {
+      decision: { type: 'string', enum: ['image'] },
+      subject: {
+        type: 'string',
+        description: `Descrizione visiva autosufficiente di una o due frasi: massimo assoluto ${MAX_VISUAL_SUBJECT_CHARS} caratteri Unicode, obiettivo 240-320. Le sole etichette consentite nell'immagine devono essere racchiuse fra caporali «…»: massimo assoluto ${MAX_VISUAL_AUTHORIZED_LABELS} etichette distinte da ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna. Deve essere distinta dal subject di ogni altro elemento "image" dell'array.`,
+      },
+      rationale: {
+        type: 'string',
+        description: `Utilità didattica specifica, massimo ${MAX_VISUAL_RATIONALE_CHARS} caratteri Unicode. Deve essere distinta dalla rationale di ogni altro elemento "image" dell'array.`,
+      },
+      anchor: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['anchorHeadingIndex', 'anchorHeadingText'],
+        properties: {
+          anchorHeadingIndex: {
+            type: 'integer',
+            minimum: 0,
+            maximum: maxIndex,
+            description:
+              'Indice 0-based nell’elenco enumerato degli heading ancorabili (non deduplicato).',
+          },
+          anchorHeadingText: {
+            type: 'string',
+            enum: anchorHeadingTexts,
+            description: `Testo esatto dell'heading a quell'indice, senza marcatori Markdown. Massimo ${MAX_VISUAL_ANCHOR_HEADING_CHARS} caratteri Unicode.`,
+          },
+        },
+      },
+      caption: {
+        type: 'string',
+        description: `Didascalia informativa, massimo ${MAX_VISUAL_CAPTION_CHARS} caratteri Unicode.`,
+      },
+      altText: {
+        type: 'string',
+        description: `Descrizione accessibile equivalente, massimo ${MAX_VISUAL_ALT_TEXT_CHARS} caratteri Unicode.`,
+      },
+    },
+  };
+}
+
+/**
+ * Schema strict della proposta coordinata: un envelope `{ decisions: [...] }`
+ * (stessa necessità di trasporto dell'envelope singolo — la radice strict
+ * dev'essere un `object`), array 0..`ceiling` di unioni chiuse `none`/`image`.
+ * Se non esiste alcun heading ancorabile, l'array può contenere solo esiti
+ * `none` — stessa logica della proposta singola, generalizzata all'array.
+ */
+export function buildVisualPlanProposalOutputSchema(
+  request: Extract<AiContentRequest, { kind: 'visual_plan_proposal' }>,
+): Record<string, unknown> {
+  const headings = listMultiVisualAnchorableHeadings(request.lessonBody).filter(
+    (heading) => codePointLength(heading.text) <= MAX_VISUAL_ANCHOR_HEADING_CHARS,
+  );
+  const anchorHeadingTexts = [...new Set(headings.map((heading) => heading.text))];
+  const decisionSchema = {
+    anyOf:
+      headings.length === 0
+        ? [VISUAL_PLAN_PROPOSAL_NONE_SCHEMA]
+        : [
+            VISUAL_PLAN_PROPOSAL_NONE_SCHEMA,
+            buildVisualPlanProposalImageSchema(anchorHeadingTexts, headings.length - 1),
+          ],
+  };
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['decisions'],
+    properties: {
+      decisions: {
+        type: 'array',
+        minItems: 0,
+        maxItems: request.quantity.ceiling,
+        items: decisionSchema,
+      },
+    },
+  };
+}
+
 export const CONCEPT_MAP_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -429,7 +572,9 @@ export function buildContentStructuredRequest(
         ? buildConceptMapPrompt(request)
         : request.kind === 'visual_proposal'
           ? buildVisualProposalPrompt(request)
-          : buildLessonPrompt(request);
+          : request.kind === 'visual_plan_proposal'
+            ? buildVisualPlanProposalPrompt(request)
+            : buildLessonPrompt(request);
   const schema =
     request.kind === 'pool'
       ? buildPoolOutputSchema(request)
@@ -437,7 +582,9 @@ export function buildContentStructuredRequest(
         ? CONCEPT_MAP_OUTPUT_SCHEMA
         : request.kind === 'visual_proposal'
           ? buildVisualProposalOutputSchema(request)
-          : LESSON_OUTPUT_SCHEMA;
+          : request.kind === 'visual_plan_proposal'
+            ? buildVisualPlanProposalOutputSchema(request)
+            : LESSON_OUTPUT_SCHEMA;
   return {
     model,
     input: [

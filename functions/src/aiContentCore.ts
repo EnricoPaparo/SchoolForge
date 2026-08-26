@@ -158,7 +158,12 @@ export const POOL_LEVEL_DIFFICULTY: Readonly<Record<PoolLevel, { min: number; ma
 export const LESSON_DEPTHS = ['synthetic', 'complete', 'in_depth'] as const;
 export type LessonDepth = (typeof LESSON_DEPTHS)[number];
 
-export type ContentKind = 'pool' | 'lesson' | 'concept_map' | 'visual_proposal';
+export type ContentKind =
+  | 'pool'
+  | 'lesson'
+  | 'concept_map'
+  | 'visual_proposal'
+  | 'visual_plan_proposal';
 export const QUESTION_TYPES = ['aperta', 'chiusa_singola', 'chiusa_multipla'] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
@@ -291,11 +296,75 @@ export interface VisualProposalRequest {
   lessonBody: string;
 }
 
+/**
+ * MULTI-VISUAL-02 — quantità richiesta dal docente per la proposta
+ * coordinata (roadmap §8.2, §10.1). Forma **diversa** da
+ * `VisualPlanQuantitySelection` (`aiVisualMultiPlan.ts`, `{mode, ceiling}`):
+ * qui `requested` è un campo di payload aggiuntivo che rende la richiesta
+ * autodescrittiva senza dover dedurre l'intento del docente da `ceiling` da
+ * solo — `exact` porta sempre `requested === ceiling`, `auto` porta sempre
+ * `requested === null` (validato in `parseVisualPlanProposalQuantity`).
+ * `VisualPlanRun`/`VisualPlanQuantitySelection` restano competenza di
+ * MULTI-VISUAL-03: questo tipo non li sostituisce, alimenta solo il payload
+ * di generazione.
+ */
+export interface VisualPlanProposalQuantity {
+  mode: 'auto' | 'exact';
+  requested: 1 | 2 | 3 | null;
+  ceiling: 1 | 2 | 3;
+}
+
+/**
+ * MULTI-VISUAL-02 — proposta coordinata multi-immagine (roadmap §8.3).
+ *
+ * Stesso payload didattico di `VisualProposalRequest` (identità della
+ * lezione e corpo salvato autorevoli, profilo fisso a `quality`), esteso con
+ * `quantity`: il tetto `ceiling` che delimita l'array Structured Output
+ * 0..ceiling. Nessun dato studente, nessun path Storage, nessun testo
+ * client-autorevole — gli heading enumerati (indice+testo) sono derivati
+ * server-side da `lessonBody`, mai inviati dal client.
+ */
+export interface VisualPlanProposalRequest {
+  kind: 'visual_plan_proposal';
+  requestId: string;
+  modelProfile: 'quality';
+  titolo: string;
+  sottotitolo: string | null;
+  difficolta: string;
+  concettiChiave: string[];
+  obiettivi: string[];
+  udaTitle: string;
+  udaContext: LessonUdaContext;
+  /** Corpo salvato della lezione — dato **non attendibile**, delimitato nel prompt. */
+  lessonBody: string;
+  quantity: VisualPlanProposalQuantity;
+}
+
 export type AiContentRequest =
   | PoolRequest
   | LessonRequest
   | ConceptMapRequest
-  | VisualProposalRequest;
+  | VisualProposalRequest
+  | VisualPlanProposalRequest;
+
+/**
+ * Confine delle due callable generiche `aiContentPreview`/`aiContentGenerate`.
+ *
+ * `visual_plan_proposal` è un primitivo interno: MULTI-VISUAL-03 lo invocherà
+ * soltanto dopo avere letto il corpo autorevole, creato il piano e prenotato il
+ * budget coordinato. Lasciarlo raggiungibile dalla callable generica
+ * permetterebbe al client di saltare quell'autorizzazione usando un
+ * `lessonBody` scelto dal client. Il validator generale continua invece ad
+ * accettarlo, perché engine/provider devono poterlo usare internamente.
+ */
+export function assertGenericAiContentCallableKind(request: AiContentRequest): void {
+  if (request.kind === 'visual_plan_proposal') {
+    throw new AiContentError(
+      'invalid_input',
+      'La proposta visuale coordinata richiede un piano autorizzato server-side.',
+    );
+  }
+}
 
 // ─── Helpers puri ─────────────────────────────────────────────────────────────
 
@@ -406,6 +475,40 @@ export function canonicalRequest(request: AiContentRequest): string {
       concettiChiave: request.concettiChiave,
       obiettivi: request.obiettivi,
       lessonBody: request.lessonBody,
+    });
+  }
+  // MULTI-VISUAL-02 — quinto kind, stessa regola: la sua forma canonica è un
+  // ramo a sé e non tocca un byte di quelle già esistenti (pool, lezione,
+  // mappa, visual_proposal). `quantity` partecipa per intero, così ogni suo
+  // campo semantico (mode/requested/ceiling) invalida l'`inputHash` se cambia.
+  if (request.kind === 'visual_plan_proposal') {
+    return JSON.stringify({
+      kind: 'visual_plan_proposal',
+      modelProfile: request.modelProfile,
+      titolo: request.titolo,
+      sottotitolo: request.sottotitolo,
+      difficolta: request.difficolta,
+      udaTitle: request.udaTitle,
+      udaContext: {
+        title: request.udaContext.title,
+        descrizione: request.udaContext.descrizione,
+        competenze: request.udaContext.competenze,
+        obiettivi: request.udaContext.obiettivi,
+        currentLessonPosition: request.udaContext.currentLessonPosition,
+        lessons: request.udaContext.lessons.map((l) => ({
+          position: l.position,
+          titolo: l.titolo,
+          sottotitolo: l.sottotitolo,
+        })),
+      },
+      concettiChiave: request.concettiChiave,
+      obiettivi: request.obiettivi,
+      lessonBody: request.lessonBody,
+      quantity: {
+        mode: request.quantity.mode,
+        requested: request.quantity.requested,
+        ceiling: request.quantity.ceiling,
+      },
     });
   }
   const canonical: unknown =
@@ -660,6 +763,41 @@ function enforceTotalRequestSize(request: AiContentRequest): AiContentRequest {
   return request;
 }
 
+/**
+ * MULTI-VISUAL-02 — quantità della proposta coordinata (roadmap §8.2).
+ * Chiusa, fail-closed: `mode` determina univocamente `requested`
+ * (`exact` ⇒ `requested === ceiling`, `auto` ⇒ `requested === null`), così
+ * il payload non può dichiarare un `requested` incoerente con l'intento che
+ * `mode` afferma.
+ */
+function parseVisualPlanProposalQuantity(value: unknown): VisualPlanProposalQuantity {
+  if (!isPlainObject(value)) {
+    throw new AiContentError('invalid_input', 'Quantità mancante o non valida.');
+  }
+  assertNoExtraKeys(value, ['mode', 'requested', 'ceiling']);
+  const mode = value.mode;
+  if (mode !== 'auto' && mode !== 'exact') {
+    throw new AiContentError('invalid_input', 'Modalità di quantità non valida.');
+  }
+  const ceiling = value.ceiling;
+  if (ceiling !== 1 && ceiling !== 2 && ceiling !== 3) {
+    throw new AiContentError('invalid_input', 'Tetto di quantità non valido.');
+  }
+  if (mode === 'exact') {
+    if (value.requested !== ceiling) {
+      throw new AiContentError(
+        'invalid_input',
+        'requested deve coincidere con ceiling in modalità exact.',
+      );
+    }
+    return { mode, requested: ceiling, ceiling };
+  }
+  if (value.requested !== null) {
+    throw new AiContentError('invalid_input', 'requested deve essere nullo in modalità auto.');
+  }
+  return { mode, requested: null, ceiling };
+}
+
 function parseProfile(value: unknown): ModelProfile {
   const res = parseModelProfileField(value);
   if (!res.ok || res.profile === undefined) {
@@ -689,9 +827,58 @@ function validateAiContentRequestWithPolicy(
     input.kind !== 'pool' &&
     input.kind !== 'lesson' &&
     input.kind !== 'concept_map' &&
-    input.kind !== 'visual_proposal'
+    input.kind !== 'visual_proposal' &&
+    input.kind !== 'visual_plan_proposal'
   ) {
     throw new AiContentError('invalid_input', 'kind non supportato.');
+  }
+
+  // MULTI-VISUAL-02 — proposta coordinata: stesso payload didattico della
+  // proposta visuale singola, esteso da `quantity`. Validata prima di tutto
+  // il resto, come le altre fasi testuali fisse a `quality`.
+  if (input.kind === 'visual_plan_proposal') {
+    assertNoExtraKeys(input, [
+      'kind',
+      'requestId',
+      'modelProfile',
+      'titolo',
+      'sottotitolo',
+      'difficolta',
+      'concettiChiave',
+      'obiettivi',
+      'udaTitle',
+      'udaContext',
+      'lessonBody',
+      'quantity',
+    ]);
+    if (input.modelProfile !== 'quality') {
+      throw new AiContentError(
+        'invalid_input',
+        'La proposta coordinata è disponibile solo con il profilo quality.',
+      );
+    }
+    if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
+      throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
+    }
+    if (utf8ByteLength(input.lessonBody) > AI_CONTENT_LIMITS.MAX_LESSON_SOURCE_BYTES) {
+      throw new AiContentError('content_too_large', 'Il corpo della lezione è troppo grande.');
+    }
+    return enforceTotalRequestSize({
+      kind: 'visual_plan_proposal',
+      requestId,
+      modelProfile: 'quality',
+      titolo: parseRequiredText(input.titolo, 'Titolo', MAX_TITLE_CHARS),
+      sottotitolo: parseTitle(input.sottotitolo, 'Sottotitolo'),
+      difficolta: parseRequiredText(input.difficolta, 'Difficoltà', MAX_DIFFICOLTA_CHARS),
+      concettiChiave: parseRequiredStringArray(input.concettiChiave, 'Concetti chiave'),
+      obiettivi: parseRequiredStringArray(input.obiettivi, 'Obiettivi'),
+      udaTitle: parseRequiredText(input.udaTitle, 'Titolo UDA', MAX_TITLE_CHARS),
+      udaContext: parseUdaContext(input.udaContext),
+      // Nessun `trim()`: al prompt arriva esattamente il testo salvato, e
+      // l'`inputHash` copre quel testo.
+      lessonBody: input.lessonBody,
+      quantity: parseVisualPlanProposalQuantity(input.quantity),
+    });
   }
 
   // VISUAL-ENRICHMENT-01 — proposta visuale: payload chiuso, profilo fisso a
