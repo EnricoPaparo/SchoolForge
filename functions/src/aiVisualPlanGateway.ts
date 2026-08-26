@@ -103,7 +103,7 @@ import {
   checkProjectionForVisual,
   describeVisualBindingFailure,
 } from './aiVisualLessonBinding.js';
-import { readLegacyLessonVisuals } from './aiVisualMultiManifest.js';
+import { projectLessonVisualsManifest, readLegacyLessonVisuals } from './aiVisualMultiManifest.js';
 import {
   AiVisualMultiError,
   MAX_VISUALS_PER_LESSON,
@@ -282,6 +282,58 @@ function writeLedgerState(
   });
 }
 
+/**
+ * Chiude la prenotazione master di un piano che non può più proseguire.
+ *
+ * Se la reservation è ancora `pending`, il provider della **sola proposta**
+ * può essere stato invocato: si liquida quindi al relativo cap, mai al
+ * `totalReserved` che comprende generazioni per-slot mai partite. Per evitare
+ * che il settlement generico trasformi prima una pending appena scaduta
+ * nell'intero tetto, la riconciliazione avviene all'ultimo istante in cui la
+ * reservation risultava attiva. Una reservation `reserved` viene invece
+ * rilasciata a costo zero.
+ */
+function closeVisualPlanReservation(
+  state: BudgetLedgerState,
+  plan: VisualPlanRun,
+  nowMs: number,
+): BudgetLedgerState {
+  const reservationKey = plan.budgetCeiling.reservationKey;
+  const reservation = state.reservations[reservationKey];
+  if (!reservation) return state;
+  const pending = reservation.status === 'pending';
+  const reconciliationNowMs = pending
+    ? Math.min(nowMs, Math.max(0, reservation.expiresAtMs - 1))
+    : nowMs;
+  return reconcileLedger(
+    state,
+    reservationKey,
+    pending ? plan.budgetCeiling.proposalCap : 0,
+    reconciliationNowMs,
+  );
+}
+
+async function releaseVisualPlanReservationAfterLostOwnership(params: {
+  db: Firestore;
+  plan: VisualPlanRun;
+  config: AiRuntimeConfig;
+  nowMs: number;
+}): Promise<void> {
+  const { db, plan, config, nowMs } = params;
+  const ledgerRef = db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`);
+  await db.runTransaction(async (tx) => {
+    const ledgerSnap = await tx.get(ledgerRef);
+    const state = readLedgerState(
+      ledgerSnap,
+      plan.budgetCeiling.reservationMonthKey,
+      config.monthlyBudgetMicroUsd,
+      config.dailyBudgetMicroUsd,
+    );
+    if (!state.reservations[plan.budgetCeiling.reservationKey]) return;
+    writeLedgerState(tx, ledgerRef, closeVisualPlanReservation(state, plan, nowMs));
+  });
+}
+
 // ─── Porte plan-aware (roadmap §12.1 — review fix Codex, blocker P0-1/P0-7) ───
 
 /**
@@ -365,6 +417,11 @@ function createVisualPlanProposalPorts(params: {
   const { db, config, mode, secret, plan } = params;
   const reservationKey = plan.budgetCeiling.reservationKey;
   const ledgerRef = db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`);
+  const opaquePlanId = computeOpaqueVisualPlanId(plan.ownerUid, plan.requestId);
+  const planRef = db.doc(`visualPlanRuns/${opaquePlanId}`);
+  const planLeaseRef = db.doc(
+    `visualPlanLeases/${computeVisualPlanLeaseId(plan.ownerUid, plan.lessonId)}`,
+  );
   const planExpireAtMs = timestampToMillis(plan.expireAt);
   // Validato a monte da `validateVisualPlanRun`: sempre risolvibile.
   const reservationExpiresAtMs = planExpireAtMs ?? Date.now() + VISUAL_STAGING_TTL_MS;
@@ -434,6 +491,12 @@ function createVisualPlanProposalPorts(params: {
           if (!existing) return { kind: 'conflict' };
           if (existing.inputHash !== reqParams.inputHash) return { kind: 'conflict' };
           if (existing.status === 'completed') return { kind: 'replay_completed', run: existing };
+          // Un fallimento già fatturato (o a costo ignoto, liquidato al cap)
+          // ha consumato l'unica quota di proposta autorizzata. Non può fare
+          // takeover usando la riserva destinata agli slot immagine.
+          if (existing.status === 'failed' && (existing.settledCostMicroUsd ?? 0) > 0) {
+            return { kind: 'budget', code: 'budget_unavailable' };
+          }
           if (existing.status === 'running' && existing.leaseExpiresAtMs > reqParams.nowMs) {
             return { kind: 'running' };
           }
@@ -520,28 +583,40 @@ function createVisualPlanProposalPorts(params: {
     async failRun(reqParams) {
       const runRef = db.doc(`aiContentRuns/${reqParams.opaqueRunId}`);
       await db.runTransaction(async (tx) => {
-        const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
+        const [runSnap, ledgerSnap, planSnap, leaseSnap] = await Promise.all([
+          tx.get(runRef),
+          tx.get(ledgerRef),
+          tx.get(planRef),
+          tx.get(planLeaseRef),
+        ]);
         if (!runSnap.exists) return;
         const run = parseStoredRunDocument(runSnap.data());
         if (!run || run.leaseExecutionId !== reqParams.executionId) return;
         const state = loadLedgerState(ledgerSnap);
-        // Nessun output valido su fallimento: non si conosce quanti slot
-        // immagine sarebbero stati proposti. Mai sotto-riservare — il
-        // residuo torna al tetto pieno, meno quanto già realmente speso.
-        const remainingMicroUsd = Math.max(
-          0,
-          plan.budgetCeiling.totalReserved - reqParams.settledMicroUsd,
-        );
-        writeLedgerState(
-          tx,
-          ledgerRef,
-          reconcileAndPreserveRemaining(
-            state,
-            reqParams.settledMicroUsd,
-            remainingMicroUsd,
-            reqParams.nowMs,
-          ),
-        );
+        const billableFailure = reqParams.settledMicroUsd > 0;
+        if (billableFailure) {
+          // La proposta è stata fatturata o il suo costo è ignoto: chiusura
+          // terminale e rilascio dell'intero residuo. Una nuova proposta
+          // richiederà un nuovo piano/autorizzazione, mai la quota generation.
+          writeLedgerState(
+            tx,
+            ledgerRef,
+            reconcileLedger(state, reservationKey, reqParams.settledMicroUsd, reqParams.nowMs),
+          );
+        } else {
+          // Errore certamente pre-invocazione: nessuna nuova spesa. La quota
+          // master resta interamente disponibile per un retry dello stesso run.
+          writeLedgerState(
+            tx,
+            ledgerRef,
+            reconcileAndPreserveRemaining(
+              state,
+              0,
+              plan.budgetCeiling.totalReserved,
+              reqParams.nowMs,
+            ),
+          );
+        }
         tx.set(
           runRef,
           {
@@ -554,6 +629,35 @@ function createVisualPlanProposalPorts(params: {
           },
           { merge: true },
         );
+
+        if (billableFailure && planSnap.exists && leaseSnap.exists) {
+          try {
+            const currentPlan = validateVisualPlanRun(planSnap.data());
+            const currentLease = validateVisualPlanLease(leaseSnap.data());
+            if (
+              currentPlan.status === 'proposing' &&
+              leaseMatchesPlan(currentLease, currentPlan, opaquePlanId)
+            ) {
+              const expireMs = timestampToMillis(currentPlan.expireAt);
+              if (expireMs === null) return;
+              const abandoned: VisualPlanRun = {
+                ...currentPlan,
+                status: 'abandoned',
+                settlement: {
+                  proposalActualCost: reqParams.actualCostMicroUsd,
+                  slots: [],
+                },
+                updatedAt: Timestamp.fromMillis(Math.min(reqParams.nowMs, expireMs)),
+              };
+              validateVisualPlanRun(abandoned);
+              tx.set(planRef, abandoned);
+              tx.delete(planLeaseRef);
+            }
+          } catch {
+            // Il run/ledger devono comunque essere liquidati in modo
+            // conservativo. Un piano/lease corrotto non viene mai riscritto.
+          }
+        }
       });
     },
   };
@@ -637,6 +741,21 @@ function isUnsettled(status: VisualPlanRun['status']): boolean {
   return status === 'authorized' || status === 'proposing';
 }
 
+function leaseMatchesPlan(
+  lease: VisualPlanLease,
+  plan: VisualPlanRun,
+  opaquePlanId: string,
+): boolean {
+  return (
+    lease.ownerUid === plan.ownerUid &&
+    lease.programId === plan.programId &&
+    lease.importId === plan.importId &&
+    lease.lessonId === plan.lessonId &&
+    lease.requestId === plan.requestId &&
+    lease.opaquePlanId === opaquePlanId
+  );
+}
+
 // ─── Autorizzazione — orchestrazione (roadmap §8.3, §10.1, §10.3) ─────────────
 
 /**
@@ -658,13 +777,15 @@ export async function authorizeVisualPlanForOwner(params: {
   secret: string | undefined;
   /** Iniettabile nei test per rendere deterministica la corsa sul lease (blocker P0-2). */
   clock?: () => number;
+  /** Solo test: provider finto, mai rete reale. */
+  callProviderOverride?: AiContentPorts['callProvider'];
+  /** Solo test: rende osservabile che il replay non carica la configurazione. */
+  loadConfigOverride?: typeof loadRuntimeConfig;
+  /** Solo test: barriera dopo le letture autorevoli, prima delle scritture. */
+  afterAuthoritativeRead?: () => Promise<void>;
 }): Promise<VisualPlanRun> {
   const { db, ownerUid, input, mode, visualMode, secret } = params;
   const clock = params.clock ?? Date.now;
-
-  if (mode === 'disabled') {
-    throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
-  }
 
   const opaquePlanId = computeOpaqueVisualPlanId(ownerUid, input.requestId);
   const planRef = db.doc(`visualPlanRuns/${opaquePlanId}`);
@@ -691,7 +812,11 @@ export async function authorizeVisualPlanForOwner(params: {
     plan = existing;
   }
 
-  const config = await loadRuntimeConfig(db);
+  if (mode === 'disabled') {
+    throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+  }
+
+  const config = await (params.loadConfigOverride ?? loadRuntimeConfig)(db);
   if (!config || !config.enabled) {
     throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
   }
@@ -705,6 +830,7 @@ export async function authorizeVisualPlanForOwner(params: {
       config,
       visualMode,
       nowMs: clock(),
+      afterAuthoritativeRead: params.afterAuthoritativeRead,
     });
     if (!isUnsettled(plan.status)) {
       // Corsa fra il percorso rapido (sopra) e questa transazione: un altro
@@ -713,7 +839,16 @@ export async function authorizeVisualPlanForOwner(params: {
     }
   }
 
-  return resumeCoordinatedProposal({ db, plan, input, config, mode, secret, clock });
+  return resumeCoordinatedProposal({
+    db,
+    plan,
+    input,
+    config,
+    mode,
+    secret,
+    clock,
+    callProviderOverride: params.callProviderOverride,
+  });
 }
 
 /**
@@ -734,6 +869,7 @@ export async function createVisualPlanForOwner(params: {
   config: AiRuntimeConfig;
   visualMode: AiVisualMode;
   nowMs: number;
+  afterAuthoritativeRead?: () => Promise<void>;
 }): Promise<VisualPlanRun> {
   const { db, ownerUid, input, opaquePlanId, config, visualMode, nowMs } = params;
   const leaseId = computeVisualPlanLeaseId(ownerUid, input.lessonId);
@@ -785,6 +921,7 @@ export async function createVisualPlanForOwner(params: {
       if (error instanceof AiVisualError) return { kind: 'lesson_error', error };
       throw error;
     }
+    await params.afterAuthoritativeRead?.();
 
     const legacy = readLegacyLessonVisuals({
       visual: lesson.lessonData.visual,
@@ -946,6 +1083,12 @@ export async function createVisualPlanForOwner(params: {
     // prima scrittura MULTI-VISUAL su questa lezione — mai un passo separato.
     if (legacy.status === 'ok' && legacy.adoptedFromSingular) {
       tx.update(lessonRef, { visuals: legacy.manifest, visual: FieldValue.delete() });
+      if (lesson.completed) {
+        tx.update(db.doc(`publicLessons/${lesson.publicLessonId}`), {
+          visuals: projectLessonVisualsManifest(legacy.manifest),
+          visual: FieldValue.delete(),
+        });
+      }
     }
 
     return { kind: 'created', plan: newPlan };
@@ -984,11 +1127,10 @@ export async function createVisualPlanForOwner(params: {
  * 2. chiamata al motore generico (`generateContent`, porte plan-aware);
  * 3. transazione di finalizzazione, con un orologio **fresco** (dopo la
  *    chiamata, mai lo stesso istante della fase 1): rilegge piano+lease e
- *    scrive l'esito **solo se** il lease è ancora il nostro. Se nel
- *    frattempo un altro tentativo ha acquisito il lease (il nostro è scaduto
- *    durante la chiamata), il piano viene comunque scritto (documento
- *    proprio, nessuna collisione) ma il lease **non viene mai toccato** —
- *    non sovrascrive mai il vincitore della corsa.
+ *    scrive l'esito **solo se** il lease è ancora nostro, coerente e valido.
+ *    Se nel frattempo un altro tentativo lo ha acquisito (o il lease è
+ *    scaduto), restituisce `lost_ownership` con **zero scritture** — né piano
+ *    né lease del vincitore vengono toccati.
  */
 export async function resumeCoordinatedProposal(params: {
   db: Firestore;
@@ -1000,6 +1142,8 @@ export async function resumeCoordinatedProposal(params: {
   clock: () => number;
   /** Solo test: sostituisce `callProvider` mantenendo intatta la contabilità del ledger. */
   callProviderOverride?: AiContentPorts['callProvider'];
+  /** Solo test: simula la perdita della risposta dopo il commit AIGEN. */
+  afterProposalResult?: () => Promise<void>;
 }): Promise<VisualPlanRun> {
   const { db, input, config, mode, secret, clock } = params;
   const plan = params.plan;
@@ -1007,56 +1151,6 @@ export async function resumeCoordinatedProposal(params: {
   const leaseId = computeVisualPlanLeaseId(plan.ownerUid, plan.lessonId);
   const planRef = db.doc(`visualPlanRuns/${opaquePlanId}`);
   const leaseRef = db.doc(`visualPlanLeases/${leaseId}`);
-
-  // Il corpo non è mai persistito: va riletto per costruire davvero la
-  // richiesta, ma verificato contro `sourceBodyHash` congelato — mai
-  // ricalcolato silenziosamente su un corpo diverso da quello autorizzato.
-  const lessonRef = db.doc(lessonPath(plan.programId, plan.importId, plan.lessonId));
-  const lessonSnap = await lessonRef.get();
-  const lessonData = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
-  const lessonGate = checkLessonForVisual({
-    lesson: lessonData,
-    lessonId: plan.lessonId,
-    ownerUid: plan.ownerUid,
-    importId: plan.importId,
-  });
-  if (!lessonGate.ok) {
-    throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
-  }
-  const publicLessonSnap = await db.doc(`publicLessons/${lessonGate.publicLessonId}`).get();
-  const projectionGate = checkProjectionForVisual({
-    lesson: lessonData as Record<string, unknown>,
-    publicLesson: publicLessonSnap.exists
-      ? (publicLessonSnap.data() as Record<string, unknown>)
-      : null,
-    programId: plan.programId,
-    importId: plan.importId,
-    ownerUid: plan.ownerUid,
-  });
-  if (!projectionGate.ok) {
-    throw new AiVisualError('invalid_input', describeVisualBindingFailure(projectionGate.failure));
-  }
-
-  const sourceBodyHash = sha256Hex(projectionGate.body);
-  if (sourceBodyHash !== plan.sourceBodyHash) {
-    throw new AiVisualMultiError(
-      'visual_plan_proposal_body_changed',
-      "Il corpo della lezione è cambiato dopo l'autorizzazione del piano.",
-    );
-  }
-
-  const proposalRequest = buildVisualPlanProposalRequest({
-    requestId: plan.requestId,
-    quantity: plan.quantity,
-    lessonBody: projectionGate.body,
-    titolo: input.titolo,
-    sottotitolo: input.sottotitolo,
-    difficolta: input.difficolta,
-    concettiChiave: input.concettiChiave,
-    obiettivi: input.obiettivi,
-    udaTitle: input.udaTitle,
-    udaContext: input.udaContext,
-  });
 
   const leaseWindowMs = computeContentLeaseTtlMs(retryPolicyFromConfig(config));
 
@@ -1098,12 +1192,22 @@ export async function resumeCoordinatedProposal(params: {
     } catch {
       return { kind: 'corrupted_state' };
     }
-    if (currentLease.opaquePlanId !== opaquePlanId) return { kind: 'lost_ownership' };
+    if (!leaseMatchesPlan(currentLease, currentPlan, opaquePlanId)) {
+      return { kind: 'lost_ownership' };
+    }
 
     const planExpireMs = timestampToMillis(currentPlan.expireAt);
     const leaseExpireMs = timestampToMillis(currentLease.expireAt);
     if (planExpireMs === null || leaseExpireMs === null) return { kind: 'corrupted_state' };
     if (planExpireMs <= prepareNowMs || leaseExpireMs <= prepareNowMs) {
+      const ledgerRef = db.doc(`aiBudgetLedger/${currentPlan.budgetCeiling.reservationMonthKey}`);
+      const ledgerSnap = await tx.get(ledgerRef);
+      const ledgerState = readLedgerState(
+        ledgerSnap,
+        currentPlan.budgetCeiling.reservationMonthKey,
+        config.monthlyBudgetMicroUsd,
+        config.dailyBudgetMicroUsd,
+      );
       // `updatedAt` è fissato a `expireAt`, non a `prepareNowMs`: il
       // validatore fail-closed (`assertVisualPlanTimestampOrder`) richiede
       // `updatedAt <= expireAt` per ogni status diverso da `expired` (che qui
@@ -1113,9 +1217,14 @@ export async function resumeCoordinatedProposal(params: {
       const expiredPlan: VisualPlanRun = {
         ...currentPlan,
         status: 'abandoned',
-        updatedAt: Timestamp.fromMillis(planExpireMs),
+        updatedAt: Timestamp.fromMillis(Math.min(prepareNowMs, planExpireMs)),
       };
       validateVisualPlanRun(expiredPlan);
+      writeLedgerState(
+        tx,
+        ledgerRef,
+        closeVisualPlanReservation(ledgerState, currentPlan, prepareNowMs),
+      );
       tx.set(planRef, expiredPlan);
       tx.delete(leaseRef);
       return { kind: 'plan_expired', plan: expiredPlan };
@@ -1133,6 +1242,7 @@ export async function resumeCoordinatedProposal(params: {
       updatedAt: Timestamp.fromMillis(prepareNowMs),
       expireAt: Timestamp.fromMillis(prepareNowMs + leaseWindowMs),
     };
+    validateVisualPlanLease(renewedLease);
     tx.set(leaseRef, renewedLease);
     return { kind: 'prepared' };
   });
@@ -1153,6 +1263,53 @@ export async function resumeCoordinatedProposal(params: {
     return prepared.plan;
   }
 
+  // Solo dopo avere dimostrato che piano e lease sono vivi e coerenti si
+  // rilegge il corpo autorevole necessario alla proposta. Un piano scaduto
+  // non arriva neppure a questo I/O, tanto meno al provider.
+  const lessonRef = db.doc(lessonPath(plan.programId, plan.importId, plan.lessonId));
+  const lessonSnap = await lessonRef.get();
+  const lessonData = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
+  const lessonGate = checkLessonForVisual({
+    lesson: lessonData,
+    lessonId: plan.lessonId,
+    ownerUid: plan.ownerUid,
+    importId: plan.importId,
+  });
+  if (!lessonGate.ok) {
+    throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
+  }
+  const publicLessonSnap = await db.doc(`publicLessons/${lessonGate.publicLessonId}`).get();
+  const projectionGate = checkProjectionForVisual({
+    lesson: lessonData as Record<string, unknown>,
+    publicLesson: publicLessonSnap.exists
+      ? (publicLessonSnap.data() as Record<string, unknown>)
+      : null,
+    programId: plan.programId,
+    importId: plan.importId,
+    ownerUid: plan.ownerUid,
+  });
+  if (!projectionGate.ok) {
+    throw new AiVisualError('invalid_input', describeVisualBindingFailure(projectionGate.failure));
+  }
+  if (sha256Hex(projectionGate.body) !== plan.sourceBodyHash) {
+    throw new AiVisualMultiError(
+      'visual_plan_proposal_body_changed',
+      "Il corpo della lezione è cambiato dopo l'autorizzazione del piano.",
+    );
+  }
+  const proposalRequest = buildVisualPlanProposalRequest({
+    requestId: plan.requestId,
+    quantity: plan.quantity,
+    lessonBody: projectionGate.body,
+    titolo: input.titolo,
+    sottotitolo: input.sottotitolo,
+    difficolta: input.difficolta,
+    concettiChiave: input.concettiChiave,
+    obiettivi: input.obiettivi,
+    udaTitle: input.udaTitle,
+    udaContext: input.udaContext,
+  });
+
   // ── Fase 2: motore generico, porte plan-aware ─────────────────────────────
   const basePorts = createVisualPlanProposalPorts({ db, config, mode, secret, plan });
   const ports = params.callProviderOverride
@@ -1167,6 +1324,7 @@ export async function resumeCoordinatedProposal(params: {
   };
   const result = await generateContent(proposalRequest, ctx, ports);
   const decisions = validateStoredVisualPlanProposalOutput(result.output, plan.quantity.ceiling);
+  await params.afterProposalResult?.();
   const slots = decisions.map((decision, index) => buildSlotFromDecision(decision, index));
   const hasImageSlot = slots.some((slot) => slot.decision === 'image');
   const nextStatus: VisualPlanRun['status'] = hasImageSlot ? 'proposed' : 'abandoned';
@@ -1188,6 +1346,7 @@ export async function resumeCoordinatedProposal(params: {
   const finalizeNowMs = clock();
   type FinalizeOutcome =
     | { kind: 'written'; plan: VisualPlanRun }
+    | { kind: 'plan_expired'; plan: VisualPlanRun }
     | { kind: 'lost_ownership' }
     | { kind: 'corrupted_state' };
   const finalized = await db.runTransaction<FinalizeOutcome>(async (tx) => {
@@ -1207,10 +1366,15 @@ export async function resumeCoordinatedProposal(params: {
     }
 
     let ownsLease = false;
+    let currentLease: VisualPlanLease | null = null;
     if (leaseSnap.exists) {
       try {
-        const currentLease = validateVisualPlanLease(leaseSnap.data());
-        ownsLease = currentLease.opaquePlanId === opaquePlanId;
+        currentLease = validateVisualPlanLease(leaseSnap.data());
+        const leaseExpireMs = timestampToMillis(currentLease.expireAt);
+        ownsLease =
+          leaseExpireMs !== null &&
+          leaseExpireMs > finalizeNowMs &&
+          leaseMatchesPlan(currentLease, currentPlan, opaquePlanId);
       } catch {
         ownsLease = false;
       }
@@ -1220,6 +1384,35 @@ export async function resumeCoordinatedProposal(params: {
       // era in corso (il nostro è scaduto durante la chiamata al motore):
       // zero scritture, né sul piano né sul lease del vincitore.
       return { kind: 'lost_ownership' };
+    }
+
+    const planExpireMs = timestampToMillis(currentPlan.expireAt);
+    if (planExpireMs === null) return { kind: 'corrupted_state' };
+    if (planExpireMs <= finalizeNowMs) {
+      const ledgerSnap = await tx.get(
+        db.doc(`aiBudgetLedger/${currentPlan.budgetCeiling.reservationMonthKey}`),
+      );
+      const state = readLedgerState(
+        ledgerSnap,
+        currentPlan.budgetCeiling.reservationMonthKey,
+        config.monthlyBudgetMicroUsd,
+        config.dailyBudgetMicroUsd,
+      );
+      const expiredPlan: VisualPlanRun = {
+        ...currentPlan,
+        status: 'abandoned',
+        settlement: { proposalActualCost: result.actualCostMicroUsd, slots: [] },
+        updatedAt: Timestamp.fromMillis(planExpireMs),
+      };
+      validateVisualPlanRun(expiredPlan);
+      writeLedgerState(
+        tx,
+        db.doc(`aiBudgetLedger/${currentPlan.budgetCeiling.reservationMonthKey}`),
+        reconcileLedger(state, currentPlan.budgetCeiling.reservationKey, 0, finalizeNowMs),
+      );
+      tx.set(planRef, expiredPlan);
+      tx.delete(leaseRef);
+      return { kind: 'plan_expired', plan: expiredPlan };
     }
 
     const updated: VisualPlanRun = {
@@ -1249,6 +1442,7 @@ export async function resumeCoordinatedProposal(params: {
         updatedAt: Timestamp.fromMillis(finalizeNowMs),
         expireAt: Timestamp.fromMillis(finalizeNowMs + VISUAL_STAGING_TTL_MS),
       };
+      validateVisualPlanLease(renewedLease);
       tx.set(leaseRef, renewedLease);
     }
     return { kind: 'written', plan: updated };
@@ -1261,11 +1455,22 @@ export async function resumeCoordinatedProposal(params: {
     );
   }
   if (finalized.kind === 'lost_ownership') {
+    // `generateContent.finalizeRun` può avere già ri-prenotato la quota
+    // generation residua sotto la reservationKey di questo piano. Il piano
+    // vincitore usa una chiave diversa: rilasciare la nostra quota non tocca
+    // né il suo lease né il suo budget. Piano e lease restano byte-identici.
+    await releaseVisualPlanReservationAfterLostOwnership({
+      db,
+      plan,
+      config,
+      nowMs: finalizeNowMs,
+    });
     throw new AiVisualMultiError(
       'visual_plan_already_active',
       'Il lease di questo piano è scaduto ed è stato acquisito da un altro tentativo durante la proposta.',
     );
   }
+  if (finalized.kind === 'plan_expired') return finalized.plan;
   return finalized.plan;
 }
 
@@ -1372,11 +1577,11 @@ async function handleAuthorizeVisualPlan(
   const db = database();
   try {
     const ownerUid = await requireOwner(request, db);
-    const mode = contentModeFromEnv();
-    if (mode === 'disabled') {
-      throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
-    }
+    // Payload chiuso e identità autenticata vengono sempre validati prima del
+    // replay. Il kill switch riguarda soltanto nuovo lavoro: un risultato già
+    // persistito deve restare leggibile anche a generazione disattivata.
     const input = validateVisualPlanAuthorizeInput(request.data);
+    const mode = contentModeFromEnv();
     const visualMode = visualModeFromEnv();
     const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
     return await authorizeVisualPlanForOwner({

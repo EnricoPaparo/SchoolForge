@@ -2,9 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { OPENAI_RUNTIME_LUNA_MODEL, OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION } from './aiCorrectionCost.js';
-import { AiContentError } from './aiContentCore.js';
-import { AiVisualMultiError } from './aiVisualMultiCore.js';
+import {
+  OPENAI_RUNTIME_LUNA_MODEL,
+  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+} from './aiCorrectionCost.js';
+import { AiContentError, computeBudgetReservationKey } from './aiContentCore.js';
+import { monthKeyFromMs } from './aiCorrectionBudget.js';
+import { AiVisualMultiError, computeVisualPlanHash } from './aiVisualMultiCore.js';
 import {
   computeVisualPlanTotalReserved,
   validateVisualPlanRun,
@@ -18,7 +22,8 @@ import {
   type VisualPlanLease,
 } from './aiVisualPlanLease.js';
 
-const { authorizeVisualPlanForOwner } = await import('./aiVisualPlanGateway.js');
+const { authorizeVisualPlanForOwner, createVisualPlanForOwner, resumeCoordinatedProposal } =
+  await import('./aiVisualPlanGateway.js');
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 
@@ -29,6 +34,25 @@ const UDA_DIR = 'uda-1';
 const LESSON_FILENAME = 'lezione-1.md';
 const LESSON_PATH_FIELD = `${UDA_DIR}/${LESSON_FILENAME}`;
 const LESSON_BODY = '## Introduzione\n\nTesto introduttivo.\n\n## Reti\n\nContenuto sulle reti.';
+
+function singularVisual(assetId: string): Record<string, unknown> {
+  return {
+    contractVersion: 'visual-enrichment/v1',
+    assetId,
+    storageRef: `repository/${OWNER_UID}/${IMPORT_ID}/${UDA_DIR}/visuals/${assetId}.webp`,
+    anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after' },
+    caption: 'Didascalia.',
+    altText: 'Testo alternativo.',
+    width: 800,
+    height: 600,
+    byteLength: 12_345,
+    sha256: 'd'.repeat(64),
+    mimeType: 'image/webp',
+    styleVersion: 'schoolforge-sketch/v1',
+    sourceBodyHash: 'e'.repeat(64),
+    approvedAt: Timestamp.now(),
+  };
+}
 
 const AI_CONFIG = {
   enabled: true,
@@ -94,12 +118,21 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
   afterEach(async () => {
     await Promise.all(touchedRefs.splice(0).map((ref) => ref.delete().catch(() => undefined)));
     const monthKey = new Date().toISOString().slice(0, 7);
-    await db.doc(`aiBudgetLedger/${monthKey}`).delete().catch(() => undefined);
+    await db
+      .doc(`aiBudgetLedger/${monthKey}`)
+      .delete()
+      .catch(() => undefined);
   });
 
   afterAll(async () => {
-    await db.doc('settings/owner').delete().catch(() => undefined);
-    await db.doc('settings/aiConfig').delete().catch(() => undefined);
+    await db
+      .doc('settings/owner')
+      .delete()
+      .catch(() => undefined);
+    await db
+      .doc('settings/aiConfig')
+      .delete()
+      .catch(() => undefined);
     await deleteApp(app);
   });
 
@@ -132,16 +165,21 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     touchedRefs.push(lessonRef, publicRef);
   }
 
-  function call(payload: Record<string, unknown>, nowMs = Date.now()) {
+  function call(
+    payload: Record<string, unknown>,
+    nowMs = Date.now(),
+    overrides: Partial<Parameters<typeof authorizeVisualPlanForOwner>[0]> = {},
+  ) {
     const input = validateVisualPlanAuthorizeInput(payload);
     return authorizeVisualPlanForOwner({
       db,
       ownerUid: OWNER_UID,
       input,
-      nowMs,
+      clock: () => nowMs,
       mode: 'mock',
       visualMode: 'mock',
       secret: undefined,
+      ...overrides,
     });
   }
 
@@ -210,7 +248,124 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect(await ledgerReservationCount()).toBe(0);
   });
 
-  it('due autorizzazioni concorrenti sulla stessa lezione: una sola vince il lease, l\'altra riceve visual_plan_already_active', async () => {
+  it('costo proposta non-zero con slot image usa la prenotazione master e conserva solo la quota generation', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+
+    const plan = await call(authorizePayload({ requestId, lessonId }), Date.now(), {
+      callProviderOverride: async () => ({
+        status: 'ok',
+        output: {
+          decisions: [
+            {
+              decision: 'image',
+              subject: 'Schema di una rete di computer con nodi e collegamenti',
+              rationale: 'Rende visibile la topologia descritta nel testo della lezione.',
+              anchor: { anchorHeadingIndex: 1, anchorHeadingText: 'Reti' },
+              caption: 'Nodi e collegamenti in una rete.',
+              altText: 'Schema di computer collegati fra loro in una rete.',
+            },
+          ],
+        },
+        usage: { inputTokens: 100, outputTokens: 100 },
+        metered: true,
+        priorBillingRisk: false,
+      }),
+    });
+
+    expect(plan.status).toBe('proposed');
+    expect(plan.slots).toHaveLength(1);
+    expect(plan.slots[0]?.decision).toBe('image');
+    expect(plan.settlement.proposalActualCost).toBeGreaterThan(0);
+    const ledger = await db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`).get();
+    const reservation = ledger.data()?.reservations?.[plan.budgetCeiling.reservationKey];
+    expect(reservation?.microUsd).toBe(
+      plan.budgetCeiling.generationCap * plan.budgetCeiling.maxAttemptsPerSlot,
+    );
+  });
+
+  it('fallimento provider fatturabile chiude il piano e non può richiamare la proposta', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    let providerCalls = 0;
+    const payload = authorizePayload({ requestId, lessonId });
+
+    await expect(
+      call(payload, Date.now(), {
+        callProviderOverride: async () => {
+          providerCalls += 1;
+          return { status: 'error', phase: 'invocation_unknown', reason: 'other' };
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'provider_unavailable' });
+
+    const failedPlan = validateVisualPlanRun((await planRef(requestId).get()).data());
+    expect(failedPlan.status).toBe('abandoned');
+    expect(failedPlan.settlement.proposalActualCost).toBeNull();
+    expect((await leaseRef(lessonId).get()).exists).toBe(false);
+    expect(await ledgerReservationCount()).toBe(0);
+
+    const replay = await call(payload, Date.now(), {
+      mode: 'disabled',
+      callProviderOverride: async () => {
+        providerCalls += 1;
+        throw new Error('provider non deve essere richiamato');
+      },
+    });
+    expect(replay.status).toBe('abandoned');
+    expect(providerCalls).toBe(1);
+  });
+
+  it('replay terminale precede config, LessonDoc, lease, budget e provider anche se assenti o malformati', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    const payload = authorizePayload({ requestId, lessonId });
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    const first = await call(payload);
+
+    const lessonRef = db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${lessonId}`);
+    const publicRef = db.doc(`publicLessons/${publicLessonId}`);
+    const ledgerRef = db.doc(`aiBudgetLedger/${first.budgetCeiling.reservationMonthKey}`);
+    await Promise.all([
+      db.doc('settings/aiConfig').delete(),
+      lessonRef.delete(),
+      publicRef.set({ malformed: true }),
+      leaseRef(lessonId).set({ malformed: true }),
+      ledgerRef.set({ malformed: true }),
+    ]);
+
+    let configReads = 0;
+    let providerCalls = 0;
+    try {
+      const replay = await call(payload, Date.now(), {
+        mode: 'disabled',
+        loadConfigOverride: async () => {
+          configReads += 1;
+          return null;
+        },
+        callProviderOverride: async () => {
+          providerCalls += 1;
+          throw new Error('provider non deve essere chiamato');
+        },
+      });
+      expect(replay.status).toBe(first.status);
+      expect(replay.updatedAt).toEqual(first.updatedAt);
+      expect(configReads).toBe(0);
+      expect(providerCalls).toBe(0);
+    } finally {
+      await db.doc('settings/aiConfig').set(AI_CONFIG);
+    }
+  });
+
+  it("due autorizzazioni concorrenti sulla stessa lezione: una sola vince il lease, l'altra riceve visual_plan_already_active", async () => {
     const lessonId = `lesson-${randomUUID()}`;
     const publicLessonId = `public-${lessonId}`;
     await seedLesson(lessonId, publicLessonId);
@@ -233,6 +388,291 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect((rejection as AiVisualMultiError).details).toMatchObject({
       opaquePlanId: expect.any(String),
     });
+  });
+
+  it('risposta persa dopo completed AIGEN viene ripresa come replay senza seconda chiamata provider', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    const input = validateVisualPlanAuthorizeInput(authorizePayload({ requestId, lessonId }));
+    const startedAt = Date.now();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    const plan = await createVisualPlanForOwner({
+      db,
+      ownerUid: OWNER_UID,
+      input,
+      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestId),
+      config: AI_CONFIG,
+      visualMode: 'mock',
+      nowMs: startedAt,
+    });
+    let providerCalls = 0;
+    const providerResult = {
+      status: 'ok' as const,
+      output: {
+        decisions: [
+          {
+            decision: 'image',
+            subject: 'Schema coordinato dei nodi principali della rete',
+            rationale: 'Mostra le relazioni spaziali fra i nodi descritte nel testo.',
+            anchor: { anchorHeadingIndex: 1, anchorHeadingText: 'Reti' },
+            caption: 'Nodi principali della rete.',
+            altText: 'Schema di più nodi collegati in una rete.',
+          },
+        ],
+      },
+      usage: { inputTokens: 0, outputTokens: 0 },
+      metered: false,
+      priorBillingRisk: false,
+    };
+
+    await expect(
+      resumeCoordinatedProposal({
+        db,
+        plan,
+        input,
+        config: AI_CONFIG,
+        mode: 'mock',
+        secret: undefined,
+        clock: () => startedAt + 1,
+        callProviderOverride: async () => {
+          providerCalls += 1;
+          return providerResult;
+        },
+        afterProposalResult: async () => {
+          throw new Error('simulated response loss');
+        },
+      }),
+    ).rejects.toThrow('simulated response loss');
+
+    const replayed = await resumeCoordinatedProposal({
+      db,
+      plan,
+      input,
+      config: AI_CONFIG,
+      mode: 'mock',
+      secret: undefined,
+      clock: () => startedAt + 2,
+      callProviderOverride: async () => {
+        providerCalls += 1;
+        throw new Error('provider non deve essere richiamato');
+      },
+    });
+    expect(replayed.status).toBe('proposed');
+    expect(replayed.slots[0]?.decision).toBe('image');
+    expect(providerCalls).toBe(1);
+  });
+
+  it('race A lenta/B takeover: A perde ownership e la finalizzazione produce zero scritture sul piano', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestIdA = randomUUID();
+    const requestIdB = randomUUID();
+    const inputA = validateVisualPlanAuthorizeInput(
+      authorizePayload({ requestId: requestIdA, lessonId }),
+    );
+    const startedAt = Date.now();
+    touchedRefs.push(planRef(requestIdA), planRef(requestIdB), leaseRef(lessonId));
+    const planA = await createVisualPlanForOwner({
+      db,
+      ownerUid: OWNER_UID,
+      input: inputA,
+      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestIdA),
+      config: AI_CONFIG,
+      visualMode: 'mock',
+      nowMs: startedAt,
+    });
+
+    let raceNowMs = startedAt + 1;
+    let releaseProvider!: () => void;
+    let signalProviderStarted!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      signalProviderStarted = resolve;
+    });
+    const providerRelease = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const slowA = resumeCoordinatedProposal({
+      db,
+      plan: planA,
+      input: inputA,
+      config: AI_CONFIG,
+      mode: 'mock',
+      secret: undefined,
+      clock: () => raceNowMs,
+      callProviderOverride: async () => {
+        signalProviderStarted();
+        await providerRelease;
+        return {
+          status: 'ok',
+          output: {
+            decisions: [
+              {
+                decision: 'image',
+                subject: 'Schema dei nodi principali della rete',
+                rationale: 'Rende visibili i collegamenti descritti nella lezione.',
+                anchor: { anchorHeadingIndex: 1, anchorHeadingText: 'Reti' },
+                caption: 'Nodi collegati nella rete.',
+                altText: 'Schema di più nodi collegati in una rete.',
+              },
+            ],
+          },
+          usage: { inputTokens: 0, outputTokens: 0 },
+          metered: false,
+          priorBillingRisk: false,
+        };
+      },
+    });
+    await providerStarted;
+    const beforeTakeover = validateVisualPlanRun((await planRef(requestIdA).get()).data());
+    expect(beforeTakeover.status).toBe('proposing');
+
+    raceNowMs = startedAt + 6 * 60 * 60 * 1_000;
+    await call(authorizePayload({ requestId: requestIdB, lessonId }), raceNowMs);
+    releaseProvider();
+    await expect(slowA).rejects.toMatchObject({ code: 'visual_plan_already_active' });
+
+    const afterLostOwnership = validateVisualPlanRun((await planRef(requestIdA).get()).data());
+    expect(afterLostOwnership).toEqual(beforeTakeover);
+    const ledger = await db.doc(`aiBudgetLedger/${planA.budgetCeiling.reservationMonthKey}`).get();
+    expect(
+      ledger.data()?.reservations?.[computeBudgetReservationKey(OWNER_UID, requestIdA)],
+    ).toBeUndefined();
+  });
+
+  it('piano o lease scaduto viene chiuso prima di LessonDoc/provider e non viene rinnovato', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    const input = validateVisualPlanAuthorizeInput(authorizePayload({ requestId, lessonId }));
+    const startedAt = Date.now();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    const plan = await createVisualPlanForOwner({
+      db,
+      ownerUid: OWNER_UID,
+      input,
+      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestId),
+      config: AI_CONFIG,
+      visualMode: 'mock',
+      nowMs: startedAt,
+    });
+    await db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${lessonId}`).delete();
+    let providerCalls = 0;
+
+    const expired = await resumeCoordinatedProposal({
+      db,
+      plan,
+      input,
+      config: AI_CONFIG,
+      mode: 'mock',
+      secret: undefined,
+      clock: () => startedAt + 86_400_000,
+      callProviderOverride: async () => {
+        providerCalls += 1;
+        throw new Error('provider non deve essere chiamato');
+      },
+    });
+    expect(expired.status).toBe('abandoned');
+    expect(providerCalls).toBe(0);
+    expect((await leaseRef(lessonId).get()).exists).toBe(false);
+    const persisted = await planRef(requestId).get();
+    expect(() => validateVisualPlanRun(persisted.data())).not.toThrow();
+    const ledger = await db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`).get();
+    expect(ledger.data()?.reservations?.[plan.budgetCeiling.reservationKey]).toBeUndefined();
+  });
+
+  it('lease scaduto con piano vivo rilascia una reservation reserved senza addebito', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    const input = validateVisualPlanAuthorizeInput(authorizePayload({ requestId, lessonId }));
+    const startedAt = Date.now();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    const plan = await createVisualPlanForOwner({
+      db,
+      ownerUid: OWNER_UID,
+      input,
+      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestId),
+      config: AI_CONFIG,
+      visualMode: 'mock',
+      nowMs: startedAt,
+    });
+    const leaseDocument = validateVisualPlanLease((await leaseRef(lessonId).get()).data());
+    await leaseRef(lessonId).set({
+      ...leaseDocument,
+      expireAt: Timestamp.fromMillis(startedAt + 1_000),
+    });
+
+    const closed = await resumeCoordinatedProposal({
+      db,
+      plan,
+      input,
+      config: AI_CONFIG,
+      mode: 'mock',
+      secret: undefined,
+      clock: () => startedAt + 2_000,
+    });
+
+    expect(closed.status).toBe('abandoned');
+    const ledger = await db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`).get();
+    expect(ledger.data()?.reservations?.[plan.budgetCeiling.reservationKey]).toBeUndefined();
+    expect(ledger.data()?.spentMicroUsd).toBe(0);
+  });
+
+  it('lease scaduto con reservation pending liquida solo proposalCap, mai totalReserved', async () => {
+    const lessonId = `lesson-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    const input = validateVisualPlanAuthorizeInput(authorizePayload({ requestId, lessonId }));
+    const startedAt = Date.now();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    const plan = await createVisualPlanForOwner({
+      db,
+      ownerUid: OWNER_UID,
+      input,
+      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestId),
+      config: AI_CONFIG,
+      visualMode: 'mock',
+      nowMs: startedAt,
+    });
+    const leaseDocument = validateVisualPlanLease((await leaseRef(lessonId).get()).data());
+    await leaseRef(lessonId).set({
+      ...leaseDocument,
+      expireAt: Timestamp.fromMillis(startedAt + 1_000),
+    });
+    const ledgerRef = db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`);
+    const ledgerData = (await ledgerRef.get()).data() ?? {};
+    await ledgerRef.set({
+      ...ledgerData,
+      reservations: {
+        ...(ledgerData.reservations ?? {}),
+        [plan.budgetCeiling.reservationKey]: {
+          ...ledgerData.reservations[plan.budgetCeiling.reservationKey],
+          status: 'pending',
+        },
+      },
+    });
+
+    const closed = await resumeCoordinatedProposal({
+      db,
+      plan,
+      input,
+      config: AI_CONFIG,
+      mode: 'mock',
+      secret: undefined,
+      clock: () => startedAt + 2_000,
+    });
+
+    expect(closed.status).toBe('abandoned');
+    const ledger = await ledgerRef.get();
+    expect(ledger.data()?.reservations?.[plan.budgetCeiling.reservationKey]).toBeUndefined();
+    expect(ledger.data()?.spentMicroUsd).toBe(plan.budgetCeiling.proposalCap);
+    expect(plan.budgetCeiling.totalReserved).toBeGreaterThan(plan.budgetCeiling.proposalCap);
   });
 
   it('lease scaduto è riacquisibile nella stessa transazione', async () => {
@@ -303,6 +743,9 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     // Un record valido ma per un'ALTRA lezione, sotto lo stesso opaquePlanId
     // (stesso ownerUid+requestId): l'identità persistita non coincide con
     // quella della richiesta corrente.
+    const divergentCreatedAtMs = Date.now() - 1_000;
+    const divergentSourceHash = 'b'.repeat(64);
+    const divergentQuantity = { mode: 'auto' as const, ceiling: 1 as const };
     const divergent: VisualPlanRun = {
       contractVersion: VISUAL_PLAN_CONTRACT_VERSION,
       ownerUid: OWNER_UID,
@@ -312,13 +755,23 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
       publicLessonId: otherPublicLessonId,
       udaDir: UDA_DIR,
       requestId,
-      planHash: 'a'.repeat(64),
+      planHash: computeVisualPlanHash({
+        ownerUid: OWNER_UID,
+        programId: PROGRAM_ID,
+        importId: IMPORT_ID,
+        lessonId: otherLessonId,
+        publicLessonId: otherPublicLessonId,
+        sourceBodyHash: divergentSourceHash,
+        existingItemAssetIds: [],
+        quantity: divergentQuantity,
+      }),
       status: 'abandoned',
-      quantity: { mode: 'auto', ceiling: 1 },
-      sourceBodyHash: 'b'.repeat(64),
+      quantity: divergentQuantity,
+      sourceBodyHash: divergentSourceHash,
       existingItemAssetIds: [],
       budgetCeiling: {
-        reservationKey: 'c'.repeat(64),
+        reservationKey: computeBudgetReservationKey(OWNER_UID, requestId),
+        reservationMonthKey: monthKeyFromMs(divergentCreatedAtMs),
         proposalCap: 1,
         generationCap: 1,
         maxAttemptsPerSlot: 2,
@@ -326,9 +779,9 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
       },
       slots: [],
       settlement: { proposalActualCost: 0, slots: [] },
-      createdAt: Timestamp.fromMillis(Date.now() - 1_000),
-      updatedAt: Timestamp.fromMillis(Date.now() - 1_000),
-      expireAt: Timestamp.fromMillis(Date.now() + 86_400_000 - 1_000),
+      createdAt: Timestamp.fromMillis(divergentCreatedAtMs),
+      updatedAt: Timestamp.fromMillis(divergentCreatedAtMs),
+      expireAt: Timestamp.fromMillis(divergentCreatedAtMs + 86_400_000),
     };
     await planRef(requestId).set(divergent);
 
@@ -337,7 +790,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     });
   });
 
-  it('replay dopo promozioni simulate: nessuna rilettura del mondo, il record torna così com\'è', async () => {
+  it("replay dopo promozioni simulate: nessuna rilettura del mondo, il record torna così com'è", async () => {
     const lessonId = `lesson-${randomUUID()}`;
     const publicLessonId = `public-${lessonId}`;
     await seedLesson(lessonId, publicLessonId);
@@ -348,6 +801,9 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     // deve poter esistere sotto una lettura futura di 03B) e il cui lease è
     // già stato rilasciato (stato terminale).
     const promotedAssetId = randomUUID();
+    const simulatedCreatedAtMs = Date.now() - 10_000;
+    const simulatedSourceHash = 'b'.repeat(64);
+    const simulatedQuantity = { mode: 'exact' as const, ceiling: 1 as const };
     const simulated: VisualPlanRun = {
       contractVersion: VISUAL_PLAN_CONTRACT_VERSION,
       ownerUid: OWNER_UID,
@@ -357,13 +813,23 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
       publicLessonId,
       udaDir: UDA_DIR,
       requestId,
-      planHash: 'a'.repeat(64),
+      planHash: computeVisualPlanHash({
+        ownerUid: OWNER_UID,
+        programId: PROGRAM_ID,
+        importId: IMPORT_ID,
+        lessonId,
+        publicLessonId,
+        sourceBodyHash: simulatedSourceHash,
+        existingItemAssetIds: [],
+        quantity: simulatedQuantity,
+      }),
       status: 'completed',
-      quantity: { mode: 'exact', ceiling: 1 },
-      sourceBodyHash: 'b'.repeat(64), // corpo "originale", ormai diverso da quello live
+      quantity: simulatedQuantity,
+      sourceBodyHash: simulatedSourceHash, // corpo "originale", ormai diverso da quello live
       existingItemAssetIds: [],
       budgetCeiling: {
-        reservationKey: 'c'.repeat(64),
+        reservationKey: computeBudgetReservationKey(OWNER_UID, requestId),
+        reservationMonthKey: monthKeyFromMs(simulatedCreatedAtMs),
         proposalCap: 1000,
         generationCap: 1000,
         maxAttemptsPerSlot: 2,
@@ -390,10 +856,13 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
           promotedAssetId,
         },
       ],
-      settlement: { proposalActualCost: 500, slots: [{ slotIndex: 0, attempts: 1, actualCost: 1000 }] },
-      createdAt: Timestamp.fromMillis(Date.now() - 10_000),
-      updatedAt: Timestamp.fromMillis(Date.now() - 5_000),
-      expireAt: Timestamp.fromMillis(Date.now() + 86_400_000 - 10_000),
+      settlement: {
+        proposalActualCost: 500,
+        slots: [{ slotIndex: 0, attempts: 1, actualCost: 1000 }],
+      },
+      createdAt: Timestamp.fromMillis(simulatedCreatedAtMs),
+      updatedAt: Timestamp.fromMillis(simulatedCreatedAtMs + 5_000),
+      expireAt: Timestamp.fromMillis(simulatedCreatedAtMs + 86_400_000),
     };
     // Autoverifica del fixture prima di persisterlo: deve essere un record
     // realmente valido secondo lo stesso validatore che il gateway userà.
@@ -403,9 +872,15 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
 
     // Cambia il corpo live DOPO la scrittura del piano simulato — se il
     // replay rileggesse il mondo, romperebbe l'identità/il corpo congelato.
-    await seedLesson(lessonId, publicLessonId, `${LESSON_BODY}\n\n## Nuova sezione\n\nAggiunta dopo.`);
+    await seedLesson(
+      lessonId,
+      publicLessonId,
+      `${LESSON_BODY}\n\n## Nuova sezione\n\nAggiunta dopo.`,
+    );
 
-    const replayed = await call(authorizePayload({ requestId, lessonId, quantity: { mode: 'exact', ceiling: 1 } }));
+    const replayed = await call(
+      authorizePayload({ requestId, lessonId, quantity: { mode: 'exact', ceiling: 1 } }),
+    );
 
     expect(replayed.status).toBe('completed');
     expect(replayed.slots[0]?.promotedAssetId).toBe(promotedAssetId);
@@ -449,7 +924,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect((await planRef(requestId).get()).exists).toBe(false);
   });
 
-  it('adozione singolare — dataset legacy variegato: manifest singolare distinto per lezione, letto senza scrittura', async () => {
+  it('adozione singolare atomica: converte ogni manifest privato legacy una sola volta', async () => {
     const cases = [
       { lessonId: `legacy-a-${randomUUID()}`, assetId: randomUUID() },
       { lessonId: `legacy-b-${randomUUID()}`, assetId: randomUUID() },
@@ -459,24 +934,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
       const publicLessonId = `public-${lessonId}`;
       await seedLesson(lessonId, publicLessonId);
       const lessonRef = db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${lessonId}`);
-      await lessonRef.update({
-        visual: {
-          contractVersion: 'visual-enrichment/v1',
-          assetId,
-          storageRef: `repository/${OWNER_UID}/${IMPORT_ID}/${UDA_DIR}/visuals/${assetId}.webp`,
-          anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after' },
-          caption: 'Didascalia.',
-          altText: 'Testo alternativo.',
-          width: 800,
-          height: 600,
-          byteLength: 12_345,
-          sha256: 'd'.repeat(64),
-          mimeType: 'image/webp',
-          styleVersion: 'schoolforge-sketch/v1',
-          sourceBodyHash: 'e'.repeat(64),
-          approvedAt: Timestamp.now(),
-        },
-      });
+      await lessonRef.update({ visual: singularVisual(assetId) });
 
       const requestId = randomUUID();
       touchedRefs.push(planRef(requestId), leaseRef(lessonId));
@@ -486,18 +944,91 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
       );
       expect(plan.existingItemAssetIds).toEqual([assetId]);
 
-      // Idempotente: una seconda lettura sulla stessa lezione (piano diverso,
-      // dopo che il primo si è già chiuso e ha rilasciato il lease) continua a
-      // leggere lo stesso assetId, senza alcuna scrittura di adozione.
+      // Idempotente: una seconda lettura usa il manifest plurale già adottato.
       const secondRequestId = randomUUID();
       touchedRefs.push(planRef(secondRequestId));
       const plan2 = await call(
-        authorizePayload({ requestId: secondRequestId, lessonId, quantity: { mode: 'exact', ceiling: 1 } }),
+        authorizePayload({
+          requestId: secondRequestId,
+          lessonId,
+          quantity: { mode: 'exact', ceiling: 1 },
+        }),
       );
       expect(plan2.existingItemAssetIds).toEqual([assetId]);
       const rawSnap = await lessonRef.get();
-      expect(rawSnap.data()?.visuals).toBeUndefined(); // nessuna adozione scritta
+      expect(rawSnap.data()?.visual).toBeUndefined();
+      expect(rawSnap.data()?.visuals?.items?.[0]?.assetId).toBe(assetId);
     }
+  });
+
+  it('adozione singolare su lezione completed aggiorna privato e PublicLessonDoc nella stessa transazione', async () => {
+    const lessonId = `legacy-completed-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    const assetId = randomUUID();
+    await seedLesson(lessonId, publicLessonId);
+    const lessonRef = db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${lessonId}`);
+    const publicRef = db.doc(`publicLessons/${publicLessonId}`);
+    const privateVisual = singularVisual(assetId);
+    await Promise.all([
+      lessonRef.update({ completed: true, visual: privateVisual }),
+      publicRef.update({
+        completed: true,
+        visual: {
+          assetId,
+          anchor: privateVisual.anchor,
+          caption: privateVisual.caption,
+          altText: privateVisual.altText,
+          width: privateVisual.width,
+          height: privateVisual.height,
+        },
+      }),
+    ]);
+
+    const requestId = randomUUID();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    await call(authorizePayload({ requestId, lessonId, quantity: { mode: 'exact', ceiling: 1 } }));
+
+    const [privateSnap, publicSnap] = await Promise.all([lessonRef.get(), publicRef.get()]);
+    expect(privateSnap.data()?.visual).toBeUndefined();
+    expect(privateSnap.data()?.visuals?.items?.[0]?.assetId).toBe(assetId);
+    expect(publicSnap.data()?.visual).toBeUndefined();
+    expect(publicSnap.data()?.visuals).toEqual({
+      contractVersion: 'lesson-visuals/v1',
+      items: [
+        {
+          assetId,
+          anchor: privateVisual.anchor,
+          caption: privateVisual.caption,
+          altText: privateVisual.altText,
+          width: privateVisual.width,
+          height: privateVisual.height,
+        },
+      ],
+    });
+  });
+
+  it('race lettura→commit: una mutazione relazionale forza il retry e impedisce piano, lease e budget', async () => {
+    const lessonId = `lesson-race-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    await seedLesson(lessonId, publicLessonId);
+    const requestId = randomUUID();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+    let mutated = false;
+
+    await expect(
+      call(authorizePayload({ requestId, lessonId }), Date.now(), {
+        afterAuthoritativeRead: async () => {
+          if (mutated) return;
+          mutated = true;
+          await db.doc(`publicLessons/${publicLessonId}`).update({ completed: true });
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+
+    expect(mutated).toBe(true);
+    expect((await planRef(requestId).get()).exists).toBe(false);
+    expect((await leaseRef(lessonId).get()).exists).toBe(false);
+    expect(await ledgerReservationCount()).toBe(0);
   });
 
   it('quantità richiesta oltre gli slot liberi ⇒ invalid_input, zero scritture', async () => {
@@ -545,7 +1076,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
         db,
         ownerUid: OWNER_UID,
         input,
-        nowMs: Date.now(),
+        clock: Date.now,
         mode: 'disabled',
         visualMode: 'mock',
         secret: undefined,

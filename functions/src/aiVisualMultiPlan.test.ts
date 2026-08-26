@@ -964,6 +964,12 @@ describe('blocker 4 (round 1) — relazioni interne complete del piano', () => {
     (plan.budgetCeiling as Record<string, unknown>).totalReserved = 999;
     expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
   });
+
+  it('rifiuta reservationMonthKey diverso dal mese UTC di createdAt', () => {
+    const plan = planOf({ ceiling: 1, slots: [imageSlot(0)] });
+    (plan.budgetCeiling as Record<string, unknown>).reservationMonthKey = '2023-12';
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
 });
 
 // ─── Blocker 1 (round 2) — status derivato, failed terminale solo a tetto ─────

@@ -31,6 +31,7 @@ import {
   type VisualTimestampLike,
 } from './aiContentVisualProposal.js';
 import { AiVisualError } from './aiVisualCore.js';
+import { monthKeyFromMs } from './aiCorrectionBudget.js';
 import { isValidDocumentIdInput } from './firestoreDocumentId.js';
 import { validateVisualAnchorSelector, type VisualAnchorSelector } from './aiVisualMultiAnchor.js';
 import {
@@ -649,7 +650,7 @@ export function computeVisualPlanTotalReserved(params: {
  */
 function validateVisualPlanBudgetCeiling(
   value: unknown,
-  params: { ceiling: 1 | 2 | 3; ownerUid: string; requestId: string },
+  params: { ceiling: 1 | 2 | 3; ownerUid: string; requestId: string; createdAtMs: number },
 ): VisualPlanBudgetCeiling {
   const root = asRecord(value, 'Tetto di budget del piano non valido.', 'corrupted_state');
   assertExactKeys(root, BUDGET_CEILING_KEYS, 'Tetto di budget del piano', 'corrupted_state');
@@ -668,6 +669,12 @@ function validateVisualPlanBudgetCeiling(
   const reservationMonthKey = root.reservationMonthKey;
   if (typeof reservationMonthKey !== 'string' || !MONTH_KEY_RE.test(reservationMonthKey)) {
     throw new AiVisualMultiError('corrupted_state', 'reservationMonthKey non valida.');
+  }
+  if (reservationMonthKey !== monthKeyFromMs(params.createdAtMs)) {
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'reservationMonthKey non corrisponde al mese UTC di createdAt.',
+    );
   }
   const proposalCap = assertNonNegativeInt(root.proposalCap, 'proposalCap');
   const generationCap = assertNonNegativeInt(root.generationCap, 'generationCap');
@@ -1178,10 +1185,19 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
     );
   }
 
+  const createdAt = assertTimestampLike(root.createdAt, 'createdAt');
+  const updatedAt = assertTimestampLike(root.updatedAt, 'updatedAt');
+  const expireAt = assertTimestampLike(root.expireAt, 'expireAt');
+  const createdAtMs = timestampToMillis(createdAt);
+  if (createdAtMs === null) {
+    throw new AiVisualMultiError('corrupted_state', 'createdAt del piano non valido.');
+  }
+
   const budgetCeiling = validateVisualPlanBudgetCeiling(root.budgetCeiling, {
     ceiling: quantity.ceiling,
     ownerUid,
     requestId,
+    createdAtMs,
   });
 
   if (!Array.isArray(root.slots)) invalidSlot('slots del piano non valido.');
@@ -1216,9 +1232,6 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
     totalReserved: budgetCeiling.totalReserved,
   });
 
-  const createdAt = assertTimestampLike(root.createdAt, 'createdAt');
-  const updatedAt = assertTimestampLike(root.updatedAt, 'updatedAt');
-  const expireAt = assertTimestampLike(root.expireAt, 'expireAt');
   assertVisualPlanTimestampOrder({
     status: status as VisualPlanStatus,
     createdAt,
