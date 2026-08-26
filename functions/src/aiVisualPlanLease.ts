@@ -23,6 +23,7 @@ import {
   AiVisualMultiError,
   asRecord,
   assertExactKeys,
+  computeOpaqueVisualPlanId,
   isSha256Hex,
   isUuidV4,
 } from './aiVisualMultiCore.js';
@@ -103,14 +104,39 @@ export function validateVisualPlanLease(value: unknown): VisualPlanLease {
   const requestId = root.requestId;
   if (!isUuidV4(requestId)) invalidLease('requestId del lease non valido.');
 
+  // **Review fix (Codex, blocker P1).** `opaquePlanId` non è solo «una stringa
+  // a forma di SHA-256»: deve essere quello **canonico**, ricalcolato da
+  // `(ownerUid, requestId)` — gli stessi due campi persistiti nello stesso
+  // record. Un lease con un `opaquePlanId` sintatticamente valido ma che non
+  // corrisponde al piano che dichiara di detenere sarebbe una scrittura fuori
+  // disciplina indistinguibile da un bug di corsa: fail-closed, stessa
+  // disciplina di `planHash` (`aiVisualMultiCore.ts`).
+  if (opaquePlanId !== computeOpaqueVisualPlanId(ownerUid, requestId)) {
+    invalidLease('opaquePlanId del lease non corrisponde a (ownerUid, requestId).');
+  }
+
   const createdAt = assertTimestampLike(root.createdAt, 'createdAt');
   const updatedAt = assertTimestampLike(root.updatedAt, 'updatedAt');
   const expireAt = assertTimestampLike(root.expireAt, 'expireAt');
 
   const createdMs = timestampToMillis(createdAt);
   const updatedMs = timestampToMillis(updatedAt);
-  if (createdMs === null || updatedMs === null || createdMs > updatedMs) {
-    invalidLease('Timestamp del lease non coerenti (createdAt > updatedAt).');
+  const expireMs = timestampToMillis(expireAt);
+  if (
+    createdMs === null ||
+    updatedMs === null ||
+    expireMs === null ||
+    createdMs > updatedMs ||
+    updatedMs > expireMs
+  ) {
+    // **Review fix (Codex, blocker P1).** Aggiunto `updatedAt <= expireAt`: un
+    // rinnovo scrive sempre un'istante di scadenza successivo al proprio
+    // stesso aggiornamento — l'ordine inverso non è mai il risultato di un
+    // rinnovo legittimo (§10.3), solo di una scrittura fuori disciplina o di
+    // un bug. `expireAt` del lease non è vincolato a `createdAt + TTL fisso`
+    // (a differenza di `VisualPlanRun.expireAt`): il lease è rinnovabile
+    // (§10.3), il piano no.
+    invalidLease('Timestamp del lease non coerenti (richiesto createdAt ≤ updatedAt ≤ expireAt).');
   }
 
   return {

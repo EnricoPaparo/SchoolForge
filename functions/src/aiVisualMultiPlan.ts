@@ -18,7 +18,7 @@
  * Puro: nessuna rete, nessun I/O, nessuna dipendenza Firebase.
  */
 
-import { AiContentError, timestampToMillis } from './aiContentCore.js';
+import { AiContentError, computeBudgetReservationKey, timestampToMillis } from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
   MAX_VISUAL_BYTES,
@@ -41,6 +41,7 @@ import {
   asRecord,
   assertExactKeys,
   computeOpaqueVisualPlanId,
+  computeVisualPlanHash,
   isSha256Hex,
   isUuidV4,
 } from './aiVisualMultiCore.js';
@@ -588,6 +589,19 @@ export function validateVisualPlanDiversity(slots: readonly VisualPlanSlot[]): v
 
 export interface VisualPlanBudgetCeiling {
   reservationKey: string;
+  /**
+   * MULTI-VISUAL-03A — **review fix (Codex, blocker P2/7)**. Mese UTC
+   * (`YYYY-MM`, stesso formato di `monthKeyFromMs`, `aiCorrectionBudget.ts`)
+   * del documento `aiBudgetLedger/{reservationMonthKey}` su cui è stata
+   * posata la prenotazione, **congelato alla creazione del piano**. Un piano
+   * ha un TTL di 24h e può quindi attraversare un cambio di mese UTC: se
+   * ogni scrittura successiva (proposta, futura generazione) ricalcolasse il
+   * mese da `Date.now()`, andrebbe a scrivere/leggere un documento ledger
+   * **diverso** da quello che detiene la prenotazione reale, lasciandola
+   * bloccata per sempre nel mese originario. Ogni operazione sul ledger di
+   * questo piano deve usare **questo** campo, mai `monthKeyFromMs(nowMs)`.
+   */
+  reservationMonthKey: string;
   proposalCap: number;
   generationCap: number;
   maxAttemptsPerSlot: number;
@@ -596,11 +610,14 @@ export interface VisualPlanBudgetCeiling {
 
 const BUDGET_CEILING_KEYS = [
   'reservationKey',
+  'reservationMonthKey',
   'proposalCap',
   'generationCap',
   'maxAttemptsPerSlot',
   'totalReserved',
 ] as const;
+
+const MONTH_KEY_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** `proposalCap + generationCap × ceiling × maxAttemptsPerSlot` (roadmap §12.1). */
 export function computeVisualPlanTotalReserved(params: {
@@ -621,16 +638,36 @@ export function computeVisualPlanTotalReserved(params: {
  * introducesse un tetto diverso per piano, questo controllo — e non un
  * secondo posto — è quello da aggiornare.
  */
+/**
+ * **Review fix (Codex, blocker P1/5).** `reservationKey` non è più solo «una
+ * stringa a forma di SHA-256»: deve essere quella **canonica**, ricalcolata
+ * dal meccanismo AIGEN già esistente (`computeBudgetReservationKey`,
+ * `aiContentCore.ts`) da `(ownerUid, requestId)` — gli stessi due campi già
+ * persistiti nel resto del record. Una chiave sintatticamente valida ma non
+ * ricalcolabile sarebbe una scrittura fuori disciplina, indistinguibile da
+ * un bug: fail-closed, stessa disciplina di `planHash`.
+ */
 function validateVisualPlanBudgetCeiling(
   value: unknown,
-  ceiling: 1 | 2 | 3,
+  params: { ceiling: 1 | 2 | 3; ownerUid: string; requestId: string },
 ): VisualPlanBudgetCeiling {
   const root = asRecord(value, 'Tetto di budget del piano non valido.', 'corrupted_state');
   assertExactKeys(root, BUDGET_CEILING_KEYS, 'Tetto di budget del piano', 'corrupted_state');
+  const { ceiling, ownerUid, requestId } = params;
 
   const reservationKey = root.reservationKey;
   if (!isSha256Hex(reservationKey)) {
     throw new AiVisualMultiError('corrupted_state', 'reservationKey non valida.');
+  }
+  if (reservationKey !== computeBudgetReservationKey(ownerUid, requestId)) {
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'reservationKey non corrisponde a (ownerUid, requestId).',
+    );
+  }
+  const reservationMonthKey = root.reservationMonthKey;
+  if (typeof reservationMonthKey !== 'string' || !MONTH_KEY_RE.test(reservationMonthKey)) {
+    throw new AiVisualMultiError('corrupted_state', 'reservationMonthKey non valida.');
   }
   const proposalCap = assertNonNegativeInt(root.proposalCap, 'proposalCap');
   const generationCap = assertNonNegativeInt(root.generationCap, 'generationCap');
@@ -652,7 +689,14 @@ function validateVisualPlanBudgetCeiling(
     invalidSlot('totalReserved non coerente con la formula del tetto.');
   }
 
-  return { reservationKey, proposalCap, generationCap, maxAttemptsPerSlot, totalReserved };
+  return {
+    reservationKey,
+    reservationMonthKey,
+    proposalCap,
+    generationCap,
+    maxAttemptsPerSlot,
+    totalReserved,
+  };
 }
 
 // ─── Consuntivo (roadmap §5.5, §12) ────────────────────────────────────────────
@@ -922,12 +966,51 @@ function validateExistingItemAssetIds(value: unknown): string[] {
  *   blocker 1/3) — un piano i cui slot sono già tutti risolti non è "scaduto
  *   in corso", ha già una conclusione reale che deve essere dichiarata come
  *   tale, non nascosta dietro `expired`.
+ *
+ * **Review fix (Codex, blocker P1/5).** Estesa alla matrice pre-proposta:
+ * - `authorized`/`proposing`: **zero** slot — nessuno slot esiste finché la
+ *   proposta coordinata non ha risposto (roadmap §8.3); `proposing` è lo
+ *   stato scritto nella transazione che precede la chiamata al motore
+ *   (§10.3, gateway), non un momento in cui gli slot possano già esistere;
+ * - `proposed`: **almeno uno** slot, tutti non terminali con la forma
+ *   esatta appena uscita dalla proposta coordinata — `decision: 'image'` ⇒
+ *   `state: 'pending'` (non ancora generato), `decision: 'none'` ⇒
+ *   `state: 'abandoned'` (già terminale in sé, ma il piano nel suo insieme
+ *   non lo è finché resta almeno uno slot immagine `pending`) — e **almeno
+ *   uno** slot con `decision: 'image'` (con zero slot immagine l'esito
+ *   coerente è `abandoned`, mai `proposed`, stessa asimmetria di
+ *   `completed` sopra).
  */
 function assertVisualPlanStatusMatchesSlots(
   status: VisualPlanStatus,
   slots: readonly VisualPlanSlot[],
 ): void {
   const allTerminal = slots.every((slot) => isTerminalSlot(slot));
+
+  if (status === 'authorized' || status === 'proposing') {
+    if (slots.length !== 0) {
+      invalidSlot(`status "${status}" richiede un piano senza slot.`);
+    }
+    return;
+  }
+
+  if (status === 'proposed') {
+    const hasImageSlot = slots.some((slot) => slot.decision === 'image');
+    if (!hasImageSlot) {
+      invalidSlot(
+        'status "proposed" richiede almeno uno slot immagine; con zero slot immagine l\'esito è "abandoned".',
+      );
+    }
+    for (const slot of slots) {
+      const expectedState = slot.decision === 'image' ? 'pending' : 'abandoned';
+      if (slot.state !== expectedState) {
+        invalidSlot(
+          `status "proposed" richiede che ogni slot sia nella forma appena uscita dalla proposta coordinata (${slot.decision === 'image' ? '"pending"' : '"abandoned"'}).`,
+        );
+      }
+    }
+    return;
+  }
 
   if (status === 'expired') {
     if (allTerminal) {
@@ -1070,7 +1153,36 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
     );
   }
 
-  const budgetCeiling = validateVisualPlanBudgetCeiling(root.budgetCeiling, quantity.ceiling);
+  // **Review fix (Codex, blocker P1/5).** `planHash` non è più solo «una
+  // stringa a forma di SHA-256»: viene ricalcolato dagli stessi campi
+  // persistiti che la formula promette (roadmap §10.1, §5.5) e confrontato
+  // con quello scritto nel record. Un disallineamento è la prova di una
+  // scrittura fuori disciplina (un bug, non un caso di business) — fail-
+  // closed, mai «forse va bene lo stesso».
+  if (
+    planHash !==
+    computeVisualPlanHash({
+      ownerUid,
+      programId,
+      importId,
+      lessonId,
+      publicLessonId,
+      sourceBodyHash,
+      existingItemAssetIds,
+      quantity,
+    })
+  ) {
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'planHash non corrisponde ai campi persistiti del piano.',
+    );
+  }
+
+  const budgetCeiling = validateVisualPlanBudgetCeiling(root.budgetCeiling, {
+    ceiling: quantity.ceiling,
+    ownerUid,
+    requestId,
+  });
 
   if (!Array.isArray(root.slots)) invalidSlot('slots del piano non valido.');
   if (root.slots.length > quantity.ceiling) {

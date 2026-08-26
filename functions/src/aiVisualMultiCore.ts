@@ -83,6 +83,15 @@ export function computeOpaqueVisualPlanId(ownerUid: string, requestId: string): 
  * Il tipo di `quantity` è dichiarato qui a forma strutturale (non importato
  * da `aiVisualMultiPlan.ts`) per evitare un ciclo di import: questo modulo è
  * la base che `aiVisualMultiPlan.ts` importa, mai il contrario.
+ *
+ * **Review fix (Codex, blocker P2).** `existingItemAssetIds` **non** viene
+ * ordinato prima dell'hash: l'ordine dell'array è lo stesso, semantico,
+ * ordine di `LessonDoc.visuals.items` (roadmap §5.5) — due piani che
+ * differiscono solo per l'ordine di due asset esistenti sono due piani
+ * diversi (per esempio dopo un riordino, §8.10), e devono produrre due
+ * `planHash` diversi. Ordinare avrebbe reso il piano indifferente a uno
+ * scambio di posizione, contraddicendo l'invariante che l'array è
+ * l'informazione, non l'insieme che rappresenta.
  */
 export function computeVisualPlanHash(params: {
   ownerUid: string;
@@ -94,7 +103,6 @@ export function computeVisualPlanHash(params: {
   existingItemAssetIds: readonly string[];
   quantity: { mode: 'auto' | 'exact'; ceiling: 1 | 2 | 3 };
 }): string {
-  const sortedExistingItemAssetIds = [...params.existingItemAssetIds].sort();
   return sha256Hex(
     canonicalTuple([
       VISUAL_PLAN_CONTRACT_VERSION,
@@ -104,7 +112,7 @@ export function computeVisualPlanHash(params: {
       params.lessonId,
       params.publicLessonId,
       params.sourceBodyHash,
-      JSON.stringify(sortedExistingItemAssetIds),
+      JSON.stringify(params.existingItemAssetIds),
       JSON.stringify(params.quantity),
     ]),
   );
