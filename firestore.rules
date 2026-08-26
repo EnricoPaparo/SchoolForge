@@ -370,6 +370,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- visualPlanRuns/{opaquePlanId}, visualPlanLeases/{leaseId} (MULTI-VISUAL-03A) ---
+    // Piano visivo coordinato e lease deterministico un-piano-per-lezione
+    // (roadmap `multi-visual-roadmap.md` §5.5, §10.3): stessa disciplina
+    // server-only di `aiContentRuns`/`visualRuns` — nessuna eccezione owner-
+    // readable, coerente col resto delle collezioni tecniche di questo
+    // dominio. Solo l'Admin SDK (Cloud Functions) vi accede; il replay passa
+    // esclusivamente dalla callable owner-only `aiVisualPlanAuthorize`.
+    match /visualPlanRuns/{document=**} {
+      allow read, write: if false;
+    }
+    match /visualPlanLeases/{document=**} {
+      allow read, write: if false;
+    }
+
     // VE-03A/03B — ticket, replay di promozione, tombstone di abbandono e
     // record di recovery della rimozione contengono identità e path tecnici.
     // Sono leggibili soltanto dall'Admin SDK attraverso callable owner-only.

@@ -71,6 +71,53 @@ export function computeOpaqueVisualPlanId(ownerUid: string, requestId: string): 
   return sha256Hex(canonicalTuple([VISUAL_PLAN_CONTRACT_VERSION, ownerUid, requestId]));
 }
 
+/**
+ * MULTI-VISUAL-03A — `planHash` (roadmap §10.1, corretto rispetto alla
+ * revisione 3): fingerprint di integrità interna calcolato **una sola
+ * volta**, alla creazione del piano, dai valori **iniziali** — mai
+ * ricalcolato dopo, mai usato per giudicare se un replay è valido (quel
+ * giudizio confronta i campi identità persistiti, §10.1). Include davvero
+ * tutti i campi che §5.5 promette (`programId`/`importId`/`publicLessonId`
+ * compresi, omessi dalla formula difettosa della revisione 3).
+ *
+ * Il tipo di `quantity` è dichiarato qui a forma strutturale (non importato
+ * da `aiVisualMultiPlan.ts`) per evitare un ciclo di import: questo modulo è
+ * la base che `aiVisualMultiPlan.ts` importa, mai il contrario.
+ *
+ * **Review fix (Codex, blocker P2).** `existingItemAssetIds` **non** viene
+ * ordinato prima dell'hash: l'ordine dell'array è lo stesso, semantico,
+ * ordine di `LessonDoc.visuals.items` (roadmap §5.5) — due piani che
+ * differiscono solo per l'ordine di due asset esistenti sono due piani
+ * diversi (per esempio dopo un riordino, §8.10), e devono produrre due
+ * `planHash` diversi. Ordinare avrebbe reso il piano indifferente a uno
+ * scambio di posizione, contraddicendo l'invariante che l'array è
+ * l'informazione, non l'insieme che rappresenta.
+ */
+export function computeVisualPlanHash(params: {
+  ownerUid: string;
+  programId: string;
+  importId: string;
+  lessonId: string;
+  publicLessonId: string;
+  sourceBodyHash: string;
+  existingItemAssetIds: readonly string[];
+  quantity: { mode: 'auto' | 'exact'; ceiling: 1 | 2 | 3 };
+}): string {
+  return sha256Hex(
+    canonicalTuple([
+      VISUAL_PLAN_CONTRACT_VERSION,
+      params.ownerUid,
+      params.programId,
+      params.importId,
+      params.lessonId,
+      params.publicLessonId,
+      params.sourceBodyHash,
+      JSON.stringify(params.existingItemAssetIds),
+      JSON.stringify(params.quantity),
+    ]),
+  );
+}
+
 // ─── Errore tipizzato ───────────────────────────────────────────────────────────
 
 /**
@@ -88,6 +135,12 @@ export type AiVisualMultiErrorCode =
   | 'visual_legacy_conflict'
   | 'provider_invalid_output'
   | 'visual_promotion_anchor_stale'
+  // MULTI-VISUAL-03A — vocabolario proprio del piano coordinato (roadmap
+  // §10.3, §8.3): un secondo tentativo di autorizzazione mentre un piano è
+  // già attivo sulla stessa lezione; il corpo è cambiato fra l'autorizzazione
+  // e la ripresa della proposta coordinata dopo una risposta persa.
+  | 'visual_plan_already_active'
+  | 'visual_plan_proposal_body_changed'
   // MULTI-VISUAL-02 — vocabolario proprio della catena binaria dell'upload
   // (roadmap §9.2, §9.7): distinti dai codici di VE (`AiVisualErrorCode`),
   // che restano quelli del flusso di generazione, mai riusati qui per non
@@ -99,11 +152,20 @@ export type AiVisualMultiErrorCode =
 
 export class AiVisualMultiError extends Error {
   readonly code: AiVisualMultiErrorCode;
+  /**
+   * MULTI-VISUAL-03A — dati non sensibili da propagare al chiamante insieme
+   * al codice (roadmap §10.3: `visual_plan_already_active` porta
+   * `opaquePlanId`/`requestId` del piano che detiene il lease, perché il
+   * client possa riaprirlo invece di crearne un altro). `undefined` per ogni
+   * altro codice: nessun altro punto del contratto ne ha bisogno.
+   */
+  readonly details?: Record<string, unknown>;
 
-  constructor(code: AiVisualMultiErrorCode, message: string) {
+  constructor(code: AiVisualMultiErrorCode, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = 'AiVisualMultiError';
     this.code = code;
+    this.details = details;
   }
 }
 

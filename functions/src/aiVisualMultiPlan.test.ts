@@ -14,6 +14,7 @@ import {
   MAX_VISUAL_SUBJECT_CHARS,
   VISUAL_STAGING_TTL_MS,
 } from './aiContentVisualProposal.js';
+import { computeBudgetReservationKey } from './aiContentCore.js';
 import {
   ACCEPTED_VISUAL_UPLOAD_MIME_TYPES,
   AiVisualMultiError,
@@ -22,6 +23,7 @@ import {
   VISUAL_PLAN_CONTRACT_VERSION,
   VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT,
   computeOpaqueVisualPlanId,
+  computeVisualPlanHash,
 } from './aiVisualMultiCore.js';
 
 /**
@@ -43,9 +45,12 @@ import {
  */
 
 const OWNER = 'owner-uid';
-const RESERVATION_KEY = 'a'.repeat(64);
+// **Review fix (Codex, blocker P1/5).** `validateVisualPlanRun` ora
+// ricalcola e verifica `planHash`/`budgetCeiling.reservationKey` contro gli
+// altri campi persistiti (mai più solo «forma di SHA-256»): questi due non
+// possono più essere costanti arbitrarie: sono derivate dagli stessi campi
+// del fixture con le funzioni canoniche del contratto.
 const REQUEST_ID = '11111111-2222-4333-8444-555555555555';
-const PLAN_HASH = 'b'.repeat(64);
 const SOURCE_BODY_HASH = 'c'.repeat(64);
 const CREATED_AT_MS = 1_700_000_000_000;
 const CREATED_AT = { toMillis: () => CREATED_AT_MS };
@@ -54,6 +59,7 @@ const EXPIRE_AT_MS = CREATED_AT_MS + VISUAL_STAGING_TTL_MS;
 const EXPIRE_AT = { toMillis: () => EXPIRE_AT_MS };
 const OPAQUE_PLAN_ID = computeOpaqueVisualPlanId(OWNER, REQUEST_ID);
 const ASSET_ID = '11111111-2222-4333-8444-555555555555';
+const RESERVATION_MONTH_KEY = '2023-11';
 
 function stagedFor(slotIndex: number, over: Partial<Record<string, unknown>> = {}) {
   return {
@@ -107,7 +113,11 @@ function noneSlot(slotIndex: number, over: Partial<Record<string, unknown>> = {}
   };
 }
 
-function budgetCeilingFor(ceiling: 1 | 2 | 3, over: Partial<Record<string, unknown>> = {}) {
+function budgetCeilingFor(
+  ceiling: 1 | 2 | 3,
+  params: { ownerUid: string; requestId: string },
+  over: Partial<Record<string, unknown>> = {},
+) {
   const proposalCap = 1;
   const generationCap = 1;
   const maxAttemptsPerSlot = VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT;
@@ -118,7 +128,8 @@ function budgetCeilingFor(ceiling: 1 | 2 | 3, over: Partial<Record<string, unkno
     maxAttemptsPerSlot,
   });
   return {
-    reservationKey: RESERVATION_KEY,
+    reservationKey: computeBudgetReservationKey(params.ownerUid, params.requestId),
+    reservationMonthKey: RESERVATION_MONTH_KEY,
     proposalCap,
     generationCap,
     maxAttemptsPerSlot,
@@ -127,26 +138,53 @@ function budgetCeilingFor(ceiling: 1 | 2 | 3, over: Partial<Record<string, unkno
   };
 }
 
+/**
+ * **Review fix (Codex, blocker P1/5).** `planHash`/`budgetCeiling.
+ * reservationKey` sono ora ricalcolati e verificati da `validateVisualPlanRun`
+ * contro gli altri campi persistiti — non possono più essere costanti
+ * arbitrarie. Le identità effettive (comprese eventuali `over` che le
+ * toccano) vengono risolte **prima** di calcolare gli hash, così un test che
+ * vuole un fixture internamente coerente lo ottiene per costruzione; un test
+ * che vuole invece un hash/chiave esplicitamente sbagliati può ancora
+ * sovrascriverli via `over` (applicato per ultimo, vince sempre).
+ */
 function planOf(params: {
   ceiling: 1 | 2 | 3;
   slots: Record<string, unknown>[];
   over?: Partial<Record<string, unknown>>;
 }) {
-  const budgetCeiling = budgetCeilingFor(params.ceiling);
-  return {
-    contractVersion: VISUAL_PLAN_CONTRACT_VERSION,
+  const identity = {
     ownerUid: OWNER,
     programId: 'prog-1',
     importId: 'imp-1',
     lessonId: 'lesson-1',
     publicLessonId: 'imp-1_lesson-1',
-    udaDir: 'uda-01',
     requestId: REQUEST_ID,
-    planHash: PLAN_HASH,
-    status: 'awaiting_review',
-    quantity: { mode: 'auto', ceiling: params.ceiling },
     sourceBodyHash: SOURCE_BODY_HASH,
-    existingItemAssetIds: [],
+    existingItemAssetIds: [] as string[],
+    quantity: { mode: 'auto' as const, ceiling: params.ceiling },
+    ...params.over,
+  };
+  const planHash = computeVisualPlanHash({
+    ownerUid: identity.ownerUid,
+    programId: identity.programId,
+    importId: identity.importId,
+    lessonId: identity.lessonId,
+    publicLessonId: identity.publicLessonId,
+    sourceBodyHash: identity.sourceBodyHash,
+    existingItemAssetIds: identity.existingItemAssetIds,
+    quantity: identity.quantity,
+  });
+  const budgetCeiling = budgetCeilingFor(params.ceiling, {
+    ownerUid: identity.ownerUid,
+    requestId: identity.requestId,
+  });
+  return {
+    contractVersion: VISUAL_PLAN_CONTRACT_VERSION,
+    udaDir: 'uda-01',
+    status: 'awaiting_review',
+    ...identity,
+    planHash,
     budgetCeiling,
     slots: params.slots,
     settlement: {
@@ -255,7 +293,7 @@ describe('blocker 1 — identità canoniche (isValidDocumentIdInput, UUID, SHA-2
     const plan = planOf({
       ceiling: 1,
       slots: [noneSlot(0)],
-      over: { planHash: PLAN_HASH.toUpperCase() },
+      over: { planHash: 'B'.repeat(64) },
     });
     expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
   });
@@ -850,7 +888,7 @@ describe('blocker 4 (round 1) — relazioni interne complete del piano', () => {
   });
 
   it('accetta un consuntivo entro il tetto riservato, con attempts coerenti', () => {
-    const budgetCeiling = budgetCeilingFor(1);
+    const budgetCeiling = budgetCeilingFor(1, { ownerUid: OWNER, requestId: REQUEST_ID });
     const plan = planOf({
       ceiling: 1,
       slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
@@ -866,7 +904,7 @@ describe('blocker 4 (round 1) — relazioni interne complete del piano', () => {
   });
 
   it('rifiuta un consuntivo che supera il tetto riservato, con attempts coerenti', () => {
-    const budgetCeiling = budgetCeilingFor(1);
+    const budgetCeiling = budgetCeilingFor(1, { ownerUid: OWNER, requestId: REQUEST_ID });
     const plan = planOf({
       ceiling: 1,
       slots: [imageSlot(0, { state: 'generating', attempts: 1 })],
@@ -924,6 +962,12 @@ describe('blocker 4 (round 1) — relazioni interne complete del piano', () => {
   it('rifiuta totalReserved non coerente con la formula del tetto', () => {
     const plan = planOf({ ceiling: 1, slots: [imageSlot(0)] });
     (plan.budgetCeiling as Record<string, unknown>).totalReserved = 999;
+    expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
+  });
+
+  it('rifiuta reservationMonthKey diverso dal mese UTC di createdAt', () => {
+    const plan = planOf({ ceiling: 1, slots: [imageSlot(0)] });
+    (plan.budgetCeiling as Record<string, unknown>).reservationMonthKey = '2023-12';
     expect(() => validateVisualPlanRun(plan)).toThrow(AiVisualMultiError);
   });
 });

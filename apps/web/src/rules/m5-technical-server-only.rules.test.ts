@@ -23,6 +23,9 @@ const TECHNICAL_DOCUMENTS = [
   'aiContentRuns/opaque-run-1',
   // VISUAL-ENRICHMENT-02 — byte inline, lease e costi visuali server-only.
   'visualRuns/opaque-visual-run-1',
+  // MULTI-VISUAL-03A — piano coordinato e lease per-lezione server-only.
+  'visualPlanRuns/opaque-visual-plan-1',
+  'visualPlanLeases/opaque-visual-plan-lease-1',
   'aiVisualCandidates/opaque-visual-run-1',
   'aiVisualPromotions/opaque-visual-run-1',
   'aiVisualAbandonments/opaque-visual-run-1',

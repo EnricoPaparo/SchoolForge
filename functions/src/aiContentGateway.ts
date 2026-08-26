@@ -65,13 +65,19 @@ async function loadOwnerUid(database: Firestore): Promise<string | null> {
   return snap.exists ? ((snap.data()?.ownerUid as string | undefined) ?? null) : null;
 }
 
-async function loadRuntimeConfig(database: Firestore): Promise<AiRuntimeConfig | null> {
+/** Esportata per MULTI-VISUAL-03A: stesso documento `settings/aiConfig`, nessun secondo percorso. */
+export async function loadRuntimeConfig(database: Firestore): Promise<AiRuntimeConfig | null> {
   const snap = await database.doc('settings/aiConfig').get();
   return snap.exists ? parseAiRuntimeConfig(snap.data()) : null;
 }
 
-/** Policy retry dalla config runtime validata (ceiling DEV: retry ≤ 1, timeout ≤ 60 s). */
-function retryPolicyFromConfig(config: AiRuntimeConfig | null): RetryPolicy {
+/**
+ * Policy retry dalla config runtime validata (ceiling DEV: retry ≤ 1, timeout
+ * ≤ 60 s). Esportata per MULTI-VISUAL-03A: la lease TTL della chiamata
+ * interna `generateContent` per `visual_plan_proposal` deve derivare dalla
+ * stessa policy delle altre fasi testuali, non da un valore proprio.
+ */
+export function retryPolicyFromConfig(config: AiRuntimeConfig | null): RetryPolicy {
   if (!config) return DEFAULT_OPENAI_RETRY_POLICY;
   return {
     ...DEFAULT_OPENAI_RETRY_POLICY,
@@ -156,7 +162,13 @@ function writeLedgerState(
 
 // ── Porte concrete (Admin SDK) ────────────────────────────────────────────────
 
-function createPorts(
+/**
+ * Esportata per MULTI-VISUAL-03A (`aiVisualPlanGateway.ts`): la proposta
+ * coordinata (`kind: 'visual_plan_proposal'`) invoca `generateContent`
+ * internamente, dopo aver già creato il piano/lease/prenotazione — le stesse
+ * porte concrete del motore generico, non una seconda fabbrica.
+ */
+export function createPorts(
   database: Firestore,
   config: AiRuntimeConfig | null,
   mode: AiContentMode,
