@@ -53,6 +53,7 @@ export function LessonMultiVisualWorkflowDialog({
     altText: '',
     anchorHeadingIndex: 0,
   });
+  const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null);
 
   async function authorize() {
     if (busy) return;
@@ -120,7 +121,7 @@ export function LessonMultiVisualWorkflowDialog({
           requestId: plan.requestId,
           slotIndex,
           promotionRequestId: crypto.randomUUID(),
-          mode: { mode: 'add' },
+          mode: replaceAssetId ? { mode: 'replace', replaceAssetId } : { mode: 'add' },
         }),
       );
       await onRefresh();
@@ -186,6 +187,27 @@ export function LessonMultiVisualWorkflowDialog({
     }
   }
 
+  async function reorderExisting(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= currentVisuals.length || busy) return;
+    const next = currentVisuals.map((item) => item.assetId);
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    setBusy(true);
+    setError(null);
+    try {
+      await client.reorder({
+        ...identity,
+        expectedAssetIds: currentVisuals.map((item) => item.assetId),
+        nextAssetIds: next,
+      });
+      await onRefresh();
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <DialogShell
       title="Aggiungi immagini alla lezione"
@@ -206,6 +228,31 @@ export function LessonMultiVisualWorkflowDialog({
                 <div className={styles.currentItem} key={item.assetId}>
                   <span>
                     {index + 1}. {item.anchor.headingText}
+                  </span>
+                  <span className={styles.inlineActions}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => void reorderExisting(index, -1)}
+                      disabled={busy || index === 0}
+                    >
+                      Su
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => void reorderExisting(index, 1)}
+                      disabled={busy || index === currentVisuals.length - 1}
+                    >
+                      Giù
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setReplaceAssetId(item.assetId)}
+                    >
+                      Sostituisci
+                    </button>
                   </span>
                   <button
                     type="button"

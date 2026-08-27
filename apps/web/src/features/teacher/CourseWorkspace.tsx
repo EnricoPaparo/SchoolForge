@@ -95,6 +95,7 @@ import { LessonVisualWorkflowDialog } from './LessonVisualWorkflowDialog.js';
 import {
   createVisualWorkflowPorts,
   readAuthoritativePrivateVisual,
+  readAuthoritativePrivateVisuals,
 } from '../repository/programs/visualGenerationClient.js';
 import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
 import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
@@ -2336,6 +2337,27 @@ export function CourseWorkspace({
               }}
               onCloseMultiVisualDialog={() => setMultiVisualDialogOpen(false)}
               onOpenMultiVisualDialog={() => setMultiVisualDialogOpen(true)}
+              onRefreshMultiVisuals={async () => {
+                if (!card.activeImportId) return;
+                const refreshed = await readAuthoritativePrivateVisuals({
+                  db,
+                  programId: card.programId,
+                  importId: card.activeImportId,
+                  lessonId: selectedLesson.id,
+                });
+                setTree((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        lessons: prev.lessons.map((item) =>
+                          item.id === selectedLesson.id
+                            ? { ...item, visuals: refreshed ?? undefined }
+                            : item,
+                        ),
+                      }
+                    : prev,
+                );
+              }}
             />
           )}
         </div>
@@ -2842,6 +2864,7 @@ function LessonDetail({
   onCloseVisualDialog,
   onCloseMultiVisualDialog,
   onOpenMultiVisualDialog,
+  onRefreshMultiVisuals,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2880,6 +2903,7 @@ function LessonDetail({
   onCloseVisualDialog: () => void;
   onCloseMultiVisualDialog: () => void;
   onOpenMultiVisualDialog: () => void;
+  onRefreshMultiVisuals: () => Promise<void>;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -3018,6 +3042,7 @@ function LessonDetail({
     });
     if (!detailMounted.current) return;
     setLocalVisual(next);
+    await onRefreshMultiVisuals();
   }
 
   async function confirmReanchor(choice: { index: number; text: string }) {

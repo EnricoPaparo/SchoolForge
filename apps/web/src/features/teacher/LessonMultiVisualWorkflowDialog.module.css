@@ -55,6 +55,11 @@
   display: grid;
   gap: 0.5rem;
 }
+.inlineActions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
 .editor input,
 .editor select {
   width: 100%;
