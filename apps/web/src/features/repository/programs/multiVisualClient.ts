@@ -41,6 +41,18 @@ export interface MultiVisualPlan {
   budgetCeiling: Record<string, unknown>;
   settlement: Record<string, unknown>;
 }
+export function describeMultiVisualError(error: unknown): string {
+  const code = (error as { details?: { code?: unknown } })?.details?.code;
+  if (code === 'budget_unavailable' || code === 'operation_budget_exceeded')
+    return 'Budget non disponibile: nessuna nuova spesa è stata autorizzata.';
+  if (code === 'uncertain_state')
+    return 'Esito incerto: non ripetere ora il tentativo; verifica il piano.';
+  if (code === 'visual_plan_slot_attempts_exhausted') return 'Tentativi esauriti per questo slot.';
+  if (code === 'visual_plan_external_mutation')
+    return 'La lezione è cambiata: ricarica il piano prima di continuare.';
+  if (code === 'visual_plan_expired') return 'Il piano è scaduto: avvia una nuova proposta.';
+  return 'Operazione non riuscita. Nessuna modifica parziale è stata applicata.';
+}
 export function createMultiVisualClient(functions: Functions) {
   const authorize = httpsCallable<MultiVisualPlanRequest, MultiVisualPlan>(
     functions,

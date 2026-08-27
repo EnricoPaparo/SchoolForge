@@ -4,6 +4,7 @@ import {
   createMultiVisualClient,
   type MultiVisualPlan,
   type MultiVisualPlanRequest,
+  describeMultiVisualError,
 } from '../repository/programs/multiVisualClient.js';
 import type { Functions } from 'firebase/functions';
 import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
@@ -72,8 +73,8 @@ export function LessonMultiVisualWorkflowDialog({
         udaContext: lessonAi.udaContext,
       };
       setPlan(await client.authorize(input));
-    } catch {
-      setError('Impossibile preparare le immagini. Riprova.');
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
     }
@@ -85,10 +86,8 @@ export function LessonMultiVisualWorkflowDialog({
     setError(null);
     try {
       setPlan(await client.generateSlot({ ...identity, requestId: plan.requestId, slotIndex }));
-    } catch {
-      setError(
-        'Impossibile generare questa immagine. Riprova senza costi aggiuntivi se il tentativo è già concluso.',
-      );
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
     }
@@ -117,10 +116,17 @@ export function LessonMultiVisualWorkflowDialog({
         }),
       );
       await onRefresh();
-    } catch {
-      setError('Impossibile applicare questa immagine. Nessun dato è stato modificato.');
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function promoteAll() {
+    if (!plan || busy) return;
+    for (const slot of plan.slots) {
+      if (slot.staged && !slot.promotedAssetId) await promote(slot.slotIndex);
     }
   }
 
@@ -236,6 +242,16 @@ export function LessonMultiVisualWorkflowDialog({
               </article>
             ))}
           </div>
+          {plan.slots.some((slot) => slot.staged && !slot.promotedAssetId) && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void promoteAll()}
+              disabled={busy}
+            >
+              Applica tutte
+            </button>
+          )}
           <div className={styles.actions}>
             <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
               Chiudi
