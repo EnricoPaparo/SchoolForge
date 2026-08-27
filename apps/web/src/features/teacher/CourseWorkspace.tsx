@@ -3221,7 +3221,6 @@ function LessonDetail({
                 <LessonMultiVisualWorkflowDialog
                   functions={functions}
                   identity={{ programId, importId, lessonId: lesson.id }}
-                  content={content}
                   lessonAi={lessonAi}
                   existingCount={lesson.visuals?.items.length ?? 0}
                   headings={visualHeadings}

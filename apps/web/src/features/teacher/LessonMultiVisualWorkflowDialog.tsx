@@ -11,7 +11,6 @@ import styles from './LessonMultiVisualWorkflowDialog.module.css';
 export function LessonMultiVisualWorkflowDialog({
   functions,
   identity,
-  content,
   lessonAi,
   existingCount,
   headings,
@@ -20,7 +19,6 @@ export function LessonMultiVisualWorkflowDialog({
 }: {
   functions: Functions;
   identity: { programId: string; importId: string; lessonId: string };
-  content: string;
   lessonAi: {
     titolo?: string | null;
     sottotitolo?: string | null;
