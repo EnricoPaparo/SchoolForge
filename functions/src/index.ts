@@ -42,6 +42,10 @@ export {
   aiVisualPlanGenerateSlot,
   aiVisualPlanPromoteSlot,
 } from './aiVisualPlanExecutionGateway.js';
+// MULTI-VISUAL-03C — lifecycle editoriale del manifest ad array. Le callable
+// rileggono sempre LessonDoc e proiezione nella transazione; nessun client può
+// scrivere direttamente manifest o documenti tecnici.
+export { aiVisualMultiReorder, aiVisualMultiRemove } from './aiVisualMultiEditorialGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.

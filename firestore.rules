@@ -128,6 +128,19 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/settings/studentAccess).data.examMode
                  .get('classIds', []).hasAny([classId])
           )
+        )
+        // MULTI-VISUAL-03C: array pubblico ammesso solo su lezione svolta;
+        // forma dettagliata e coerenza col privato restano nel gateway.
+        && (
+          !('visuals' in request.resource.data)
+          || (
+            request.resource.data.get('completed', false) == true
+            && request.resource.data.visuals is map
+            && request.resource.data.visuals.contractVersion == 'lesson-visuals/v1'
+            && request.resource.data.visuals.items is list
+            && request.resource.data.visuals.items.size() >= 1
+            && request.resource.data.visuals.items.size() <= 3
+          )
         );
     }
 
@@ -408,6 +421,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /aiVisualRemovals/{document=**} {
+      allow read, write: if false;
+    }
+    // MULTI-VISUAL-03C — recovery per rimozione di un asset multi-visuale.
+    match /aiVisualMultiCleanups/{document=**} {
       allow read, write: if false;
     }
 
