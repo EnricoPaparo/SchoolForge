@@ -51,6 +51,15 @@
   border: 1px solid var(--border);
   border-radius: 0.5rem;
 }
+.editor {
+  display: grid;
+  gap: 0.5rem;
+}
+.editor input,
+.editor select {
+  width: 100%;
+  min-width: 0;
+}
 @media (max-width: 640px) {
   .slots {
     grid-template-columns: 1fr;

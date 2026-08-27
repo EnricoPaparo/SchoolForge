@@ -46,6 +46,13 @@ export function LessonMultiVisualWorkflowDialog({
   const [plan, setPlan] = useState<MultiVisualPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [draft, setDraft] = useState({
+    subject: '',
+    caption: '',
+    altText: '',
+    anchorHeadingIndex: 0,
+  });
 
   async function authorize() {
     if (busy) return;
@@ -128,6 +135,54 @@ export function LessonMultiVisualWorkflowDialog({
     if (!plan || busy) return;
     for (const slot of plan.slots) {
       if (slot.staged && !slot.promotedAssetId) await promote(slot.slotIndex);
+    }
+  }
+  async function saveSlotEdit(slotIndex: number) {
+    if (!plan || busy) return;
+    const anchor = headings.find((item) => item.index === draft.anchorHeadingIndex) ?? headings[0];
+    if (!anchor) return setError('Aggiungi almeno un titolo H2 o H3 alla lezione.');
+    setBusy(true);
+    setError(null);
+    try {
+      setPlan(
+        await client.editSlot({
+          ...identity,
+          requestId: plan.requestId,
+          editRequestId: crypto.randomUUID(),
+          slotIndex,
+          abandon: false,
+          subject: draft.subject,
+          caption: draft.caption,
+          altText: draft.altText,
+          anchorHeadingIndex: anchor.index,
+          anchorHeadingText: anchor.text,
+        }),
+      );
+      setEditingSlot(null);
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function abandonSlot(slotIndex: number) {
+    if (!plan || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setPlan(
+        await client.editSlot({
+          ...identity,
+          requestId: plan.requestId,
+          editRequestId: crypto.randomUUID(),
+          slotIndex,
+          abandon: true,
+        }),
+      );
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -225,6 +280,64 @@ export function LessonMultiVisualWorkflowDialog({
               <article key={slot.slotIndex} className={styles.slot}>
                 <h4>Immagine {slot.slotIndex + 1}</h4>
                 <p>{slot.subject ?? 'Nessuna immagine proposta'}</p>
+                {slot.decision === 'image' &&
+                  !slot.promotedAssetId &&
+                  (editingSlot === slot.slotIndex ? (
+                    <div className={styles.editor}>
+                      <input
+                        aria-label="Soggetto"
+                        value={draft.subject}
+                        onChange={(e) => setDraft((v) => ({ ...v, subject: e.target.value }))}
+                      />
+                      <input
+                        aria-label="Didascalia"
+                        value={draft.caption}
+                        onChange={(e) => setDraft((v) => ({ ...v, caption: e.target.value }))}
+                      />
+                      <input
+                        aria-label="Testo alternativo"
+                        value={draft.altText}
+                        onChange={(e) => setDraft((v) => ({ ...v, altText: e.target.value }))}
+                      />
+                      <select
+                        aria-label="Ancora"
+                        value={draft.anchorHeadingIndex}
+                        onChange={(e) =>
+                          setDraft((v) => ({ ...v, anchorHeadingIndex: Number(e.target.value) }))
+                        }
+                      >
+                        {headings.map((h) => (
+                          <option key={h.index} value={h.index}>
+                            {h.text}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => void saveSlotEdit(slot.slotIndex)}
+                        disabled={busy}
+                      >
+                        Salva modifica
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setEditingSlot(slot.slotIndex);
+                        setDraft({
+                          subject: slot.subject ?? '',
+                          caption: slot.caption ?? '',
+                          altText: slot.altText ?? '',
+                          anchorHeadingIndex: slot.anchor?.headingIndex ?? headings[0]?.index ?? 0,
+                        });
+                      }}
+                    >
+                      Modifica
+                    </button>
+                  ))}
                 {slot.staged ? <p>Immagine generata pronta per l’applicazione.</p> : null}
                 {slot.promotedAssetId ? (
                   <p className={styles.success}>Applicata alla lezione.</p>
@@ -238,6 +351,16 @@ export function LessonMultiVisualWorkflowDialog({
                     disabled={busy || slot.decision === 'none'}
                   >
                     {slot.staged ? 'Applica immagine' : 'Genera immagine'}
+                  </button>
+                )}
+                {slot.decision === 'image' && !slot.promotedAssetId && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => void abandonSlot(slot.slotIndex)}
+                    disabled={busy}
+                  >
+                    Abbandona slot
                   </button>
                 )}
               </article>
