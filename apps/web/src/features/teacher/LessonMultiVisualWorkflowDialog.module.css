@@ -1,0 +1,48 @@
+.slots {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1rem 0;
+}
+.slot {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface-raised);
+}
+.slot h4,
+.slot p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.slot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.error {
+  color: var(--danger);
+}
+.success {
+  color: var(--success);
+}
+@media (max-width: 640px) {
+  .slots {
+    grid-template-columns: 1fr;
+  }
+  .actions > button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+}

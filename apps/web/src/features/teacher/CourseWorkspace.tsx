@@ -100,6 +100,7 @@ import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
 import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonMultiVisualGallery } from './LessonMultiVisualGallery.js';
+import { LessonMultiVisualWorkflowDialog } from './LessonMultiVisualWorkflowDialog.js';
 import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import {
@@ -344,6 +345,7 @@ export function CourseWorkspace({
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [visualDialogOpen, setVisualDialogOpen] = useState(false);
+  const [multiVisualDialogOpen, setMultiVisualDialogOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -2324,10 +2326,13 @@ export function CourseWorkspace({
               onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
               onConceptMapDirtyChange={setConceptMapDirty}
               visualDialogOpen={visualDialogOpen}
+              multiVisualDialogOpen={multiVisualDialogOpen}
               onCloseVisualDialog={() => {
                 setVisualDialogOpen(false);
                 menuTriggerRef.current?.focus();
               }}
+              onCloseMultiVisualDialog={() => setMultiVisualDialogOpen(false)}
+              onOpenMultiVisualDialog={() => setMultiVisualDialogOpen(true)}
             />
           )}
         </div>
@@ -2830,7 +2835,10 @@ function LessonDetail({
   onSaveConceptMap,
   onConceptMapDirtyChange,
   visualDialogOpen,
+  multiVisualDialogOpen,
   onCloseVisualDialog,
+  onCloseMultiVisualDialog,
+  onOpenMultiVisualDialog,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2865,7 +2873,10 @@ function LessonDetail({
   onSaveConceptMap: (conceptMapMarkdown: string) => Promise<void>;
   onConceptMapDirtyChange: (dirty: boolean) => void;
   visualDialogOpen: boolean;
+  multiVisualDialogOpen: boolean;
   onCloseVisualDialog: () => void;
+  onCloseMultiVisualDialog: () => void;
+  onOpenMultiVisualDialog: () => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -3203,6 +3214,19 @@ function LessonDetail({
                       assetId,
                     });
                   }}
+                  onGenerate={onOpenMultiVisualDialog}
+                />
+              )}
+              {multiVisualDialogOpen && importId && content && (
+                <LessonMultiVisualWorkflowDialog
+                  functions={functions}
+                  identity={{ programId, importId, lessonId: lesson.id }}
+                  content={content}
+                  lessonAi={lessonAi}
+                  existingCount={lesson.visuals?.items.length ?? 0}
+                  headings={visualHeadings}
+                  onRefresh={refreshVisual}
+                  onClose={onCloseMultiVisualDialog}
                 />
               )}
               {reanchoring && manifest && (
