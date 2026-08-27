@@ -19,7 +19,10 @@ import {
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
-import { readStudentVisualBytes } from '../repository/programs/visualReadClients.js';
+import {
+  readStudentVisualBytes,
+  readStudentVisualBytesMulti,
+} from '../repository/programs/visualReadClients.js';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonNotesPanel } from './LessonNotesPanel.js';
 import { useLessonNotes, type LessonNotesController } from './useLessonNotes.js';
@@ -605,6 +608,35 @@ function LessonContent({
   );
 
   const visualState = useLessonVisual(visualRequest, loadVisual);
+  const [multiVisualState, setMultiVisualState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  );
+  const [multiVisualBytes, setMultiVisualBytes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    if (lesson.visuals.length === 0) {
+      setMultiVisualBytes({});
+      setMultiVisualState('idle');
+      return () => {
+        active = false;
+      };
+    }
+    setMultiVisualState('loading');
+    void readStudentVisualBytesMulti({ db, publicLessonId: lesson.id, manifests: lesson.visuals })
+      .then((entries) => {
+        if (!active) return;
+        setMultiVisualBytes(
+          Object.fromEntries(entries.map((entry) => [entry.assetId, entry.dataUri])),
+        );
+        setMultiVisualState('ready');
+      })
+      .catch(() => {
+        if (active) setMultiVisualState('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [db, lesson.id, lesson.visuals]);
 
   /**
    * Il manifest basta: posizione e spazio riservato non aspettano i byte, che
@@ -629,6 +661,21 @@ function LessonContent({
               : ('loading' as const),
       }
     : null;
+  const visuals = lesson.visuals.map((item) => ({
+    anchorSlug: item.anchor.headingSlug,
+    headingText: item.anchor.headingText,
+    altText: item.altText,
+    caption: item.caption,
+    width: item.width,
+    height: item.height,
+    dataUri: multiVisualBytes[item.assetId] ?? null,
+    status:
+      multiVisualState === 'error'
+        ? ('unavailable' as const)
+        : multiVisualState === 'ready' && multiVisualBytes[item.assetId]
+          ? ('ready' as const)
+          : ('loading' as const),
+  }));
 
   const body =
     lesson.content === null ? (
@@ -643,7 +690,12 @@ function LessonContent({
       // VE-04A: nessun `onMissingAnchor`. Se l'ancora non si risolve lo studente
       // vede semplicemente la figura in fondo — un avviso tecnico su una
       // decisione editoriale del docente non gli riguarda.
-      <MarkdownRenderer markdown={lesson.content} variant="lesson" visual={visual} />
+      <MarkdownRenderer
+        markdown={lesson.content}
+        variant="lesson"
+        visual={visual}
+        visuals={visuals}
+      />
     );
 
   return (

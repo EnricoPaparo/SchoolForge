@@ -25,17 +25,24 @@ export function MarkdownRenderer({
   markdown,
   variant,
   visual,
+  visuals,
   onMissingAnchor,
 }: {
   markdown: string;
   variant?: MarkdownRendererVariant;
   /** VE-04A — solo per `variant="lesson"`; assente ⇒ resa identica a prima. */
   visual?: LessonVisualRender | null;
+  visuals?: LessonVisualRender[];
   onMissingAnchor?: ReactNode;
 }) {
   if (variant === 'lesson') {
     return (
-      <LessonManualBody markdown={markdown} visual={visual} onMissingAnchor={onMissingAnchor} />
+      <LessonManualBody
+        markdown={markdown}
+        visual={visual}
+        visuals={visuals}
+        onMissingAnchor={onMissingAnchor}
+      />
     );
   }
 

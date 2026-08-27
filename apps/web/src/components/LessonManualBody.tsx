@@ -38,11 +38,14 @@ export interface LessonVisualRender {
 export function LessonManualBody({
   markdown,
   visual,
+  visuals,
   onMissingAnchor,
 }: {
   markdown: string;
   /** Assente per la stragrande maggioranza delle lezioni: percorso legacy. */
   visual?: LessonVisualRender | null;
+  /** MULTI-VISUAL-04 — ulteriori figure approvate, nell'ordine editoriale. */
+  visuals?: LessonVisualRender[];
   /**
    * Notifica alla vista che l'ancora non si risolve più. Serve al solo docente,
    * che può riancorare; lo studente non riceve nulla di tecnico e vede
@@ -91,6 +94,10 @@ export function LessonManualBody({
     legacy?.html ??
     (placement !== null && split === null ? (placement as { html: string }).html : null);
 
+  const additionalVisuals = (visuals ?? []).filter(
+    (item) => item.anchorSlug !== visual?.anchorSlug,
+  );
+
   return (
     <div className="lesson-manual-scope">
       <div className="lesson-manual">
@@ -125,6 +132,17 @@ export function LessonManualBody({
               )}
             </>
           )}
+          {additionalVisuals.map((item) => (
+            <LessonVisualFigure
+              key={item.anchorSlug + item.headingText + item.caption}
+              src={item.dataUri}
+              altText={item.altText}
+              caption={item.caption}
+              width={item.width}
+              height={item.height}
+              status={item.status}
+            />
+          ))}
         </div>
       </div>
     </div>

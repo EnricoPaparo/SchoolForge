@@ -227,6 +227,14 @@ export function readStudentVisualManifest(data: unknown): LessonVisualPublicMani
   return readPublicVisualManifest(data.visual);
 }
 
+export function readStudentVisualManifests(data: unknown): LessonVisualPublicManifest[] {
+  if (!isPlainObject(data) || data.completed !== true || !isPlainObject(data.visuals)) return [];
+  const root = data.visuals;
+  if (root.contractVersion !== 'lesson-visuals/v1' || !Array.isArray(root.items)) return [];
+  const parsed = root.items.map(readPublicVisualManifest);
+  return parsed.every((item): item is LessonVisualPublicManifest => item !== null) ? parsed : [];
+}
+
 /** Byte pubblici di una lezione, come li scrive `publicLessonVisuals`. */
 export interface PublicLessonVisualBytes {
   publicLessonId: string;
