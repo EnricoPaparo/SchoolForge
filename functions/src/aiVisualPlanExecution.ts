@@ -453,7 +453,13 @@ export function remainingGenerationReservation(plan: VisualPlanRun): number {
   for (const slot of plan.slots) {
     if (slot.decision !== 'image') continue;
     if (slot.state === 'pending') attempts += VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT;
-    if (slot.state === 'failed') attempts += VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT - slot.attempts;
+    if (
+      slot.state === 'failed' &&
+      slot.lastError !== 'uncertain_outcome' &&
+      slot.lastError !== 'staging_conflict'
+    ) {
+      attempts += VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT - slot.attempts;
+    }
   }
   return attempts * plan.budgetCeiling.generationCap;
 }

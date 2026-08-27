@@ -1037,3 +1037,10 @@ quel cap è conservativamente addebitabile, ma nessun altro cap del piano lo
 è. Lo staging usa create-only e lega nei metadata tentativo ed executionId;
 un 412 o timeout post-save è recuperato esclusivamente confrontando
 lunghezza e SHA-256 dei byte già presenti.
+Un'eccezione provider inattesa è `invocation_unknown`, non
+`pre_invocation`: soltanto un esito pre-invocazione esplicito consente retry.
+Se save e rilettura non permettono di provare i byte, lo slot diventa
+terminale incerto; byte divergenti rendono lo slot terminale corrotto. Il
+replay di promozione rilegge manifest privato, proiezione pubblica, byte
+pubblici e Storage canonico e li confronta esattamente: non usa mai il
+registro tecnico per mascherare una rimozione o una mutazione successiva.

@@ -29,7 +29,11 @@ import {
   checkProjectionForVisual,
   describeVisualBindingFailure,
 } from './aiVisualLessonBinding.js';
-import { canonicalVisualStorageRef, validatePublicLessonVisualDoc } from './aiVisualManifest.js';
+import {
+  canonicalVisualStorageRef,
+  validateLessonVisualPublicManifest,
+  validatePublicLessonVisualDoc,
+} from './aiVisualManifest.js';
 import {
   AiVisualMultiError,
   LESSON_VISUALS_CONTRACT_VERSION,
@@ -45,7 +49,9 @@ import {
   projectLessonVisualsManifest,
   readLegacyLessonVisuals,
   validateLessonVisualsManifest,
+  validatePublicLessonVisualsManifest,
   type LessonVisualItem,
+  type LessonVisualsManifest,
 } from './aiVisualMultiManifest.js';
 import {
   assertPlanIdentity,
@@ -241,6 +247,13 @@ export async function generateVisualPlanSlotForOwner(params: {
       throw new AiVisualError('running', 'Generazione dello slot già in corso.');
     if (slot.state !== 'pending' && slot.state !== 'failed')
       throw new AiVisualMultiError('visual_plan_slot_not_generatable', 'Slot non generabile.');
+    if (slot.state === 'failed' && slot.lastError === 'uncertain_outcome')
+      throw new AiVisualError(
+        'uncertain_state',
+        'Esito dello slot incerto; nessun nuovo tentativo.',
+      );
+    if (slot.state === 'failed' && slot.lastError === 'staging_conflict')
+      throw new AiVisualMultiError('corrupted_state', 'Staging deterministico divergente.');
     if (slot.attempts >= VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT)
       throw new AiVisualMultiError(
         'visual_plan_slot_attempts_exhausted',
@@ -372,7 +385,10 @@ export async function generateVisualPlanSlotForOwner(params: {
         : { status: 'pre_invocation' };
     } else outcome = { status: 'pre_invocation' };
   } catch {
-    outcome = { status: 'pre_invocation' };
+    // Solo un esito esplicito del provider può dimostrare che l'invocazione
+    // non è iniziata. Un'eccezione inattesa attraversa un confine di rete e
+    // viene quindi trattata come fatturazione possibile, mai ritentabile.
+    outcome = { status: 'invocation_unknown' };
   }
 
   const cap = plan.budgetCeiling.generationCap;
@@ -386,9 +402,9 @@ export async function generateVisualPlanSlotForOwner(params: {
   let errorCode: VisualPlanSlotLastError | null = null;
   let settledCostMicroUsd = 0;
   let actualCostMicroUsd: number | null = 0;
-  const uncertainOutcome = outcome.status === 'invocation_unknown';
+  let uncertainOutcome = outcome.status === 'invocation_unknown';
   if (outcome.status === 'pre_invocation' || outcome.status === 'invocation_unknown') {
-    errorCode = 'transient_error';
+    errorCode = outcome.status === 'invocation_unknown' ? 'uncertain_outcome' : 'transient_error';
     settledCostMicroUsd = outcome.status === 'invocation_unknown' ? cap : 0;
     actualCostMicroUsd = outcome.status === 'invocation_unknown' ? null : 0;
   } else {
@@ -400,6 +416,7 @@ export async function generateVisualPlanSlotForOwner(params: {
       try {
         const normalized = await (params.deps?.normalize ?? normalizeVisualWebp)(outcome.bytes);
         const storageRef = visualPlanSlotStagingRef(ownerUid, opaquePlanId, input.slotIndex);
+        let stagingFailure: 'uncertain_outcome' | 'staging_conflict' | null = null;
         try {
           await bucket.file(storageRef).save(normalized.bytes, {
             resumable: false,
@@ -420,20 +437,32 @@ export async function generateVisualPlanSlotForOwner(params: {
         } catch {
           // Comprende 412 e timeout dopo save: solo byte identici provano che
           // questo tentativo possiede già lo staging deterministico.
-          const [existing] = await bucket.file(storageRef).download();
-          if (
-            existing.byteLength !== normalized.byteLength ||
-            sha256Hex(existing) !== normalized.sha256
-          )
-            throw new AiVisualMultiError('corrupted_state', 'Staging occupato da byte diversi.');
+          try {
+            const [existing] = await bucket.file(storageRef).download();
+            if (
+              existing.byteLength !== normalized.byteLength ||
+              sha256Hex(existing) !== normalized.sha256
+            ) {
+              stagingFailure = 'staging_conflict';
+            }
+          } catch {
+            // La save potrebbe essere riuscita: senza rilettura autorevole il
+            // tentativo è terminale incerto e non può spendere una seconda volta.
+            stagingFailure = 'uncertain_outcome';
+          }
         }
-        staged = {
-          storageRef,
-          width: normalized.width,
-          height: normalized.height,
-          byteLength: normalized.byteLength,
-          sha256: normalized.sha256,
-        };
+        if (stagingFailure) {
+          errorCode = stagingFailure;
+          uncertainOutcome = stagingFailure === 'uncertain_outcome';
+        } else {
+          staged = {
+            storageRef,
+            width: normalized.width,
+            height: normalized.height,
+            byteLength: normalized.byteLength,
+            sha256: normalized.sha256,
+          };
+        }
       } catch (error) {
         errorCode =
           error instanceof AiVisualError && error.code === 'visual_too_large'
@@ -447,7 +476,7 @@ export async function generateVisualPlanSlotForOwner(params: {
 
   const finalizeNowMs = params.deps?.now?.() ?? Date.now();
   try {
-    return await db.runTransaction(async (tx) => {
+    const finalized = await db.runTransaction(async (tx) => {
       const [planSnap, leaseSnap, ledgerSnap, runSnap] = await Promise.all([
         tx.get(planRef),
         tx.get(leaseRef),
@@ -500,9 +529,7 @@ export async function generateVisualPlanSlotForOwner(params: {
         throw new AiVisualError('uncertain_state', 'Prenotazione della fase divergente.');
       let nextLedger = reconcile(ledger, phaseKey, settledCostMicroUsd, finalizeNowMs);
       nextLedger = reconcile(nextLedger, current.budgetCeiling.reservationKey, 0, finalizeNowMs);
-      const remainingAfterAttempt =
-        remainingGenerationReservation(next) -
-        (uncertainOutcome ? current.budgetCeiling.generationCap : 0);
+      const remainingAfterAttempt = remainingGenerationReservation(next);
       nextLedger = reserveExact(
         nextLedger,
         current.budgetCeiling.reservationKey,
@@ -528,8 +555,21 @@ export async function generateVisualPlanSlotForOwner(params: {
       else tx.update(leaseRef, { updatedAt: timestamp, expireAt: current.expireAt });
       return { replayed: false, plan: { ...next, updatedAt: timestamp } };
     });
+    if (errorCode === 'uncertain_outcome') {
+      throw new AiVisualError(
+        'uncertain_state',
+        'Il tentativo potrebbe essere stato fatturato o salvato; non verrà ripetuto.',
+      );
+    }
+    if (errorCode === 'staging_conflict') {
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Lo staging deterministico contiene byte divergenti.',
+      );
+    }
+    return finalized;
   } catch (error) {
-    if (error instanceof AiVisualError) throw error;
+    if (error instanceof AiVisualError || error instanceof AiVisualMultiError) throw error;
     throw new AiVisualError(
       'uncertain_state',
       'Il provider potrebbe essere stato fatturato; riconciliare lo slot senza una nuova chiamata.',
@@ -541,8 +581,218 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
+function sameCanonicalValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * La proiezione pubblica non è una cache riparabile: quando la lezione è
+ * svolta deve essere esattamente la derivazione del manifest privato; quando
+ * non lo è non deve esporre alcun manifest.
+ */
+function assertPublicManifestMatchesPrivate(params: {
+  publicLesson: Record<string, unknown>;
+  privateManifest: LessonVisualsManifest;
+  completed: boolean;
+}): void {
+  const hasVisual = params.publicLesson.visual !== undefined;
+  const hasVisuals = params.publicLesson.visuals !== undefined;
+  if (!params.completed) {
+    if (hasVisual || hasVisuals)
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Manifest pubblico presente su lezione non svolta.',
+      );
+    return;
+  }
+  if (hasVisual === hasVisuals)
+    throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico assente o ambiguo.');
+  const expected = projectLessonVisualsManifest(params.privateManifest);
+  if (hasVisuals) {
+    const actual = validatePublicLessonVisualsManifest(params.publicLesson.visuals);
+    if (!sameCanonicalValue(actual, expected))
+      throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico divergente dal privato.');
+    return;
+  }
+  if (expected.items.length !== 1)
+    throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico singolare incoerente.');
+  const actual = validateLessonVisualPublicManifest(params.publicLesson.visual);
+  if (!sameCanonicalValue(actual, expected.items[0]))
+    throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico singolare divergente.');
+}
+
+function assertPublicBytesMatchPrivate(params: {
+  raw: unknown | null;
+  privateManifest: LessonVisualsManifest;
+  publicLessonId: string;
+  programId: string;
+  importId: string;
+  completed: boolean;
+}): void {
+  if (!params.completed) {
+    if (params.raw !== null)
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Byte pubblici presenti su lezione non svolta.',
+      );
+    return;
+  }
+  if (params.raw === null)
+    throw new AiVisualMultiError('corrupted_state', 'Byte pubblici assenti.');
+  let bytesMap: PublicLessonVisualBytesDoc;
+  try {
+    bytesMap = validatePublicLessonVisualBytesDoc(params.raw);
+  } catch {
+    const singular = validatePublicLessonVisualDoc(params.raw);
+    if (params.privateManifest.items.length !== 1)
+      throw new AiVisualMultiError('corrupted_state', 'Byte pubblici singolari incoerenti.');
+    bytesMap = validatePublicLessonVisualBytesDoc({
+      contractVersion: LESSON_VISUALS_CONTRACT_VERSION,
+      publicLessonId: singular.publicLessonId,
+      programId: singular.programId,
+      importId: singular.importId,
+      bytes: {
+        [singular.assetId]: {
+          dataUri: singular.dataUri,
+          mimeType: 'image/webp',
+          width: singular.width,
+          height: singular.height,
+        },
+      },
+    });
+  }
+  if (
+    bytesMap.publicLessonId !== params.publicLessonId ||
+    bytesMap.programId !== params.programId ||
+    bytesMap.importId !== params.importId
+  )
+    throw new AiVisualMultiError('corrupted_state', 'Identità dei byte pubblici divergente.');
+  const expectedIds = params.privateManifest.items.map((item) => item.assetId).sort();
+  if (!sameIds(Object.keys(bytesMap.bytes).sort(), expectedIds))
+    throw new AiVisualMultiError('corrupted_state', 'Asset pubblici divergenti dal manifest.');
+  for (const item of params.privateManifest.items) {
+    const entry = bytesMap.bytes[item.assetId];
+    if (!entry || entry.width !== item.width || entry.height !== item.height)
+      throw new AiVisualMultiError('corrupted_state', 'Dimensioni pubbliche divergenti.');
+    const comma = entry.dataUri.indexOf(',');
+    const decoded = Buffer.from(entry.dataUri.slice(comma + 1), 'base64');
+    if (decoded.byteLength !== item.byteLength || sha256Hex(decoded) !== item.sha256)
+      throw new AiVisualMultiError('corrupted_state', 'Byte pubblici divergenti dal privato.');
+  }
+}
+
 function promotionId(plan: VisualPlanRun, slotIndex: number): string {
   return slotRunIdFor(plan, slotIndex);
+}
+
+async function assertPromotionReplayIsLive(params: {
+  db: Firestore;
+  bucket: BucketLike;
+  ownerUid: string;
+  input: VisualPlanPromoteInput;
+  plan: VisualPlanRun;
+  promotion: StoredVisualPlanPromotion;
+}): Promise<void> {
+  const { db, bucket, ownerUid, input, plan, promotion } = params;
+  const lessonRef = db.doc(lessonPath(input.programId, input.importId, input.lessonId));
+  const lessonSnap = await lessonRef.get();
+  if (!lessonSnap.exists)
+    throw new AiVisualMultiError('corrupted_state', 'LessonDoc assente durante il replay.');
+  const lesson = lessonSnap.data() as Record<string, unknown>;
+  const lessonGate = checkLessonForVisual({
+    lesson,
+    lessonId: input.lessonId,
+    ownerUid,
+    importId: input.importId,
+  });
+  if (!lessonGate.ok)
+    throw new AiVisualMultiError('corrupted_state', 'Identità LessonDoc divergente nel replay.');
+  const promotedIndexes = plan.slots
+    .filter((slot) => slot.state === 'promoted')
+    .map((slot) => slot.slotIndex);
+  const [publicSnap, publicBytesSnap, ...promotionSnaps] = await Promise.all([
+    db.doc(`publicLessons/${lessonGate.publicLessonId}`).get(),
+    db.doc(`${PUBLIC_BYTES}/${lessonGate.publicLessonId}`).get(),
+    ...promotedIndexes.map((index) => db.doc(`${PROMOTIONS}/${promotionId(plan, index)}`).get()),
+  ]);
+  const projectionGate = checkProjectionForVisual({
+    lesson,
+    publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
+    programId: input.programId,
+    importId: input.importId,
+    ownerUid,
+  });
+  if (!projectionGate.ok || sha256Hex(projectionGate.body) !== plan.sourceBodyHash)
+    throw new AiVisualMultiError('corrupted_state', 'Proiezione divergente nel replay.');
+  const privateRead = readLegacyLessonVisuals({ visual: lesson.visual, visuals: lesson.visuals });
+  if (privateRead.status !== 'ok')
+    throw new AiVisualMultiError('corrupted_state', 'Manifest privato assente nel replay.');
+  const promotions = promotionSnaps.map((snap) => {
+    if (!snap.exists)
+      throw new AiVisualMultiError('corrupted_state', 'Registro promozione assente nel replay.');
+    return validateStoredVisualPlanPromotion(snap.data());
+  });
+  if (
+    !sameIds(
+      privateRead.manifest.items.map((item) => item.assetId),
+      computeExpectedLiveAssetIds(plan, promotions),
+    )
+  )
+    throw new AiVisualMultiError('corrupted_state', 'Galleria privata divergente nel replay.');
+  const promotedItem = privateRead.manifest.items.find(
+    (item) => item.assetId === promotion.assetId,
+  );
+  if (!promotedItem || promotedItem.storageRef !== promotion.storageRef)
+    throw new AiVisualMultiError('corrupted_state', 'Asset promosso assente nel manifest live.');
+  const promotedSlot = plan.slots.find((slot) => slot.slotIndex === promotion.slotIndex);
+  const expectedAnchor = promotedSlot?.anchor
+    ? resolveVisualAnchorForWrite(promotedSlot.anchor, projectionGate.body)
+    : null;
+  if (
+    !promotedSlot ||
+    promotedSlot.state !== 'promoted' ||
+    promotedSlot.promotedAssetId !== promotion.assetId ||
+    promotedSlot.caption !== promotedItem.caption ||
+    promotedSlot.altText !== promotedItem.altText ||
+    !sameCanonicalValue(expectedAnchor, promotedItem.anchor) ||
+    promotedItem.source !== 'generated' ||
+    promotedItem.sourceBodyHash !== plan.sourceBodyHash
+  )
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'Manifest live divergente dallo slot promosso.',
+    );
+  assertPublicManifestMatchesPrivate({
+    publicLesson: publicSnap.data() as Record<string, unknown>,
+    privateManifest: privateRead.manifest,
+    completed: projectionGate.completed,
+  });
+  assertPublicBytesMatchPrivate({
+    raw: publicBytesSnap.exists ? publicBytesSnap.data() : null,
+    privateManifest: privateRead.manifest,
+    publicLessonId: lessonGate.publicLessonId,
+    programId: input.programId,
+    importId: input.importId,
+    completed: projectionGate.completed,
+  });
+  await Promise.all(
+    privateRead.manifest.items.map(async (item) => {
+      const canonicalRef = canonicalVisualStorageRef({
+        ownerUid,
+        importId: input.importId,
+        udaDir: plan.udaDir,
+        assetId: item.assetId,
+      });
+      if (item.storageRef !== canonicalRef)
+        throw new AiVisualMultiError('corrupted_state', 'Path canonico divergente nel replay.');
+      const [bytes] = await bucket.file(canonicalRef).download();
+      if (bytes.byteLength !== item.byteLength || sha256Hex(bytes) !== item.sha256)
+        throw new AiVisualMultiError('corrupted_state', 'Byte canonici divergenti nel replay.');
+      const inspected = inspectWebp(bytes);
+      if (inspected.width !== item.width || inspected.height !== item.height)
+        throw new AiVisualMultiError('corrupted_state', 'Dimensioni canoniche divergenti.');
+    }),
+  );
 }
 
 export async function promoteVisualPlanSlotForOwner(params: {
@@ -552,6 +802,8 @@ export async function promoteVisualPlanSlotForOwner(params: {
   input: VisualPlanPromoteInput;
   nowMs: number;
   generateAssetId?: () => string;
+  /** Solo test Emulator: forza una race dopo tutte le letture transazionali. */
+  afterPromotionReads?: () => Promise<void>;
 }): Promise<{ replayed: boolean; assetId: string; plan: VisualPlanRun }> {
   const { db, bucket, ownerUid, input, nowMs } = params;
   const opaquePlanId = computeOpaqueVisualPlanId(ownerUid, input.requestId);
@@ -586,6 +838,14 @@ export async function promoteVisualPlanSlotForOwner(params: {
     ) {
       throw new AiVisualError('run_conflict', 'Lo slot è già stato promosso con dati diversi.');
     }
+    await assertPromotionReplayIsLive({
+      db,
+      bucket,
+      ownerUid,
+      input,
+      plan: fastPlan,
+      promotion: existing,
+    });
     return { replayed: true, assetId: existing.assetId, plan: fastPlan };
   }
   const slot = fastPlan.slots.find((candidate) => candidate.slotIndex === input.slotIndex);
@@ -836,6 +1096,7 @@ export async function promoteVisualPlanSlotForOwner(params: {
       );
     const publicBytesRef = db.doc(`${PUBLIC_BYTES}/${lessonGate.publicLessonId}`);
     const publicBytesSnap = await tx.get(publicBytesRef);
+    await params.afterPromotionReads?.();
     const previousPromotions = previousPromotionSnaps.map((snap) => {
       if (!snap.exists)
         throw new AiVisualMultiError(
@@ -864,6 +1125,31 @@ export async function promoteVisualPlanSlotForOwner(params: {
         'visual_plan_external_mutation',
         'La galleria è cambiata fuori dal piano.',
       );
+    const publicData = publicSnap.data() as Record<string, unknown>;
+    if (currentManifest) {
+      assertPublicManifestMatchesPrivate({
+        publicLesson: publicData,
+        privateManifest: currentManifest,
+        completed: projectionGate.completed,
+      });
+      assertPublicBytesMatchPrivate({
+        raw: publicBytesSnap.exists ? publicBytesSnap.data() : null,
+        privateManifest: currentManifest,
+        publicLessonId: lessonGate.publicLessonId,
+        programId: input.programId,
+        importId: input.importId,
+        completed: projectionGate.completed,
+      });
+    } else if (
+      publicData.visual !== undefined ||
+      publicData.visuals !== undefined ||
+      publicBytesSnap.exists
+    ) {
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'La proiezione pubblica contiene un visual assente nel privato.',
+      );
+    }
     const anchor = resolveVisualAnchorForWrite(currentSlot.anchor, projectionGate.body);
     const item: LessonVisualItem = {
       assetId,

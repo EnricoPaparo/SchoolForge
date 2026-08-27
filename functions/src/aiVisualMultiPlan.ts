@@ -178,7 +178,9 @@ export type VisualPlanSlotDecision = 'image' | 'none';
 export type VisualPlanSlotLastError =
   | 'visual_too_large'
   | 'provider_invalid_output'
-  | 'transient_error';
+  | 'transient_error'
+  | 'uncertain_outcome'
+  | 'staging_conflict';
 
 export interface VisualPlanSlotStaged {
   storageRef: string;
@@ -220,7 +222,13 @@ export interface VisualPlanSlot {
  */
 function isTerminalSlot(slot: VisualPlanSlot): boolean {
   if (slot.state === 'promoted' || slot.state === 'abandoned') return true;
-  if (slot.state === 'failed') return slot.attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT;
+  if (slot.state === 'failed') {
+    return (
+      slot.attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT ||
+      slot.lastError === 'uncertain_outcome' ||
+      slot.lastError === 'staging_conflict'
+    );
+  }
   return false;
 }
 
@@ -236,6 +244,8 @@ const SLOT_LAST_ERRORS: readonly VisualPlanSlotLastError[] = [
   'visual_too_large',
   'provider_invalid_output',
   'transient_error',
+  'uncertain_outcome',
+  'staging_conflict',
 ];
 
 const SLOT_KEYS = [

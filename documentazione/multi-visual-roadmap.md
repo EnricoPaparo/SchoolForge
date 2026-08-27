@@ -1544,6 +1544,15 @@ master. Lo staging è sempre
 `staging/{ownerUid}/{opaquePlanId}/{slotIndex}.webp`: il retry sostituisce
 solo i byte dello stesso slot e non tocca gli altri.
 
+Due fallimenti sono terminali anche prima del secondo tentativo:
+`uncertain_outcome` (provider o save potenzialmente avvenuti senza una prova
+autorevole dell'esito) e `staging_conflict` (percorso create-only occupato da
+byte divergenti). Entrambi rimuovono dal master i cap non più spendibili; il
+primo riconcilia conservativamente il solo cap corrente, il secondo resta
+fail-closed. Soltanto l'esito provider **esplicito** `pre_invocation` è
+ritentabile a costo zero; un'eccezione inattesa non dimostra che la rete non
+sia stata raggiunta e viene classificata `invocation_unknown`.
+
 La reservation master non passa mai a `pending` durante una chiamata
 immagine. Prima del provider il server separa unicamente il cap del
 tentativo in una reservation di fase deterministica e lascia il resto
@@ -1566,6 +1575,11 @@ orfano descritto dal recovery, mai una proiezione pubblica incoerente.
 I registri di promozione persistono inoltre una `sequence` contigua: è
 quell'ordine di commit, non `slotIndex`, a ricostruire correttamente
 `expectedLiveAssetIds` quando sostituzioni dipendenti avvengono fuori ordine.
+Il replay della promozione non si fida del solo registro: rilegge LessonDoc,
+proiezione, byte pubblici, tutti i registri promossi e gli oggetti Storage
+canonici; verifica identità, ordine, manifest privato/pubblico e byte contro
+lo slot promosso. Una rimozione o mutazione successiva è conflitto/corruzione,
+mai un falso replay riuscito e mai una riparazione silenziosa.
 
 **Confine di fase:** riordino, rimozione, cleanup TTL/bulk e lifecycle
 editoriale restano MULTI-VISUAL-03C; nessuna UI è introdotta da 03B.
@@ -2528,7 +2542,9 @@ promossi dallo stesso piano, la prima promozione riuscita esegue
 **9** se aggiorna anche proiezione e byte pubblici. Storage esegue una
 lettura staging, una copia create-only e una delete staging; `replace`
 aggiunge la delete post-commit del canonico sostituito. Il replay dal
-registro di promozione è **2 letture Firestore e zero altro**. I numeri
+registro di promozione è **5 + N letture Firestore**, con `N` registri degli
+slot promossi, e **N letture Storage** dei byte canonici; zero scritture e
+zero provider. I numeri
 includono il record recovery `prepared → committed`, prezzo deliberato per
 rendere recuperabile la finestra fra copia Storage e commit Firestore.
 

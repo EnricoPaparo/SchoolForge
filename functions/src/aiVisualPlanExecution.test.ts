@@ -219,6 +219,22 @@ describe('budget e stati per slot', () => {
     expect(done.status).toBe('abandoned');
     expect(remainingGenerationReservation(done)).toBe(0);
   });
+  it.each(['uncertain_outcome', 'staging_conflict'] as const)(
+    '%s è terminale al primo tentativo e non conserva cap ritentabili',
+    (lastError) => {
+      const initial = plan([slot(0)]);
+      const value = validateVisualPlanRun({
+        ...initial,
+        status: 'abandoned',
+        slots: [slot(0, { state: 'failed', attempts: 1, lastError })],
+        settlement: {
+          proposalActualCost: 0,
+          slots: [{ slotIndex: 0, attempts: 1, actualCost: null }],
+        },
+      });
+      expect(remainingGenerationReservation(value)).toBe(0);
+    },
+  );
 });
 
 describe('insieme live dopo add/replace', () => {
@@ -426,6 +442,14 @@ describe('guardie strutturali 03B', () => {
     expect(gateway).toContain('attempt: String(slot.attempts)');
     expect(gateway).toContain('executionId,');
     expect(gateway).toContain('sha256Hex(existing) !== normalized.sha256');
+    expect(gateway).toContain("stagingFailure = 'uncertain_outcome'");
+    expect(gateway).toContain("stagingFailure = 'staging_conflict'");
+  });
+  it('solo pre_invocation esplicito è ritentabile; le eccezioni diventano invocation_unknown', () => {
+    expect(gateway).toContain("outcome = { status: 'invocation_unknown' }");
+    expect(gateway).toContain(
+      "errorCode = outcome.status === 'invocation_unknown' ? 'uncertain_outcome' : 'transient_error'",
+    );
   });
   it('congela replay relazionale, ordine promozioni e byte pubblici esatti', () => {
     for (const guard of [
@@ -435,6 +459,9 @@ describe('guardie strutturali 03B', () => {
       'replaySlot.promotedAssetId !== existing.assetId',
       'sequence: previousPromotions.length',
       "throw new AiVisualMultiError('corrupted_state', 'Byte pubblici divergenti dal manifest.')",
+      'assertPromotionReplayIsLive',
+      'assertPublicManifestMatchesPrivate',
+      'assertPublicBytesMatchPrivate',
     ])
       expect(gateway).toContain(guard);
   });
