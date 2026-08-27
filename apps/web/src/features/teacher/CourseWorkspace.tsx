@@ -2194,7 +2194,11 @@ export function CourseWorkspace({
                     disabled={visualBlockedReason !== null}
                     onClick={() => {
                       setMenuOpen(false);
-                      setMultiVisualDialogOpen(true);
+                      if (selectedLesson.visuals) setMultiVisualDialogOpen(true);
+                      else {
+                        selectTab('contenuto');
+                        setVisualDialogOpen(true);
+                      }
                     }}
                   >
                     <IconSparkles size={15} />
