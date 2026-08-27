@@ -3042,7 +3042,6 @@ function LessonDetail({
     });
     if (!detailMounted.current) return;
     setLocalVisual(next);
-    await onRefreshMultiVisuals();
   }
 
   async function confirmReanchor(choice: { index: number; text: string }) {
