@@ -367,6 +367,7 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
         nowMs: now + 1000 + providerCalls,
         deps: {
           executionId: () => randomUUID(),
+          now: () => now + 2000 + providerCalls,
           callProvider: async () => {
             providerCalls += 1;
             return outcome === 'success'
@@ -469,6 +470,7 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
       nowMs: now + 7000,
       deps: {
         executionId: () => randomUUID(),
+        now: () => now + 7500,
         callProvider: async () => ({
           status: 'success',
           bytes: raw,
