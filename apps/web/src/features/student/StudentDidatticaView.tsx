@@ -19,10 +19,8 @@ import {
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
-import {
-  readStudentVisualBytes,
-  readStudentVisualBytesMulti,
-} from '../repository/programs/visualReadClients.js';
+import { readStudentVisualBytes } from '../repository/programs/visualReadClients.js';
+import { readStudentVisualBytesMulti } from '../repository/programs/multiVisualReadClients.js';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonNotesPanel } from './LessonNotesPanel.js';
 import { useLessonNotes, type LessonNotesController } from './useLessonNotes.js';
@@ -614,7 +612,8 @@ function LessonContent({
   const [multiVisualBytes, setMultiVisualBytes] = useState<Record<string, string>>({});
   useEffect(() => {
     let active = true;
-    if (lesson.visuals.length === 0) {
+    const multiManifest = lesson.visuals ?? [];
+    if (multiManifest.length === 0) {
       setMultiVisualBytes({});
       setMultiVisualState('idle');
       return () => {
@@ -622,7 +621,7 @@ function LessonContent({
       };
     }
     setMultiVisualState('loading');
-    void readStudentVisualBytesMulti({ db, publicLessonId: lesson.id, manifests: lesson.visuals })
+    void readStudentVisualBytesMulti({ db, publicLessonId: lesson.id, manifests: multiManifest })
       .then((entries) => {
         if (!active) return;
         setMultiVisualBytes(
@@ -661,7 +660,7 @@ function LessonContent({
               : ('loading' as const),
       }
     : null;
-  const visuals = lesson.visuals.map((item) => ({
+  const visuals = (lesson.visuals ?? []).map((item) => ({
     anchorSlug: item.anchor.headingSlug,
     headingText: item.anchor.headingText,
     altText: item.altText,

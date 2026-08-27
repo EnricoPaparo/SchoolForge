@@ -99,6 +99,8 @@ import {
 import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
 import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
+import { LessonMultiVisualGallery } from './LessonMultiVisualGallery.js';
+import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import {
   MarkdownBodyEditor,
@@ -3178,6 +3180,29 @@ function LessonDetail({
                   ports={visualPorts}
                   onRefresh={refreshVisual}
                   onClose={onCloseVisualDialog}
+                />
+              )}
+              {lesson.visuals && lesson.visuals.items.length > 0 && importId && (
+                <LessonMultiVisualGallery
+                  identity={{ programId, importId, lessonId: lesson.id }}
+                  manifest={lesson.visuals.items}
+                  onReorder={async (nextAssetIds) => {
+                    await createMultiVisualClient(functions).reorder({
+                      programId,
+                      importId,
+                      lessonId: lesson.id,
+                      expectedAssetIds: lesson.visuals?.items.map((item) => item.assetId) ?? [],
+                      nextAssetIds,
+                    });
+                  }}
+                  onRemove={async (assetId) => {
+                    await createMultiVisualClient(functions).remove({
+                      programId,
+                      importId,
+                      lessonId: lesson.id,
+                      assetId,
+                    });
+                  }}
                 />
               )}
               {reanchoring && manifest && (
