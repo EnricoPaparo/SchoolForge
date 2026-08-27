@@ -57,7 +57,7 @@ export function LessonMultiVisualWorkflowDialog({
         udaTitle: lessonAi.udaTitle,
         udaContext: lessonAi.udaContext,
       };
-      setPlan((await client.authorize(input)).plan);
+      setPlan(await client.authorize(input));
     } catch {
       setError('Impossibile preparare le immagini. Riprova.');
     } finally {
@@ -70,7 +70,7 @@ export function LessonMultiVisualWorkflowDialog({
     setBusy(true);
     setError(null);
     try {
-      setPlan((await client.generateSlot({ requestId: plan.requestId, slotIndex })).plan);
+      setPlan(await client.generateSlot({ ...identity, requestId: plan.requestId, slotIndex }));
     } catch {
       setError(
         'Impossibile generare questa immagine. Riprova senza costi aggiuntivi se il tentativo è già concluso.',
@@ -84,7 +84,8 @@ export function LessonMultiVisualWorkflowDialog({
     if (!plan || busy) return;
     const slot = plan.slots.find((item) => item.slotIndex === slotIndex);
     if (!slot?.staged) return;
-    const heading = headings.find((item) => item.index === slot.anchorHeadingIndex) ?? headings[0];
+    const heading =
+      headings.find((item) => item.index === slot.anchor?.headingIndex) ?? headings[0];
     if (!heading) {
       setError('Serve almeno un titolo H2 o H3 nella lezione.');
       return;
@@ -93,16 +94,13 @@ export function LessonMultiVisualWorkflowDialog({
     setError(null);
     try {
       setPlan(
-        (
-          await client.promoteSlot({
-            requestId: plan.requestId,
-            slotIndex,
-            anchorHeadingIndex: heading.index,
-            anchorHeadingText: heading.text,
-            caption: slot.caption ?? 'Illustrazione della lezione',
-            altText: slot.altText ?? slot.subject ?? 'Illustrazione della lezione',
-          })
-        ).plan,
+        await client.promoteSlot({
+          ...identity,
+          requestId: plan.requestId,
+          slotIndex,
+          promotionRequestId: crypto.randomUUID(),
+          mode: { mode: 'add' },
+        }),
       );
       await onRefresh();
     } catch {
@@ -160,7 +158,7 @@ export function LessonMultiVisualWorkflowDialog({
               <article key={slot.slotIndex} className={styles.slot}>
                 <h4>Immagine {slot.slotIndex + 1}</h4>
                 <p>{slot.subject ?? 'Nessuna immagine proposta'}</p>
-                {slot.staged ? <img src={slot.staged.dataUri} alt="Anteprima proposta" /> : null}
+                {slot.staged ? <p>Immagine generata pronta per l’applicazione.</p> : null}
                 {slot.promotedAssetId ? (
                   <p className={styles.success}>Applicata alla lezione.</p>
                 ) : (

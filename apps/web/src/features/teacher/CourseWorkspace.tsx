@@ -1419,7 +1419,7 @@ export function CourseWorkspace({
               ? 'L’importazione attiva non è disponibile.'
               : !hasVisualAnchorHeading
                 ? 'Aggiungi almeno un titolo H2 o H3 al contenuto salvato.'
-                : visualDialogOpen
+                : visualDialogOpen || multiVisualDialogOpen
                   ? 'Operazione visuale in corso.'
                   : null;
 
@@ -2194,8 +2194,7 @@ export function CourseWorkspace({
                     disabled={visualBlockedReason !== null}
                     onClick={() => {
                       setMenuOpen(false);
-                      selectTab('contenuto');
-                      setVisualDialogOpen(true);
+                      setMultiVisualDialogOpen(true);
                     }}
                   >
                     <IconSparkles size={15} />
