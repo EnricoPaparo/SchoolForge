@@ -3226,6 +3226,7 @@ function LessonDetail({
                   identity={{ programId, importId, lessonId: lesson.id }}
                   lessonAi={lessonAi}
                   existingCount={lesson.visuals?.items.length ?? 0}
+                  currentVisuals={lesson.visuals?.items ?? []}
                   headings={visualHeadings}
                   onRefresh={refreshVisual}
                   onClose={onCloseMultiVisualDialog}

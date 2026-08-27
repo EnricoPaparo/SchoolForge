@@ -6,6 +6,7 @@ import {
   type MultiVisualPlanRequest,
 } from '../repository/programs/multiVisualClient.js';
 import type { Functions } from 'firebase/functions';
+import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
 import styles from './LessonMultiVisualWorkflowDialog.module.css';
 
 export function LessonMultiVisualWorkflowDialog({
@@ -13,6 +14,7 @@ export function LessonMultiVisualWorkflowDialog({
   identity,
   lessonAi,
   existingCount,
+  currentVisuals,
   headings,
   onRefresh,
   onClose,
@@ -29,6 +31,7 @@ export function LessonMultiVisualWorkflowDialog({
     udaContext?: unknown;
   };
   existingCount: number;
+  currentVisuals: LessonVisualPrivateManifest[];
   headings: { text: string; index: number }[];
   onRefresh: () => Promise<void>;
   onClose: () => void;
@@ -134,6 +137,28 @@ export function LessonMultiVisualWorkflowDialog({
             Puoi aggiungere fino a {ceiling} immagini. La proposta e ogni immagine hanno una
             conferma e un costo separati.
           </p>
+          {currentVisuals.length > 0 && (
+            <div className={styles.currentList} aria-label="Immagini attuali">
+              <h4>Immagini attuali</h4>
+              {currentVisuals.map((item, index) => (
+                <div className={styles.currentItem} key={item.assetId}>
+                  <span>
+                    {index + 1}. {item.anchor.headingText}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() =>
+                      void client.remove({ ...identity, assetId: item.assetId }).then(onRefresh)
+                    }
+                    disabled={busy}
+                  >
+                    Rimuovi
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <label>
             Quantità
             <select

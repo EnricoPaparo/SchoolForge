@@ -3,7 +3,10 @@ import type { Firestore } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
 import type { LessonUdaContext } from '../pools/aiContentClient.js';
-import type { LessonVisualPrivateManifest } from '../../../types/firestore.js';
+import type {
+  LessonVisualPrivateManifest,
+  LessonVisualsManifest,
+} from '../../../types/firestore.js';
 import { createVisualLifecycleClient } from './visualLifecycleClient.js';
 import { parsePrivateVisualManifest } from './lessonVisualContract.js';
 
@@ -166,6 +169,35 @@ export async function readAuthoritativePrivateVisual(
     throw new Error('Il manifest visuale salvato non è leggibile in sicurezza.');
   }
   return parsed.manifest;
+}
+
+export async function readAuthoritativePrivateVisuals(
+  params: VisualIdentity & { db: Firestore },
+): Promise<LessonVisualsManifest | null> {
+  const snap = await getDoc(
+    doc(
+      params.db,
+      'programs',
+      params.programId,
+      'imports',
+      params.importId,
+      'lessons',
+      params.lessonId,
+    ),
+  );
+  if (!snap.exists()) throw new Error('La lezione non esiste più.');
+  const data = snap.data();
+  const raw = data.visuals;
+  if (raw === undefined) return null;
+  if (
+    typeof raw !== 'object' ||
+    raw === null ||
+    Array.isArray(raw) ||
+    (raw as { contractVersion?: unknown }).contractVersion !== 'lesson-visuals/v1' ||
+    !Array.isArray((raw as { items?: unknown }).items)
+  )
+    throw new Error('Il manifest multi-visuale salvato non è leggibile in sicurezza.');
+  return raw as LessonVisualsManifest;
 }
 
 export type WebAiVisualErrorCode =

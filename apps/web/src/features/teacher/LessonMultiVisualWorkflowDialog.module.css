@@ -37,6 +37,20 @@
 .success {
   color: var(--success);
 }
+.currentList {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.currentItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
 @media (max-width: 640px) {
   .slots {
     grid-template-columns: 1fr;
