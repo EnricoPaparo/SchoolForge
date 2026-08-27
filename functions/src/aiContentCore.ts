@@ -392,16 +392,16 @@ export function utf8ByteLength(value: string): number {
  * viene importato.
  */
 export function timestampToMillis(value: unknown): number | null {
-  if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
-    let ms: unknown;
-    try {
-      ms = (value as { toMillis: () => unknown }).toMillis();
-    } catch {
-      return null;
-    }
-    return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+  if (!value || typeof (value as { toMillis?: unknown }).toMillis !== 'function') {
+    return null;
   }
-  return null;
+  let ms: unknown;
+  try {
+    ms = (value as { toMillis: () => unknown }).toMillis();
+  } catch {
+    return null;
+  }
+  return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
 }
 
 /** Serializzazione canonica non ambigua di una tupla di stringhe. */
