@@ -56,6 +56,8 @@ const TECHNICAL = [
   'aiVisualPromotions/x',
   'aiVisualAbandonments/x',
   'aiVisualRemovals/x',
+  // MULTI-VISUAL-04 — chiavi di idempotenza della revisione gratuita §8.4.
+  'visualPlanSlotEdits/x',
 ];
 
 describe('collezioni tecniche VE-03 — nessuna è raggiungibile dal client', () => {

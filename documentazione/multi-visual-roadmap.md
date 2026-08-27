@@ -1393,6 +1393,36 @@ slot — il tetto era fissato alla quantità originale, non ricalcolato a
 runtime, per evitare che una riduzione su uno slot inneschi silenziosamente
 un'espansione su un altro).
 
+#### 8.4.1 Realizzazione server MULTI-VISUAL-04
+
+`aiVisualPlanEditSlot` è la sola porta di scrittura per questa revisione. Il
+payload è una unione chiusa:
+
+```ts
+type VisualPlanEditSlotInput =
+  | { requestId; editRequestId; programId; importId; lessonId; slotIndex;
+      abandon: false; subject; caption; altText;
+      anchorHeadingIndex; anchorHeadingText }
+  | { requestId; editRequestId; programId; importId; lessonId; slotIndex;
+      abandon: true };
+```
+
+La transazione rilegge `settings/owner`, piano, lease, `LessonDoc` e
+`publicLessons` e confronta il corpo fresco con `sourceBodyHash`; l'ancora è
+risolta contro gli heading freschi indice+testo. È modificabile soltanto uno
+slot `decision:'image'` ancora `pending` di un piano `proposed`: nessuno stato
+`generating|ready|failed|promoted|abandoned` può essere resuscitato o
+riscritto. Subject/caption/altText riusano i limiti VE e la modifica deve
+preservare la diversità fra slot; `rationale`, attempts, staged, promozione e
+settlement restano immutati.
+
+`editRequestId` ha un record opaco server-only in `visualPlanSlotEdits`.
+Replay identico restituisce il piano corrente con zero scritture; riuso dello
+stesso id con identità o contenuto diversi fallisce chiuso. L'abbandono
+riconcilia soltanto la prenotazione master già esistente alla capacità residua
+e chiude il lease se era l'ultimo slot pending: non crea prenotazioni di fase,
+non invoca provider e non genera alcun costo IA.
+
 ### 8.5 Generazione per slot — indipendente, con retry che non perde nulla
 
 Ogni slot con `decision: 'image'` e non abbandonato genera
@@ -2436,6 +2466,9 @@ verificata in Emulator (§17, §19).
 | **Tentativo respinto da `visual_plan_already_active`** (§10.3, Race A/B) | 0 | 1 lettura del lease, **zero scritture** | 0 | 1 |
 | **Proposta coordinata** (1 per piano, mai N) | 1 chiamata testo, `quality`, indipendente da `ceiling` nel numero di chiamate | **2W**: 1 aggiornamento `VisualPlanRun.slots`+`settlement.proposalActualCost`, 1 settlement sul ledger mensile (stessa disciplina già in vigore per `lesson`/`pool`/`concept_map`/`visual_proposal`) | 0 | 1 |
 | **Rilascio della quota non usata** (`ceiling − slot con decision:'image'`) | 0 | incluso nell'aggiornamento sopra — nessuna scrittura aggiuntiva | 0 | 0 |
+| **Revisione gratuita di uno slot pending** (`aiVisualPlanEditSlot`) | 0 | **7R + 4W** nel percorso callable: owner (preflight + rilettura transazionale), piano, lezione, proiezione, lease, chiave idempotente; scritture piano + chiave + audit + rinnovo lease | 0 | 1 |
+| **Abbandono gratuito di uno slot pending** | 0 | **8R + 5W**: come la revisione, più lettura/scrittura del ledger per ridurre la prenotazione master; sull'ultimo slot il write del lease è un delete | 0 | 1 |
+| **Replay identico della revisione** | 0 | **7R, 0W**: fonti fresche e chiave idempotente rilette, nessun timestamp/audit/lease riscritto | 0 | 1 |
 | **Rinnovo del lease** (a ogni transizione di stato del piano, §10.3) | 0 | incluso nella stessa transazione della transizione — nessuna scrittura aggiuntiva rispetto a quanto quella transizione già conta | 0 | 0 |
 | **Rilascio del lease** (piano terminale, §8.7) | 0 | incluso nella stessa transazione della transizione a stato terminale — 1 delete, nessuna scrittura aggiuntiva oltre a quella già contata dalla transizione stessa | 0 | 0 |
 

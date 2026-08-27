@@ -396,6 +396,11 @@ service cloud.firestore {
     match /visualPlanLeases/{document=**} {
       allow read, write: if false;
     }
+    // MULTI-VISUAL-04: chiavi idempotenti della revisione gratuita §8.4.
+    // Contengono hash tecnici e restano accessibili solo tramite callable.
+    match /visualPlanSlotEdits/{document=**} {
+      allow read, write: if false;
+    }
     // MULTI-VISUAL-03B — esecuzioni per slot, registri idempotenti di
     // promozione e recovery dei blob canonici sono sempre server-only.
     match /visualPlanSlotRuns/{document=**} {

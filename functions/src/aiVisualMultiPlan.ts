@@ -989,14 +989,10 @@ function validateExistingItemAssetIds(value: unknown): string[] {
  *   proposta coordinata non ha risposto (roadmap §8.3); `proposing` è lo
  *   stato scritto nella transazione che precede la chiamata al motore
  *   (§10.3, gateway), non un momento in cui gli slot possano già esistere;
- * - `proposed`: **almeno uno** slot, tutti non terminali con la forma
- *   esatta appena uscita dalla proposta coordinata — `decision: 'image'` ⇒
- *   `state: 'pending'` (non ancora generato), `decision: 'none'` ⇒
- *   `state: 'abandoned'` (già terminale in sé, ma il piano nel suo insieme
- *   non lo è finché resta almeno uno slot immagine `pending`) — e **almeno
- *   uno** slot con `decision: 'image'` (con zero slot immagine l'esito
- *   coerente è `abandoned`, mai `proposed`, stessa asimmetria di
- *   `completed` sopra).
+ * - `proposed`: almeno uno slot immagine resta `pending`; gli altri slot sono
+ *   `abandoned` perché `decision: 'none'` oppure perché il docente li ha
+ *   esclusi gratuitamente durante §8.4. Nessuno slot può avere già avviato
+ *   una generazione.
  */
 function assertVisualPlanStatusMatchesSlots(
   status: VisualPlanStatus,
@@ -1012,17 +1008,16 @@ function assertVisualPlanStatusMatchesSlots(
   }
 
   if (status === 'proposed') {
-    const hasImageSlot = slots.some((slot) => slot.decision === 'image');
-    if (!hasImageSlot) {
-      invalidSlot(
-        'status "proposed" richiede almeno uno slot immagine; con zero slot immagine l\'esito è "abandoned".',
-      );
+    const hasPendingImageSlot = slots.some(
+      (slot) => slot.decision === 'image' && slot.state === 'pending',
+    );
+    if (!hasPendingImageSlot) {
+      invalidSlot('status "proposed" richiede almeno uno slot immagine ancora pending.');
     }
     for (const slot of slots) {
-      const expectedState = slot.decision === 'image' ? 'pending' : 'abandoned';
-      if (slot.state !== expectedState) {
+      if (slot.state !== 'pending' && slot.state !== 'abandoned') {
         invalidSlot(
-          `status "proposed" richiede che ogni slot sia nella forma appena uscita dalla proposta coordinata (${slot.decision === 'image' ? '"pending"' : '"abandoned"'}).`,
+          'status "proposed" ammette solo slot pending o abbandonati prima della generazione.',
         );
       }
     }

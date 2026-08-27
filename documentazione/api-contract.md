@@ -1348,3 +1348,40 @@ VE-05A non usa Firebase né esegue rollout.
   stesso commit.
 - `visualPlanSlotRuns`, `visualPlanPromotions` e
   `visualPlanPromotionRecoveries` sono collezioni tecniche server-only.
+
+## MULTI-VISUAL-04 — revisione gratuita pre-generazione
+
+`aiVisualPlanEditSlot` è una callable v2 owner-only senza secret e senza
+provider. Accetta esattamente uno dei payload seguenti (proprietà extra
+respinte):
+
+```ts
+type VisualPlanEditSlotInput =
+  | {
+      requestId: UUIDv4; editRequestId: UUIDv4;
+      programId: string; importId: string; lessonId: string; slotIndex: 0|1|2;
+      abandon: false;
+      subject: string; caption: string; altText: string;
+      anchorHeadingIndex: number; anchorHeadingText: string;
+    }
+  | {
+      requestId: UUIDv4; editRequestId: UUIDv4;
+      programId: string; importId: string; lessonId: string; slotIndex: 0|1|2;
+      abandon: true;
+    };
+```
+
+Risposta: `{ replayed: boolean, plan: VisualPlanRun }`. Solo uno slot
+`image/pending` di un piano `proposed` è modificabile. Il server rilegge owner,
+lezione, proiezione, corpo/hash e heading nella transazione; valida limiti VE e
+diversità, e non modifica `rationale`, attempts, staging, promozione o
+settlement. `abandon:true` porta lo slot ad `abandoned`, riduce la sola
+prenotazione master residua e deriva lo stato terminale/chiude il lease quando
+necessario. Nessuna chiamata provider, nessuna prenotazione nuova, nessun
+accesso Storage.
+
+L'idempotenza usa `visualPlanSlotEdits/{SHA-256(ownerUid,editRequestId)}`
+server-only. Stesso id e stesso payload: replay con zero scritture; stesso id
+con payload/slot/piano divergente: `invalid_input`, zero scritture. Le race con
+generazione sono serializzate dal documento piano: se la generazione ha già
+portato lo slot fuori da `pending`, la modifica fallisce senza resuscitarlo.
