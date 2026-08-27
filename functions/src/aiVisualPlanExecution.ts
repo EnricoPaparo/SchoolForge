@@ -9,6 +9,7 @@ import {
   AiVisualMultiError,
   VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT,
   VISUAL_PLAN_PROMOTION_CONTRACT_VERSION,
+  VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION,
   VISUAL_PLAN_SLOT_RUN_CONTRACT_VERSION,
   asRecord,
   assertExactKeys,
@@ -234,6 +235,85 @@ export interface StoredVisualPlanPromotion {
   createdAt: unknown;
 }
 
+export interface StoredVisualPlanPromotionRecovery {
+  contractVersion: typeof VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION;
+  ownerUid: string;
+  opaquePlanId: string;
+  planHash: string;
+  slotIndex: number;
+  promotionRequestId: string;
+  mode: 'add' | 'replace';
+  replacedAssetId: string | null;
+  assetId: string;
+  storageRef: string;
+  status: 'prepared' | 'committed';
+  createdAt: unknown;
+  updatedAt: unknown;
+  expireAt: unknown;
+}
+
+const PROMOTION_RECOVERY_KEYS = [
+  'contractVersion',
+  'ownerUid',
+  'opaquePlanId',
+  'planHash',
+  'slotIndex',
+  'promotionRequestId',
+  'mode',
+  'replacedAssetId',
+  'assetId',
+  'storageRef',
+  'status',
+  'createdAt',
+  'updatedAt',
+  'expireAt',
+] as const;
+
+export function validateStoredVisualPlanPromotionRecovery(
+  value: unknown,
+): StoredVisualPlanPromotionRecovery {
+  const root = asRecord(value, 'Recovery di promozione non valido.', 'corrupted_state');
+  assertExactKeys(root, PROMOTION_RECOVERY_KEYS, 'Recovery di promozione', 'corrupted_state');
+  if (
+    root.contractVersion !== VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION ||
+    !isValidDocumentIdInput(root.ownerUid) ||
+    !isSha256Hex(root.opaquePlanId) ||
+    !isSha256Hex(root.planHash) ||
+    !isUuidV4(root.promotionRequestId) ||
+    !isUuidV4(root.assetId)
+  )
+    throw new AiVisualMultiError('corrupted_state', 'Identità del recovery non valida.');
+  if (
+    !Number.isInteger(root.slotIndex) ||
+    (root.slotIndex as number) < 0 ||
+    (root.slotIndex as number) > 2
+  )
+    throw new AiVisualMultiError('corrupted_state', 'slotIndex del recovery non valido.');
+  if (root.mode === 'add') {
+    if (root.replacedAssetId !== null)
+      throw new AiVisualMultiError('corrupted_state', 'Recovery add incoerente.');
+  } else if (root.mode === 'replace') {
+    if (!isUuidV4(root.replacedAssetId))
+      throw new AiVisualMultiError('corrupted_state', 'Recovery replace incoerente.');
+  } else throw new AiVisualMultiError('corrupted_state', 'mode del recovery non valido.');
+  if (!['prepared', 'committed'].includes(root.status as string))
+    throw new AiVisualMultiError('corrupted_state', 'status del recovery non valido.');
+  if (typeof root.storageRef !== 'string' || !root.storageRef.endsWith(`/${root.assetId}.webp`))
+    throw new AiVisualMultiError('corrupted_state', 'storageRef del recovery non valido.');
+  const created = timestampToMillis(root.createdAt);
+  const updated = timestampToMillis(root.updatedAt);
+  const expire = timestampToMillis(root.expireAt);
+  if (
+    created === null ||
+    updated === null ||
+    expire === null ||
+    created > updated ||
+    updated > expire
+  )
+    throw new AiVisualMultiError('corrupted_state', 'Timestamp del recovery non validi.');
+  return root as unknown as StoredVisualPlanPromotionRecovery;
+}
+
 const PROMOTION_KEYS = [
   'contractVersion',
   'ownerUid',
@@ -332,7 +412,7 @@ export function replaceSlot(
     if (allTerminal) nextStatus = deriveVisualPlanTerminalStatus(slots);
     else if (slots.some((candidate) => candidate.state === 'generating')) nextStatus = 'generating';
     else if (slots.some((candidate) => candidate.state === 'ready')) nextStatus = 'awaiting_review';
-    else nextStatus = 'proposed';
+    else nextStatus = 'awaiting_review';
   }
   const next = { ...plan, status: nextStatus, slots };
   return validateVisualPlanRun(next);

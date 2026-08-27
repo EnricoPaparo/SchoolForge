@@ -14,9 +14,8 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
 import { markPending, reconcile, reserve, type BudgetLedgerState } from './aiCorrectionBudget.js';
 import { timestampToMillis } from './aiContentCore.js';
-import { VISUAL_STAGING_TTL_MS, VISUAL_STYLE_VERSION } from './aiContentVisualProposal.js';
+import { VISUAL_STYLE_VERSION } from './aiContentVisualProposal.js';
 import {
-  AI_VISUAL_SERVER_CONFIG,
   AiVisualError,
   inspectWebp,
   resolveAiVisualMode,
@@ -36,6 +35,7 @@ import {
   LESSON_VISUALS_CONTRACT_VERSION,
   VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT,
   VISUAL_PLAN_PROMOTION_CONTRACT_VERSION,
+  VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION,
   VISUAL_PLAN_SLOT_RUN_CONTRACT_VERSION,
   computeOpaqueVisualPlanId,
   computeOpaqueVisualPlanSlotRunId,
@@ -46,7 +46,6 @@ import {
   readLegacyLessonVisuals,
   validateLessonVisualsManifest,
   type LessonVisualItem,
-  type LessonVisualsManifest,
 } from './aiVisualMultiManifest.js';
 import {
   assertPlanIdentity,
@@ -58,11 +57,13 @@ import {
   slotRunIdFor,
   upsertSlotSettlement,
   validateStoredVisualPlanPromotion,
+  validateStoredVisualPlanPromotionRecovery,
   validateStoredVisualPlanSlotRun,
   validateVisualPlanPromoteInput,
   validateVisualPlanSlotInput,
   visualPlanSlotStagingRef,
   type StoredVisualPlanPromotion,
+  type StoredVisualPlanPromotionRecovery,
   type StoredVisualPlanSlotRun,
   type VisualPlanPromoteInput,
   type VisualPlanSlotInput,
@@ -90,7 +91,7 @@ import { resolveVisualAnchorForWrite } from './aiVisualMultiAnchor.js';
 import { loadRuntimeConfig, retryPolicyFromConfig } from './aiContentGateway.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { lessonPath, requireOwner } from './aiVisualIdentity.js';
-import { isStorageNotFound, type BucketLike } from './repositoryGatewayCore.js';
+import type { BucketLike } from './repositoryGatewayCore.js';
 
 const PUBLIC_BYTES = 'publicLessonVisuals';
 const SLOT_RUNS = 'visualPlanSlotRuns';
@@ -163,6 +164,7 @@ export interface GenerateVisualPlanSlotDeps {
   ) => Promise<ImageProviderOutcome>;
   normalize?: typeof normalizeVisualWebp;
   executionId?: () => string;
+  resolveSecret?: () => string | undefined;
 }
 
 export async function generateVisualPlanSlotForOwner(params: {
@@ -209,7 +211,7 @@ export async function generateVisualPlanSlotForOwner(params: {
       throw new AiVisualMultiError('corrupted_state', 'Piano o lease assente.');
     const current = validateVisualPlanRun(planSnap.data());
     assertPlanIdentity(current, ownerUid, input);
-    const expireAtMs = nowOrThrow(current, nowMs);
+    nowOrThrow(current, nowMs);
     assertLease(current, leaseSnap.data(), nowMs);
     const slot = current.slots.find((candidate) => candidate.slotIndex === input.slotIndex);
     if (!slot || slot.decision !== 'image' || !slot.subject)
@@ -231,7 +233,8 @@ export async function generateVisualPlanSlotForOwner(params: {
         existingRun.opaquePlanId !== opaquePlanId ||
         existingRun.planHash !== current.planHash ||
         existingRun.slotIndex !== input.slotIndex ||
-        existingRun.attempts !== slot.attempts
+        existingRun.attempts !== slot.attempts ||
+        existingRun.subjectHash !== sha256Hex(slot.subject)
       ) {
         throw new AiVisualMultiError('corrupted_state', 'Run dello slot divergente.');
       }
@@ -239,6 +242,11 @@ export async function generateVisualPlanSlotForOwner(params: {
         throw new AiVisualError(
           'uncertain_state',
           'Esito dello slot incerto; nessun nuovo tentativo.',
+        );
+      if (existingRun.status !== 'failed')
+        throw new AiVisualMultiError(
+          'corrupted_state',
+          'Run concluso incompatibile con uno slot ritentabile.',
         );
     }
     const ledger = readVisualPlanLedgerState(
@@ -281,9 +289,9 @@ export async function generateVisualPlanSlotForOwner(params: {
       status: 'pending',
       attempts,
       executionId,
-      settledCostMicroUsd:
-        current.settlement.slots.find((entry) => entry.slotIndex === input.slotIndex)?.actualCost ??
-        0,
+      settledCostMicroUsd: runSnap.exists
+        ? validateStoredVisualPlanSlotRun(runSnap.data()).settledCostMicroUsd
+        : 0,
       stagingRef: visualPlanSlotStagingRef(ownerUid, opaquePlanId, input.slotIndex),
       createdAt: runSnap.exists
         ? validateStoredVisualPlanSlotRun(runSnap.data()).createdAt
@@ -314,11 +322,14 @@ export async function generateVisualPlanSlotForOwner(params: {
       );
     else if (mode === 'mock')
       outcome = await createDeterministicMockImageProvider().generate(slot.subject);
-    else if (mode === 'openai' && params.secret)
-      outcome = await createImageProvider(createOpenAiImageTransport(params.secret), {
-        policy: retryPolicyFromConfig(config),
-      }).generate(slot.subject);
-    else outcome = { status: 'pre_invocation' };
+    else if (mode === 'openai') {
+      const secret = params.secret ?? params.deps?.resolveSecret?.();
+      outcome = secret
+        ? await createImageProvider(createOpenAiImageTransport(secret), {
+            policy: retryPolicyFromConfig(config),
+          }).generate(slot.subject)
+        : { status: 'pre_invocation' };
+    } else outcome = { status: 'pre_invocation' };
   } catch {
     outcome = { status: 'pre_invocation' };
   }
@@ -371,74 +382,90 @@ export async function generateVisualPlanSlotForOwner(params: {
         errorCode =
           error instanceof AiVisualError && error.code === 'visual_too_large'
             ? 'visual_too_large'
-            : 'provider_invalid_output';
+            : error instanceof AiVisualError
+              ? 'provider_invalid_output'
+              : 'transient_error';
       }
     }
   }
 
-  return db.runTransaction(async (tx) => {
-    const [planSnap, leaseSnap, ledgerSnap, runSnap] = await Promise.all([
-      tx.get(planRef),
-      tx.get(leaseRef),
-      tx.get(db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`)),
-      tx.get(slotRunRef),
-    ]);
-    if (!planSnap.exists || !leaseSnap.exists || !runSnap.exists)
-      throw new AiVisualError('uncertain_state', 'Finalizzazione dello slot incerta.');
-    const current = validateVisualPlanRun(planSnap.data());
-    const run = validateStoredVisualPlanSlotRun(runSnap.data());
-    if (run.executionId !== executionId || run.status !== 'pending')
-      throw new AiVisualError('uncertain_state', 'La lease dello slot è cambiata.');
-    const currentSlot = current.slots.find((candidate) => candidate.slotIndex === input.slotIndex);
-    if (!currentSlot || currentSlot.state !== 'generating' || currentSlot.attempts !== run.attempts)
-      throw new AiVisualError('uncertain_state', 'Lo slot è cambiato durante la generazione.');
-    const expireAtMs = nowOrThrow(current, nowMs);
-    assertLease(current, leaseSnap.data(), nowMs);
-    const resultSlot = staged
-      ? readySlot(currentSlot, staged)
-      : failedSlot(currentSlot, errorCode ?? 'provider_invalid_output');
-    const withSettlement = {
-      ...current,
-      settlement: upsertSlotSettlement(
+  try {
+    return await db.runTransaction(async (tx) => {
+      const [planSnap, leaseSnap, ledgerSnap, runSnap] = await Promise.all([
+        tx.get(planRef),
+        tx.get(leaseRef),
+        tx.get(db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`)),
+        tx.get(slotRunRef),
+      ]);
+      if (!planSnap.exists || !leaseSnap.exists || !runSnap.exists)
+        throw new AiVisualError('uncertain_state', 'Finalizzazione dello slot incerta.');
+      const current = validateVisualPlanRun(planSnap.data());
+      const run = validateStoredVisualPlanSlotRun(runSnap.data());
+      if (run.executionId !== executionId || run.status !== 'pending')
+        throw new AiVisualError('uncertain_state', 'La lease dello slot è cambiata.');
+      const currentSlot = current.slots.find(
+        (candidate) => candidate.slotIndex === input.slotIndex,
+      );
+      if (
+        !currentSlot ||
+        currentSlot.state !== 'generating' ||
+        currentSlot.attempts !== run.attempts
+      )
+        throw new AiVisualError('uncertain_state', 'Lo slot è cambiato durante la generazione.');
+      const expireAtMs = nowOrThrow(current, nowMs);
+      assertLease(current, leaseSnap.data(), nowMs);
+      const resultSlot = staged
+        ? readySlot(currentSlot, staged)
+        : failedSlot(currentSlot, errorCode ?? 'provider_invalid_output');
+      const withSettlement = {
+        ...current,
+        settlement: upsertSlotSettlement(
+          current,
+          input.slotIndex,
+          currentSlot.attempts,
+          actualCostMicroUsd,
+        ),
+      };
+      const next = replaceSlot(withSettlement, input.slotIndex, resultSlot);
+      const ledger = readVisualPlanLedgerState(
+        ledgerSnap,
+        current.budgetCeiling.reservationMonthKey,
+        config.monthlyBudgetMicroUsd,
+        config.dailyBudgetMicroUsd,
+      );
+      const nextLedger = preserveReservation(
+        ledger,
         current,
-        input.slotIndex,
-        currentSlot.attempts,
-        actualCostMicroUsd,
-      ),
-    };
-    const next = replaceSlot(withSettlement, input.slotIndex, resultSlot);
-    const ledger = readVisualPlanLedgerState(
-      ledgerSnap,
-      current.budgetCeiling.reservationMonthKey,
-      config.monthlyBudgetMicroUsd,
-      config.dailyBudgetMicroUsd,
-    );
-    const nextLedger = preserveReservation(
-      ledger,
-      current,
-      settledCostMicroUsd,
-      remainingGenerationReservation(next),
-      nowMs,
-      expireAtMs,
-    );
-    const timestamp = Timestamp.fromMillis(nowMs);
-    tx.set(planRef, { ...next, updatedAt: timestamp });
-    tx.set(slotRunRef, {
-      ...run,
-      status: staged ? 'completed' : 'failed',
-      settledCostMicroUsd: run.settledCostMicroUsd + settledCostMicroUsd,
-      updatedAt: timestamp,
+        settledCostMicroUsd,
+        remainingGenerationReservation(next),
+        nowMs,
+        expireAtMs,
+      );
+      const timestamp = Timestamp.fromMillis(nowMs);
+      tx.set(planRef, { ...next, updatedAt: timestamp });
+      tx.set(slotRunRef, {
+        ...run,
+        status: staged ? 'completed' : 'failed',
+        settledCostMicroUsd: run.settledCostMicroUsd + settledCostMicroUsd,
+        updatedAt: timestamp,
+      });
+      writeVisualPlanLedgerState(
+        tx,
+        db.doc(`aiBudgetLedger/${current.budgetCeiling.reservationMonthKey}`),
+        nextLedger,
+      );
+      if (['completed', 'partially_completed', 'abandoned'].includes(next.status))
+        tx.delete(leaseRef);
+      else tx.update(leaseRef, { updatedAt: timestamp, expireAt: current.expireAt });
+      return { replayed: false, plan: { ...next, updatedAt: timestamp } };
     });
-    writeVisualPlanLedgerState(
-      tx,
-      db.doc(`aiBudgetLedger/${current.budgetCeiling.reservationMonthKey}`),
-      nextLedger,
+  } catch (error) {
+    if (error instanceof AiVisualError) throw error;
+    throw new AiVisualError(
+      'uncertain_state',
+      'Il provider potrebbe essere stato fatturato; riconciliare lo slot senza una nuova chiamata.',
     );
-    if (['completed', 'partially_completed', 'abandoned'].includes(next.status))
-      tx.delete(leaseRef);
-    else tx.update(leaseRef, { updatedAt: timestamp, expireAt: current.expireAt });
-    return { replayed: false, plan: { ...next, updatedAt: timestamp } };
-  });
+  }
 }
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
@@ -500,7 +527,28 @@ export async function promoteVisualPlanSlotForOwner(params: {
   if (inspected.width !== stagedMeta.width || inspected.height !== stagedMeta.height)
     throw new AiVisualMultiError('corrupted_state', 'Dimensioni staging divergenti.');
   const replaceAssetId = input.mode.mode === 'replace' ? input.mode.replaceAssetId : null;
-  const assetId = params.generateAssetId?.() ?? randomUUID();
+  const recoveryRef = db.doc(`${PROMOTION_RECOVERIES}/${promotionId(fastPlan, input.slotIndex)}`);
+  const recoverySnap = await recoveryRef.get();
+  const priorRecovery = recoverySnap.exists
+    ? validateStoredVisualPlanPromotionRecovery(recoverySnap.data())
+    : null;
+  if (
+    priorRecovery &&
+    (priorRecovery.ownerUid !== ownerUid ||
+      priorRecovery.opaquePlanId !== opaquePlanId ||
+      priorRecovery.planHash !== fastPlan.planHash ||
+      priorRecovery.slotIndex !== input.slotIndex ||
+      priorRecovery.promotionRequestId !== input.promotionRequestId ||
+      priorRecovery.mode !== input.mode.mode ||
+      priorRecovery.replacedAssetId !== replaceAssetId)
+  )
+    throw new AiVisualError('run_conflict', 'Recovery di promozione divergente.');
+  if (priorRecovery?.status === 'committed')
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'Recovery committato senza registro di promozione.',
+    );
+  const assetId = priorRecovery?.assetId ?? params.generateAssetId?.() ?? randomUUID();
   if (!isUuidV4(assetId))
     throw new AiVisualMultiError('corrupted_state', 'assetId generato non valido.');
   const storageRef = canonicalVisualStorageRef({
@@ -509,17 +557,100 @@ export async function promoteVisualPlanSlotForOwner(params: {
     udaDir: fastPlan.udaDir,
     assetId,
   });
-  const recoveryRef = db.doc(`${PROMOTION_RECOVERIES}/${promotionId(fastPlan, input.slotIndex)}`);
-  await recoveryRef.set({
+  if (priorRecovery && priorRecovery.storageRef !== storageRef)
+    throw new AiVisualMultiError('corrupted_state', 'Path del recovery divergente.');
+
+  // Preflight read-only: input stantio o mondo mutato devono produrre zero scritture.
+  const lessonRef = db.doc(lessonPath(input.programId, input.importId, input.lessonId));
+  const lessonPreflight = await lessonRef.get();
+  if (!lessonPreflight.exists)
+    throw new AiVisualMultiError('corrupted_state', 'LessonDoc autorevole assente.');
+  const lessonPreflightData = lessonPreflight.data() as Record<string, unknown>;
+  const lessonPreflightGate = checkLessonForVisual({
+    lesson: lessonPreflightData,
+    lessonId: input.lessonId,
+    ownerUid,
+    importId: input.importId,
+  });
+  if (!lessonPreflightGate.ok)
+    throw new AiVisualError(
+      'invalid_input',
+      describeVisualBindingFailure(lessonPreflightGate.failure),
+    );
+  const publicPreflight = await db.doc(`publicLessons/${lessonPreflightGate.publicLessonId}`).get();
+  const projectionPreflight = checkProjectionForVisual({
+    lesson: lessonPreflightData,
+    publicLesson: publicPreflight.exists
+      ? (publicPreflight.data() as Record<string, unknown>)
+      : null,
+    programId: input.programId,
+    importId: input.importId,
+    ownerUid,
+  });
+  if (!projectionPreflight.ok)
+    throw new AiVisualError(
+      'invalid_input',
+      describeVisualBindingFailure(projectionPreflight.failure),
+    );
+  if (sha256Hex(projectionPreflight.body) !== fastPlan.sourceBodyHash)
+    throw new AiVisualMultiError(
+      'visual_plan_proposal_body_changed',
+      'Il corpo della lezione è cambiato.',
+    );
+  resolveVisualAnchorForWrite(slot.anchor, projectionPreflight.body);
+  const preflightManifest = readLegacyLessonVisuals({
+    visual: lessonPreflightData.visual,
+    visuals: lessonPreflightData.visuals,
+  });
+  if (preflightManifest.status !== 'ok' && preflightManifest.status !== 'none')
+    throw new AiVisualMultiError(preflightManifest.status, 'Manifest visuale incoerente.');
+  const promotedIndexes = fastPlan.slots
+    .filter((candidate) => candidate.state === 'promoted')
+    .map((candidate) => candidate.slotIndex);
+  const preflightPromotionSnaps = await Promise.all(
+    promotedIndexes.map((index) => db.doc(`${PROMOTIONS}/${promotionId(fastPlan, index)}`).get()),
+  );
+  const preflightPromotions = preflightPromotionSnaps.map((snap) => {
+    if (!snap.exists)
+      throw new AiVisualMultiError('corrupted_state', 'Registro precedente assente.');
+    return validateStoredVisualPlanPromotion(snap.data());
+  });
+  const preflightLiveIds =
+    preflightManifest.status === 'ok'
+      ? preflightManifest.manifest.items.map((item) => item.assetId)
+      : [];
+  if (!sameIds(preflightLiveIds, computeExpectedLiveAssetIds(fastPlan, preflightPromotions)))
+    throw new AiVisualMultiError(
+      'visual_plan_external_mutation',
+      'La galleria è cambiata fuori dal piano.',
+    );
+  if (input.mode.mode === 'add' && preflightLiveIds.length >= 3)
+    throw new AiVisualMultiError('visual_slot_full', 'La lezione ha già tre immagini.');
+  if (input.mode.mode === 'replace' && !preflightLiveIds.includes(input.mode.replaceAssetId))
+    throw new AiVisualMultiError(
+      'visual_replace_target_missing',
+      'Immagine da sostituire non presente.',
+    );
+
+  const timestamp = Timestamp.fromMillis(nowMs);
+  const preparedRecovery: StoredVisualPlanPromotionRecovery = priorRecovery ?? {
+    contractVersion: VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION,
     ownerUid,
     opaquePlanId,
+    planHash: fastPlan.planHash,
     slotIndex: input.slotIndex,
+    promotionRequestId: input.promotionRequestId,
+    mode: input.mode.mode,
+    replacedAssetId: replaceAssetId,
     assetId,
     storageRef,
     status: 'prepared',
-    createdAt: Timestamp.fromMillis(nowMs),
+    createdAt: timestamp,
+    updatedAt: timestamp,
     expireAt: fastPlan.expireAt,
-  });
+  };
+  validateStoredVisualPlanPromotionRecovery(preparedRecovery);
+  if (!priorRecovery) await recoveryRef.create(preparedRecovery);
   try {
     await bucket.file(storageRef).save(staged, {
       resumable: false,
@@ -531,13 +662,16 @@ export async function promoteVisualPlanSlotForOwner(params: {
       },
     });
   } catch (error) {
-    if (isStoragePreconditionFailed(error))
-      throw new AiVisualMultiError('corrupted_state', 'Percorso canonico già occupato.');
-    throw error;
+    if (isStoragePreconditionFailed(error)) {
+      const [existing] = await bucket.file(storageRef).download();
+      if (existing.byteLength !== staged.byteLength || sha256Hex(existing) !== stagedMeta.sha256)
+        throw new AiVisualMultiError('corrupted_state', 'Percorso canonico già occupato.');
+    } else {
+      throw error;
+    }
   }
 
   const leaseRef = db.doc(`visualPlanLeases/${computeVisualPlanLeaseId(ownerUid, input.lessonId)}`);
-  const lessonRef = db.doc(lessonPath(input.programId, input.importId, input.lessonId));
   const auditRef = db.collection('auditEvents').doc();
   let supersededStorageRef: string | null = null;
   const result = await db.runTransaction(async (tx) => {
@@ -547,17 +681,38 @@ export async function promoteVisualPlanSlotForOwner(params: {
     const promotionRefs = promotedSlotIndexes.map((index) =>
       db.doc(`${PROMOTIONS}/${promotionId(fastPlan, index)}`),
     );
-    const [promotionSnap, planSnap, leaseSnap, lessonSnap, ...previousPromotionSnaps] =
-      await Promise.all([
-        tx.get(promotionRef),
-        tx.get(planRef),
-        tx.get(leaseRef),
-        tx.get(lessonRef),
-        ...promotionRefs.map((ref) => tx.get(ref)),
-      ]);
+    const [
+      promotionSnap,
+      recoverySnap,
+      planSnap,
+      leaseSnap,
+      lessonSnap,
+      ...previousPromotionSnaps
+    ] = await Promise.all([
+      tx.get(promotionRef),
+      tx.get(recoveryRef),
+      tx.get(planRef),
+      tx.get(leaseRef),
+      tx.get(lessonRef),
+      ...promotionRefs.map((ref) => tx.get(ref)),
+    ]);
     if (promotionSnap.exists) throw new AiVisualError('running', 'Promozione già in corso.');
-    if (!planSnap.exists || !leaseSnap.exists || !lessonSnap.exists)
+    if (!recoverySnap.exists || !planSnap.exists || !leaseSnap.exists || !lessonSnap.exists)
       throw new AiVisualMultiError('corrupted_state', 'Stato autorevole assente.');
+    const recovery = validateStoredVisualPlanPromotionRecovery(recoverySnap.data());
+    if (
+      recovery.status !== 'prepared' ||
+      recovery.ownerUid !== ownerUid ||
+      recovery.opaquePlanId !== opaquePlanId ||
+      recovery.planHash !== fastPlan.planHash ||
+      recovery.slotIndex !== input.slotIndex ||
+      recovery.promotionRequestId !== input.promotionRequestId ||
+      recovery.assetId !== assetId ||
+      recovery.storageRef !== storageRef ||
+      recovery.mode !== input.mode.mode ||
+      recovery.replacedAssetId !== replaceAssetId
+    )
+      throw new AiVisualMultiError('corrupted_state', 'Recovery transazionale divergente.');
     const plan = validateVisualPlanRun(planSnap.data());
     assertPlanIdentity(plan, ownerUid, input);
     nowOrThrow(plan, nowMs);
@@ -643,7 +798,7 @@ export async function promoteVisualPlanSlotForOwner(params: {
       sourceBodyHash: plan.sourceBodyHash,
       approvedAt: Timestamp.fromMillis(nowMs),
     };
-    let items = currentManifest ? [...currentManifest.items] : [];
+    const items = currentManifest ? [...currentManifest.items] : [];
     if (input.mode.mode === 'add') {
       if (items.length >= 3)
         throw new AiVisualMultiError('visual_slot_full', 'La lezione ha già tre immagini.');
@@ -727,13 +882,19 @@ export async function promoteVisualPlanSlotForOwner(params: {
     tx.set(planRef, { ...nextPlan, updatedAt: timestamp });
     tx.set(promotionRef, record);
     tx.set(recoveryRef, {
+      contractVersion: VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION,
       ownerUid,
       opaquePlanId,
+      planHash: plan.planHash,
       slotIndex: input.slotIndex,
+      promotionRequestId: input.promotionRequestId,
+      mode: input.mode.mode,
+      replacedAssetId: replaceAssetId,
       assetId,
       storageRef,
       status: 'committed',
-      createdAt: timestamp,
+      createdAt: preparedRecovery.createdAt,
+      updatedAt: timestamp,
       expireAt: plan.expireAt,
     });
     tx.set(auditRef, {
@@ -790,22 +951,22 @@ export const aiVisualPlanGenerateSlot = onCall(
       const ownerUid = await requireOwner(request, db);
       const input = validateVisualPlanSlotInput(request.data);
       const mode = resolveAiVisualMode({ AI_VISUAL_MODE: process.env.AI_VISUAL_MODE });
-      let secret: string | undefined;
-      if (mode === 'openai') {
-        try {
-          secret = AI_VISUAL_OPENAI_API_KEY.value();
-        } catch {
-          secret = undefined;
-        }
-      }
       return await generateVisualPlanSlotForOwner({
         db,
         bucket: getStorage().bucket() as unknown as BucketLike,
         ownerUid,
         input,
         mode,
-        secret,
         nowMs: Date.now(),
+        deps: {
+          resolveSecret: () => {
+            try {
+              return AI_VISUAL_OPENAI_API_KEY.value();
+            } catch {
+              return undefined;
+            }
+          },
+        },
       });
     } catch (error) {
       if (error instanceof AiVisualError || error instanceof AiVisualMultiError) throw https(error);

@@ -1534,6 +1534,30 @@ finché quello attivo non è terminale (§10.3): «Arricchisci» su una lezione
 con un piano attivo apre direttamente quel piano, non un nuovo selettore di
 quantità.
 
+#### 8.8.1 Realizzazione MULTI-VISUAL-03B
+
+L'esecuzione usa un record server-only deterministico per `(opaquePlanId,
+slotIndex)`. Un run `pending` o `uncertain` non autorizza mai una nuova
+chiamata provider; soltanto un run `failed`, identico per piano, subject e
+numero di tentativi, può usare il secondo tentativo già compreso nel tetto
+master. Lo staging è sempre
+`staging/{ownerUid}/{opaquePlanId}/{slotIndex}.webp`: il retry sostituisce
+solo i byte dello stesso slot e non tocca gli altri.
+
+La promozione usa un record server-only di recovery a forma chiusa che lega
+`promotionRequestId`, modalità, eventuale target sostituito, `assetId` e
+percorso canonico. Il preflight è read-only; soltanto dopo corpo, ancora,
+manifest live ed `expectedLiveAssetIds` coerenti il record passa a
+`prepared` e avviene la copia create-only. Un replay riusa lo stesso
+`assetId`; una collisione è recuperabile soltanto se i byte coincidono per
+lunghezza e SHA-256. Il commit rilegge recovery, piano, lease, lezione,
+proiezione, byte pubblici e promozioni precedenti prima di ogni scrittura.
+Il massimo danno delle finestre Storage/Firestore resta un blob canonico
+orfano descritto dal recovery, mai una proiezione pubblica incoerente.
+
+**Confine di fase:** riordino, rimozione, cleanup TTL/bulk e lifecycle
+editoriale restano MULTI-VISUAL-03C; nessuna UI è introdotta da 03B.
+
 ### 8.9 Rimozione di un singolo elemento — invariata dalla revisione 1
 
 1. rimuove la chiave `assetId` da `publicLessonVisuals/{id}.bytes`; mappa
@@ -2434,6 +2458,15 @@ ogni slot che va a buon fine al primo tentativo, mai addebitata (§8.2,
 | **Retry di uno slot fallito** (2° tentativo, entro `maxAttemptsPerSlot`) | 1 chiamata immagine | **2W**: 1 aggiornamento `slots[i].attempts`, 1 settlement | 1 riscrittura staging (stesso `opaqueSlotRunId`) | 1 |
 | **Replay** (risposta persa, stesso `opaquePlanId`+`slotIndex`) | **0** | 1 lettura | 0 | 1 |
 
+**Realizzazione 03B — conteggio nominale effettivo.** Le due transazioni
+separate (prenotazione del tentativo e settlement) aggiungono le letture e
+le scritture necessarie a lease, slot run e ledger: un tentativo completo
+usa **9 letture / 8 scritture Firestore**, una scrittura Storage staging e
+una chiamata provider. Il replay `ready`/`promoted` resta **1 lettura,
+zero scritture, zero Storage, zero provider**. Il secondo tentativo ha lo
+stesso costo del primo ma non crea una nuova prenotazione economica: usa il
+cap residuo del master già autorizzato.
+
 **Conteggio per lezione**, esplicito — aggiornato per riflettere fino a 2
 tentativi per slot, non più un numero indefinito:
 
@@ -2476,6 +2509,16 @@ esplicito**, non nascosto dentro il numero:
 | **Promozione — modalità `replace`** (1 asset) | 0 | come `add` **+ 1W stimato** (rimozione chiave mappa byte del vecchio `assetId`, se svolta) | 1 copia + 1 delete staging + 1 delete canonico precedente dopo commit (misurato) | 1 |
 | **«Applica tutte»** (N slot `ready`, N = 1..3) | 0 | **N ×** (9R/3W misurato + 1-2R/1-2W stimato), eseguite in sequenza — mai un'unica transazione | **N ×** le righe sopra | **N** |
 | **Adozione da manifest singolo** (una tantum per lezione) | 0 | inclusa nella transazione di promozione che la innesca (§6.2) — nessuna scrittura aggiuntiva oltre a quella già contata sopra | 0 | 0 |
+
+**Realizzazione 03B — delta del recovery fail-closed.** Con `N` slot già
+promossi dallo stesso piano, la prima promozione riuscita esegue
+`12 + 2N` letture Firestore; **7 scritture** se la lezione non è svolta o
+**9** se aggiorna anche proiezione e byte pubblici. Storage esegue una
+lettura staging, una copia create-only e una delete staging; `replace`
+aggiunge la delete post-commit del canonico sostituito. Il replay dal
+registro di promozione è **2 letture Firestore e zero altro**. I numeri
+includono il record recovery `prepared → committed`, prezzo deliberato per
+rendere recuperabile la finestra fra copia Storage e commit Firestore.
 
 **Perché «Applica tutte» costa esattamente N volte, non meno.** Non esiste
 uno sconto di batch sulla scrittura, per lo stesso motivo per cui non ne
@@ -2871,7 +2914,7 @@ Nuovi in questa revisione:
 | **MULTI-VISUAL-02** | **Catena binaria dell'upload** (cap 2 MB, allowlist PNG/JPEG/WebP non animati, `background=opaque`) e **proposta coordinata** (`kind: 'visual_plan_proposal'`, Structured Output ad array, vincolo di diversità applicato server-side). Nessuna UI, nessuna proiezione studente. | MULTI-VISUAL-01 | **Implementato.** Il nuovo kind è disponibile soltanto al motore interno: le callable IA generiche lo rifiutano prima di configurazione, budget, provider e scritture; MULTI-VISUAL-03 gli darà la porta autorizzata dal piano. L'upload persiste `VisualUploadRun`, normalizza con la pipeline Sharp condivisa, usa staging create-only e prova di proprietà nei metadati con delete condizionata alla generation. Cleanup TTL esposto come porta puntuale, senza scheduler o indice in questa fase. |
 | **MULTI-VISUAL-03** | **Persistenza e lifecycle del piano.** Epic contenitore dei tre slice 03A/03B/03C; resta aperto finché non sono chiusi tutti. | MULTI-VISUAL-02 | **Aperto.** |
 | **MULTI-VISUAL-03A** | **Autorizzazione e proposta coordinata.** `VisualPlanRun`, lease un-piano-per-lezione, prenotazione master a somma di cap, replay owner-only, adozione singolare atomica privata/pubblica e Rules server-only delle collezioni tecniche. Nessuna generazione/promozione per slot. | MULTI-VISUAL-02 | **Implementato.** |
-| **MULTI-VISUAL-03B** | **Esecuzione e promozione per slot.** Generazione/retry, staging e promozione atomica `add`/`replace`, settlement per slot e recovery. | MULTI-VISUAL-03A | Aperto. |
+| **MULTI-VISUAL-03B** | **Esecuzione e promozione per slot.** Generazione/retry, staging e promozione atomica `add`/`replace`, settlement per slot e recovery. | MULTI-VISUAL-03A | **Implementato, non distribuito.** Callable `aiVisualPlanGenerateSlot` e `aiVisualPlanPromoteSlot`; test puri ed Emulator. |
 | **MULTI-VISUAL-03C** | **Lifecycle editoriale e proiezioni.** Riordino, rimozione, cleanup, Rules su `publicLessons.visuals`/`publicLessonVisuals` e batching export. | MULTI-VISUAL-03B | Aperto. |
 | **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, upload, galleria con riordino da tastiera, integrazione col flusso «Genera lezione» (testo salvato prima del piano visivo), rendering N-way, responsive desktop/mobile con semantica modale reale (focus trap, Escape, ripristino del focus). | MULTI-VISUAL-03 | Aperto. |
 | **MULTI-VISUAL-05** | **Qualità e rollout controllato.** Benchmark su lezioni con più immagini, verifica del margine di §4 su documenti reali, smoke DEV con flag in sequenza, verifica del percorso di rollback, verifica diretta su dati di produzione della domanda aperta di §17.3. | MULTI-VISUAL-04 | Aperto. |

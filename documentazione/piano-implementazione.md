@@ -1292,6 +1292,9 @@ caricate per lezione. Contratto completo in
 | MULTI-VISUAL-01 | Tipi, manifest, adattatore legacy, ancore e validatori puri. | MULTI-VISUAL-00 | **Chiuso.** PR #425. |
 | MULTI-VISUAL-02 | Proposta coordinata interna `visual_plan_proposal`; upload PNG/JPEG/WebP owner-only, normalizzazione WebP condivisa, `VisualUploadRun`, replay/conflitto, staging create-only, abbandono e cleanup puntuale con prova di proprietà. | MULTI-VISUAL-01 | **Implementato, non distribuito.** Nessuna UI, Rule, proiezione studente, chiamata provider reale o deploy. |
 | MULTI-VISUAL-03 | Persistenza e lifecycle economico del piano, promozione condivisa, Rules, export e wiring TTL. | MULTI-VISUAL-02 | **Aperto.** |
+| MULTI-VISUAL-03A | Autorizzazione economica unica, piano persistito, lease e proposta coordinata. | MULTI-VISUAL-02 | **Chiuso.** PR #429. |
+| MULTI-VISUAL-03B | Generazione/retry per slot, staging deterministico, settlement e promozione atomica add/replace con recovery. | MULTI-VISUAL-03A | **Implementato, non distribuito.** Nessuna UI o chiamata provider reale. |
+| MULTI-VISUAL-03C | Lifecycle editoriale, riordino/rimozione/cleanup, export e Rules finali. | MULTI-VISUAL-03B | **Aperto.** |
 | MULTI-VISUAL-04 | UI docente/studente, upload, galleria, riordino e integrazione con «Genera lezione». | MULTI-VISUAL-03 | **Aperto.** |
 | MULTI-VISUAL-05 | Benchmark reale e rollout controllato. | MULTI-VISUAL-04 | **Aperto.** |
 | Gate GMULTI | Approvazione umana su qualità, flusso e responsive. | MULTI-VISUAL-05 | **PENDING.** |

@@ -6,6 +6,7 @@ import {
   VISUAL_PLAN_CONTRACT_VERSION,
   VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT,
   VISUAL_PLAN_PROMOTION_CONTRACT_VERSION,
+  VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION,
   VISUAL_PLAN_SLOT_RUN_CONTRACT_VERSION,
   computeOpaqueVisualPlanId,
   computeOpaqueVisualPlanSlotRunId,
@@ -17,6 +18,7 @@ import {
   replaceSlot,
   upsertSlotSettlement,
   validateStoredVisualPlanPromotion,
+  validateStoredVisualPlanPromotionRecovery,
   validateStoredVisualPlanSlotRun,
   validateVisualPlanPromoteInput,
   validateVisualPlanSlotInput,
@@ -196,7 +198,7 @@ describe('budget e stati per slot', () => {
   });
   it('un failed al primo tentativo conserva un solo cap; al secondo è terminale', () => {
     const initial = plan([slot(0)]);
-    let value = validateVisualPlanRun({
+    const value = validateVisualPlanRun({
       ...initial,
       status: 'generating',
       slots: [slot(0, { state: 'failed', attempts: 1, lastError: 'transient_error' })],
@@ -314,5 +316,41 @@ describe('identità slot run', () => {
     expect(computeOpaqueVisualPlanSlotRunId(OWNER, PLAN_ID, 0)).not.toBe(
       computeOpaqueVisualPlanSlotRunId(OWNER, PLAN_ID, 1),
     );
+  });
+});
+
+describe('recovery di promozione', () => {
+  it('è chiuso, lega request/mode/asset e rifiuta timestamp o campi divergenti', () => {
+    const recovery = {
+      contractVersion: VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION,
+      ownerUid: OWNER,
+      opaquePlanId: PLAN_ID,
+      planHash: plan().planHash,
+      slotIndex: 0,
+      promotionRequestId: PROMOTION_REQUEST,
+      mode: 'add',
+      replacedAssetId: null,
+      assetId: REQUEST,
+      storageRef: `repository/${OWNER}/import/uda-01/visuals/${REQUEST}.webp`,
+      status: 'prepared',
+      createdAt: CREATED,
+      updatedAt: CREATED,
+      expireAt: EXPIRE,
+    };
+    expect(validateStoredVisualPlanPromotionRecovery(recovery)).toEqual(recovery);
+    expect(() => validateStoredVisualPlanPromotionRecovery({ ...recovery, extra: true })).toThrow();
+    expect(() =>
+      validateStoredVisualPlanPromotionRecovery({
+        ...recovery,
+        mode: 'replace',
+        replacedAssetId: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      validateStoredVisualPlanPromotionRecovery({
+        ...recovery,
+        updatedAt: { toMillis: () => EXPIRE.toMillis() + 1 },
+      }),
+    ).toThrow();
   });
 });

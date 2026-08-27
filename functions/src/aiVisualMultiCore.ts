@@ -42,6 +42,8 @@ export const VISUAL_PLAN_CONTRACT_VERSION = 'visual-plan/v1' as const;
 /** Versioni dei due record tecnici introdotti da MULTI-VISUAL-03B. */
 export const VISUAL_PLAN_SLOT_RUN_CONTRACT_VERSION = 'visual-plan-slot-run/v1' as const;
 export const VISUAL_PLAN_PROMOTION_CONTRACT_VERSION = 'visual-plan-promotion/v1' as const;
+export const VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION =
+  'visual-plan-promotion-recovery/v1' as const;
 
 /** `styleVersion` di un'immagine caricata dal docente — nessuna verifica di stile. */
 export const UPLOADED_VISUAL_STYLE_VERSION = 'uploaded/v1' as const;

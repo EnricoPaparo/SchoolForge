@@ -1334,3 +1334,17 @@ diverse non dimostrano una distanza ordinata senza un piano di arrivo comune.
 Un errore `pre_invocation` registra costo zero,
 mentre solo un rischio di fatturazione rende il totale reale sconosciuto.
 VE-05A non usa Firebase né esegue rollout.
+
+## MULTI-VISUAL-03B — esecuzione e promozione per slot
+
+- `aiVisualPlanGenerateSlot({ requestId, programId, importId, lessonId, slotIndex })`:
+  owner-only; riusa piano, lease e budget master di 03A. Il replay di uno
+  slot `ready`/`promoted` non chiama provider né Storage. Sono ammessi al
+  massimo due tentativi totali per slot, entrambi già autorizzati.
+- `aiVisualPlanPromoteSlot({ ..., promotionRequestId, mode })`: `mode` è
+  l'unione chiusa `{ mode: 'add' } | { mode: 'replace', replaceAssetId }`.
+  Promuove un solo slot, confronta corpo/ancora/manifest live, aggiorna
+  privato e — solo se la lezione è svolta — proiezione e byte pubblici nello
+  stesso commit.
+- `visualPlanSlotRuns`, `visualPlanPromotions` e
+  `visualPlanPromotionRecoveries` sono collezioni tecniche server-only.

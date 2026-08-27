@@ -323,4 +323,66 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
     expect(replay.assetId).toBe(promotedAsset);
     expect(bucket.data.size).toBe(size);
   });
+
+  it('promuove replace sul mondo fresco e rimuove il canonico sostituito solo dopo il commit', async () => {
+    const previousPlan = validateVisualPlanRun(
+      (await db.doc(`visualPlanRuns/${opaquePlanId}`).get()).data(),
+    );
+    const previousAssetId = previousPlan.slots[0]?.promotedAssetId;
+    expect(previousAssetId).toMatch(/^[0-9a-f-]{36}$/);
+    const raw = await sharp({
+      create: { width: 80, height: 60, channels: 3, background: '#dfe8f1' },
+    })
+      .webp()
+      .toBuffer();
+    const generated = await generateVisualPlanSlotForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { requestId, programId: PROGRAM, importId: IMPORT, lessonId: LESSON, slotIndex: 1 },
+      mode: 'mock',
+      nowMs: now + 7000,
+      deps: {
+        executionId: () => randomUUID(),
+        callProvider: async () => ({
+          status: 'success',
+          bytes: raw,
+          usage: null,
+          priorBillingRisk: false,
+          metered: false,
+        }),
+      },
+    });
+    expect(generated.plan.slots[1]?.state).toBe('ready');
+    const replacementId = randomUUID();
+    const replaced = await promoteVisualPlanSlotForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: {
+        requestId,
+        programId: PROGRAM,
+        importId: IMPORT,
+        lessonId: LESSON,
+        slotIndex: 1,
+        promotionRequestId: randomUUID(),
+        mode: { mode: 'replace', replaceAssetId: previousAssetId! },
+      },
+      nowMs: now + 8000,
+      generateAssetId: () => replacementId,
+    });
+    expect(replaced.plan.slots[1]?.promotedAssetId).toBe(replacementId);
+    const lesson = (
+      await db.doc(`programs/${PROGRAM}/imports/${IMPORT}/lessons/${LESSON}`).get()
+    ).data()!;
+    expect(lesson.visuals.items.map((item: { assetId: string }) => item.assetId)).toEqual([
+      replacementId,
+    ]);
+    expect(
+      bucket.data.has(`repository/${OWNER}/${IMPORT}/uda-01/visuals/${previousAssetId}.webp`),
+    ).toBe(false);
+    expect(
+      bucket.data.has(`repository/${OWNER}/${IMPORT}/uda-01/visuals/${replacementId}.webp`),
+    ).toBe(true);
+  });
 });
