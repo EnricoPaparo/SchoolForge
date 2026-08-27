@@ -585,6 +585,14 @@ function sameCanonicalValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function readStoredOrCorrupted<T>(read: () => T, message: string): T {
+  try {
+    return read();
+  } catch {
+    throw new AiVisualMultiError('corrupted_state', message);
+  }
+}
+
 /**
  * La proiezione pubblica non è una cache riparabile: quando la lezione è
  * svolta deve essere esattamente la derivazione del manifest privato; quando
@@ -609,14 +617,20 @@ function assertPublicManifestMatchesPrivate(params: {
     throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico assente o ambiguo.');
   const expected = projectLessonVisualsManifest(params.privateManifest);
   if (hasVisuals) {
-    const actual = validatePublicLessonVisualsManifest(params.publicLesson.visuals);
+    const actual = readStoredOrCorrupted(
+      () => validatePublicLessonVisualsManifest(params.publicLesson.visuals),
+      'Manifest pubblico malformato.',
+    );
     if (!sameCanonicalValue(actual, expected))
       throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico divergente dal privato.');
     return;
   }
   if (expected.items.length !== 1)
     throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico singolare incoerente.');
-  const actual = validateLessonVisualPublicManifest(params.publicLesson.visual);
+  const actual = readStoredOrCorrupted(
+    () => validateLessonVisualPublicManifest(params.publicLesson.visual),
+    'Manifest pubblico singolare malformato.',
+  );
   if (!sameCanonicalValue(actual, expected.items[0]))
     throw new AiVisualMultiError('corrupted_state', 'Manifest pubblico singolare divergente.');
 }
@@ -643,7 +657,10 @@ function assertPublicBytesMatchPrivate(params: {
   try {
     bytesMap = validatePublicLessonVisualBytesDoc(params.raw);
   } catch {
-    const singular = validatePublicLessonVisualDoc(params.raw);
+    const singular = readStoredOrCorrupted(
+      () => validatePublicLessonVisualDoc(params.raw),
+      'Documento dei byte pubblici malformato.',
+    );
     if (params.privateManifest.items.length !== 1)
       throw new AiVisualMultiError('corrupted_state', 'Byte pubblici singolari incoerenti.');
     bytesMap = validatePublicLessonVisualBytesDoc({
@@ -785,12 +802,19 @@ async function assertPromotionReplayIsLive(params: {
       });
       if (item.storageRef !== canonicalRef)
         throw new AiVisualMultiError('corrupted_state', 'Path canonico divergente nel replay.');
-      const [bytes] = await bucket.file(canonicalRef).download();
-      if (bytes.byteLength !== item.byteLength || sha256Hex(bytes) !== item.sha256)
-        throw new AiVisualMultiError('corrupted_state', 'Byte canonici divergenti nel replay.');
-      const inspected = inspectWebp(bytes);
-      if (inspected.width !== item.width || inspected.height !== item.height)
-        throw new AiVisualMultiError('corrupted_state', 'Dimensioni canoniche divergenti.');
+      try {
+        const [bytes] = await bucket.file(canonicalRef).download();
+        if (bytes.byteLength !== item.byteLength || sha256Hex(bytes) !== item.sha256)
+          throw new Error('byte mismatch');
+        const inspected = inspectWebp(bytes);
+        if (inspected.width !== item.width || inspected.height !== item.height)
+          throw new Error('dimension mismatch');
+      } catch {
+        throw new AiVisualMultiError(
+          'corrupted_state',
+          'Oggetto canonico assente o divergente nel replay.',
+        );
+      }
     }),
   );
 }
