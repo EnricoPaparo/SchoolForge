@@ -1031,3 +1031,9 @@ uncertain o divergenti sono fail-closed. Prima di scrivere recovery o
 Storage, la promozione verifica in sola lettura identità, corpo, ancora,
 manifest live e target add/replace; la transazione ripete le verifiche sullo
 stato fresco e mantiene tutte le letture prima di ogni scrittura.
+La reservation master resta `reserved`: solo il cap del tentativo corrente
+è spostato su una reservation di fase `pending`. In caso di esito ambiguo
+quel cap è conservativamente addebitabile, ma nessun altro cap del piano lo
+è. Lo staging usa create-only e lega nei metadata tentativo ed executionId;
+un 412 o timeout post-save è recuperato esclusivamente confrontando
+lunghezza e SHA-256 dei byte già presenti.

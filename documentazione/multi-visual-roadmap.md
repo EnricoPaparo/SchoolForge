@@ -1544,6 +1544,15 @@ master. Lo staging è sempre
 `staging/{ownerUid}/{opaquePlanId}/{slotIndex}.webp`: il retry sostituisce
 solo i byte dello stesso slot e non tocca gli altri.
 
+La reservation master non passa mai a `pending` durante una chiamata
+immagine. Prima del provider il server separa unicamente il cap del
+tentativo in una reservation di fase deterministica e lascia il resto
+`reserved`; soltanto la fase diventa `pending`. Il clock viene ricampionato
+dopo provider e Storage. Un `invocation_unknown`, una finalizzazione persa o
+una scadenza possono quindi riconciliare al massimo **quel singolo cap**,
+mai tutti i cap residui del piano, e il relativo slot non può spendere di
+nuovo.
+
 La promozione usa un record server-only di recovery a forma chiusa che lega
 `promotionRequestId`, modalità, eventuale target sostituito, `assetId` e
 percorso canonico. Il preflight è read-only; soltanto dopo corpo, ancora,
@@ -1554,6 +1563,9 @@ lunghezza e SHA-256. Il commit rilegge recovery, piano, lease, lezione,
 proiezione, byte pubblici e promozioni precedenti prima di ogni scrittura.
 Il massimo danno delle finestre Storage/Firestore resta un blob canonico
 orfano descritto dal recovery, mai una proiezione pubblica incoerente.
+I registri di promozione persistono inoltre una `sequence` contigua: è
+quell'ordine di commit, non `slotIndex`, a ricostruire correttamente
+`expectedLiveAssetIds` quando sostituzioni dipendenti avvengono fuori ordine.
 
 **Confine di fase:** riordino, rimozione, cleanup TTL/bulk e lifecycle
 editoriale restano MULTI-VISUAL-03C; nessuna UI è introdotta da 03B.

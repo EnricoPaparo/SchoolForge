@@ -227,6 +227,7 @@ export interface StoredVisualPlanPromotion {
   opaquePlanId: string;
   planHash: string;
   slotIndex: number;
+  sequence: number;
   promotionRequestId: string;
   mode: 'add' | 'replace';
   replacedAssetId: string | null;
@@ -320,6 +321,7 @@ const PROMOTION_KEYS = [
   'opaquePlanId',
   'planHash',
   'slotIndex',
+  'sequence',
   'promotionRequestId',
   'mode',
   'replacedAssetId',
@@ -341,6 +343,12 @@ export function validateStoredVisualPlanPromotion(value: unknown): StoredVisualP
   ) {
     throw new AiVisualMultiError('corrupted_state', 'Identità della promozione non valida.');
   }
+  if (
+    !Number.isInteger(root.sequence) ||
+    (root.sequence as number) < 0 ||
+    (root.sequence as number) > 2
+  )
+    throw new AiVisualMultiError('corrupted_state', 'sequence della promozione non valida.');
   if (
     typeof root.slotIndex !== 'number' ||
     !Number.isInteger(root.slotIndex) ||
@@ -371,7 +379,10 @@ export function computeExpectedLiveAssetIds(
   promotions: readonly StoredVisualPlanPromotion[],
 ): string[] {
   const live = [...plan.existingItemAssetIds];
-  for (const promotion of [...promotions].sort((a, b) => a.slotIndex - b.slotIndex)) {
+  const ordered = [...promotions].sort((a, b) => a.sequence - b.sequence);
+  if (ordered.some((promotion, index) => promotion.sequence !== index))
+    throw new AiVisualMultiError('corrupted_state', 'Sequenza delle promozioni non contigua.');
+  for (const promotion of ordered) {
     if (
       promotion.ownerUid !== plan.ownerUid ||
       promotion.opaquePlanId !== computeOpaqueVisualPlanId(plan.ownerUid, plan.requestId) ||

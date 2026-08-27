@@ -46,7 +46,12 @@ class MemoryFile implements FileLike {
     if (!value) throw Object.assign(new Error('not found'), { code: 404 });
     return [value];
   }
-  async save(value: Uint8Array): Promise<void> {
+  async save(
+    value: Uint8Array,
+    options?: { preconditionOpts?: { ifGenerationMatch?: number } },
+  ): Promise<void> {
+    if (options?.preconditionOpts?.ifGenerationMatch === 0 && this.data.has(this.path))
+      throw Object.assign(new Error('precondition'), { code: 412 });
     this.data.set(this.path, Buffer.from(value));
   }
   async delete(): Promise<void> {
@@ -384,5 +389,33 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
     expect(
       bucket.data.has(`repository/${OWNER}/${IMPORT}/uda-01/visuals/${replacementId}.webp`),
     ).toBe(true);
+  });
+
+  it('invocation_unknown consuma solo il cap della fase e vieta una nuova chiamata provider', async () => {
+    let providerCalls = 0;
+    const call = () =>
+      generateVisualPlanSlotForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER,
+        input: { requestId, programId: PROGRAM, importId: IMPORT, lessonId: LESSON, slotIndex: 2 },
+        mode: 'mock',
+        nowMs: now + 9000,
+        deps: {
+          executionId: () => randomUUID(),
+          now: () => now + 9100,
+          callProvider: async () => {
+            providerCalls += 1;
+            return { status: 'invocation_unknown' as const };
+          },
+        },
+      });
+    const first = await call();
+    expect(first.plan.slots[2]?.state).toBe('failed');
+    await expect(call()).rejects.toMatchObject({ code: 'uncertain_state' });
+    expect(providerCalls).toBe(1);
+    const ledger = (await db.doc(`aiBudgetLedger/${monthKey}`).get()).data()!;
+    expect(ledger.reservations[reservationKey]).toBeUndefined();
+    expect(ledger.spentMicroUsd).toBe(generationCap);
   });
 });

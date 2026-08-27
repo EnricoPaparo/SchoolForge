@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { computeBudgetReservationKey } from './aiContentCore.js';
 import { VISUAL_STAGING_TTL_MS } from './aiContentVisualProposal.js';
@@ -164,6 +165,7 @@ describe('record slot e promozione', () => {
       opaquePlanId: PLAN_ID,
       planHash: 'a'.repeat(64),
       slotIndex: 0,
+      sequence: 0,
       promotionRequestId: PROMOTION_REQUEST,
       mode: 'replace',
       replacedAssetId: REQUEST,
@@ -259,6 +261,7 @@ describe('insieme live dopo add/replace', () => {
         opaquePlanId: PLAN_ID,
         planHash: base.planHash,
         slotIndex,
+        sequence: slotIndex,
         promotionRequestId:
           slotIndex === 0 ? PROMOTION_REQUEST : '88888888-2222-4333-8444-555555555555',
         mode,
@@ -273,6 +276,58 @@ describe('insieme live dopo add/replace', () => {
         promotion(1, 'add', added, null),
       ]),
     ).toEqual([newA, added]);
+  });
+  it('segue la sequenza di commit persistita, non lo slotIndex', () => {
+    const first = REQUEST;
+    const second = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const third = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+    const base = validateVisualPlanRun({
+      ...plan([slot(0), slot(1)]),
+      existingItemAssetIds: [first],
+      quantity: { mode: 'auto', ceiling: 2 },
+      planHash: computeVisualPlanHash({
+        ownerUid: OWNER,
+        programId: 'program',
+        importId: 'import',
+        lessonId: 'lesson',
+        publicLessonId: 'public',
+        sourceBodyHash: 'c'.repeat(64),
+        existingItemAssetIds: [first],
+        quantity: { mode: 'auto', ceiling: 2 },
+      }),
+      budgetCeiling: {
+        reservationKey: computeBudgetReservationKey(OWNER, REQUEST),
+        reservationMonthKey: '2023-11',
+        proposalCap: 10,
+        generationCap: 100,
+        maxAttemptsPerSlot: 2,
+        totalReserved: 410,
+      },
+    });
+    const record = (
+      slotIndex: number,
+      sequence: number,
+      replacedAssetId: string,
+      assetId: string,
+    ) =>
+      validateStoredVisualPlanPromotion({
+        contractVersion: VISUAL_PLAN_PROMOTION_CONTRACT_VERSION,
+        ownerUid: OWNER,
+        opaquePlanId: PLAN_ID,
+        planHash: base.planHash,
+        slotIndex,
+        sequence,
+        promotionRequestId:
+          sequence === 0 ? PROMOTION_REQUEST : '88888888-2222-4333-8444-555555555555',
+        mode: 'replace',
+        replacedAssetId,
+        assetId,
+        storageRef: `repository/owner/import/uda/visuals/${assetId}.webp`,
+        createdAt: CREATED,
+      });
+    expect(
+      computeExpectedLiveAssetIds(base, [record(0, 1, second, third), record(1, 0, first, second)]),
+    ).toEqual([third]);
   });
 });
 
@@ -352,5 +407,35 @@ describe('recovery di promozione', () => {
         updatedAt: { toMillis: () => EXPIRE.toMillis() + 1 },
       }),
     ).toThrow();
+  });
+});
+
+describe('guardie strutturali 03B', () => {
+  const gateway = readFileSync(
+    new URL('./aiVisualPlanExecutionGateway.ts', import.meta.url),
+    'utf8',
+  );
+  it('separa il cap di fase dal master e ricampiona il clock dopo il provider', () => {
+    expect(gateway).toContain('markPending(withPhase, phaseKey, nowMs)');
+    expect(gateway).not.toContain('markPending(ledger, current.budgetCeiling.reservationKey');
+    expect(gateway.indexOf('const finalizeNowMs')).toBeGreaterThan(gateway.indexOf('callProvider'));
+    expect(gateway).toContain("status: staged ? 'completed' : uncertainOutcome ? 'uncertain'");
+  });
+  it('congela create-only, proprietà del tentativo e riconciliazione dei byte', () => {
+    expect(gateway).toContain('preconditionOpts: { ifGenerationMatch: 0 }');
+    expect(gateway).toContain('attempt: String(slot.attempts)');
+    expect(gateway).toContain('executionId,');
+    expect(gateway).toContain('sha256Hex(existing) !== normalized.sha256');
+  });
+  it('congela replay relazionale, ordine promozioni e byte pubblici esatti', () => {
+    for (const guard of [
+      'existing.ownerUid !== ownerUid',
+      'existing.planHash !== fastPlan.planHash',
+      "replaySlot?.state !== 'promoted'",
+      'replaySlot.promotedAssetId !== existing.assetId',
+      'sequence: previousPromotions.length',
+      "throw new AiVisualMultiError('corrupted_state', 'Byte pubblici divergenti dal manifest.')",
+    ])
+      expect(gateway).toContain(guard);
   });
 });
