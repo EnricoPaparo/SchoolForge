@@ -392,16 +392,38 @@ export function utf8ByteLength(value: string): number {
  * viene importato.
  */
 export function timestampToMillis(value: unknown): number | null {
-  if (!value || typeof (value as { toMillis?: unknown }).toMillis !== 'function') {
-    return null;
+  if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    let ms: unknown;
+    try {
+      ms = (value as { toMillis: () => unknown }).toMillis();
+    } catch {
+      return null;
+    }
+    return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
   }
-  let ms: unknown;
-  try {
-    ms = (value as { toMillis: () => unknown }).toMillis();
-  } catch {
+  // Firestore Admin SDK versions can expose a resolved Timestamp as its
+  // structural protobuf form when it crosses an emulator/client boundary.
+  // Accept only the exact finite seconds/nanoseconds pair; arbitrary objects
+  // and unresolved sentinels remain invalid.
+  if (!value || typeof value !== 'object') return null;
+  const root = value as Record<string, unknown>;
+  const keys = Object.keys(root);
+  const secondsKey = keys.includes('_seconds') ? '_seconds' : 'seconds';
+  const nanosKey = keys.includes('_nanoseconds') ? '_nanoseconds' : 'nanoseconds';
+  if (keys.length !== 2 || !keys.includes(secondsKey) || !keys.includes(nanosKey)) return null;
+  const seconds = root[secondsKey];
+  const nanos = root[nanosKey];
+  if (
+    typeof seconds !== 'number' ||
+    !Number.isSafeInteger(seconds) ||
+    typeof nanos !== 'number' ||
+    !Number.isInteger(nanos) ||
+    nanos < 0 ||
+    nanos >= 1_000_000_000
+  )
     return null;
-  }
-  return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+  const ms = seconds * 1000 + Math.floor(nanos / 1_000_000);
+  return Number.isSafeInteger(ms) ? ms : null;
 }
 
 /** Serializzazione canonica non ambigua di una tupla di stringhe. */
