@@ -223,18 +223,63 @@ describe('budget e stati per slot', () => {
     '%s è terminale al primo tentativo e non conserva cap ritentabili',
     (lastError) => {
       const initial = plan([slot(0)]);
-      const value = validateVisualPlanRun({
-        ...initial,
-        status: 'abandoned',
-        slots: [slot(0, { state: 'failed', attempts: 1, lastError })],
-        settlement: {
-          proposalActualCost: 0,
-          slots: [{ slotIndex: 0, attempts: 1, actualCost: null }],
+      const failed = slot(0, { state: 'failed', attempts: 1, lastError });
+      const value = replaceSlot(
+        {
+          ...initial,
+          settlement: {
+            proposalActualCost: 0,
+            slots: [{ slotIndex: 0, attempts: 1, actualCost: null }],
+          },
         },
-      });
+        0,
+        failed,
+      );
+      expect(value.status).toBe('abandoned');
       expect(remainingGenerationReservation(value)).toBe(0);
     },
   );
+  it('deriva partial/completed dalla stessa semantica terminale condivisa', () => {
+    const promoted0 = slot(0, {
+      state: 'promoted',
+      attempts: 1,
+      promotedAssetId: REQUEST,
+    });
+    const uncertain1 = slot(1, {
+      state: 'failed',
+      attempts: 1,
+      lastError: 'uncertain_outcome',
+    });
+    let partial = plan([slot(0), slot(1)]);
+    partial = replaceSlot(
+      { ...partial, settlement: upsertSlotSettlement(partial, 0, 1, 0) },
+      0,
+      promoted0,
+    );
+    partial = replaceSlot(
+      { ...partial, settlement: upsertSlotSettlement(partial, 1, 1, null) },
+      1,
+      uncertain1,
+    );
+    expect(partial.status).toBe('partially_completed');
+
+    let completed = plan([slot(0), slot(1)]);
+    completed = replaceSlot(
+      { ...completed, settlement: upsertSlotSettlement(completed, 0, 1, 0) },
+      0,
+      promoted0,
+    );
+    completed = replaceSlot(
+      { ...completed, settlement: upsertSlotSettlement(completed, 1, 1, 0) },
+      1,
+      slot(1, {
+        state: 'promoted',
+        attempts: 1,
+        promotedAssetId: PROMOTION_REQUEST,
+      }),
+    );
+    expect(completed.status).toBe('completed');
+  });
 });
 
 describe('insieme live dopo add/replace', () => {
@@ -242,7 +287,7 @@ describe('insieme live dopo add/replace', () => {
     const oldA = REQUEST;
     const newA = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const added = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
-    const base = validateVisualPlanRun({
+    const initial = validateVisualPlanRun({
       ...plan([slot(0), slot(1)]),
       existingItemAssetIds: [oldA],
       quantity: { mode: 'auto', ceiling: 2 },
@@ -263,6 +308,21 @@ describe('insieme live dopo add/replace', () => {
         generationCap: 100,
         maxAttemptsPerSlot: 2,
         totalReserved: 410,
+      },
+    });
+    const base = validateVisualPlanRun({
+      ...initial,
+      status: 'completed',
+      slots: [
+        slot(0, { state: 'promoted', attempts: 1, promotedAssetId: newA }),
+        slot(1, { state: 'promoted', attempts: 1, promotedAssetId: added }),
+      ],
+      settlement: {
+        proposalActualCost: 0,
+        slots: [
+          { slotIndex: 0, attempts: 1, actualCost: 0 },
+          { slotIndex: 1, attempts: 1, actualCost: 0 },
+        ],
       },
     });
     const promotion = (
@@ -297,7 +357,7 @@ describe('insieme live dopo add/replace', () => {
     const first = REQUEST;
     const second = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const third = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
-    const base = validateVisualPlanRun({
+    const initial = validateVisualPlanRun({
       ...plan([slot(0), slot(1)]),
       existingItemAssetIds: [first],
       quantity: { mode: 'auto', ceiling: 2 },
@@ -318,6 +378,21 @@ describe('insieme live dopo add/replace', () => {
         generationCap: 100,
         maxAttemptsPerSlot: 2,
         totalReserved: 410,
+      },
+    });
+    const base = validateVisualPlanRun({
+      ...initial,
+      status: 'completed',
+      slots: [
+        slot(0, { state: 'promoted', attempts: 1, promotedAssetId: third }),
+        slot(1, { state: 'promoted', attempts: 1, promotedAssetId: second }),
+      ],
+      settlement: {
+        proposalActualCost: 0,
+        slots: [
+          { slotIndex: 0, attempts: 1, actualCost: 0 },
+          { slotIndex: 1, attempts: 1, actualCost: 0 },
+        ],
       },
     });
     const record = (

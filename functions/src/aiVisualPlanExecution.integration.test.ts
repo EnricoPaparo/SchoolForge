@@ -15,6 +15,7 @@ import {
   LESSON_VISUALS_CONTRACT_VERSION,
   VISUAL_PLAN_CONTRACT_VERSION,
   computeOpaqueVisualPlanId,
+  computeOpaqueVisualPlanSlotRunId,
   computeVisualPlanHash,
 } from './aiVisualMultiCore.js';
 import {
@@ -681,6 +682,46 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
     await expect(call()).rejects.toMatchObject({ code: 'uncertain_state' });
     await expect(call()).rejects.toMatchObject({ code: 'uncertain_state' });
     expect(calls).toBe(1);
+    const plan = validateVisualPlanRun(
+      (await db.doc(`visualPlanRuns/${fixture.opaquePlanId}`).get()).data(),
+    );
+    expect(plan.status).toBe('abandoned');
+    expect(
+      (
+        await db
+          .doc(`visualPlanLeases/${computeVisualPlanLeaseId(fixture.ownerUid, fixture.lessonId)}`)
+          .get()
+      ).exists,
+    ).toBe(false);
+  });
+
+  it('invocation_unknown su piano singolo chiude il piano, rilascia la lease e non ritenta', async () => {
+    const now = Date.now();
+    const fixture = await seedIndependentPlan({ db, now, slotCount: 1 });
+    const bucket = new MemoryBucket();
+    let calls = 0;
+    const call = () =>
+      generate(fixture, bucket, 0, now + 100, async () => {
+        calls += 1;
+        return { status: 'invocation_unknown' };
+      });
+    await expect(call()).rejects.toMatchObject({ code: 'uncertain_state' });
+    const plan = validateVisualPlanRun(
+      (await db.doc(`visualPlanRuns/${fixture.opaquePlanId}`).get()).data(),
+    );
+    expect(plan).toMatchObject({
+      status: 'abandoned',
+      slots: [{ state: 'failed', attempts: 1, lastError: 'uncertain_outcome' }],
+    });
+    expect(
+      (
+        await db
+          .doc(`visualPlanLeases/${computeVisualPlanLeaseId(fixture.ownerUid, fixture.lessonId)}`)
+          .get()
+      ).exists,
+    ).toBe(false);
+    await expect(call()).rejects.toMatchObject({ code: 'uncertain_state' });
+    expect(calls).toBe(1);
   });
 
   it('412 con byte divergenti è terminale corrupted e non ritenta il provider', async () => {
@@ -707,7 +748,15 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
     const plan = validateVisualPlanRun(
       (await db.doc(`visualPlanRuns/${fixture.opaquePlanId}`).get()).data(),
     );
+    expect(plan.status).toBe('abandoned');
     expect(plan.slots[0]).toMatchObject({ state: 'failed', lastError: 'staging_conflict' });
+    expect(
+      (
+        await db
+          .doc(`visualPlanLeases/${computeVisualPlanLeaseId(fixture.ownerUid, fixture.lessonId)}`)
+          .get()
+      ).exists,
+    ).toBe(false);
   });
 
   it('replay promozione rilegge manifest e byte live e rifiuta una mutazione editoriale', async () => {
@@ -846,6 +895,105 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
     ).rejects.toMatchObject({ code: 'corrupted_state' });
     expect((await publicBytesRef.get()).data()!.programId).toBe('programma-divergente');
   });
+
+  it.each(['slotIndex', 'assetId'] as const)(
+    'registro storico con %s divergente blocca nuova promozione e replay senza scritture',
+    async (mutation) => {
+      const now = Date.now();
+      const fixture = await seedIndependentPlan({ db, now, slotCount: 2 });
+      const bucket = new MemoryBucket();
+      const success = async () => ({
+        status: 'success' as const,
+        bytes: raw,
+        usage: null,
+        priorBillingRisk: false as const,
+        metered: false as const,
+      });
+      await generate(fixture, bucket, 0, now + 100, success);
+      const firstInput = {
+        requestId: fixture.requestId,
+        programId: fixture.programId,
+        importId: fixture.importId,
+        lessonId: fixture.lessonId,
+        slotIndex: 0,
+        promotionRequestId: randomUUID(),
+        mode: { mode: 'add' as const },
+      };
+      await promoteVisualPlanSlotForOwner({
+        db,
+        bucket,
+        ownerUid: fixture.ownerUid,
+        input: firstInput,
+        nowMs: now + 200,
+        generateAssetId: randomUUID,
+      });
+      await generate(fixture, bucket, 1, now + 300, success);
+      const recordRef = db.doc(
+        `visualPlanPromotions/${computeOpaqueVisualPlanSlotRunId(
+          fixture.ownerUid,
+          fixture.opaquePlanId,
+          0,
+        )}`,
+      );
+      if (mutation === 'slotIndex') {
+        await recordRef.update({ slotIndex: 1 });
+      } else {
+        const alienAssetId = randomUUID();
+        await recordRef.update({
+          assetId: alienAssetId,
+          storageRef: `repository/${fixture.ownerUid}/${fixture.importId}/uda-01/visuals/${alienAssetId}.webp`,
+        });
+      }
+      const planRef = db.doc(`visualPlanRuns/${fixture.opaquePlanId}`);
+      const lessonRef = db.doc(
+        `programs/${fixture.programId}/imports/${fixture.importId}/lessons/${fixture.lessonId}`,
+      );
+      const beforePlan = (await planRef.get()).data();
+      const beforeLesson = (await lessonRef.get()).data();
+      const beforeAudits = await db
+        .collection('auditEvents')
+        .where('targetId', '==', fixture.lessonId)
+        .get();
+      await expect(
+        promoteVisualPlanSlotForOwner({
+          db,
+          bucket,
+          ownerUid: fixture.ownerUid,
+          input: firstInput,
+          nowMs: now + 400,
+        }),
+      ).rejects.toMatchObject({ code: 'corrupted_state' });
+      const secondAssetId = randomUUID();
+      await expect(
+        promoteVisualPlanSlotForOwner({
+          db,
+          bucket,
+          ownerUid: fixture.ownerUid,
+          input: {
+            requestId: fixture.requestId,
+            programId: fixture.programId,
+            importId: fixture.importId,
+            lessonId: fixture.lessonId,
+            slotIndex: 1,
+            promotionRequestId: randomUUID(),
+            mode: { mode: 'add' },
+          },
+          nowMs: now + 500,
+          generateAssetId: () => secondAssetId,
+        }),
+      ).rejects.toMatchObject({ code: 'corrupted_state' });
+      expect((await planRef.get()).data()).toEqual(beforePlan);
+      expect((await lessonRef.get()).data()).toEqual(beforeLesson);
+      expect(
+        (await db.collection('auditEvents').where('targetId', '==', fixture.lessonId).get()).size,
+      ).toBe(beforeAudits.size);
+      expect(
+        bucket.data.has(
+          `repository/${fixture.ownerUid}/${fixture.importId}/uda-01/visuals/${secondAssetId}.webp`,
+        ),
+      ).toBe(false);
+    },
+  );
 
   it('una race dopo le letture forza il retry Firestore e committa una sola promozione coerente', async () => {
     const now = Date.now();

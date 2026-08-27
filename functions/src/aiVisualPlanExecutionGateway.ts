@@ -193,6 +193,10 @@ export async function generateVisualPlanSlotForOwner(params: {
   if (!replaySlot) throw new AiVisualMultiError('invalid_input', 'Lo slot non esiste.');
   if (replaySlot.state === 'ready' || replaySlot.state === 'promoted')
     return { replayed: true, plan };
+  if (replaySlot.state === 'failed' && replaySlot.lastError === 'uncertain_outcome')
+    throw new AiVisualError('uncertain_state', 'Esito dello slot incerto; nessun nuovo tentativo.');
+  if (replaySlot.state === 'failed' && replaySlot.lastError === 'staging_conflict')
+    throw new AiVisualMultiError('corrupted_state', 'Staging deterministico divergente.');
   if (mode === 'disabled')
     throw new AiVisualError('feature_disabled', 'La generazione visuale è disattivata.');
   const config = await loadRuntimeConfig(db);
@@ -744,10 +748,16 @@ async function assertPromotionReplayIsLive(params: {
   const privateRead = readLegacyLessonVisuals({ visual: lesson.visual, visuals: lesson.visuals });
   if (privateRead.status !== 'ok')
     throw new AiVisualMultiError('corrupted_state', 'Manifest privato assente nel replay.');
-  const promotions = promotionSnaps.map((snap) => {
+  const promotions = promotionSnaps.map((snap, index) => {
     if (!snap.exists)
       throw new AiVisualMultiError('corrupted_state', 'Registro promozione assente nel replay.');
-    return validateStoredVisualPlanPromotion(snap.data());
+    const record = validateStoredVisualPlanPromotion(snap.data());
+    if (record.slotIndex !== promotedIndexes[index])
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Registro promozione letto dal path di uno slot diverso.',
+      );
+    return record;
   });
   if (
     !sameIds(
@@ -852,13 +862,17 @@ export async function promoteVisualPlanSlotForOwner(params: {
       existing.opaquePlanId !== opaquePlanId ||
       existing.planHash !== fastPlan.planHash ||
       existing.slotIndex !== input.slotIndex ||
-      existing.promotionRequestId !== input.promotionRequestId ||
-      existing.mode !== input.mode.mode ||
-      existing.replacedAssetId !==
-        (input.mode.mode === 'replace' ? input.mode.replaceAssetId : null) ||
       existing.storageRef !== expectedStorageRef ||
       replaySlot?.state !== 'promoted' ||
       replaySlot.promotedAssetId !== existing.assetId
+    ) {
+      throw new AiVisualMultiError('corrupted_state', 'Registro promozione divergente dal piano.');
+    }
+    if (
+      existing.promotionRequestId !== input.promotionRequestId ||
+      existing.mode !== input.mode.mode ||
+      existing.replacedAssetId !==
+        (input.mode.mode === 'replace' ? input.mode.replaceAssetId : null)
     ) {
       throw new AiVisualError('run_conflict', 'Lo slot è già stato promosso con dati diversi.');
     }
@@ -977,10 +991,16 @@ export async function promoteVisualPlanSlotForOwner(params: {
   const preflightPromotionSnaps = await Promise.all(
     promotedIndexes.map((index) => db.doc(`${PROMOTIONS}/${promotionId(fastPlan, index)}`).get()),
   );
-  const preflightPromotions = preflightPromotionSnaps.map((snap) => {
+  const preflightPromotions = preflightPromotionSnaps.map((snap, index) => {
     if (!snap.exists)
       throw new AiVisualMultiError('corrupted_state', 'Registro precedente assente.');
-    return validateStoredVisualPlanPromotion(snap.data());
+    const record = validateStoredVisualPlanPromotion(snap.data());
+    if (record.slotIndex !== promotedIndexes[index])
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Registro precedente letto dal path di uno slot diverso.',
+      );
+    return record;
   });
   const preflightLiveIds =
     preflightManifest.status === 'ok'
@@ -1121,13 +1141,19 @@ export async function promoteVisualPlanSlotForOwner(params: {
     const publicBytesRef = db.doc(`${PUBLIC_BYTES}/${lessonGate.publicLessonId}`);
     const publicBytesSnap = await tx.get(publicBytesRef);
     await params.afterPromotionReads?.();
-    const previousPromotions = previousPromotionSnaps.map((snap) => {
+    const previousPromotions = previousPromotionSnaps.map((snap, index) => {
       if (!snap.exists)
         throw new AiVisualMultiError(
           'corrupted_state',
           'Registro di una promozione precedente assente.',
         );
-      return validateStoredVisualPlanPromotion(snap.data());
+      const record = validateStoredVisualPlanPromotion(snap.data());
+      if (record.slotIndex !== promotedSlotIndexes[index])
+        throw new AiVisualMultiError(
+          'corrupted_state',
+          'Registro transazionale letto dal path di uno slot diverso.',
+        );
+      return record;
     });
     // Letture finite.
     if (sha256Hex(projectionGate.body) !== plan.sourceBodyHash)

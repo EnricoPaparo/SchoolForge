@@ -20,6 +20,7 @@ import {
 } from './aiVisualMultiCore.js';
 import {
   deriveVisualPlanTerminalStatus,
+  isVisualPlanSlotTerminal,
   validateVisualPlanRun,
   type VisualPlanRun,
   type VisualPlanSlot,
@@ -390,6 +391,18 @@ export function computeExpectedLiveAssetIds(
     ) {
       throw new AiVisualMultiError('corrupted_state', 'Registro di promozione estraneo al piano.');
     }
+    const promotedSlot = plan.slots[promotion.slotIndex];
+    if (
+      !promotedSlot ||
+      promotedSlot.slotIndex !== promotion.slotIndex ||
+      promotedSlot.state !== 'promoted' ||
+      promotedSlot.promotedAssetId !== promotion.assetId
+    ) {
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Registro di promozione divergente dallo slot promosso.',
+      );
+    }
     if (promotion.mode === 'replace') {
       const index = live.indexOf(promotion.replacedAssetId!);
       if (index < 0)
@@ -414,12 +427,7 @@ export function replaceSlot(
   const slots = plan.slots.map((current) => (current.slotIndex === slotIndex ? slot : current));
   let nextStatus = status;
   if (!nextStatus) {
-    const allTerminal = slots.every(
-      (candidate) =>
-        candidate.state === 'promoted' ||
-        candidate.state === 'abandoned' ||
-        (candidate.state === 'failed' && candidate.attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT),
-    );
+    const allTerminal = slots.every(isVisualPlanSlotTerminal);
     if (allTerminal) nextStatus = deriveVisualPlanTerminalStatus(slots);
     else if (slots.some((candidate) => candidate.state === 'generating')) nextStatus = 'generating';
     else if (slots.some((candidate) => candidate.state === 'ready')) nextStatus = 'awaiting_review';
