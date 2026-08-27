@@ -410,6 +410,10 @@ service cloud.firestore {
     match /aiVisualRemovals/{document=**} {
       allow read, write: if false;
     }
+    // MULTI-VISUAL-03C — recovery per rimozione di un asset multi-visuale.
+    match /aiVisualMultiCleanups/{document=**} {
+      allow read, write: if false;
+    }
 
     // --- teacherAiPreferences/{ownerUid} (TWU-02) ---
     // Preferenze predefinite della correzione IA del docente: un solo documento,
@@ -955,6 +959,20 @@ service cloud.firestore {
             && request.resource.data.visual.anchor.placement == 'after-heading'
           )
         );
+      // MULTI-VISUAL-03C: la proiezione ad array è server-only in scrittura.
+      // La validazione completa (asset, ancore, limiti e coerenza col privato)
+      // vive nel gateway; qui si difende il confine di visibilità minimo.
+      // Un documento pubblico non può essere creato/modificato dal client con
+      // un manifest multi-visuale non svolto o vuoto.
+      allow create, update: if isOwner()
+        && request.resource.data.ownerUid == request.auth.uid
+        && (!('visuals' in request.resource.data)
+            || (request.resource.data.get('completed', false) == true
+                && request.resource.data.visuals is map
+                && request.resource.data.visuals.contractVersion == 'lesson-visuals/v1'
+                && request.resource.data.visuals.items is list
+                && request.resource.data.visuals.items.size() >= 1
+                && request.resource.data.visuals.items.size() <= 3));
       allow delete: if isOwner();
     }
 

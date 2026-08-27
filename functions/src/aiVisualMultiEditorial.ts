@@ -128,7 +128,11 @@ export interface VisualCleanupRecoveryRecord {
   createdAt: unknown;
 }
 
-function segment(value: unknown, label: string): string {
+function segment(
+  value: unknown,
+  label: string,
+  code: AiVisualMultiError['code'] = 'invalid_input',
+): string {
   if (
     typeof value !== 'string' ||
     value.length === 0 ||
@@ -138,7 +142,7 @@ function segment(value: unknown, label: string): string {
     value === '..' ||
     Buffer.byteLength(value, 'utf8') > 1500
   )
-    invalid(`${label} non valido.`);
+    throw new AiVisualMultiError(code, `${label} non valido.`);
   return value;
 }
 
@@ -146,7 +150,7 @@ export function validateVisualCleanupRecoveryRecord(value: unknown): VisualClean
   const root = asRecord(value, 'Record di recovery non valido.', 'corrupted_state');
   assertExactKeys(root, CLEANUP_KEYS, 'Record di recovery', 'corrupted_state');
   for (const key of ['ownerUid', 'programId', 'importId', 'lessonId', 'publicLessonId', 'udaDir']) {
-    segment(root[key], key);
+    segment(root[key], key, 'corrupted_state');
   }
   if (
     !Array.isArray(root.assetIds) ||
