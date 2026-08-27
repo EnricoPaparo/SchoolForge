@@ -191,6 +191,8 @@ export interface LessonDoc {
   conceptMapMarkdown?: string;
   /** VE-03A/03B — manifest autorevole; mai proiettato integralmente. */
   visual?: LessonVisualPrivateManifest;
+  /** MULTI-VISUAL-01/03C — manifest autorevole ad array; compatibile col legacy. */
+  visuals?: LessonVisualsManifest;
   /**
    * Parsed from the lesson's own optional YAML front matter at import time
    * (never required — see LessonMetadata). Absent on lessons imported
@@ -289,6 +291,8 @@ export interface PublicLessonDoc {
   conceptMapMarkdown?: string;
   /** VE-03A/03B — soli metadati di presentazione, presenti solo se svolta. */
   visual?: LessonVisualPublicManifest;
+  /** MULTI-VISUAL-01/03C — proiezione pubblica ad array, presente solo se svolta. */
+  visuals?: PublicLessonVisualsManifest;
 }
 
 export interface LessonVisualAnchor {
@@ -304,6 +308,16 @@ export interface LessonVisualPublicManifest {
   altText: string;
   width: number;
   height: number;
+}
+
+export interface LessonVisualsManifest {
+  contractVersion: 'lesson-visuals/v1';
+  items: LessonVisualPrivateManifest[];
+}
+
+export interface PublicLessonVisualsManifest {
+  contractVersion: 'lesson-visuals/v1';
+  items: LessonVisualPublicManifest[];
 }
 
 export interface LessonVisualPrivateManifest extends LessonVisualPublicManifest {
