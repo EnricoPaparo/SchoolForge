@@ -217,7 +217,7 @@ function buildVisualPlanProposalRequest(params: {
 
 // ─── Ledger — adapter locale (stesso schema di aiContentGateway.ts) ───────────
 
-function readLedgerState(
+export function readVisualPlanLedgerState(
   snap: FirebaseFirestore.DocumentSnapshot,
   monthKey: string,
   budgetMicroUsd: number,
@@ -266,7 +266,7 @@ function readLedgerState(
   };
 }
 
-function writeLedgerState(
+export function writeVisualPlanLedgerState(
   tx: Transaction,
   ref: FirebaseFirestore.DocumentReference,
   state: BudgetLedgerState,
@@ -323,14 +323,14 @@ async function releaseVisualPlanReservationAfterLostOwnership(params: {
   const ledgerRef = db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`);
   await db.runTransaction(async (tx) => {
     const ledgerSnap = await tx.get(ledgerRef);
-    const state = readLedgerState(
+    const state = readVisualPlanLedgerState(
       ledgerSnap,
       plan.budgetCeiling.reservationMonthKey,
       config.monthlyBudgetMicroUsd,
       config.dailyBudgetMicroUsd,
     );
     if (!state.reservations[plan.budgetCeiling.reservationKey]) return;
-    writeLedgerState(tx, ledgerRef, closeVisualPlanReservation(state, plan, nowMs));
+    writeVisualPlanLedgerState(tx, ledgerRef, closeVisualPlanReservation(state, plan, nowMs));
   });
 }
 
@@ -433,7 +433,7 @@ function createVisualPlanProposalPorts(params: {
   });
 
   function loadLedgerState(snap: FirebaseFirestore.DocumentSnapshot): BudgetLedgerState {
-    return readLedgerState(
+    return readVisualPlanLedgerState(
       snap,
       plan.budgetCeiling.reservationMonthKey,
       config.monthlyBudgetMicroUsd,
@@ -533,7 +533,11 @@ function createVisualPlanProposalPorts(params: {
         ) {
           return false;
         }
-        writeLedgerState(tx, ledgerRef, markPendingLedger(state, reservationKey, reqParams.nowMs));
+        writeVisualPlanLedgerState(
+          tx,
+          ledgerRef,
+          markPendingLedger(state, reservationKey, reqParams.nowMs),
+        );
         return true;
       });
     },
@@ -554,7 +558,7 @@ function createVisualPlanProposalPorts(params: {
         const imageSlotCount = countImageSlotsFromOutput(reqParams.output, plan.quantity.ceiling);
         const remainingMicroUsd =
           plan.budgetCeiling.generationCap * imageSlotCount * plan.budgetCeiling.maxAttemptsPerSlot;
-        writeLedgerState(
+        writeVisualPlanLedgerState(
           tx,
           ledgerRef,
           reconcileAndPreserveRemaining(
@@ -598,7 +602,7 @@ function createVisualPlanProposalPorts(params: {
           // La proposta è stata fatturata o il suo costo è ignoto: chiusura
           // terminale e rilascio dell'intero residuo. Una nuova proposta
           // richiederà un nuovo piano/autorizzazione, mai la quota generation.
-          writeLedgerState(
+          writeVisualPlanLedgerState(
             tx,
             ledgerRef,
             reconcileLedger(state, reservationKey, reqParams.settledMicroUsd, reqParams.nowMs),
@@ -606,7 +610,7 @@ function createVisualPlanProposalPorts(params: {
         } else {
           // Errore certamente pre-invocazione: nessuna nuova spesa. La quota
           // master resta interamente disponibile per un retry dello stesso run.
-          writeLedgerState(
+          writeVisualPlanLedgerState(
             tx,
             ledgerRef,
             reconcileAndPreserveRemaining(
@@ -1025,7 +1029,7 @@ export async function createVisualPlanForOwner(params: {
     }
 
     const ledgerSnap = await tx.get(ledgerRef);
-    const ledgerState = readLedgerState(
+    const ledgerState = readVisualPlanLedgerState(
       ledgerSnap,
       reservationMonthKey,
       config.monthlyBudgetMicroUsd,
@@ -1076,7 +1080,7 @@ export async function createVisualPlanForOwner(params: {
       expireAt,
     };
     tx.set(planRef, newPlan);
-    writeLedgerState(tx, ledgerRef, reserved.state);
+    writeVisualPlanLedgerState(tx, ledgerRef, reserved.state);
 
     // Adozione singolare atomica (roadmap §6.2): solo se questa lettura ha
     // davvero adottato un `visual` singolare, nella stessa transazione della
@@ -1202,7 +1206,7 @@ export async function resumeCoordinatedProposal(params: {
     if (planExpireMs <= prepareNowMs || leaseExpireMs <= prepareNowMs) {
       const ledgerRef = db.doc(`aiBudgetLedger/${currentPlan.budgetCeiling.reservationMonthKey}`);
       const ledgerSnap = await tx.get(ledgerRef);
-      const ledgerState = readLedgerState(
+      const ledgerState = readVisualPlanLedgerState(
         ledgerSnap,
         currentPlan.budgetCeiling.reservationMonthKey,
         config.monthlyBudgetMicroUsd,
@@ -1220,7 +1224,7 @@ export async function resumeCoordinatedProposal(params: {
         updatedAt: Timestamp.fromMillis(Math.min(prepareNowMs, planExpireMs)),
       };
       validateVisualPlanRun(expiredPlan);
-      writeLedgerState(
+      writeVisualPlanLedgerState(
         tx,
         ledgerRef,
         closeVisualPlanReservation(ledgerState, currentPlan, prepareNowMs),
@@ -1392,7 +1396,7 @@ export async function resumeCoordinatedProposal(params: {
       const ledgerSnap = await tx.get(
         db.doc(`aiBudgetLedger/${currentPlan.budgetCeiling.reservationMonthKey}`),
       );
-      const state = readLedgerState(
+      const state = readVisualPlanLedgerState(
         ledgerSnap,
         currentPlan.budgetCeiling.reservationMonthKey,
         config.monthlyBudgetMicroUsd,
@@ -1405,7 +1409,7 @@ export async function resumeCoordinatedProposal(params: {
         updatedAt: Timestamp.fromMillis(planExpireMs),
       };
       validateVisualPlanRun(expiredPlan);
-      writeLedgerState(
+      writeVisualPlanLedgerState(
         tx,
         db.doc(`aiBudgetLedger/${currentPlan.budgetCeiling.reservationMonthKey}`),
         reconcileLedger(state, currentPlan.budgetCeiling.reservationKey, 0, finalizeNowMs),

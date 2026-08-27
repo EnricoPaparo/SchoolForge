@@ -1019,3 +1019,28 @@ di fatturazione lascia il totale reale sconosciuto.
 | G5 — Portale digitale (M3-full) ✅ | Superato. Submission unica e immutabile post-consegna; studente post-consegna legge solo la receipt; verifica chiusa blocca bozze; modalità verifica nega realmente la lettura delle lezioni via Security Rules; nessuna Cloud Function. Evidenze in `documentazione/evidenze/g5-m3-full-checklist-finale.md` e `m3-full-roadmap.md §8`. |
 | G6 (M4, M4-00→M4-04 completati — **Gate G6 superato**) | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G5 (M3-full, superato). Contratto, service/Rules, workspace docente, lettura studente, ciclo di vita, Registro Correzioni ed export **CSV e PDF** sono implementati; export **Markdown rinviato** per assenza di caso d'uso. Evidenze in `evidenze/g6-m4-checklist-finale.md`. |
 | G7/G8 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |
+
+## MULTI-VISUAL-03B
+
+Le collezioni tecniche `visualPlanSlotRuns`, `visualPlanPromotions` e
+`visualPlanPromotionRecoveries` negano lettura e scrittura a ogni client.
+Solo `aiVisualPlanGenerateSlot` possiede il binding del secret immagini;
+la promozione non chiama provider e non ha secret. Ogni retry richiede il
+medesimo piano, slot, subject hash e run fallito; gli stati pending,
+uncertain o divergenti sono fail-closed. Prima di scrivere recovery o
+Storage, la promozione verifica in sola lettura identità, corpo, ancora,
+manifest live e target add/replace; la transazione ripete le verifiche sullo
+stato fresco e mantiene tutte le letture prima di ogni scrittura.
+La reservation master resta `reserved`: solo il cap del tentativo corrente
+è spostato su una reservation di fase `pending`. In caso di esito ambiguo
+quel cap è conservativamente addebitabile, ma nessun altro cap del piano lo
+è. Lo staging usa create-only e lega nei metadata tentativo ed executionId;
+un 412 o timeout post-save è recuperato esclusivamente confrontando
+lunghezza e SHA-256 dei byte già presenti.
+Un'eccezione provider inattesa è `invocation_unknown`, non
+`pre_invocation`: soltanto un esito pre-invocazione esplicito consente retry.
+Se save e rilettura non permettono di provare i byte, lo slot diventa
+terminale incerto; byte divergenti rendono lo slot terminale corrotto. Il
+replay di promozione rilegge manifest privato, proiezione pubblica, byte
+pubblici e Storage canonico e li confronta esattamente: non usa mai il
+registro tecnico per mascherare una rimozione o una mutazione successiva.

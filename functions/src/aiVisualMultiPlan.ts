@@ -178,7 +178,9 @@ export type VisualPlanSlotDecision = 'image' | 'none';
 export type VisualPlanSlotLastError =
   | 'visual_too_large'
   | 'provider_invalid_output'
-  | 'transient_error';
+  | 'transient_error'
+  | 'uncertain_outcome'
+  | 'staging_conflict';
 
 export interface VisualPlanSlotStaged {
   storageRef: string;
@@ -218,9 +220,15 @@ export interface VisualPlanSlot {
  *   scarterebbe un tentativo che il docente non ha ancora avuto la
  *   possibilità di consumare.
  */
-function isTerminalSlot(slot: VisualPlanSlot): boolean {
+export function isVisualPlanSlotTerminal(slot: VisualPlanSlot): boolean {
   if (slot.state === 'promoted' || slot.state === 'abandoned') return true;
-  if (slot.state === 'failed') return slot.attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT;
+  if (slot.state === 'failed') {
+    return (
+      slot.attempts === VISUAL_PLAN_MAX_ATTEMPTS_PER_SLOT ||
+      slot.lastError === 'uncertain_outcome' ||
+      slot.lastError === 'staging_conflict'
+    );
+  }
   return false;
 }
 
@@ -236,6 +244,8 @@ const SLOT_LAST_ERRORS: readonly VisualPlanSlotLastError[] = [
   'visual_too_large',
   'provider_invalid_output',
   'transient_error',
+  'uncertain_outcome',
+  'staging_conflict',
 ];
 
 const SLOT_KEYS = [
@@ -959,7 +969,7 @@ function validateExistingItemAssetIds(value: unknown): string[] {
  * degli slot, senza inventare relazioni per gli stati intermedi
  * (`authorized`…`awaiting_review`) che il roadmap non determina qui:
  *
- * - `completed`: ogni slot è terminale (`isTerminalSlot`, review fix round 2
+ * - `completed`: ogni slot è terminale (`isVisualPlanSlotTerminal`, review fix round 2
  *   blocker 1 — un `failed` con retry ancora disponibili non è terminale),
  *   **almeno uno** slot "image" esiste ed è `promoted`, e nessuno slot
  *   "image" resta non promosso — con **zero** slot "image" l'esito
@@ -992,7 +1002,7 @@ function assertVisualPlanStatusMatchesSlots(
   status: VisualPlanStatus,
   slots: readonly VisualPlanSlot[],
 ): void {
-  const allTerminal = slots.every((slot) => isTerminalSlot(slot));
+  const allTerminal = slots.every((slot) => isVisualPlanSlotTerminal(slot));
 
   if (status === 'authorized' || status === 'proposing') {
     if (slots.length !== 0) {
@@ -1071,7 +1081,7 @@ function assertVisualPlanStatusMatchesSlots(
 export function deriveVisualPlanTerminalStatus(
   slots: readonly VisualPlanSlot[],
 ): 'completed' | 'partially_completed' | 'abandoned' {
-  if (!slots.every((slot) => isTerminalSlot(slot))) {
+  if (!slots.every((slot) => isVisualPlanSlotTerminal(slot))) {
     invalidSlot('Impossibile derivare uno stato terminale: non ogni slot è terminale.');
   }
   const imageSlots = slots.filter((slot) => slot.decision === 'image');
