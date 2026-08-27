@@ -36,19 +36,30 @@ export function LessonMultiVisualWorkflowDialog({
   const client = useMemo(() => createMultiVisualClient(functions), [functions]);
   const requestId = useMemo(() => crypto.randomUUID(), []);
   const ceiling = Math.min(3 - existingCount, 3) as 1 | 2 | 3;
+  const [quantityMode, setQuantityMode] = useState<'auto' | 'exact'>('auto');
+  const [exactQuantity, setExactQuantity] = useState<1 | 2 | 3>(1);
   const [plan, setPlan] = useState<MultiVisualPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function authorize() {
     if (busy) return;
+    if (existingCount >= 3) return;
+    const selectedCeiling =
+      quantityMode === 'auto' ? ceiling : (Math.min(exactQuantity, ceiling) as 1 | 2 | 3);
+    if (
+      !window.confirm(
+        `Confermi la proposta fino a ${selectedCeiling} immagini? Il costo massimo comprende proposta e generazioni.`,
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
       const input: MultiVisualPlanRequest = {
         ...identity,
         requestId,
-        quantity: { mode: 'exact', ceiling },
+        quantity: { mode: quantityMode, ceiling: selectedCeiling },
         titolo: lessonAi.titolo,
         sottotitolo: lessonAi.sottotitolo,
         difficolta: lessonAi.difficolta,
@@ -123,6 +134,30 @@ export function LessonMultiVisualWorkflowDialog({
             Puoi aggiungere fino a {ceiling} immagini. La proposta e ogni immagine hanno una
             conferma e un costo separati.
           </p>
+          <label>
+            Quantità
+            <select
+              value={quantityMode === 'auto' ? 'auto' : String(exactQuantity)}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === 'auto') setQuantityMode('auto');
+                else {
+                  setQuantityMode('exact');
+                  setExactQuantity(Number(value) as 1 | 2 | 3);
+                }
+              }}
+              disabled={busy || existingCount >= 3}
+            >
+              <option value="auto">Auto (1–{ceiling})</option>
+              {[1, 2, 3]
+                .filter((value) => value <= ceiling)
+                .map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+            </select>
+          </label>
           {error && (
             <p role="alert" className={styles.error}>
               {error}

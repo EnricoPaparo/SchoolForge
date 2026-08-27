@@ -308,6 +308,41 @@ export function readPublicLessonVisualBytes(params: {
   };
 }
 
+/** Valida il documento dei byte multi-visuali contro il manifest pubblico. */
+export function readPublicLessonVisualBytesMulti(params: {
+  data: unknown;
+  publicLessonId: string;
+  manifests: LessonVisualPublicManifest[];
+}): Record<string, { assetId: string; dataUri: string; width: number; height: number }> | null {
+  if (!isPlainObject(params.data) || params.manifests.length === 0) return null;
+  if (
+    params.data.contractVersion !== 'lesson-visuals/v1' ||
+    params.data.publicLessonId !== params.publicLessonId ||
+    typeof params.data.programId !== 'string' ||
+    typeof params.data.importId !== 'string' ||
+    !isPlainObject(params.data.bytes)
+  )
+    return null;
+  const bytesRoot = params.data.bytes;
+  const result: Record<
+    string,
+    { assetId: string; dataUri: string; width: number; height: number }
+  > = {};
+  for (const manifest of params.manifests) {
+    const raw = bytesRoot[manifest.assetId];
+    if (!isPlainObject(raw) || raw.mimeType !== 'image/webp' || !isWebpDataUri(raw.dataUri))
+      return null;
+    if (raw.width !== manifest.width || raw.height !== manifest.height) return null;
+    result[manifest.assetId] = {
+      assetId: manifest.assetId,
+      dataUri: raw.dataUri,
+      width: manifest.width,
+      height: manifest.height,
+    };
+  }
+  return result;
+}
+
 /**
  * Compone il data URI dai byte base64 restituiti dall'export docente.
  *

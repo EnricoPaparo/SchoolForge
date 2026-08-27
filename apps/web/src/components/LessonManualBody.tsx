@@ -97,52 +97,110 @@ export function LessonManualBody({
   const additionalVisuals = (visuals ?? []).filter(
     (item) => item.anchorSlug !== visual?.anchorSlug,
   );
+  const allVisuals = visual ? [visual, ...additionalVisuals] : additionalVisuals;
+  const visualSequence =
+    allVisuals.length > 0
+      ? (() => {
+          let remaining = markdown;
+          const nodes: ReactNode[] = [];
+          const missing: LessonVisualRender[] = [];
+          for (const item of allVisuals) {
+            const placed = placeLessonVisual({ markdown: remaining, anchorSlug: item.anchorSlug });
+            if (placed.status === 'missing_anchor') {
+              missing.push(item);
+              continue;
+            }
+            if (placed.status === 'anchored') {
+              nodes.push(
+                <div
+                  key={`${item.anchorSlug}-before`}
+                  className="prose prose--manual"
+                  dangerouslySetInnerHTML={{ __html: placed.before }}
+                />,
+                <LessonVisualFigure
+                  key={`${item.anchorSlug}-figure`}
+                  src={item.dataUri}
+                  altText={item.altText}
+                  caption={item.caption}
+                  width={item.width}
+                  height={item.height}
+                  status={item.status}
+                />,
+              );
+              remaining = placed.after;
+            }
+          }
+          nodes.push(
+            <div
+              key="visual-tail"
+              className="prose prose--manual"
+              dangerouslySetInnerHTML={{ __html: remaining }}
+            />,
+          );
+          for (const item of missing) {
+            nodes.push(
+              <LessonVisualFigure
+                key={`${item.anchorSlug}-missing`}
+                src={item.dataUri}
+                altText={item.altText}
+                caption={item.caption}
+                width={item.width}
+                height={item.height}
+                status={item.status}
+              />,
+            );
+          }
+          return nodes;
+        })()
+      : null;
 
   return (
     <div className="lesson-manual-scope">
       <div className="lesson-manual">
         <div className="lesson-manual__body">
-          {split === null ? (
-            /*
-             * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito
-             * da DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
-             */
-            <div
-              className="prose prose--manual"
-              dangerouslySetInnerHTML={{ __html: singleHtml ?? '' }}
-            />
-          ) : (
-            <>
-              {/*
-               * Due frammenti sanificati **separatamente**, con la figura in
-               * mezzo come nodo React. Nessuna concatenazione di stringhe dopo
-               * `sanitize`: le due metà non si toccano mai.
-               */}
+          {visualSequence ??
+            (split === null ? (
+              /*
+               * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito
+               * da DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
+               */
               <div
                 className="prose prose--manual"
-                dangerouslySetInnerHTML={{ __html: split.before }}
+                dangerouslySetInnerHTML={{ __html: singleHtml ?? '' }}
               />
-              {split.status === 'missing_anchor' && onMissingAnchor}
-              {figure}
-              {split.after !== '' && (
+            ) : (
+              <>
+                {/*
+                 * Due frammenti sanificati **separatamente**, con la figura in
+                 * mezzo come nodo React. Nessuna concatenazione di stringhe dopo
+                 * `sanitize`: le due metà non si toccano mai.
+                 */}
                 <div
                   className="prose prose--manual"
-                  dangerouslySetInnerHTML={{ __html: split.after }}
+                  dangerouslySetInnerHTML={{ __html: split.before }}
                 />
-              )}
-            </>
-          )}
-          {additionalVisuals.map((item) => (
-            <LessonVisualFigure
-              key={item.anchorSlug + item.headingText + item.caption}
-              src={item.dataUri}
-              altText={item.altText}
-              caption={item.caption}
-              width={item.width}
-              height={item.height}
-              status={item.status}
-            />
-          ))}
+                {split.status === 'missing_anchor' && onMissingAnchor}
+                {figure}
+                {split.after !== '' && (
+                  <div
+                    className="prose prose--manual"
+                    dangerouslySetInnerHTML={{ __html: split.after }}
+                  />
+                )}
+              </>
+            ))}
+          {visualSequence === null &&
+            additionalVisuals.map((item) => (
+              <LessonVisualFigure
+                key={item.anchorSlug + item.headingText + item.caption}
+                src={item.dataUri}
+                altText={item.altText}
+                caption={item.caption}
+                width={item.width}
+                height={item.height}
+                status={item.status}
+              />
+            ))}
         </div>
       </div>
     </div>
