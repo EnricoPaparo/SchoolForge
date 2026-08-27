@@ -39,7 +39,8 @@ export function LessonMultiVisualWorkflowDialog({
 }) {
   const client = useMemo(() => createMultiVisualClient(functions), [functions]);
   const requestId = useMemo(() => crypto.randomUUID(), []);
-  const ceiling = Math.min(3 - existingCount, 3) as 1 | 2 | 3;
+  const freeSlots = Math.max(0, Math.min(3 - existingCount, 3));
+  const ceiling = Math.max(1, freeSlots) as 1 | 2 | 3;
   const [quantityMode, setQuantityMode] = useState<'auto' | 'exact'>('auto');
   const [exactQuantity, setExactQuantity] = useState<1 | 2 | 3>(1);
   const [plan, setPlan] = useState<MultiVisualPlan | null>(null);
@@ -140,7 +141,7 @@ export function LessonMultiVisualWorkflowDialog({
       {!plan ? (
         <>
           <p>
-            Puoi aggiungere fino a {ceiling} immagini. La proposta e ogni immagine hanno una
+            Puoi aggiungere fino a {freeSlots} immagini. La proposta e ogni immagine hanno una
             conferma e un costo separati.
           </p>
           {currentVisuals.length > 0 && (
@@ -179,7 +180,7 @@ export function LessonMultiVisualWorkflowDialog({
               }}
               disabled={busy || existingCount >= 3}
             >
-              <option value="auto">Auto (1–{ceiling})</option>
+              <option value="auto">Auto (1–{freeSlots})</option>
               {[1, 2, 3]
                 .filter((value) => value <= ceiling)
                 .map((value) => (

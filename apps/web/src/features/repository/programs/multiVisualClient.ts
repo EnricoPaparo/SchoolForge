@@ -79,6 +79,20 @@ export function createMultiVisualClient(functions: Functions) {
     functions,
     'aiVisualMultiRemove',
   );
+  const edit = httpsCallable<
+    MultiVisualIdentity & {
+      requestId: string;
+      editRequestId: string;
+      slotIndex: number;
+      abandon: boolean;
+      subject?: string;
+      caption?: string;
+      altText?: string;
+      anchorHeadingIndex?: number;
+      anchorHeadingText?: string;
+    },
+    MultiVisualPlan
+  >(functions, 'aiVisualPlanEditSlot');
   return {
     authorize: (input: MultiVisualPlanRequest) => authorize(input).then((r) => r.data),
     generateSlot: (input: MultiVisualIdentity & { requestId: string; slotIndex: number }) =>
@@ -95,5 +109,25 @@ export function createMultiVisualClient(functions: Functions) {
       input: MultiVisualIdentity & { expectedAssetIds: string[]; nextAssetIds: string[] },
     ) => reorder(input).then((r) => r.data),
     remove: (input: MultiVisualIdentity & { assetId: string }) => remove(input).then((r) => r.data),
+    editSlot: (
+      input:
+        | (MultiVisualIdentity & {
+            requestId: string;
+            editRequestId: string;
+            slotIndex: number;
+            abandon: true;
+          })
+        | (MultiVisualIdentity & {
+            requestId: string;
+            editRequestId: string;
+            slotIndex: number;
+            abandon: false;
+            subject: string;
+            caption: string;
+            altText: string;
+            anchorHeadingIndex: number;
+            anchorHeadingText: string;
+          }),
+    ) => edit(input).then((r) => r.data),
   };
 }
