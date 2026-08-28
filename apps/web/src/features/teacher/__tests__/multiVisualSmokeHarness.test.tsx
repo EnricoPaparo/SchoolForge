@@ -54,8 +54,11 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
     );
     const shell = readFileSync(resolve(root, 'TeacherShell.module.css'), 'utf8');
     expect(gallery).toMatch(/repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+    expect(gallery).toMatch(/\.gallery\s*\{[^}]*border-top:\s*1px/s);
+    expect(gallery).toMatch(/\.header\s*\{[^}]*border-bottom:\s*1px/s);
     expect(gallery).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*grid-template-columns:\s*1fr/);
     expect(dialog).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*min-height:\s*44px/);
+    expect(dialog).toMatch(/\.slotDetails\s*>\s*div\s*\{[^}]*border:/s);
     expect(dialog).toMatch(
       /@media\s*\(max-width:\s*640px\)[\s\S]*\.currentItem\s*\{[\s\S]*flex-direction:\s*column/,
     );

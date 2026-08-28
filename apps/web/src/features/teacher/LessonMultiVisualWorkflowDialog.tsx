@@ -24,6 +24,19 @@ function canGenerateOrPromote(slot: MultiVisualPlan['slots'][number]): boolean {
   );
 }
 
+function isFatalWorkflowError(error: unknown): boolean {
+  const code = (error as { details?: { code?: unknown } })?.details?.code;
+  return [
+    'budget_unavailable',
+    'operation_budget_exceeded',
+    'feature_disabled',
+    'uncertain_state',
+    'visual_plan_external_mutation',
+    'visual_plan_expired',
+    'corrupted_state',
+  ].includes(typeof code === 'string' ? code : '');
+}
+
 export function LessonMultiVisualWorkflowDialog({
   functions,
   identity,
@@ -185,39 +198,52 @@ export function LessonMultiVisualWorkflowDialog({
     setBusy(true);
     setError(null);
     setSummary(null);
+    let firstSlotError: unknown = null;
     try {
       for (let position = 0; position < actionable.length; position += 1) {
         const slotIndex = actionable[position]!.slotIndex;
         let slot = currentPlan.slots.find((item) => item.slotIndex === slotIndex);
         if (!slot) continue;
 
-        if (!slot.staged && !slot.promotedAssetId) {
-          setProgressText(`Generazione immagine ${position + 1} di ${actionable.length}…`);
-          currentPlan = await client.generateSlot({
-            ...identity,
-            requestId: currentPlan.requestId,
-            slotIndex,
-          });
-          setPlan(currentPlan);
-          slot = currentPlan.slots.find((item) => item.slotIndex === slotIndex);
-        }
+        try {
+          if (!slot.staged && !slot.promotedAssetId) {
+            setProgressText(`Generazione immagine ${position + 1} di ${actionable.length}…`);
+            currentPlan = await client.generateSlot({
+              ...identity,
+              requestId: currentPlan.requestId,
+              slotIndex,
+            });
+            setPlan(currentPlan);
+            slot = currentPlan.slots.find((item) => item.slotIndex === slotIndex);
+          }
 
-        if (slot?.staged && !slot.promotedAssetId) {
-          setProgressText(`Applicazione immagine ${position + 1} di ${actionable.length}…`);
-          currentPlan = await client.promoteSlot({
-            ...identity,
-            requestId: currentPlan.requestId,
-            slotIndex,
-            promotionRequestId: promotionRequestIdFor(slotIndex),
-            mode: replaceAssetId ? { mode: 'replace', replaceAssetId } : { mode: 'add' },
-          });
-          changed = true;
-          setPlan(currentPlan);
+          if (slot?.staged && !slot.promotedAssetId) {
+            setProgressText(`Applicazione immagine ${position + 1} di ${actionable.length}…`);
+            currentPlan = await client.promoteSlot({
+              ...identity,
+              requestId: currentPlan.requestId,
+              slotIndex,
+              promotionRequestId: promotionRequestIdFor(slotIndex),
+              mode: replaceAssetId ? { mode: 'replace', replaceAssetId } : { mode: 'add' },
+            });
+            changed = true;
+            setPlan(currentPlan);
+          }
+        } catch (cause) {
+          // Gli errori di un singolo slot non devono impedire agli altri slot
+          // indipendenti di concludere. Stati globali/incerti restano invece
+          // fail-closed: nessuna nuova spesa dopo una risposta non affidabile.
+          firstSlotError ??= cause;
+          if (isFatalWorkflowError(cause)) throw cause;
         }
       }
 
       setProgressText('Aggiornamento della lezione…');
       if (changed) await onRefresh();
+      if (firstSlotError) {
+        setError(describeMultiVisualError(firstSlotError));
+        return;
+      }
       setSummary({
         applied: currentPlan.slots.filter((slot) => Boolean(slot.promotedAssetId)).length,
         skipped: currentPlan.slots.filter(

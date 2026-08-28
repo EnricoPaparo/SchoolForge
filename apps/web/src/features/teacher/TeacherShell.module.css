@@ -6,6 +6,8 @@
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
   background:
     radial-gradient(circle at 7% 2%, rgba(56, 189, 248, 0.13), transparent 32%),
     radial-gradient(circle at 48% 42%, rgba(99, 102, 241, 0.1), transparent 43%),
@@ -259,6 +261,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   /* Keep the internal content scroller functional while hiding the thick
      track that otherwise appears beside the centered 1100px column. */
   scrollbar-width: none;

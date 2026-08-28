@@ -12,6 +12,7 @@
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: var(--surface-raised);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
 }
 .slotDetails {
   display: grid;
@@ -21,6 +22,10 @@
 .slotDetails > div {
   display: grid;
   gap: 0.15rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
 }
 .slotDetails dt {
   color: var(--text-muted);

@@ -210,6 +210,45 @@ describe('LessonMultiVisualWorkflowDialog', () => {
     expect(onRefresh).toHaveBeenCalledOnce();
   });
 
+  it('continua sugli slot successivi se un errore locale interrompe uno slot', async () => {
+    const second = { ...baseSlot, slotIndex: 1, subject: 'RAM' };
+    const third = { ...baseSlot, slotIndex: 2, subject: 'Archiviazione' };
+    const readyFirst = makePlan([{ ...baseSlot, state: 'ready', staged }, second, third]);
+    const promotedFirst = makePlan([
+      { ...baseSlot, state: 'promoted', promotedAssetId: 'asset-1' },
+      second,
+      third,
+    ]);
+    const readyThird = makePlan([
+      { ...baseSlot, state: 'promoted', promotedAssetId: 'asset-1' },
+      { ...second, state: 'failed', attempts: 1, lastError: 'transient_error' },
+      { ...third, state: 'ready', staged },
+    ]);
+    const completed = makePlan([
+      { ...baseSlot, state: 'promoted', promotedAssetId: 'asset-1' },
+      { ...second, state: 'failed', attempts: 1, lastError: 'transient_error' },
+      { ...third, state: 'promoted', promotedAssetId: 'asset-3' },
+    ]);
+    const localError = Object.assign(new Error('slot failed'), {
+      details: { code: 'visual_plan_slot_not_generatable' },
+    });
+    mocks.authorize.mockResolvedValue(makePlan([baseSlot, second, third]));
+    mocks.generate
+      .mockResolvedValueOnce(readyFirst)
+      .mockRejectedValueOnce(localError)
+      .mockResolvedValueOnce(readyThird);
+    mocks.promote.mockResolvedValueOnce(promotedFirst).mockResolvedValueOnce(completed);
+    const { onRefresh } = renderDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stima immagini' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Genera e applica 3 immagini' }));
+    await screen.findByRole('alert');
+
+    expect(mocks.generate.mock.calls.map(([input]) => input.slotIndex)).toEqual([0, 1, 2]);
+    expect(mocks.promote.mock.calls.map(([input]) => input.slotIndex)).toEqual([0, 2]);
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
   it('salta la generazione di uno slot staged e riusa promotionRequestId al retry', async () => {
     const ready = makePlan([{ ...baseSlot, state: 'ready', staged }]);
     mocks.authorize.mockResolvedValue(ready);
