@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
+import type { LessonVisualItem } from '../../types/firestore.js';
 import type { MultiVisualIdentity } from '../repository/programs/multiVisualClient.js';
 import styles from './LessonMultiVisualGallery.module.css';
 
@@ -12,15 +12,15 @@ export function LessonMultiVisualGallery({
   bytes = {},
 }: {
   identity: MultiVisualIdentity;
-  manifest: LessonVisualPrivateManifest[];
+  manifest: LessonVisualItem[];
   onReorder: (assetIds: string[]) => Promise<void>;
   onRemove: (assetId: string) => Promise<void>;
   onGenerate?: () => void;
   bytes?: Record<string, string>;
 }) {
-  const [items, setItems] = useState(manifest);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const items = manifest;
   const ids = useMemo(() => items.map((item) => item.assetId), [items]);
   async function move(index: number, direction: -1 | 1) {
     const target = index + direction;
@@ -31,7 +31,6 @@ export function LessonMultiVisualGallery({
     setError(null);
     try {
       await onReorder(next.map((item) => item.assetId));
-      setItems(next);
     } catch {
       setError('Impossibile riordinare le immagini. Riprova.');
     } finally {
@@ -40,11 +39,11 @@ export function LessonMultiVisualGallery({
   }
   async function remove(assetId: string) {
     if (busy) return;
+    if (!window.confirm('Rimuovere definitivamente questa immagine dalla lezione?')) return;
     setBusy(true);
     setError(null);
     try {
       await onRemove(assetId);
-      setItems((current) => current.filter((item) => item.assetId !== assetId));
     } catch {
       setError('Impossibile rimuovere l’immagine. Riprova.');
     } finally {

@@ -5,6 +5,7 @@ export type MultiVisualQuantity = { mode: 'auto' | 'exact'; ceiling: 1 | 2 | 3 }
 export interface MultiVisualPlanRequest extends MultiVisualIdentity {
   requestId: string;
   quantity: MultiVisualQuantity;
+  replacementAssetId: string | null;
   titolo: unknown;
   sottotitolo: unknown;
   difficolta: unknown;

@@ -286,6 +286,51 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     expect((await publicBytesRef().get()).exists).toBe(true);
   });
 
+  it('pubblica, nasconde e ripubblica atomicamente un manifest multi-visuale', async () => {
+    const visual = await seed();
+    await lessonRef().update({
+      visual: FieldValue.delete(),
+      visuals: {
+        contractVersion: 'lesson-visuals/v1',
+        items: [{ ...visual, source: 'generated' }],
+      },
+    });
+
+    await setLessonCompletedForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...input, completed: true },
+    });
+    expect((await publicRef().get()).data()).toMatchObject({
+      completed: true,
+      visuals: { contractVersion: 'lesson-visuals/v1', items: [{ assetId: ASSET }] },
+    });
+    expect((await publicRef().get()).data()).not.toHaveProperty('visual');
+    expect((await publicBytesRef().get()).data()).toMatchObject({
+      contractVersion: 'lesson-visuals/v1',
+      bytes: { [ASSET]: { width: 96, height: 64 } },
+    });
+
+    await setLessonCompletedForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...input, completed: false },
+    });
+    expect((await publicRef().get()).data()).not.toHaveProperty('visuals');
+    expect((await publicBytesRef().get()).exists).toBe(false);
+
+    await setLessonCompletedForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { ...input, completed: true },
+    });
+    expect((await publicRef().get()).data()).toHaveProperty('visuals');
+    expect((await publicBytesRef().get()).exists).toBe(true);
+  }, 30_000);
+
   it('true → false conserva una mappa privata malformata e mette in sicurezza il pubblico', async () => {
     await seed();
     await setLessonCompletedForOwner({

@@ -1,6 +1,10 @@
 import { useMemo, type ReactNode } from 'react';
 import { parseLessonMarkdown } from './lessonManualMarkdown.js';
-import { placeLessonVisual, type LessonVisualPlacement } from './lessonManualVisual.js';
+import {
+  placeLessonVisual,
+  placeLessonVisuals,
+  type LessonVisualPlacement,
+} from './lessonManualVisual.js';
 import { LessonVisualFigure } from './LessonVisualFigure.js';
 
 /**
@@ -98,61 +102,47 @@ export function LessonManualBody({
     (item) => item.anchorSlug !== visual?.anchorSlug,
   );
   const allVisuals = visual ? [visual, ...additionalVisuals] : additionalVisuals;
-  const visualSequence =
-    allVisuals.length > 0
-      ? (() => {
-          let remaining = markdown;
-          const nodes: ReactNode[] = [];
-          const missing: LessonVisualRender[] = [];
-          for (const item of allVisuals) {
-            const placed = placeLessonVisual({ markdown: remaining, anchorSlug: item.anchorSlug });
-            if (placed.status === 'missing_anchor') {
-              missing.push(item);
-              continue;
-            }
-            if (placed.status === 'anchored') {
-              nodes.push(
-                <div
-                  key={`${item.anchorSlug}-before`}
-                  className="prose prose--manual"
-                  dangerouslySetInnerHTML={{ __html: placed.before }}
-                />,
-                <LessonVisualFigure
-                  key={`${item.anchorSlug}-figure`}
-                  src={item.dataUri}
-                  altText={item.altText}
-                  caption={item.caption}
-                  width={item.width}
-                  height={item.height}
-                  status={item.status}
-                />,
-              );
-              remaining = placed.after;
-            }
-          }
-          nodes.push(
-            <div
-              key="visual-tail"
-              className="prose prose--manual"
-              dangerouslySetInnerHTML={{ __html: remaining }}
-            />,
-          );
-          for (const item of missing) {
-            nodes.push(
-              <LessonVisualFigure
-                key={`${item.anchorSlug}-missing`}
-                src={item.dataUri}
-                altText={item.altText}
-                caption={item.caption}
-                width={item.width}
-                height={item.height}
-                status={item.status}
-              />,
-            );
-          }
-          return nodes;
-        })()
-      : null;
+  const multiPlacement = useMemo(
+    () =>
+      allVisuals.length > 0
+        ? placeLessonVisuals({
+            markdown,
+            anchorSlugs: allVisuals.map((item) => item.anchorSlug),
+          })
+        : null,
+    [allVisuals, markdown],
+  );
+  const renderFigure = (item: LessonVisualRender, key: string) => (
+    <LessonVisualFigure
+      key={key}
+      src={item.dataUri}
+      altText={item.altText}
+      caption={item.caption}
+      width={item.width}
+      height={item.height}
+      status={item.status}
+    />
+  );
+  const visualSequence: ReactNode[] | null = multiPlacement
+    ? [
+        ...multiPlacement.groups.flatMap((group, groupIndex) => [
+          <div
+            key={`visual-group-${groupIndex}`}
+            className="prose prose--manual"
+            dangerouslySetInnerHTML={{ __html: group.html }}
+          />,
+          ...group.visualIndexes.map((index) =>
+            renderFigure(allVisuals[index]!, `visual-${index}`),
+          ),
+        ]),
+        ...(multiPlacement.missingVisualIndexes.length > 0 && onMissingAnchor
+          ? [<div key="visual-missing-anchor-notice">{onMissingAnchor}</div>]
+          : []),
+        ...multiPlacement.missingVisualIndexes.map((index) =>
+          renderFigure(allVisuals[index]!, `visual-missing-${index}`),
+        ),
+      ]
+    : null;
 
   return (
     <div className="lesson-manual-scope">
@@ -188,18 +178,6 @@ export function LessonManualBody({
                   />
                 )}
               </>
-            ))}
-          {visualSequence === null &&
-            additionalVisuals.map((item) => (
-              <LessonVisualFigure
-                key={item.anchorSlug + item.headingText + item.caption}
-                src={item.dataUri}
-                altText={item.altText}
-                caption={item.caption}
-                width={item.width}
-                height={item.height}
-                status={item.status}
-              />
             ))}
         </div>
       </div>

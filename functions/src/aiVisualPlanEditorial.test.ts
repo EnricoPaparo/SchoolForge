@@ -34,6 +34,7 @@ function plan(): VisualPlanRun {
     publicLessonId: 'public',
     sourceBodyHash: sha256Hex('## A\n\nTesto\n\n## B\n\nTesto'),
     existingItemAssetIds: [] as string[],
+    replacementAssetId: null,
     quantity,
   };
   return validateVisualPlanRun({

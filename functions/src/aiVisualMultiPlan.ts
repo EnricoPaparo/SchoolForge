@@ -89,6 +89,7 @@ export interface VisualPlanAuthorizeInput {
   importId: string;
   lessonId: string;
   quantity: VisualPlanQuantitySelection;
+  replacementAssetId: string | null;
   titolo: unknown;
   sottotitolo: unknown;
   difficolta: unknown;
@@ -104,6 +105,7 @@ const AUTHORIZE_INPUT_KEYS = [
   'importId',
   'lessonId',
   'quantity',
+  'replacementAssetId',
   'titolo',
   'sottotitolo',
   'difficolta',
@@ -146,6 +148,10 @@ export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuth
   if (!isValidDocumentIdInput(lessonId)) invalidAuthorizeInput('lessonId non valido.');
 
   const quantity = parseAuthorizeQuantity(root.quantity);
+  const replacementAssetId = root.replacementAssetId;
+  if (replacementAssetId !== null && !isValidDocumentIdInput(replacementAssetId)) {
+    invalidAuthorizeInput('replacementAssetId non valido.');
+  }
 
   return {
     requestId,
@@ -153,6 +159,7 @@ export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuth
     importId,
     lessonId,
     quantity,
+    replacementAssetId,
     titolo: root.titolo,
     sottotitolo: root.sottotitolo,
     difficolta: root.difficolta,
@@ -860,6 +867,7 @@ export interface VisualPlanRun {
   quantity: VisualPlanQuantitySelection;
   sourceBodyHash: string;
   existingItemAssetIds: string[];
+  replacementAssetId: string | null;
   budgetCeiling: VisualPlanBudgetCeiling;
   slots: VisualPlanSlot[];
   settlement: VisualPlanSettlement;
@@ -882,6 +890,7 @@ const PLAN_KEYS = [
   'quantity',
   'sourceBodyHash',
   'existingItemAssetIds',
+  'replacementAssetId',
   'budgetCeiling',
   'slots',
   'settlement',
@@ -1159,7 +1168,17 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
   }
 
   const existingItemAssetIds = validateExistingItemAssetIds(root.existingItemAssetIds);
-  if (existingItemAssetIds.length + quantity.ceiling > MAX_VISUALS_PER_LESSON) {
+  const replacementAssetId = root.replacementAssetId;
+  if (replacementAssetId !== null && !isUuidV4(replacementAssetId)) {
+    invalidSlot('replacementAssetId non valido.');
+  }
+  if (replacementAssetId !== null && !existingItemAssetIds.includes(replacementAssetId)) {
+    invalidSlot('replacementAssetId non appartiene alla fotografia iniziale.');
+  }
+  if (
+    existingItemAssetIds.length + quantity.ceiling - (replacementAssetId === null ? 0 : 1) >
+    MAX_VISUALS_PER_LESSON
+  ) {
     invalidSlot(
       'existingItemAssetIds e quantity.ceiling superano insieme il tetto di tre immagini.',
     );
@@ -1181,6 +1200,7 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
       publicLessonId,
       sourceBodyHash,
       existingItemAssetIds,
+      replacementAssetId,
       quantity,
     })
   ) {
@@ -1258,6 +1278,7 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
     quantity,
     sourceBodyHash,
     existingItemAssetIds,
+    replacementAssetId,
     budgetCeiling,
     slots,
     settlement,

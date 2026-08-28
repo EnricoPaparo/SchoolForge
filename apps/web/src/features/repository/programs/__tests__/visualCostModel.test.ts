@@ -61,6 +61,11 @@ describe('nessun costo passivo', () => {
     expect(code).toContain("'aiVisualExportBatch'");
     expect(code).toContain('lessonIds: [lessonId]');
     expect(code.match(/httpsCallable</g)).toHaveLength(1);
+
+    const multi = src('features/repository/programs/multiVisualReadClients.ts');
+    expect(multi).toContain('createVisualExportClient');
+    expect(multi).toContain('lessonIds: [params.lessonId]');
+    expect(multi).not.toContain('httpsCallable');
   });
 
   /**

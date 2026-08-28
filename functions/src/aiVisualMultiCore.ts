@@ -122,6 +122,7 @@ export function computeVisualPlanHash(params: {
   publicLessonId: string;
   sourceBodyHash: string;
   existingItemAssetIds: readonly string[];
+  replacementAssetId?: string | null;
   quantity: { mode: 'auto' | 'exact'; ceiling: 1 | 2 | 3 };
 }): string {
   return sha256Hex(
@@ -134,6 +135,7 @@ export function computeVisualPlanHash(params: {
       params.publicLessonId,
       params.sourceBodyHash,
       JSON.stringify(params.existingItemAssetIds),
+      params.replacementAssetId ?? '',
       JSON.stringify(params.quantity),
     ]),
   );

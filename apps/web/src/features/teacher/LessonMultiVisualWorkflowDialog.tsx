@@ -7,7 +7,7 @@ import {
   describeMultiVisualError,
 } from '../repository/programs/multiVisualClient.js';
 import type { Functions } from 'firebase/functions';
-import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
+import type { LessonVisualItem } from '../../types/firestore.js';
 import styles from './LessonMultiVisualWorkflowDialog.module.css';
 
 export function LessonMultiVisualWorkflowDialog({
@@ -16,6 +16,7 @@ export function LessonMultiVisualWorkflowDialog({
   lessonAi,
   existingCount,
   currentVisuals,
+  legacySingular = false,
   headings,
   onRefresh,
   onClose,
@@ -32,7 +33,8 @@ export function LessonMultiVisualWorkflowDialog({
     udaContext?: unknown;
   };
   existingCount: number;
-  currentVisuals: LessonVisualPrivateManifest[];
+  currentVisuals: LessonVisualItem[];
+  legacySingular?: boolean;
   headings: { text: string; index: number }[];
   onRefresh: () => Promise<void>;
   onClose: () => void;
@@ -57,9 +59,12 @@ export function LessonMultiVisualWorkflowDialog({
 
   async function authorize() {
     if (busy) return;
-    if (existingCount >= 3) return;
+    if (existingCount >= 3 && !replaceAssetId) return;
+    const availableSlots = replaceAssetId ? 1 : freeSlots;
     const selectedCeiling =
-      quantityMode === 'auto' ? ceiling : (Math.min(exactQuantity, ceiling) as 1 | 2 | 3);
+      quantityMode === 'auto'
+        ? (Math.max(1, availableSlots) as 1 | 2 | 3)
+        : (Math.min(exactQuantity, Math.max(1, availableSlots)) as 1 | 2 | 3);
     if (
       !window.confirm(
         `Confermi la proposta fino a ${selectedCeiling} immagini? Il costo massimo comprende proposta e generazioni.`,
@@ -73,6 +78,7 @@ export function LessonMultiVisualWorkflowDialog({
         ...identity,
         requestId,
         quantity: { mode: quantityMode, ceiling: selectedCeiling },
+        replacementAssetId: replaceAssetId,
         titolo: lessonAi.titolo,
         sottotitolo: lessonAi.sottotitolo,
         difficolta: lessonAi.difficolta,
@@ -82,6 +88,7 @@ export function LessonMultiVisualWorkflowDialog({
         udaContext: lessonAi.udaContext,
       };
       setPlan(await client.authorize(input));
+      if (legacySingular) await onRefresh();
     } catch (cause) {
       setError(describeMultiVisualError(cause));
     } finally {
@@ -208,6 +215,21 @@ export function LessonMultiVisualWorkflowDialog({
     }
   }
 
+  async function removeExisting(assetId: string) {
+    if (busy) return;
+    if (!window.confirm('Rimuovere definitivamente questa immagine dalla lezione?')) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await client.remove({ ...identity, assetId });
+      await onRefresh();
+    } catch (cause) {
+      setError(describeMultiVisualError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <DialogShell
       title="Aggiungi immagini alla lezione"
@@ -234,7 +256,7 @@ export function LessonMultiVisualWorkflowDialog({
                       type="button"
                       className="btn-secondary"
                       onClick={() => void reorderExisting(index, -1)}
-                      disabled={busy || index === 0}
+                      disabled={busy || legacySingular || index === 0}
                     >
                       Su
                     </button>
@@ -242,14 +264,20 @@ export function LessonMultiVisualWorkflowDialog({
                       type="button"
                       className="btn-secondary"
                       onClick={() => void reorderExisting(index, 1)}
-                      disabled={busy || index === currentVisuals.length - 1}
+                      disabled={busy || legacySingular || index === currentVisuals.length - 1}
                     >
                       Giù
                     </button>
                     <button
                       type="button"
                       className="btn-secondary"
-                      onClick={() => setReplaceAssetId(item.assetId)}
+                      aria-pressed={replaceAssetId === item.assetId}
+                      onClick={() => {
+                        setReplaceAssetId(item.assetId);
+                        setQuantityMode('exact');
+                        setExactQuantity(1);
+                      }}
+                      disabled={busy}
                     >
                       Sostituisci
                     </button>
@@ -257,16 +285,33 @@ export function LessonMultiVisualWorkflowDialog({
                   <button
                     type="button"
                     className="btn-danger"
-                    onClick={() =>
-                      void client.remove({ ...identity, assetId: item.assetId }).then(onRefresh)
-                    }
-                    disabled={busy}
+                    onClick={() => void removeExisting(item.assetId)}
+                    disabled={busy || legacySingular}
                   >
                     Rimuovi
                   </button>
                 </div>
               ))}
             </div>
+          )}
+          {legacySingular && (
+            <p role="status">
+              L’immagine legacy verrà adottata nel formato multi quando confermi la proposta; prima
+              dell’adozione puoi sostituirla, ma non riordinarla o rimuoverla.
+            </p>
+          )}
+          {replaceAssetId && (
+            <p role="status">
+              La nuova immagine sostituirà quella selezionata.
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setReplaceAssetId(null)}
+                disabled={busy}
+              >
+                Annulla sostituzione
+              </button>
+            </p>
           )}
           <label>
             Quantità
@@ -280,11 +325,11 @@ export function LessonMultiVisualWorkflowDialog({
                   setExactQuantity(Number(value) as 1 | 2 | 3);
                 }
               }}
-              disabled={busy || existingCount >= 3}
+              disabled={busy || Boolean(replaceAssetId) || existingCount >= 3}
             >
               <option value="auto">Auto (1–{freeSlots})</option>
               {[1, 2, 3]
-                .filter((value) => value <= ceiling)
+                .filter((value) => value <= (replaceAssetId ? 1 : ceiling))
                 .map((value) => (
                   <option key={value} value={value}>
                     {value}
@@ -305,7 +350,7 @@ export function LessonMultiVisualWorkflowDialog({
               type="button"
               className="btn-primary"
               onClick={() => void authorize()}
-              disabled={busy}
+              disabled={busy || (existingCount >= 3 && !replaceAssetId)}
             >
               Stima immagini
             </button>
@@ -329,6 +374,7 @@ export function LessonMultiVisualWorkflowDialog({
                 <p>{slot.subject ?? 'Nessuna immagine proposta'}</p>
                 {slot.decision === 'image' &&
                   !slot.promotedAssetId &&
+                  slot.state === 'pending' &&
                   (editingSlot === slot.slotIndex ? (
                     <div className={styles.editor}>
                       <input
@@ -388,19 +434,27 @@ export function LessonMultiVisualWorkflowDialog({
                 {slot.staged ? <p>Immagine generata pronta per l’applicazione.</p> : null}
                 {slot.promotedAssetId ? (
                   <p className={styles.success}>Applicata alla lezione.</p>
-                ) : (
+                ) : slot.staged ? (
                   <button
                     type="button"
                     className="btn-primary"
-                    onClick={() =>
-                      void (slot.staged ? promote(slot.slotIndex) : generate(slot.slotIndex))
-                    }
-                    disabled={busy || slot.decision === 'none'}
+                    onClick={() => void promote(slot.slotIndex)}
+                    disabled={busy}
                   >
-                    {slot.staged ? 'Applica immagine' : 'Genera immagine'}
+                    Applica immagine
                   </button>
-                )}
-                {slot.decision === 'image' && !slot.promotedAssetId && (
+                ) : slot.decision === 'image' &&
+                  (slot.state === 'pending' || slot.state === 'failed') ? (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => void generate(slot.slotIndex)}
+                    disabled={busy}
+                  >
+                    {slot.state === 'failed' ? 'Riprova generazione' : 'Genera immagine'}
+                  </button>
+                ) : null}
+                {slot.decision === 'image' && slot.state === 'pending' && !slot.promotedAssetId && (
                   <button
                     type="button"
                     className="btn-secondary"

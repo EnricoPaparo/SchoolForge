@@ -1257,7 +1257,7 @@ callable è l'unica eccezione, ed è deliberatamente **non** una rotta del
 gateway: il chiamante non nomina alcun percorso, perché farlo equivarrebbe a una
 lettura arbitraria dello Storage con un altro nome.
 
-Input chiuso: `{ programId, importId, lessonIds }`, al massimo **32** lezioni,
+Input chiuso: `{ programId, importId, lessonIds }`, al massimo **13** lezioni,
 senza duplicati, ogni id un segmento (né `/`, né `.`, né `..`). `ownerUid`,
 `udaDir`, `assetId`, `storageRef`, `sha256`, `byteLength`, dimensioni e MIME
 sono **derivati dal server** leggendo il `LessonDoc`; nessuno dei nove è
@@ -1266,7 +1266,9 @@ accettato dal client nemmeno se inviato.
 Output: un elemento per lezione, **nello stesso ordine della richiesta**.
 `{ lessonId, status: 'absent' }` per una lezione senza campo `visual` — il caso
 normale — oppure `{ lessonId, status: 'present', assetId, manifestJson, base64,
-byteLength }`. Il `manifestJson` è la serializzazione deterministica del
+byteLength }` per il legacy singolare, oppure `{ lessonId, status: 'multi',
+assets: [{ assetId, manifestJson, base64, byteLength }, ...] }` per 1..3 asset
+nello stesso ordine del manifest plurale. Il `manifestJson` è la serializzazione deterministica del
 manifest privato validato: chiavi in ordine congelato, `approvedAt` in ISO 8601
 UTC, nessuna URL, token, dato provider, prompt, subject, costo o dato studente.
 
@@ -1278,10 +1280,11 @@ archivio a metà che sembra intero.
 
 **Limiti, e da dove vengono.** Una callable risponde in JSON, quindi i byte
 viaggiano in base64 (+33%). Il tetto binario è 8.000.000 byte per risposta; il
-massimo di lezioni discende da quello e dal cap per immagine già congelato in
-VE-02: 32 × 204.800 = 6.553.600 ≤ 8.000.000. Un test ricalcola la disuguaglianza,
+massimo di lezioni discende da quello, dal cap di tre immagini per lezione e dal
+cap per immagine già congelato in VE-02:
+13 × 3 × 204.800 = 7.987.200 ≤ 8.000.000. Un test ricalcola la disuguaglianza,
 così alzare il numero di lezioni senza alzare il tetto fallisce invece di
-produrre risposte troncate. Il client suddivide in batch da 32 con concorrenza 2,
+produrre risposte troncate. Il client suddivide in batch da 13 con concorrenza 2,
 deduplica conservando la prima posizione, verifica ordine e assenza di duplicati
 a ogni batch e sulla ricomposizione complessiva.
 
@@ -1379,6 +1382,24 @@ settlement. `abandon:true` porta lo slot ad `abandoned`, riduce la sola
 prenotazione master residua e deriva lo stato terminale/chiude il lease quando
 necessario. Nessuna chiamata provider, nessuna prenotazione nuova, nessun
 accesso Storage.
+
+### Client e refresh autorevole
+
+Il client usa le callable `aiVisualPlanAuthorize`, `aiVisualPlanGenerateSlot`,
+`aiVisualPlanEditSlot`, `aiVisualPlanPromoteSlot`, `aiVisualMultiReorder` e
+`aiVisualMultiRemove` con i payload chiusi sopra descritti. La risposta della
+callable non viene mai usata come nuovo manifest della lezione: dopo
+promozione, riordino o rimozione viene eseguito un solo `get()` puntuale del
+`LessonDoc`, validato fail-closed (radice, 1..3 elementi, identità, path,
+provenienza, hash e timestamp). Solo quel risultato aggiorna la lezione nel
+tree in memoria; nessuna query o rilettura del corso.
+
+`aiVisualPlanAuthorize` include sempre la chiave chiusa
+`replacementAssetId: UUIDv4 | null`. Se valorizzata deve appartenere agli asset
+live letti nella stessa transazione e riserva esattamente uno slot di
+sostituzione: il cap è `live + quantity.ceiling - 1 <= 3`. Il target entra
+nell'hash e nel record del piano; replay con target divergente falliscono
+chiusi. Questo consente il replace a 3/3 senza creare nuova capacità.
 
 L'idempotenza usa `visualPlanSlotEdits/{SHA-256(ownerUid,editRequestId)}`
 server-only. Stesso id e stesso payload: replay con zero scritture; stesso id

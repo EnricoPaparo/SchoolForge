@@ -37,10 +37,9 @@ const LESSON_BODY = '## Introduzione\n\nTesto introduttivo.\n\n## Reti\n\nConten
 
 function singularVisual(assetId: string): Record<string, unknown> {
   return {
-    contractVersion: 'visual-enrichment/v1',
     assetId,
     storageRef: `repository/${OWNER_UID}/${IMPORT_ID}/${UDA_DIR}/visuals/${assetId}.webp`,
-    anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after' },
+    anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after-heading' },
     caption: 'Didascalia.',
     altText: 'Testo alternativo.',
     width: 800,
@@ -52,6 +51,10 @@ function singularVisual(assetId: string): Record<string, unknown> {
     sourceBodyHash: 'e'.repeat(64),
     approvedAt: Timestamp.now(),
   };
+}
+
+function multiVisualItem(assetId: string): Record<string, unknown> {
+  return { ...singularVisual(assetId), source: 'generated' };
 }
 
 const AI_CONFIG = {
@@ -82,6 +85,7 @@ function authorizePayload(over: Record<string, unknown> = {}): Record<string, un
     importId: IMPORT_ID,
     lessonId: 'lesson-1',
     quantity: { mode: 'auto', ceiling: 2 },
+    replacementAssetId: null,
     titolo: 'Le reti',
     sottotitolo: null,
     difficolta: 'base',
@@ -763,12 +767,14 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
         publicLessonId: otherPublicLessonId,
         sourceBodyHash: divergentSourceHash,
         existingItemAssetIds: [],
+        replacementAssetId: null,
         quantity: divergentQuantity,
       }),
       status: 'abandoned',
       quantity: divergentQuantity,
       sourceBodyHash: divergentSourceHash,
       existingItemAssetIds: [],
+      replacementAssetId: null,
       budgetCeiling: {
         reservationKey: computeBudgetReservationKey(OWNER_UID, requestId),
         reservationMonthKey: monthKeyFromMs(divergentCreatedAtMs),
@@ -821,12 +827,14 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
         publicLessonId,
         sourceBodyHash: simulatedSourceHash,
         existingItemAssetIds: [],
+        replacementAssetId: null,
         quantity: simulatedQuantity,
       }),
       status: 'completed',
       quantity: simulatedQuantity,
       sourceBodyHash: simulatedSourceHash, // corpo "originale", ormai diverso da quello live
       existingItemAssetIds: [],
+      replacementAssetId: null,
       budgetCeiling: {
         reservationKey: computeBudgetReservationKey(OWNER_UID, requestId),
         reservationMonthKey: monthKeyFromMs(simulatedCreatedAtMs),
@@ -1031,6 +1039,77 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect(await ledgerReservationCount()).toBe(0);
   });
 
+  it('cap pieno: autorizza soltanto la sostituzione esatta, senza nuova capacità', async () => {
+    const lessonId = `lesson-full-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    const assetIds = [randomUUID(), randomUUID(), randomUUID()];
+    await seedLesson(lessonId, publicLessonId);
+    await db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${lessonId}`).update({
+      visuals: {
+        contractVersion: 'lesson-visuals/v1',
+        items: assetIds.map(multiVisualItem),
+      },
+    });
+
+    const replaceRequestId = randomUUID();
+    touchedRefs.push(planRef(replaceRequestId), leaseRef(lessonId));
+    const plan = await call(
+      authorizePayload({
+        requestId: replaceRequestId,
+        lessonId,
+        quantity: { mode: 'exact', ceiling: 1 },
+        replacementAssetId: assetIds[1],
+      }),
+    );
+    expect(plan.existingItemAssetIds).toEqual(assetIds);
+    expect(plan.replacementAssetId).toBe(assetIds[1]);
+
+    const addRequestId = randomUUID();
+    touchedRefs.push(planRef(addRequestId));
+    await expect(
+      call(
+        authorizePayload({
+          requestId: addRequestId,
+          lessonId,
+          quantity: { mode: 'exact', ceiling: 1 },
+          replacementAssetId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+    expect((await planRef(addRequestId).get()).exists).toBe(false);
+  });
+
+  it('target di sostituzione stale: se è già sparito non crea piano né budget', async () => {
+    const lessonId = `lesson-replace-race-${randomUUID()}`;
+    const publicLessonId = `public-${lessonId}`;
+    const assetIds = [randomUUID(), randomUUID(), randomUUID()];
+    const lessonRef = db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${lessonId}`);
+    await seedLesson(lessonId, publicLessonId);
+    await lessonRef.update({
+      visuals: {
+        contractVersion: 'lesson-visuals/v1',
+        items: [multiVisualItem(randomUUID()), ...assetIds.slice(1).map(multiVisualItem)],
+      },
+    });
+    const requestId = randomUUID();
+    touchedRefs.push(planRef(requestId), leaseRef(lessonId));
+
+    await expect(
+      call(
+        authorizePayload({
+          requestId,
+          lessonId,
+          quantity: { mode: 'exact', ceiling: 1 },
+          replacementAssetId: assetIds[0],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+
+    expect((await planRef(requestId).get()).exists).toBe(false);
+    expect((await leaseRef(lessonId).get()).exists).toBe(false);
+    expect(await ledgerReservationCount()).toBe(0);
+  });
+
   it('quantità richiesta oltre gli slot liberi ⇒ invalid_input, zero scritture', async () => {
     const lessonId = `lesson-${randomUUID()}`;
     const publicLessonId = `public-${lessonId}`;
@@ -1039,22 +1118,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     await lessonRef.update({
       visuals: {
         contractVersion: 'lesson-visuals/v1',
-        items: [1, 2].map((n) => ({
-          assetId: randomUUID(),
-          storageRef: `repository/${OWNER_UID}/${IMPORT_ID}/${UDA_DIR}/visuals/asset-${n}.webp`,
-          anchor: { headingSlug: `reti-${n}`, headingText: 'Reti', placement: 'after' },
-          caption: 'Didascalia.',
-          altText: 'Testo alternativo.',
-          width: 800,
-          height: 600,
-          byteLength: 12_345,
-          sha256: 'd'.repeat(64),
-          mimeType: 'image/webp',
-          source: 'generated',
-          styleVersion: 'schoolforge-sketch/v1',
-          sourceBodyHash: 'e'.repeat(64),
-          approvedAt: Timestamp.now(),
-        })),
+        items: [randomUUID(), randomUUID()].map(multiVisualItem),
       },
     });
 

@@ -69,8 +69,15 @@
   .slots {
     grid-template-columns: 1fr;
   }
-  .actions > button {
+  .actions > button,
+  .inlineActions > button,
+  .currentItem > button {
     flex: 1 1 100%;
     min-height: 44px;
+  }
+  .currentItem {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
   }
 }

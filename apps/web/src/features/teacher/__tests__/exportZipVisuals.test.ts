@@ -107,6 +107,19 @@ const presentItem = (lessonId: string, assetId: string) => ({
   byteLength: WEBP_BYTES.byteLength,
 });
 
+const multiItem = (lessonId: string) => ({
+  lessonId,
+  status: 'multi' as const,
+  assets: [presentItem(lessonId, ASSET_A), presentItem(lessonId, ASSET_B)].map(
+    ({ assetId, manifestJson, base64, byteLength }) => ({
+      assetId,
+      manifestJson,
+      base64,
+      byteLength,
+    }),
+  ),
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockReadTexts.mockImplementation(async (paths: string[]) =>
@@ -187,7 +200,12 @@ describe('export ZIP — sidecar visuali', () => {
     mockListLessons.mockResolvedValue([
       lesson({ id: 'a', filename: 'lezione-001.md', visual: MANIFEST, order: 0 }),
       lesson({ id: 'b', filename: 'lezione-002.md', order: 1 }),
-      lesson({ id: 'c', filename: 'lezione-003.md', visual: MANIFEST, order: 2 }),
+      lesson({
+        id: 'c',
+        filename: 'lezione-003.md',
+        visual: { ...MANIFEST, assetId: ASSET_B },
+        order: 2,
+      }),
     ]);
     const fetchVisuals: FetchLessonVisuals = vi.fn(async () => [
       presentItem('a', ASSET_A),
@@ -202,6 +220,35 @@ describe('export ZIP — sidecar visuali', () => {
       importId: 'imp-1',
       lessonIds: ['a', 'c'],
     });
+  });
+
+  it('include tutti i sidecar del manifest plurale nello stesso ordine', async () => {
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([
+      lesson({
+        visuals: {
+          contractVersion: 'lesson-visuals/v1',
+          items: [
+            { ...MANIFEST, assetId: ASSET_A, source: 'generated' },
+            { ...MANIFEST, assetId: ASSET_B, source: 'generated' },
+          ],
+        },
+      }),
+    ]);
+    const item = multiItem('lesson-1');
+    const fetchVisuals: FetchLessonVisuals = async () => [item];
+
+    const zip = await buildExportZip(PROGRAM, mockStorage, mockDb, fetchVisuals);
+
+    expect(fileKeys(zip).slice(-4)).toEqual([
+      `visuals/${ASSET_A}.json`,
+      `visuals/${ASSET_A}.webp`,
+      `visuals/${ASSET_B}.json`,
+      `visuals/${ASSET_B}.webp`,
+    ]);
+    await expect(zip.file(`visuals/${ASSET_B}.webp`)!.async('uint8array')).resolves.toEqual(
+      WEBP_BYTES,
+    );
   });
 });
 

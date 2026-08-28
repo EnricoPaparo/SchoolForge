@@ -86,6 +86,7 @@ emulatorDescribe('MULTI-VISUAL-04 — Firestore Emulator revisione slot §8.4', 
       publicLessonId: PUBLIC,
       sourceBodyHash,
       existingItemAssetIds: [] as string[],
+      replacementAssetId: null,
       quantity,
     };
     const reservationKey = computeBudgetReservationKey(OWNER, requestId);

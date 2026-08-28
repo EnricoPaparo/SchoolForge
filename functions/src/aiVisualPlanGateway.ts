@@ -737,7 +737,8 @@ function identityMatchesInput(
     plan.programId === input.programId &&
     plan.importId === input.importId &&
     plan.lessonId === input.lessonId &&
-    plan.requestId === input.requestId
+    plan.requestId === input.requestId &&
+    plan.replacementAssetId === input.replacementAssetId
   );
 }
 
@@ -946,7 +947,24 @@ export async function createVisualPlanForOwner(params: {
     }
     const existingItemAssetIds =
       legacy.status === 'ok' ? legacy.manifest.items.map((item) => item.assetId) : [];
-    if (existingItemAssetIds.length + input.quantity.ceiling > MAX_VISUALS_PER_LESSON) {
+    if (
+      input.replacementAssetId !== null &&
+      !existingItemAssetIds.includes(input.replacementAssetId)
+    ) {
+      return {
+        kind: 'lesson_error',
+        error: new AiVisualMultiError(
+          'invalid_input',
+          'L’immagine richiesta per la sostituzione non è presente.',
+        ),
+      };
+    }
+    if (
+      existingItemAssetIds.length +
+        input.quantity.ceiling -
+        (input.replacementAssetId === null ? 0 : 1) >
+      MAX_VISUALS_PER_LESSON
+    ) {
       return {
         kind: 'lesson_error',
         error: new AiVisualMultiError(
@@ -965,6 +983,7 @@ export async function createVisualPlanForOwner(params: {
       publicLessonId: lesson.publicLessonId,
       sourceBodyHash,
       existingItemAssetIds,
+      replacementAssetId: input.replacementAssetId,
       quantity: input.quantity,
     });
 
@@ -1072,6 +1091,7 @@ export async function createVisualPlanForOwner(params: {
       quantity: input.quantity,
       sourceBodyHash,
       existingItemAssetIds,
+      replacementAssetId: input.replacementAssetId,
       budgetCeiling,
       slots: [],
       settlement: { proposalActualCost: null, slots: [] },

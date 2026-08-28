@@ -129,24 +129,68 @@ service cloud.firestore {
                  .get('classIds', []).hasAny([classId])
           )
         )
-        // MULTI-VISUAL-03C: array pubblico ammesso solo su lezione svolta;
-        // forma dettagliata e coerenza col privato restano nel gateway.
-        && (
-          !('visuals' in request.resource.data)
-          || (
-            request.resource.data.get('completed', false) == true
-            && request.resource.data.visuals is map
-            && request.resource.data.visuals.contractVersion == 'lesson-visuals/v1'
-            && request.resource.data.visuals.items is list
-            && request.resource.data.visuals.items.size() >= 1
-            && request.resource.data.visuals.items.size() <= 3
-          )
-        );
+        ;
     }
 
     // --- publicLessonVisuals ↔ publicLessons cross-check (VE-03A) ---
     function publicLessonOf(publicLessonId) {
       return get(/databases/$(database)/documents/publicLessons/$(publicLessonId)).data;
+    }
+
+    function validPublicVisualItem(item) {
+      return item is map
+        && item.keys().hasOnly(['assetId', 'anchor', 'caption', 'altText', 'width', 'height'])
+        && item.keys().hasAll(['assetId', 'anchor', 'caption', 'altText', 'width', 'height'])
+        && item.assetId is string
+        && item.caption is string
+        && item.altText is string
+        && item.width is int
+        && item.height is int
+        && item.anchor is map
+        && item.anchor.keys().hasOnly(['headingSlug', 'headingText', 'placement'])
+        && item.anchor.keys().hasAll(['headingSlug', 'headingText', 'placement'])
+        && item.anchor.headingSlug is string
+        && item.anchor.headingText is string
+        && item.anchor.placement == 'after-heading';
+    }
+
+    function validPublicVisualsManifest(value) {
+      return value is map
+        && value.keys().hasOnly(['contractVersion', 'items'])
+        && value.keys().hasAll(['contractVersion', 'items'])
+        && value.contractVersion == 'lesson-visuals/v1'
+        && value.items is list
+        && value.items.size() >= 1
+        && value.items.size() <= 3
+        && validPublicVisualItem(value.items[0])
+        && (value.items.size() < 2 || validPublicVisualItem(value.items[1]))
+        && (value.items.size() < 3 || validPublicVisualItem(value.items[2]))
+        && (value.items.size() < 2 || value.items[0].assetId != value.items[1].assetId)
+        && (value.items.size() < 3 || (
+          value.items[0].assetId != value.items[2].assetId
+          && value.items[1].assetId != value.items[2].assetId
+        ));
+    }
+
+    function multiVisualBytesMatchProjection(publicLessonId) {
+      let projection = publicLessonOf(publicLessonId);
+      let items = projection.visuals.items;
+      let expectedIds = items.size() == 1
+        ? [items[0].assetId]
+        : (items.size() == 2
+          ? [items[0].assetId, items[1].assetId]
+          : [items[0].assetId, items[1].assetId, items[2].assetId]);
+      return projection.keys().hasAny(['visuals'])
+        && validPublicVisualsManifest(projection.visuals)
+        && resource.data.keys().hasOnly(
+             ['contractVersion', 'publicLessonId', 'programId', 'importId', 'bytes'])
+        && resource.data.keys().hasAll(
+             ['contractVersion', 'publicLessonId', 'programId', 'importId', 'bytes'])
+        && resource.data.contractVersion == 'lesson-visuals/v1'
+        && resource.data.publicLessonId == publicLessonId
+        && resource.data.bytes is map
+        && resource.data.bytes.keys().hasOnly(expectedIds)
+        && resource.data.bytes.keys().hasAll(expectedIds);
     }
 
     // --- publicLessons active-import helper (HARD-02B-1) ---
@@ -976,6 +1020,19 @@ service cloud.firestore {
                  ['headingSlug', 'headingText', 'placement'])
             && request.resource.data.visual.anchor.placement == 'after-heading'
           )
+        )
+        // MULTI-VISUAL-04: singolare e array sono mutuamente esclusivi; il
+        // manifest pubblico è chiuso e può esistere solo su una lezione svolta.
+        && !(
+          request.resource.data.keys().hasAny(['visual'])
+          && request.resource.data.keys().hasAny(['visuals'])
+        )
+        && (
+          !('visuals' in request.resource.data)
+          || (
+            request.resource.data.get('completed', false) == true
+            && validPublicVisualsManifest(request.resource.data.visuals)
+          )
         );
       allow delete: if isOwner();
     }
@@ -1020,8 +1077,13 @@ service cloud.firestore {
           && !examModeAppliesToClass(myStudentClassId())
           && exists(/databases/$(database)/documents/publicLessons/$(publicLessonId))
           && publicLessonOf(publicLessonId).get('completed', false) == true
-          && publicLessonOf(publicLessonId).keys().hasAny(['visual'])
-          && publicLessonOf(publicLessonId).visual.assetId == resource.data.assetId
+          && (
+            (
+              publicLessonOf(publicLessonId).keys().hasAny(['visual'])
+              && publicLessonOf(publicLessonId).visual.assetId == resource.data.assetId
+            )
+            || multiVisualBytesMatchProjection(publicLessonId)
+          )
           && publicLessonOf(publicLessonId).programId == resource.data.programId
           && publicLessonOf(publicLessonId).importId == resource.data.importId
         );

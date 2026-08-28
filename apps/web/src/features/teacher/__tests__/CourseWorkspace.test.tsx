@@ -5,7 +5,7 @@ import { CourseWorkspace } from '../CourseWorkspace.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 import type { LessonItem, UdaItem } from '../../repository/programs/programsService.js';
-import type { LessonVisualPrivateManifest } from '../../../types/firestore.js';
+import type { LessonVisualItem, LessonVisualPrivateManifest } from '../../../types/firestore.js';
 import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
 import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
 
@@ -41,7 +41,15 @@ const mockVisualPromote = vi.fn();
 const mockVisualAbandon = vi.fn();
 const mockVisualRemove = vi.fn();
 const mockReadAuthoritativePrivateVisual = vi.fn();
+const mockReadAuthoritativePrivateVisuals = vi.fn();
 const mockReadTeacherVisual = vi.fn();
+const mockReadTeacherMultiVisual = vi.fn();
+const mockMultiReorder = vi.fn();
+const mockMultiRemove = vi.fn();
+const mockMultiAuthorize = vi.fn();
+const mockMultiGenerate = vi.fn();
+const mockMultiPromote = vi.fn();
+const mockMultiEdit = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../repository/programs/visualGenerationClient.js', () => ({
@@ -57,12 +65,31 @@ vi.mock('../../repository/programs/visualGenerationClient.js', () => ({
   }),
   readAuthoritativePrivateVisual: (...args: unknown[]) =>
     mockReadAuthoritativePrivateVisual(...args),
+  readAuthoritativePrivateVisuals: (...args: unknown[]) =>
+    mockReadAuthoritativePrivateVisuals(...args),
 }));
 vi.mock('../../repository/programs/visualReadClients.js', () => ({
   createTeacherVisualReader:
     () =>
     (...args: unknown[]) =>
       mockReadTeacherVisual(...args),
+}));
+vi.mock('../../repository/programs/multiVisualReadClients.js', () => ({
+  createTeacherMultiVisualReader:
+    () =>
+    (...args: unknown[]) =>
+      mockReadTeacherMultiVisual(...args),
+}));
+vi.mock('../../repository/programs/multiVisualClient.js', () => ({
+  createMultiVisualClient: () => ({
+    authorize: (...args: unknown[]) => mockMultiAuthorize(...args),
+    generateSlot: (...args: unknown[]) => mockMultiGenerate(...args),
+    promoteSlot: (...args: unknown[]) => mockMultiPromote(...args),
+    reorder: (...args: unknown[]) => mockMultiReorder(...args),
+    remove: (...args: unknown[]) => mockMultiRemove(...args),
+    editSlot: (...args: unknown[]) => mockMultiEdit(...args),
+  }),
+  describeMultiVisualError: () => 'Errore multi-visuale.',
 }));
 vi.mock('../../../lib/pdfModuleLoader.js', async (importOriginal) => {
   const actual = await importOriginal<typeof PdfModuleLoaderModule>();
@@ -169,11 +196,13 @@ vi.mock('../QuestionPoolEditor.js', () => ({
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   // Reset the viewport stub so desktop is the default for other tests.
   delete (window as { matchMedia?: unknown }).matchMedia;
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
   // Default: no usable Firestore projection, so existing tests exercise the
   // legacy Storage path (fetchLessonContent). MOB-01C tests override this.
   mockFetchPublicLessonContent.mockResolvedValue(null);
@@ -189,7 +218,11 @@ beforeEach(() => {
   });
   mockVisualRemove.mockResolvedValue(undefined);
   mockReadAuthoritativePrivateVisual.mockResolvedValue(null);
+  mockReadAuthoritativePrivateVisuals.mockResolvedValue(null);
+  mockMultiReorder.mockResolvedValue({ status: 'ok' });
+  mockMultiRemove.mockResolvedValue({ status: 'ok' });
   mockReadTeacherVisual.mockResolvedValue(null);
+  mockReadTeacherMultiVisual.mockResolvedValue([]);
 });
 
 // Controllable matchMedia stub for the mobile/desktop breakpoint tests.
@@ -289,6 +322,14 @@ function visualManifest(overrides: Partial<LessonVisualPrivateManifest> = {}) {
     approvedAt: { toMillis: () => 1_700_000_000_000 } as LessonVisualPrivateManifest['approvedAt'],
     ...overrides,
   } satisfies LessonVisualPrivateManifest;
+}
+
+function multiVisualManifest(overrides: Partial<LessonVisualItem> = {}): LessonVisualItem {
+  return {
+    ...visualManifest(),
+    source: 'generated',
+    ...overrides,
+  } as LessonVisualItem;
 }
 
 function renderWorkspace(over: Partial<CourseCard> = {}, onBack = vi.fn()) {
@@ -526,56 +567,123 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     await screen.findByTestId('md');
   }
 
-  it('apre il percorso proposta dal controllo reale e restituisce il focus alla chiusura', async () => {
+  it('apre il percorso multi-immagine da una lezione senza visual senza spendere', async () => {
     await openVisualLesson(null);
-    const trigger = screen.getByRole('button', { name: 'Azioni lezione' });
-    trigger.focus();
     clickMenuAction('Azioni lezione', 'Arricchisci');
 
-    await screen.findByText('Stima della proposta testuale');
-    expect(mockVisualPreviewProposal).toHaveBeenCalledOnce();
+    await screen.findByRole('heading', { name: 'Aggiungi immagini alla lezione' });
+    expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
+    expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(document.activeElement).toBe(trigger);
   });
 
-  it('gestisce e rimuove la visual corrente senza IA, poi aggiorna controllo e renderer', async () => {
+  it('mantiene il renderer legacy e apre il piano multi che adotterà il singolare', async () => {
     const current = visualManifest();
     await openVisualLesson(current);
     await waitFor(() => expect(screen.getByTestId('md').dataset.visualBytes).toContain('UklGRg'));
     expect(screen.getByTestId('md').dataset.visual).toBe('present');
     expect(screen.getByTestId('md').dataset.visualCaption).toBe(current.caption);
 
-    const trigger = screen.getByRole('button', { name: 'Azioni lezione' });
-    trigger.focus();
     clickMenuAction('Azioni lezione', 'Arricchisci');
-    await screen.findByRole('heading', { name: 'Immagine attuale' });
+    await screen.findByRole('heading', { name: 'Aggiungi immagini alla lezione' });
+    expect(screen.getByRole('button', { name: 'Sostituisci' })).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Rimuovi' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole('button', { name: 'Su' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/verrà adottata nel formato multi/)).toBeTruthy();
     expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
     expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
     expect(mockVisualBind).not.toHaveBeenCalled();
     expect(mockVisualPreviewImage).not.toHaveBeenCalled();
     expect(mockVisualGenerateImage).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rimuovi immagine' }));
-    fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', {
-        name: 'Rimuovi immagine',
-      }),
-    );
-
-    await waitFor(() => expect(mockVisualRemove).toHaveBeenCalledOnce());
-    expect(mockVisualRemove).toHaveBeenCalledWith({
-      programId: 'p1',
-      importId: 'imp1',
-      lessonId: 'l1',
-    });
-    expect(mockReadAuthoritativePrivateVisual).toHaveBeenCalledOnce();
-    expect(openMenuAction('Azioni lezione', 'Arricchisci')).toBeTruthy();
-    expect(screen.getByTestId('md').dataset.visual).toBe('absent');
-    expect(screen.getByTestId('md').dataset.visualBytes).toBe('');
-    expect(document.activeElement).toBe(trigger);
+    expect(mockVisualRemove).not.toHaveBeenCalled();
     expect(mockVisualPromote).not.toHaveBeenCalled();
     expect(mockVisualAbandon).not.toHaveBeenCalled();
+  });
+
+  it('rilegge e applica al solo tree locale il manifest multi dopo reorder', async () => {
+    const first = multiVisualManifest({ caption: 'Prima figura' });
+    const second = multiVisualManifest({
+      assetId: '999e4567-e89b-42d3-a456-426614174999',
+      caption: 'Seconda figura',
+      altText: 'Secondo schema',
+      storageRef:
+        'repository/owner/imp1/uda-01-reti/visuals/999e4567-e89b-42d3-a456-426614174999.webp',
+    });
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', {
+        titolo: 'Lezione visuale',
+        visuals: { contractVersion: 'lesson-visuals/v1', items: [first, second] },
+      }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue('## Topologie\n\nCorpo.');
+    mockReadAuthoritativePrivateVisuals.mockResolvedValue({
+      contractVersion: 'lesson-visuals/v1',
+      items: [second, first],
+    });
+    mockReadTeacherMultiVisual.mockResolvedValue([
+      {
+        assetId: first.assetId,
+        dataUri: 'data:image/webp;base64,UklGRg==',
+        width: first.width,
+        height: first.height,
+      },
+      {
+        assetId: second.assetId,
+        dataUri: 'data:image/webp;base64,UklGRg==',
+        width: second.width,
+        height: second.height,
+      },
+    ]);
+
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(await screen.findByRole('button', { name: 'Lezione visuale' }));
+    await screen.findByRole('heading', { name: 'Immagini della lezione' });
+    expect(await screen.findByRole('img', { name: first.altText })).toBeTruthy();
+    expect(await screen.findByRole('img', { name: second.altText })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Su' })[1]!);
+
+    await waitFor(() => expect(mockReadAuthoritativePrivateVisuals).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      const cards = screen.getAllByRole('article');
+      expect(within(cards[0]!).getByText('Seconda figura')).toBeTruthy();
+      expect(within(cards[1]!).getByText('Prima figura')).toBeTruthy();
+    });
+    expect(mockListLessons).toHaveBeenCalledTimes(1);
+  });
+
+  it('rimuove l’ultima immagine dal tree senza refetch globale né ritorno al legacy', async () => {
+    const current = multiVisualManifest({ caption: 'Ultima figura' });
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', {
+        titolo: 'Lezione visuale',
+        visuals: { contractVersion: 'lesson-visuals/v1', items: [current] },
+      }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue('## Topologie\n\nCorpo.');
+    mockReadAuthoritativePrivateVisuals.mockResolvedValue(null);
+
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(await screen.findByRole('button', { name: 'Lezione visuale' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rimuovi' }));
+
+    await waitFor(() => expect(mockReadAuthoritativePrivateVisuals).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Immagini della lezione' })).toBeNull(),
+    );
+    expect(mockListLessons).toHaveBeenCalledTimes(1);
+    clickMenuAction('Azioni lezione', 'Arricchisci');
+    expect(
+      await screen.findByRole('heading', { name: 'Aggiungi immagini alla lezione' }),
+    ).toBeTruthy();
+    expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
   });
 });
 

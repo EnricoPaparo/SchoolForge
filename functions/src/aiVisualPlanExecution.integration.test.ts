@@ -101,6 +101,7 @@ async function seedIndependentPlan(params: {
   now: number;
   slotCount?: 1 | 2 | 3;
   completed?: boolean;
+  replacementAssetId?: string;
 }) {
   const ownerUid = `owner-${randomUUID()}`;
   const programId = `program-${randomUUID()}`;
@@ -114,6 +115,7 @@ async function seedIndependentPlan(params: {
   const monthKey = monthKeyFromMs(params.now);
   const reservationKey = computeBudgetReservationKey(ownerUid, requestId);
   const generationCap = 1000;
+  const existingItemAssetIds = params.replacementAssetId ? [params.replacementAssetId] : [];
   const planHash = computeVisualPlanHash({
     ownerUid,
     programId,
@@ -121,7 +123,8 @@ async function seedIndependentPlan(params: {
     lessonId,
     publicLessonId,
     sourceBodyHash: sha256Hex(BODY),
-    existingItemAssetIds: [],
+    existingItemAssetIds,
+    replacementAssetId: params.replacementAssetId ?? null,
     quantity,
   });
   const plan: VisualPlanRun = {
@@ -137,7 +140,8 @@ async function seedIndependentPlan(params: {
     status: 'proposed',
     quantity,
     sourceBodyHash: sha256Hex(BODY),
-    existingItemAssetIds: [],
+    existingItemAssetIds,
+    replacementAssetId: params.replacementAssetId ?? null,
     budgetCeiling: {
       reservationKey,
       reservationMonthKey: monthKey,
@@ -161,6 +165,35 @@ async function seedIndependentPlan(params: {
       filename: 'lezione-1.md',
       publicLessonId,
       completed: params.completed ?? false,
+      ...(params.replacementAssetId
+        ? {
+            visuals: {
+              contractVersion: LESSON_VISUALS_CONTRACT_VERSION,
+              items: [
+                {
+                  assetId: params.replacementAssetId,
+                  storageRef: `repository/${ownerUid}/${importId}/uda-01/visuals/${params.replacementAssetId}.webp`,
+                  anchor: {
+                    headingSlug: 'primo',
+                    headingText: 'Primo',
+                    placement: 'after-heading',
+                  },
+                  caption: 'Immagine da sostituire',
+                  altText: 'Schema precedente',
+                  width: 80,
+                  height: 60,
+                  byteLength: 100,
+                  sha256: 'a'.repeat(64),
+                  mimeType: 'image/webp',
+                  source: 'generated',
+                  styleVersion: 'schoolforge-sketch/v1',
+                  sourceBodyHash: sha256Hex(BODY),
+                  approvedAt: Timestamp.fromMillis(params.now - 1000),
+                },
+              ],
+            },
+          }
+        : {}),
     }),
     params.db.doc(`publicLessons/${publicLessonId}`).set({
       ownerUid,
@@ -171,6 +204,27 @@ async function seedIndependentPlan(params: {
       filename: 'lezione-1.md',
       content: BODY,
       completed: params.completed ?? false,
+      ...(params.replacementAssetId && params.completed
+        ? {
+            visuals: {
+              contractVersion: LESSON_VISUALS_CONTRACT_VERSION,
+              items: [
+                {
+                  assetId: params.replacementAssetId,
+                  anchor: {
+                    headingSlug: 'primo',
+                    headingText: 'Primo',
+                    placement: 'after-heading',
+                  },
+                  caption: 'Immagine da sostituire',
+                  altText: 'Schema precedente',
+                  width: 80,
+                  height: 60,
+                },
+              ],
+            },
+          }
+        : {}),
     }),
     params.db.doc(`visualPlanRuns/${opaquePlanId}`).set(plan),
     params.db.doc(`visualPlanLeases/${computeVisualPlanLeaseId(ownerUid, lessonId)}`).set({
@@ -274,6 +328,7 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
       publicLessonId: PUBLIC,
       sourceBodyHash: sha256Hex(BODY),
       existingItemAssetIds: [],
+      replacementAssetId: null,
       quantity,
     });
     const plan: VisualPlanRun = {
@@ -290,6 +345,7 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
       quantity,
       sourceBodyHash: sha256Hex(BODY),
       existingItemAssetIds: [],
+      replacementAssetId: null,
       budgetCeiling: {
         reservationKey,
         reservationMonthKey: monthKey,
@@ -450,7 +506,7 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
     expect(bucket.data.size).toBe(size);
   });
 
-  it('promuove replace sul mondo fresco e rimuove il canonico sostituito solo dopo il commit', async () => {
+  it('rifiuta un replace deciso dopo authorize e conserva il canonico esistente', async () => {
     const previousPlan = validateVisualPlanRun(
       (await db.doc(`visualPlanRuns/${opaquePlanId}`).get()).data(),
     );
@@ -482,35 +538,36 @@ emulatorDescribe('MULTI-VISUAL-03B — Firestore e Storage fake fedele', () => {
     });
     expect(generated.plan.slots[1]?.state).toBe('ready');
     const replacementId = randomUUID();
-    const replaced = await promoteVisualPlanSlotForOwner({
-      db,
-      bucket,
-      ownerUid: OWNER,
-      input: {
-        requestId,
-        programId: PROGRAM,
-        importId: IMPORT,
-        lessonId: LESSON,
-        slotIndex: 1,
-        promotionRequestId: randomUUID(),
-        mode: { mode: 'replace', replaceAssetId: previousAssetId! },
-      },
-      nowMs: now + 8000,
-      generateAssetId: () => replacementId,
-    });
-    expect(replaced.plan.slots[1]?.promotedAssetId).toBe(replacementId);
+    await expect(
+      promoteVisualPlanSlotForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER,
+        input: {
+          requestId,
+          programId: PROGRAM,
+          importId: IMPORT,
+          lessonId: LESSON,
+          slotIndex: 1,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'replace', replaceAssetId: previousAssetId! },
+        },
+        nowMs: now + 8000,
+        generateAssetId: () => replacementId,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
     const lesson = (
       await db.doc(`programs/${PROGRAM}/imports/${IMPORT}/lessons/${LESSON}`).get()
     ).data()!;
     expect(lesson.visuals.items.map((item: { assetId: string }) => item.assetId)).toEqual([
-      replacementId,
+      previousAssetId,
     ]);
     expect(
       bucket.data.has(`repository/${OWNER}/${IMPORT}/uda-01/visuals/${previousAssetId}.webp`),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       bucket.data.has(`repository/${OWNER}/${IMPORT}/uda-01/visuals/${replacementId}.webp`),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('invocation_unknown consuma solo il cap della fase e vieta una nuova chiamata provider', async () => {
@@ -1049,4 +1106,51 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
       .get();
     expect(audits.size).toBe(1);
   }, 15_000);
+
+  it('replace autorizzato usa soltanto il target congelato nel piano', async () => {
+    const now = Date.now();
+    const target = randomUUID();
+    const fixture = await seedIndependentPlan({
+      db,
+      now,
+      slotCount: 1,
+      replacementAssetId: target,
+    });
+    const bucket = new MemoryBucket();
+    await generate(fixture, bucket, 0, now + 100, async () => ({
+      status: 'success',
+      bytes: raw,
+      usage: null,
+      priorBillingRisk: false,
+      metered: false,
+    }));
+    const replacement = randomUUID();
+    const result = await promoteVisualPlanSlotForOwner({
+      db,
+      bucket,
+      ownerUid: fixture.ownerUid,
+      input: {
+        requestId: fixture.requestId,
+        programId: fixture.programId,
+        importId: fixture.importId,
+        lessonId: fixture.lessonId,
+        slotIndex: 0,
+        promotionRequestId: randomUUID(),
+        mode: { mode: 'replace', replaceAssetId: target },
+      },
+      nowMs: now + 200,
+      generateAssetId: () => replacement,
+    });
+    expect(result.plan.slots[0]?.promotedAssetId).toBe(replacement);
+    const lesson = (
+      await db
+        .doc(
+          `programs/${fixture.programId}/imports/${fixture.importId}/lessons/${fixture.lessonId}`,
+        )
+        .get()
+    ).data()!;
+    expect(lesson.visuals.items.map((item: { assetId: string }) => item.assetId)).toEqual([
+      replacement,
+    ]);
+  });
 });

@@ -117,7 +117,9 @@ export async function buildExportZip(
   // quali lezioni hanno un'immagine non costa **nessuna** lettura in più, e un
   // programma che non ne ha nemmeno una non fa alcuna chiamata binaria.
   const lessonsWithVisual = lessons.filter(
-    (lesson) => lesson.visual !== undefined && lesson.visual !== null,
+    (lesson) =>
+      (lesson.visual !== undefined && lesson.visual !== null) ||
+      (lesson.visuals !== undefined && lesson.visuals.items.length > 0),
   );
   if (lessonsWithVisual.length > 0) {
     const fetchVisuals =
@@ -150,33 +152,51 @@ export async function buildExportZip(
       // Fail-closed: la lezione **dichiara** un'immagine. Un `absent` qui non è
       // il caso normale — quello non arriva nemmeno fin qui — ma una divergenza
       // fra il documento e ciò che il server è riuscito a verificare.
-      if (item.status !== 'present') {
+      if (item.status === 'absent') {
         throw new VisualExportError(
           `L’immagine della lezione ${lesson.filename} non è disponibile: export interrotto.`,
         );
       }
-      if (!UUID_V4_RE.test(item.assetId)) {
+      const assets = item.status === 'present' ? [item] : item.assets;
+      if (assets.some((asset) => !UUID_V4_RE.test(asset.assetId))) {
         throw new VisualExportError('Identificativo immagine non valido: export interrotto.');
       }
-
-      const jsonPath = `${VISUAL_EXPORT_ZIP_PREFIX}${item.assetId}.json`;
-      const webpPath = `${VISUAL_EXPORT_ZIP_PREFIX}${item.assetId}.webp`;
-      for (const path of [jsonPath, webpPath]) {
-        // `JSZip.file()` sovrascrive in silenzio: senza questo controllo due
-        // lezioni con lo stesso assetId produrrebbero un archivio a cui manca
-        // una figura, e nulla lo segnalerebbe.
-        if (writtenPaths.has(path)) {
-          throw new VisualExportError(`Collisione di percorso nell’archivio: ${path}`);
+      const singularAssetId = lesson.visual?.assetId;
+      const multiAssetIds = lesson.visuals?.items.map((entry) => entry.assetId) ?? [];
+      if (singularAssetId && multiAssetIds.length > 0) {
+        throw new VisualExportError('Manifest visuale ambiguo: export interrotto.');
+      }
+      if (
+        (singularAssetId !== undefined &&
+          (item.status !== 'present' || item.assetId !== singularAssetId)) ||
+        (multiAssetIds.length > 0 &&
+          (item.status !== 'multi' ||
+            item.assets.length !== multiAssetIds.length ||
+            item.assets.some((asset, index) => asset.assetId !== multiAssetIds[index])))
+      ) {
+        throw new VisualExportError(
+          'La risposta visuale non coincide con il manifest della lezione: export interrotto.',
+        );
+      }
+      for (const asset of assets) {
+        const jsonPath = `${VISUAL_EXPORT_ZIP_PREFIX}${asset.assetId}.json`;
+        const webpPath = `${VISUAL_EXPORT_ZIP_PREFIX}${asset.assetId}.webp`;
+        for (const path of [jsonPath, webpPath]) {
+          if (writtenPaths.has(path)) {
+            throw new VisualExportError(`Collisione di percorso nell’archivio: ${path}`);
+          }
+          writtenPaths.add(path);
         }
-        writtenPaths.add(path);
-      }
 
-      const bytes = decodeBase64(item.base64);
-      if (bytes.byteLength !== item.byteLength) {
-        throw new VisualExportError('I byte dell’immagine non corrispondono a quanto dichiarato.');
+        const bytes = decodeBase64(asset.base64);
+        if (bytes.byteLength !== asset.byteLength) {
+          throw new VisualExportError(
+            'I byte dell’immagine non corrispondono a quanto dichiarato.',
+          );
+        }
+        zip.file(jsonPath, asset.manifestJson);
+        zip.file(webpPath, bytes);
       }
-      zip.file(jsonPath, item.manifestJson);
-      zip.file(webpPath, bytes);
     }
   }
 

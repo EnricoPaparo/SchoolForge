@@ -8,7 +8,7 @@ import type {
   LessonVisualsManifest,
 } from '../../../types/firestore.js';
 import { createVisualLifecycleClient } from './visualLifecycleClient.js';
-import { parsePrivateVisualManifest } from './lessonVisualContract.js';
+import { parsePrivateVisualManifest, parsePrivateVisualsManifest } from './lessonVisualContract.js';
 
 export interface VisualProposalRequest {
   kind: 'visual_proposal';
@@ -187,17 +187,17 @@ export async function readAuthoritativePrivateVisuals(
   );
   if (!snap.exists()) throw new Error('La lezione non esiste più.');
   const data = snap.data();
-  const raw = data.visuals;
-  if (raw === undefined) return null;
-  if (
-    typeof raw !== 'object' ||
-    raw === null ||
-    Array.isArray(raw) ||
-    (raw as { contractVersion?: unknown }).contractVersion !== 'lesson-visuals/v1' ||
-    !Array.isArray((raw as { items?: unknown }).items)
-  )
+  const parsed = parsePrivateVisualsManifest({
+    value: data.visuals,
+    ownerUid: data.ownerUid,
+    importId: params.importId,
+    udaDir: data.udaDir,
+  });
+  if (parsed.kind === 'absent') return null;
+  if (parsed.kind === 'malformed') {
     throw new Error('Il manifest multi-visuale salvato non è leggibile in sicurezza.');
-  return raw as LessonVisualsManifest;
+  }
+  return parsed.manifest;
 }
 
 export type WebAiVisualErrorCode =

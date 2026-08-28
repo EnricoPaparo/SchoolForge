@@ -1006,6 +1006,14 @@ export async function promoteVisualPlanSlotForOwner(params: {
     preflightManifest.status === 'ok'
       ? preflightManifest.manifest.items.map((item) => item.assetId)
       : [];
+  const requestedReplacementAssetId =
+    input.mode.mode === 'replace' ? input.mode.replaceAssetId : null;
+  if (requestedReplacementAssetId !== fastPlan.replacementAssetId) {
+    throw new AiVisualMultiError(
+      'invalid_input',
+      'La modalità di promozione non coincide con il piano autorizzato.',
+    );
+  }
   if (!sameIds(preflightLiveIds, computeExpectedLiveAssetIds(fastPlan, preflightPromotions)))
     throw new AiVisualMultiError(
       'visual_plan_external_mutation',

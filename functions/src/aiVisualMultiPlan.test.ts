@@ -162,6 +162,7 @@ function planOf(params: {
     requestId: REQUEST_ID,
     sourceBodyHash: SOURCE_BODY_HASH,
     existingItemAssetIds: [] as string[],
+    replacementAssetId: null,
     quantity: { mode: 'auto' as const, ceiling: params.ceiling },
     ...params.over,
   };
@@ -173,6 +174,7 @@ function planOf(params: {
     publicLessonId: identity.publicLessonId,
     sourceBodyHash: identity.sourceBodyHash,
     existingItemAssetIds: identity.existingItemAssetIds,
+    replacementAssetId: identity.replacementAssetId as string | null,
     quantity: identity.quantity,
   });
   const budgetCeiling = budgetCeilingFor(params.ceiling, {
@@ -852,6 +854,29 @@ describe('blocker 4 (round 1) — relazioni interne complete del piano', () => {
       },
     });
     expect(() => validateVisualPlanRun(plan)).not.toThrow();
+  });
+
+  it('accetta un solo slot replace a galleria piena e lega il target alla fotografia iniziale', () => {
+    const first = '11111111-2222-4333-8444-555555555555';
+    const plan = planOf({
+      ceiling: 1,
+      slots: [imageSlot(0)],
+      over: {
+        existingItemAssetIds: [
+          first,
+          '22222222-2222-4333-8444-555555555555',
+          '33333333-2222-4333-8444-555555555555',
+        ],
+        replacementAssetId: first,
+      },
+    });
+    expect(() => validateVisualPlanRun(plan)).not.toThrow();
+    expect(() =>
+      validateVisualPlanRun({
+        ...plan,
+        replacementAssetId: '99999999-2222-4333-8444-555555555555',
+      }),
+    ).toThrow(AiVisualMultiError);
   });
 
   it('rifiuta uno slot il cui slotIndex non corrisponde alla propria posizione', () => {

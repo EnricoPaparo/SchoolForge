@@ -81,7 +81,7 @@ import {
   parseLessonMetadata,
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
-import type { LessonVisualPrivateManifest } from '../../types/firestore.js';
+import type { LessonVisualPrivateManifest, LessonVisualsManifest } from '../../types/firestore.js';
 import { fetchLessonContent, fetchPublicLessonContent } from './lessonContent.js';
 import {
   describeStorageError,
@@ -95,6 +95,7 @@ import { LessonVisualWorkflowDialog } from './LessonVisualWorkflowDialog.js';
 import {
   createVisualWorkflowPorts,
   readAuthoritativePrivateVisual,
+  readAuthoritativePrivateVisuals,
 } from '../repository/programs/visualGenerationClient.js';
 import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
 import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
@@ -102,6 +103,7 @@ import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonMultiVisualGallery } from './LessonMultiVisualGallery.js';
 import { LessonMultiVisualWorkflowDialog } from './LessonMultiVisualWorkflowDialog.js';
 import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
+import { createTeacherMultiVisualReader } from '../repository/programs/multiVisualReadClients.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import {
   MarkdownBodyEditor,
@@ -1449,6 +1451,32 @@ export function CourseWorkspace({
     );
   }
 
+  /**
+   * MULTI-VISUAL-04 — applica al solo LessonDoc interessato la rilettura
+   * autorevole eseguita dopo una mutazione. Nessun refetch del corso: sidebar,
+   * dettaglio e prossima operazione condividono immediatamente la stessa
+   * fotografia. Il primo passaggio al contratto array consuma il legacy
+   * singolare; anche l'array vuoto/assente quindi rimuove `visual` dal tree.
+   */
+  function handleVisualsChange(lessonId: string, visuals: LessonVisualsManifest | null) {
+    setTree((prev) =>
+      prev
+        ? {
+            udas: prev.udas,
+            lessons: prev.lessons.map((lesson) =>
+              lesson.id === lessonId
+                ? {
+                    ...lesson,
+                    visual: undefined,
+                    visuals: visuals ?? undefined,
+                  }
+                : lesson,
+            ),
+          }
+        : prev,
+    );
+  }
+
   function handleToggleCompleted(lesson: LessonItem) {
     if (!card.activeImportId) return;
     const importId = card.activeImportId;
@@ -2194,11 +2222,10 @@ export function CourseWorkspace({
                     disabled={visualBlockedReason !== null}
                     onClick={() => {
                       setMenuOpen(false);
-                      if (selectedLesson.visuals) setMultiVisualDialogOpen(true);
-                      else {
-                        selectTab('contenuto');
-                        setVisualDialogOpen(true);
-                      }
+                      selectTab('contenuto');
+                      // Unico ingresso: anche il singolare legacy passa dal
+                      // piano multi, che lo adotta atomicamente sul server.
+                      setMultiVisualDialogOpen(true);
                     }}
                   >
                     <IconSparkles size={15} />
@@ -2336,6 +2363,7 @@ export function CourseWorkspace({
               }}
               onCloseMultiVisualDialog={() => setMultiVisualDialogOpen(false)}
               onOpenMultiVisualDialog={() => setMultiVisualDialogOpen(true)}
+              onVisualsChange={(visuals) => handleVisualsChange(selectedLesson.id, visuals)}
             />
           )}
         </div>
@@ -2842,6 +2870,7 @@ function LessonDetail({
   onCloseVisualDialog,
   onCloseMultiVisualDialog,
   onOpenMultiVisualDialog,
+  onVisualsChange,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2880,6 +2909,7 @@ function LessonDetail({
   onCloseVisualDialog: () => void;
   onCloseMultiVisualDialog: () => void;
   onOpenMultiVisualDialog: () => void;
+  onVisualsChange: (visuals: LessonVisualsManifest | null) => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -2935,6 +2965,41 @@ function LessonDetail({
   }, [manifest, programId, importId, lesson.id]);
 
   const visualState = useLessonVisual(visualRequest, loadVisual);
+  const [multiVisualState, setMultiVisualState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  );
+  const [multiVisualBytes, setMultiVisualBytes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    const manifests = lesson.visuals?.items ?? [];
+    if (!importId || manifests.length === 0) {
+      setMultiVisualBytes({});
+      setMultiVisualState('idle');
+      return () => {
+        active = false;
+      };
+    }
+    setMultiVisualState('loading');
+    void createTeacherMultiVisualReader(functions)({
+      programId,
+      importId,
+      lessonId: lesson.id,
+      manifests,
+    })
+      .then((entries) => {
+        if (!active) return;
+        setMultiVisualBytes(
+          Object.fromEntries(entries.map((entry) => [entry.assetId, entry.dataUri])),
+        );
+        setMultiVisualState('ready');
+      })
+      .catch(() => {
+        if (active) setMultiVisualState('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [functions, importId, lesson.id, lesson.visuals, programId]);
 
   /**
    * Il manifest basta: la figura è montata subito, con lo spazio già riservato,
@@ -2959,6 +3024,21 @@ function LessonDetail({
               : ('loading' as const),
       }
     : null;
+  const lessonVisuals = (lesson.visuals?.items ?? []).map((item) => ({
+    anchorSlug: item.anchor.headingSlug,
+    headingText: item.anchor.headingText,
+    altText: item.altText,
+    caption: item.caption,
+    width: item.width,
+    height: item.height,
+    dataUri: multiVisualBytes[item.assetId] ?? null,
+    status:
+      multiVisualState === 'error'
+        ? ('unavailable' as const)
+        : multiVisualState === 'ready' && multiVisualBytes[item.assetId]
+          ? ('ready' as const)
+          : ('loading' as const),
+  }));
 
   /**
    * Gli heading realmente presenti nel corpo corrente: l'elenco del dialog
@@ -3018,6 +3098,19 @@ function LessonDetail({
     });
     if (!detailMounted.current) return;
     setLocalVisual(next);
+  }
+
+  async function refreshMultiVisuals() {
+    if (!importId) return;
+    const next = await readAuthoritativePrivateVisuals({
+      db,
+      programId,
+      importId,
+      lessonId: lesson.id,
+    });
+    if (!detailMounted.current) return;
+    setLocalVisual(undefined);
+    onVisualsChange(next);
   }
 
   async function confirmReanchor(choice: { index: number; text: string }) {
@@ -3166,6 +3259,7 @@ function LessonDetail({
                   markdown={content}
                   variant="lesson"
                   visual={lessonVisual}
+                  visuals={lessonVisuals}
                   onMissingAnchor={
                     manifest ? (
                       <LessonVisualAnchorNotice
@@ -3208,6 +3302,7 @@ function LessonDetail({
                       expectedAssetIds: lesson.visuals?.items.map((item) => item.assetId) ?? [],
                       nextAssetIds,
                     });
+                    await refreshMultiVisuals();
                   }}
                   onRemove={async (assetId) => {
                     await createMultiVisualClient(functions).remove({
@@ -3216,8 +3311,10 @@ function LessonDetail({
                       lessonId: lesson.id,
                       assetId,
                     });
+                    await refreshMultiVisuals();
                   }}
                   onGenerate={onOpenMultiVisualDialog}
+                  bytes={multiVisualBytes}
                 />
               )}
               {multiVisualDialogOpen && importId && content && (
@@ -3225,10 +3322,14 @@ function LessonDetail({
                   functions={functions}
                   identity={{ programId, importId, lessonId: lesson.id }}
                   lessonAi={lessonAi}
-                  existingCount={lesson.visuals?.items.length ?? 0}
-                  currentVisuals={lesson.visuals?.items ?? []}
+                  existingCount={lesson.visuals?.items.length ?? (manifest ? 1 : 0)}
+                  currentVisuals={
+                    lesson.visuals?.items ??
+                    (manifest ? [{ ...manifest, source: 'generated' as const }] : [])
+                  }
+                  legacySingular={!lesson.visuals && Boolean(manifest)}
                   headings={visualHeadings}
-                  onRefresh={refreshVisual}
+                  onRefresh={refreshMultiVisuals}
                   onClose={onCloseMultiVisualDialog}
                 />
               )}

@@ -91,4 +91,8 @@
   .actions button:last-child {
     grid-column: 1 / -1;
   }
+  .header > button,
+  .actions button {
+    min-height: 44px;
+  }
 }
