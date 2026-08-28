@@ -591,7 +591,8 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     expect((screen.getByRole('button', { name: 'Rimuovi' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
-    expect((screen.getByRole('button', { name: 'Su' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Su' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Giù' })).toBeNull();
     expect(screen.getByText(/verrà adottata nel formato multi/)).toBeTruthy();
     expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
     expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
@@ -604,7 +605,7 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     expect(mockVisualAbandon).not.toHaveBeenCalled();
   });
 
-  it('rilegge e applica al solo tree locale il manifest multi dopo reorder', async () => {
+  it('mostra il manifest multi nell’ordine autorevole senza controlli di riordino', async () => {
     const first = multiVisualManifest({ caption: 'Prima figura' });
     const second = multiVisualManifest({
       assetId: '999e4567-e89b-42d3-a456-426614174999',
@@ -621,10 +622,6 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
       }),
     ]);
     mockFetchLessonContent.mockResolvedValue('## Topologie\n\nCorpo.');
-    mockReadAuthoritativePrivateVisuals.mockResolvedValue({
-      contractVersion: 'lesson-visuals/v1',
-      items: [second, first],
-    });
     mockReadTeacherMultiVisual.mockResolvedValue([
       {
         assetId: first.assetId,
@@ -646,14 +643,13 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     await screen.findByRole('heading', { name: 'Immagini della lezione' });
     expect(await screen.findByRole('img', { name: first.altText })).toBeTruthy();
     expect(await screen.findByRole('img', { name: second.altText })).toBeTruthy();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Su' })[1]!);
-
-    await waitFor(() => expect(mockReadAuthoritativePrivateVisuals).toHaveBeenCalledOnce());
-    await waitFor(() => {
-      const cards = screen.getAllByRole('article');
-      expect(within(cards[0]!).getByText('Seconda figura')).toBeTruthy();
-      expect(within(cards[1]!).getByText('Prima figura')).toBeTruthy();
-    });
+    const cards = screen.getAllByRole('article');
+    expect(within(cards[0]!).getByText('Prima figura')).toBeTruthy();
+    expect(within(cards[1]!).getByText('Seconda figura')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Su' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Giù' })).toBeNull();
+    expect(mockMultiReorder).not.toHaveBeenCalled();
+    expect(mockReadAuthoritativePrivateVisuals).not.toHaveBeenCalled();
     expect(mockListLessons).toHaveBeenCalledTimes(1);
   });
 

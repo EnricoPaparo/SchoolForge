@@ -1,6 +1,8 @@
 .gallery {
   display: grid;
   gap: 1rem;
+  width: 100%;
+  min-width: 0;
 }
 .header {
   display: flex;
@@ -21,6 +23,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
+  min-width: 0;
 }
 .card {
   display: grid;
@@ -65,7 +68,7 @@
   flex-wrap: wrap;
 }
 .actions button {
-  flex: 1 1 4rem;
+  flex: 0 1 auto;
 }
 .error {
   color: var(--danger);
@@ -85,14 +88,11 @@
     width: 100%;
   }
   .actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-  .actions button:last-child {
-    grid-column: 1 / -1;
+    display: flex;
   }
   .header > button,
   .actions button {
     min-height: 44px;
+    width: 100%;
   }
 }
