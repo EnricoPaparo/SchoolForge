@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
 import {
   createMultiVisualClient,
@@ -9,6 +9,20 @@ import {
 import type { Functions } from 'firebase/functions';
 import type { LessonVisualItem } from '../../types/firestore.js';
 import styles from './LessonMultiVisualWorkflowDialog.module.css';
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function canGenerateOrPromote(slot: MultiVisualPlan['slots'][number]): boolean {
+  if (slot.decision !== 'image' || slot.promotedAssetId || slot.state === 'abandoned') return false;
+  if (slot.state === 'pending') return true;
+  if (slot.state === 'ready') return Boolean(slot.staged);
+  return (
+    slot.state === 'failed' &&
+    slot.attempts < 2 &&
+    slot.lastError !== 'uncertain_outcome' &&
+    slot.lastError !== 'staging_conflict'
+  );
+}
 
 export function LessonMultiVisualWorkflowDialog({
   functions,
@@ -47,7 +61,13 @@ export function LessonMultiVisualWorkflowDialog({
   const [exactQuantity, setExactQuantity] = useState<1 | 2 | 3>(1);
   const [plan, setPlan] = useState<MultiVisualPlan | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progressText, setProgressText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{
+    applied: number;
+    skipped: number;
+    unavailable: number;
+  } | null>(null);
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [draft, setDraft] = useState({
     subject: '',
@@ -56,6 +76,68 @@ export function LessonMultiVisualWorkflowDialog({
     anchorHeadingIndex: 0,
   });
   const [replaceAssetId, setReplaceAssetId] = useState<string | null>(null);
+  const promotionRequestIds = useRef(new Map<number, string>());
+  const editorialRequestIds = useRef(new Map<string, string>());
+
+  function promotionRequestIdFor(slotIndex: number): string {
+    const existing = promotionRequestIds.current.get(slotIndex);
+    if (existing) return existing;
+    const storageKey = `schoolforge:multi-visual:promotion:${identity.programId}:${identity.importId}:${identity.lessonId}:${plan?.requestId ?? requestId}:${slotIndex}`;
+    try {
+      const persisted = window.sessionStorage.getItem(storageKey);
+      if (persisted && UUID_V4.test(persisted)) {
+        promotionRequestIds.current.set(slotIndex, persisted);
+        return persisted;
+      }
+    } catch {
+      // La memoria in pagina resta sufficiente quando lo storage della sessione
+      // è disabilitato dal browser.
+    }
+    const created = crypto.randomUUID();
+    promotionRequestIds.current.set(slotIndex, created);
+    try {
+      window.sessionStorage.setItem(storageKey, created);
+    } catch {
+      // Vedi sopra: nessun blocco del flusso per uno storage non disponibile.
+    }
+    return created;
+  }
+
+  function editorialRequestIdFor(slotIndex: number, payload: Record<string, unknown>): string {
+    const canonicalPayload = JSON.stringify(payload);
+    const memoryKey = `${slotIndex}:${canonicalPayload}`;
+    const existing = editorialRequestIds.current.get(memoryKey);
+    if (existing) return existing;
+    const storageKey = `schoolforge:multi-visual:editorial:${identity.programId}:${identity.importId}:${identity.lessonId}:${plan?.requestId ?? requestId}:${slotIndex}`;
+    try {
+      const persisted = JSON.parse(window.sessionStorage.getItem(storageKey) ?? 'null') as unknown;
+      if (
+        typeof persisted === 'object' &&
+        persisted !== null &&
+        'payload' in persisted &&
+        'requestId' in persisted &&
+        persisted.payload === canonicalPayload &&
+        typeof persisted.requestId === 'string' &&
+        UUID_V4.test(persisted.requestId)
+      ) {
+        editorialRequestIds.current.set(memoryKey, persisted.requestId);
+        return persisted.requestId;
+      }
+    } catch {
+      // Un valore assente o corrotto non deve uscire dal browser.
+    }
+    const created = crypto.randomUUID();
+    editorialRequestIds.current.set(memoryKey, created);
+    try {
+      window.sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({ payload: canonicalPayload, requestId: created }),
+      );
+    } catch {
+      // La memoria in pagina conserva comunque l'idempotenza del tentativo.
+    }
+    return created;
+  }
 
   async function authorize() {
     if (busy) return;
@@ -65,14 +147,10 @@ export function LessonMultiVisualWorkflowDialog({
       quantityMode === 'auto'
         ? (Math.max(1, availableSlots) as 1 | 2 | 3)
         : (Math.min(exactQuantity, Math.max(1, availableSlots)) as 1 | 2 | 3);
-    if (
-      !window.confirm(
-        `Confermi la proposta fino a ${selectedCeiling} immagini? Il costo massimo comprende proposta e generazioni.`,
-      )
-    )
-      return;
     setBusy(true);
+    setProgressText('Sto preparando le proposte visive…');
     setError(null);
+    setSummary(null);
     try {
       const input: MultiVisualPlanRequest = {
         ...identity,
@@ -93,77 +171,98 @@ export function LessonMultiVisualWorkflowDialog({
       setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
+      setProgressText(null);
     }
   }
 
-  async function generate(slotIndex: number) {
-    if (!plan || busy) return;
+  async function generateAndApply() {
+    if (!plan || busy || editingSlot !== null) return;
+    let currentPlan = plan;
+    let changed = false;
+    const actionable = currentPlan.slots.filter(canGenerateOrPromote);
+    if (actionable.length === 0) return;
+
     setBusy(true);
     setError(null);
+    setSummary(null);
     try {
-      setPlan(await client.generateSlot({ ...identity, requestId: plan.requestId, slotIndex }));
+      for (let position = 0; position < actionable.length; position += 1) {
+        const slotIndex = actionable[position]!.slotIndex;
+        let slot = currentPlan.slots.find((item) => item.slotIndex === slotIndex);
+        if (!slot) continue;
+
+        if (!slot.staged && !slot.promotedAssetId) {
+          setProgressText(`Generazione immagine ${position + 1} di ${actionable.length}…`);
+          currentPlan = await client.generateSlot({
+            ...identity,
+            requestId: currentPlan.requestId,
+            slotIndex,
+          });
+          setPlan(currentPlan);
+          slot = currentPlan.slots.find((item) => item.slotIndex === slotIndex);
+        }
+
+        if (slot?.staged && !slot.promotedAssetId) {
+          setProgressText(`Applicazione immagine ${position + 1} di ${actionable.length}…`);
+          currentPlan = await client.promoteSlot({
+            ...identity,
+            requestId: currentPlan.requestId,
+            slotIndex,
+            promotionRequestId: promotionRequestIdFor(slotIndex),
+            mode: replaceAssetId ? { mode: 'replace', replaceAssetId } : { mode: 'add' },
+          });
+          changed = true;
+          setPlan(currentPlan);
+        }
+      }
+
+      setProgressText('Aggiornamento della lezione…');
+      if (changed) await onRefresh();
+      setSummary({
+        applied: currentPlan.slots.filter((slot) => Boolean(slot.promotedAssetId)).length,
+        skipped: currentPlan.slots.filter(
+          (slot) => slot.decision !== 'image' || slot.state === 'abandoned',
+        ).length,
+        unavailable: currentPlan.slots.filter(
+          (slot) =>
+            slot.decision === 'image' &&
+            !slot.promotedAssetId &&
+            slot.state !== 'abandoned' &&
+            !canGenerateOrPromote(slot),
+        ).length,
+      });
     } catch (cause) {
+      await onRefresh().catch(() => undefined);
+      setPlan(currentPlan);
       setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function promote(slotIndex: number) {
-    if (!plan || busy) return;
-    const slot = plan.slots.find((item) => item.slotIndex === slotIndex);
-    if (!slot?.staged) return;
-    const heading =
-      headings.find((item) => item.index === slot.anchor?.headingIndex) ?? headings[0];
-    if (!heading) {
-      setError('Serve almeno un titolo H2 o H3 nella lezione.');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      setPlan(
-        await client.promoteSlot({
-          ...identity,
-          requestId: plan.requestId,
-          slotIndex,
-          promotionRequestId: crypto.randomUUID(),
-          mode: replaceAssetId ? { mode: 'replace', replaceAssetId } : { mode: 'add' },
-        }),
-      );
-      await onRefresh();
-    } catch (cause) {
-      setError(describeMultiVisualError(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function promoteAll() {
-    if (!plan || busy) return;
-    for (const slot of plan.slots) {
-      if (slot.staged && !slot.promotedAssetId) await promote(slot.slotIndex);
+      setProgressText(null);
     }
   }
   async function saveSlotEdit(slotIndex: number) {
     if (!plan || busy) return;
     const anchor = headings.find((item) => item.index === draft.anchorHeadingIndex) ?? headings[0];
     if (!anchor) return setError('Aggiungi almeno un titolo H2 o H3 alla lezione.');
+    const editorialPayload = {
+      abandon: false,
+      subject: draft.subject,
+      caption: draft.caption,
+      altText: draft.altText,
+      anchorHeadingIndex: anchor.index,
+      anchorHeadingText: anchor.text,
+    } as const;
     setBusy(true);
+    setProgressText('Salvataggio delle modifiche…');
     setError(null);
     try {
       setPlan(
         await client.editSlot({
           ...identity,
           requestId: plan.requestId,
-          editRequestId: crypto.randomUUID(),
+          editRequestId: editorialRequestIdFor(slotIndex, editorialPayload),
           slotIndex,
-          abandon: false,
-          subject: draft.subject,
-          caption: draft.caption,
-          altText: draft.altText,
-          anchorHeadingIndex: anchor.index,
-          anchorHeadingText: anchor.text,
+          ...editorialPayload,
         }),
       );
       setEditingSlot(null);
@@ -171,18 +270,20 @@ export function LessonMultiVisualWorkflowDialog({
       setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
+      setProgressText(null);
     }
   }
   async function abandonSlot(slotIndex: number) {
     if (!plan || busy) return;
     setBusy(true);
+    setProgressText('Rimozione della proposta…');
     setError(null);
     try {
       setPlan(
         await client.editSlot({
           ...identity,
           requestId: plan.requestId,
-          editRequestId: crypto.randomUUID(),
+          editRequestId: editorialRequestIdFor(slotIndex, { abandon: true }),
           slotIndex,
           abandon: true,
         }),
@@ -191,27 +292,7 @@ export function LessonMultiVisualWorkflowDialog({
       setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function reorderExisting(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= currentVisuals.length || busy) return;
-    const next = currentVisuals.map((item) => item.assetId);
-    [next[index], next[target]] = [next[target]!, next[index]!];
-    setBusy(true);
-    setError(null);
-    try {
-      await client.reorder({
-        ...identity,
-        expectedAssetIds: currentVisuals.map((item) => item.assetId),
-        nextAssetIds: next,
-      });
-      await onRefresh();
-    } catch (cause) {
-      setError(describeMultiVisualError(cause));
-    } finally {
-      setBusy(false);
+      setProgressText(null);
     }
   }
 
@@ -219,6 +300,7 @@ export function LessonMultiVisualWorkflowDialog({
     if (busy) return;
     if (!window.confirm('Rimuovere definitivamente questa immagine dalla lezione?')) return;
     setBusy(true);
+    setProgressText('Rimozione dell’immagine…');
     setError(null);
     try {
       await client.remove({ ...identity, assetId });
@@ -227,8 +309,11 @@ export function LessonMultiVisualWorkflowDialog({
       setError(describeMultiVisualError(cause));
     } finally {
       setBusy(false);
+      setProgressText(null);
     }
   }
+
+  const actionableSlots = plan?.slots.filter(canGenerateOrPromote) ?? [];
 
   return (
     <DialogShell
@@ -240,8 +325,8 @@ export function LessonMultiVisualWorkflowDialog({
       {!plan ? (
         <>
           <p>
-            Puoi aggiungere fino a {freeSlots} immagini. La proposta e ogni immagine hanno una
-            conferma e un costo separati.
+            Puoi aggiungere fino a {freeSlots} immagini. «Stima immagini» prepara subito le
+            proposte; dopo la revisione un unico comando genera e applica quelle confermate.
           </p>
           {currentVisuals.length > 0 && (
             <div className={styles.currentList} aria-label="Immagini attuali">
@@ -252,22 +337,6 @@ export function LessonMultiVisualWorkflowDialog({
                     {index + 1}. {item.anchor.headingText}
                   </span>
                   <span className={styles.inlineActions}>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => void reorderExisting(index, -1)}
-                      disabled={busy || legacySingular || index === 0}
-                    >
-                      Su
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => void reorderExisting(index, 1)}
-                      disabled={busy || legacySingular || index === currentVisuals.length - 1}
-                    >
-                      Giù
-                    </button>
                     <button
                       type="button"
                       className="btn-secondary"
@@ -297,7 +366,7 @@ export function LessonMultiVisualWorkflowDialog({
           {legacySingular && (
             <p role="status">
               L’immagine legacy verrà adottata nel formato multi quando confermi la proposta; prima
-              dell’adozione puoi sostituirla, ma non riordinarla o rimuoverla.
+              dell’adozione puoi sostituirla, ma non rimuoverla.
             </p>
           )}
           {replaceAssetId && (
@@ -342,6 +411,12 @@ export function LessonMultiVisualWorkflowDialog({
               {error}
             </p>
           )}
+          {progressText && (
+            <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
+              <span className="spinner" aria-hidden="true" />
+              <span>{progressText}</span>
+            </div>
+          )}
           <div className={styles.actions}>
             <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
               Annulla
@@ -358,126 +433,197 @@ export function LessonMultiVisualWorkflowDialog({
         </>
       ) : (
         <>
-          <p>
-            Proposta pronta. Genera le immagini una alla volta: i tentativi già conclusi non vengono
-            ripetuti.
-          </p>
+          {summary ? (
+            <section className={styles.summary} aria-labelledby="multi-visual-summary-title">
+              <h3 id="multi-visual-summary-title">Immagini applicate alla lezione</h3>
+              <p>
+                {summary.applied === 1
+                  ? 'È stata applicata 1 immagine.'
+                  : `Sono state applicate ${summary.applied} immagini.`}
+              </p>
+              {summary.skipped > 0 && (
+                <p>
+                  {summary.skipped === 1
+                    ? 'Una proposta non richiedeva un’immagine oppure è stata scartata.'
+                    : `${summary.skipped} proposte non richiedevano un’immagine oppure sono state scartate.`}
+                </p>
+              )}
+              {summary.unavailable > 0 && (
+                <p>
+                  {summary.unavailable === 1
+                    ? 'Una proposta non era più generabile ed è stata lasciata invariata.'
+                    : `${summary.unavailable} proposte non erano più generabili e sono state lasciate invariate.`}
+                </p>
+              )}
+            </section>
+          ) : (
+            <p>
+              Controlla le proposte, modifica i dettagli se necessario e poi genera e applica tutto
+              con un solo comando.
+            </p>
+          )}
           {error && (
             <p role="alert" className={styles.error}>
               {error}
             </p>
           )}
-          <div className={styles.slots}>
-            {plan.slots.map((slot) => (
-              <article key={slot.slotIndex} className={styles.slot}>
-                <h4>Immagine {slot.slotIndex + 1}</h4>
-                <p>{slot.subject ?? 'Nessuna immagine proposta'}</p>
-                {slot.decision === 'image' &&
-                  !slot.promotedAssetId &&
-                  slot.state === 'pending' &&
-                  (editingSlot === slot.slotIndex ? (
-                    <div className={styles.editor}>
-                      <input
-                        aria-label="Soggetto"
-                        value={draft.subject}
-                        onChange={(e) => setDraft((v) => ({ ...v, subject: e.target.value }))}
-                      />
-                      <input
-                        aria-label="Didascalia"
-                        value={draft.caption}
-                        onChange={(e) => setDraft((v) => ({ ...v, caption: e.target.value }))}
-                      />
-                      <input
-                        aria-label="Testo alternativo"
-                        value={draft.altText}
-                        onChange={(e) => setDraft((v) => ({ ...v, altText: e.target.value }))}
-                      />
-                      <select
-                        aria-label="Ancora"
-                        value={draft.anchorHeadingIndex}
-                        onChange={(e) =>
-                          setDraft((v) => ({ ...v, anchorHeadingIndex: Number(e.target.value) }))
-                        }
-                      >
-                        {headings.map((h) => (
-                          <option key={h.index} value={h.index}>
-                            {h.text}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => void saveSlotEdit(slot.slotIndex)}
-                        disabled={busy}
-                      >
-                        Salva modifica
-                      </button>
-                    </div>
+          {!summary && (
+            <div className={styles.slots}>
+              {plan.slots.map((slot) => (
+                <article key={slot.slotIndex} className={styles.slot}>
+                  <h4>Immagine {slot.slotIndex + 1}</h4>
+                  {slot.decision === 'image' ? (
+                    <>
+                      {editingSlot === slot.slotIndex && slot.state === 'pending' ? (
+                        <div className={styles.editor}>
+                          <label>
+                            Cosa deve mostrare l’immagine
+                            <textarea
+                              rows={4}
+                              value={draft.subject}
+                              onChange={(e) =>
+                                setDraft((value) => ({ ...value, subject: e.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Didascalia
+                            <textarea
+                              rows={2}
+                              value={draft.caption}
+                              onChange={(e) =>
+                                setDraft((value) => ({ ...value, caption: e.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Testo alternativo
+                            <textarea
+                              rows={3}
+                              value={draft.altText}
+                              onChange={(e) =>
+                                setDraft((value) => ({ ...value, altText: e.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Posizione nella lezione
+                            <select
+                              value={draft.anchorHeadingIndex}
+                              onChange={(e) =>
+                                setDraft((value) => ({
+                                  ...value,
+                                  anchorHeadingIndex: Number(e.target.value),
+                                }))
+                              }
+                            >
+                              {headings.map((heading) => (
+                                <option key={heading.index} value={heading.index}>
+                                  {heading.text}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className={styles.slotActions}>
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              onClick={() => void saveSlotEdit(slot.slotIndex)}
+                              disabled={busy}
+                            >
+                              Salva modifiche
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => setEditingSlot(null)}
+                              disabled={busy}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <dl className={styles.slotDetails}>
+                            <div>
+                              <dt>Soggetto</dt>
+                              <dd>{slot.subject}</dd>
+                            </div>
+                            <div>
+                              <dt>Utilità didattica</dt>
+                              <dd>{slot.rationale}</dd>
+                            </div>
+                            <div>
+                              <dt>Didascalia</dt>
+                              <dd>{slot.caption}</dd>
+                            </div>
+                            <div>
+                              <dt>Testo alternativo</dt>
+                              <dd>{slot.altText}</dd>
+                            </div>
+                            <div>
+                              <dt>Posizione</dt>
+                              <dd>{slot.anchor?.headingText}</dd>
+                            </div>
+                          </dl>
+                          {!slot.promotedAssetId && slot.state !== 'abandoned' && (
+                            <div className={styles.slotActions}>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => {
+                                  setEditingSlot(slot.slotIndex);
+                                  setDraft({
+                                    subject: slot.subject ?? '',
+                                    caption: slot.caption ?? '',
+                                    altText: slot.altText ?? '',
+                                    anchorHeadingIndex:
+                                      slot.anchor?.headingIndex ?? headings[0]?.index ?? 0,
+                                  });
+                                }}
+                                disabled={busy || slot.state !== 'pending'}
+                              >
+                                Modifica
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => void abandonSlot(slot.slotIndex)}
+                                disabled={busy || slot.state !== 'pending'}
+                              >
+                                Scarta proposta
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => {
-                        setEditingSlot(slot.slotIndex);
-                        setDraft({
-                          subject: slot.subject ?? '',
-                          caption: slot.caption ?? '',
-                          altText: slot.altText ?? '',
-                          anchorHeadingIndex: slot.anchor?.headingIndex ?? headings[0]?.index ?? 0,
-                        });
-                      }}
-                    >
-                      Modifica
-                    </button>
-                  ))}
-                {slot.staged ? <p>Immagine generata pronta per l’applicazione.</p> : null}
-                {slot.promotedAssetId ? (
-                  <p className={styles.success}>Applicata alla lezione.</p>
-                ) : slot.staged ? (
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => void promote(slot.slotIndex)}
-                    disabled={busy}
-                  >
-                    Applica immagine
-                  </button>
-                ) : slot.decision === 'image' &&
-                  (slot.state === 'pending' || slot.state === 'failed') ? (
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => void generate(slot.slotIndex)}
-                    disabled={busy}
-                  >
-                    {slot.state === 'failed' ? 'Riprova generazione' : 'Genera immagine'}
-                  </button>
-                ) : null}
-                {slot.decision === 'image' && slot.state === 'pending' && !slot.promotedAssetId && (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => void abandonSlot(slot.slotIndex)}
-                    disabled={busy}
-                  >
-                    Abbandona slot
-                  </button>
-                )}
-              </article>
-            ))}
-          </div>
-          {plan.slots.some((slot) => slot.staged && !slot.promotedAssetId) && (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => void promoteAll()}
-              disabled={busy}
-            >
-              Applica tutte
-            </button>
+                    <p>Nessuna immagine utile proposta per questa parte della lezione.</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+          {progressText && (
+            <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
+              <span className="spinner" aria-hidden="true" />
+              <span>{progressText}</span>
+            </div>
           )}
           <div className={styles.actions}>
+            {!summary && actionableSlots.length > 0 && (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void generateAndApply()}
+                disabled={busy || editingSlot !== null}
+              >
+                Genera e applica{' '}
+                {actionableSlots.length === 1 ? '1 immagine' : `${actionableSlots.length} immagini`}
+              </button>
+            )}
             <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
               Chiudi
             </button>

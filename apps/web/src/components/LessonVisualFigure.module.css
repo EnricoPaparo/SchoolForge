@@ -10,6 +10,8 @@
 .figure {
   margin: 1.5rem 0;
   /* La figura non ha margini laterali propri: eredita la colonna del corpo. */
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
 }
 

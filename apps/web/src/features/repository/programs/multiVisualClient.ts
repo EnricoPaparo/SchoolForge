@@ -88,7 +88,7 @@ export function describeMultiVisualError(error: unknown): string {
   if (code === 'visual_plan_external_mutation')
     return 'La lezione è cambiata: ricarica il piano prima di continuare.';
   if (code === 'visual_plan_expired') return 'Il piano è scaduto: avvia una nuova proposta.';
-  return 'Operazione non riuscita. Nessuna modifica parziale è stata applicata.';
+  return 'Operazione interrotta. Le immagini già applicate restano nella lezione; puoi riprovare quelle mancanti.';
 }
 export function createMultiVisualClient(functions: Functions) {
   const authorize = httpsCallable<MultiVisualPlanRequest, MultiVisualPlan>(

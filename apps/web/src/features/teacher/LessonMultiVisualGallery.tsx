@@ -6,14 +6,12 @@ import styles from './LessonMultiVisualGallery.module.css';
 export function LessonMultiVisualGallery({
   identity,
   manifest,
-  onReorder,
   onRemove,
   onGenerate,
   bytes = {},
 }: {
   identity: MultiVisualIdentity;
   manifest: LessonVisualItem[];
-  onReorder: (assetIds: string[]) => Promise<void>;
   onRemove: (assetId: string) => Promise<void>;
   onGenerate?: () => void;
   bytes?: Record<string, string>;
@@ -22,21 +20,6 @@ export function LessonMultiVisualGallery({
   const [error, setError] = useState<string | null>(null);
   const items = manifest;
   const ids = useMemo(() => items.map((item) => item.assetId), [items]);
-  async function move(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= items.length || busy) return;
-    const next = [...items];
-    [next[index], next[target]] = [next[target]!, next[index]!];
-    setBusy(true);
-    setError(null);
-    try {
-      await onReorder(next.map((item) => item.assetId));
-    } catch {
-      setError('Impossibile riordinare le immagini. Riprova.');
-    } finally {
-      setBusy(false);
-    }
-  }
   async function remove(assetId: string) {
     if (busy) return;
     if (!window.confirm('Rimuovere definitivamente questa immagine dalla lezione?')) return;
@@ -105,22 +88,6 @@ export function LessonMultiVisualGallery({
             </div>
             <p className={styles.caption}>{item.caption}</p>
             <div className={styles.actions}>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => void move(index, -1)}
-                disabled={busy || index === 0}
-              >
-                Su
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => void move(index, 1)}
-                disabled={busy || index === items.length - 1}
-              >
-                Giù
-              </button>
               <button
                 type="button"
                 className="btn-danger"

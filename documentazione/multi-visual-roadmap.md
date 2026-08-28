@@ -3399,6 +3399,32 @@ nel primo piano multi. La galleria non mantiene una copia ottimistica del
 manifest: promote, reorder e remove terminano con **una lettura puntuale** del
 solo `LessonDoc`, validazione chiusa e patch della sola lezione nel tree.
 
+### 23.1 Semplificazione UX successiva al gate DEV
+
+Il primo smoke umano ha mostrato che la traduzione letterale delle operazioni
+server in pulsanti produceva un flusso troppo frammentato. La superficie
+definitiva mantiene gli stessi contratti e costi, ma li orchestra così:
+
+- `Stima immagini` parte al click, senza un secondo dialog di conferma;
+- le proposte sono elencate verticalmente e consentono di modificare soggetto,
+  didascalia, testo alternativo e posizione prima della spesa immagine;
+- un solo comando `Genera e applica N immagini` esegue in sequenza generate e
+  promote degli slot confermati, senza retry onerosi automatici;
+- ogni promozione riusa un `promotionRequestId` stabile anche dopo una risposta
+  persa; un errore interrompe la sequenza e conserva quanto già applicato;
+- al termine compare un riepilogo e non esistono più i comandi intermedi
+  `Genera immagine`, `Applica immagine` o `Applica tutte`;
+- l'ordine editoriale è quello autorevole di applicazione. I comandi `Su` e
+  `Giù` sono rimossi dalla UI; sostituzione e rimozione restano disponibili e
+  la rimozione conserva la conferma distruttiva;
+- durante stima, generazione, promozione, refresh e rimozione la UI espone uno
+  stato di avanzamento live e blocca i doppi click.
+
+La callable di reorder resta nel backend per compatibilità del contratto, ma
+non è esposta dalla UI. La dicitura storica «Applica tutte» nelle sezioni di
+progetto e nel cost model descrive quindi N promozioni sequenziali: nella UI
+finale la stessa operazione è inclusa in `Genera e applica N immagini`.
+
 Il renderer N-way risolve tutte le ancore sul Markdown originale prima di
 dividere il documento. L'ordine editoriale inverso, due immagini sulla stessa
 ancora e un'ancora mancante non possono quindi far scomparire sezioni o figure.
@@ -3410,6 +3436,6 @@ già misurato **1 lettura Firestore puntuale client** per il refresh; nessuna
 query, listener, polling o rilettura globale. La lettura studente dei byte resta
 una sola per le 1..3 immagini annunciate dal manifest.
 
-Stato: codice e test implementati; rollout DEV, smoke reale e Gate GMULTI
-restano PENDING. Upload manuale e integrazione automatica con «Genera lezione»
-non vengono dichiarati completati da questa fase.
+Stato: codice e test implementati; il secondo rollout DEV e lo smoke umano
+della semplificazione restano PENDING. Upload manuale e integrazione automatica
+con «Genera lezione» non vengono dichiarati completati da questa fase.

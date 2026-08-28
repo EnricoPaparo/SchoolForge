@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LessonVisualItem } from '../../../types/firestore.js';
 import { LessonMultiVisualGallery } from '../LessonMultiVisualGallery.js';
@@ -33,37 +33,22 @@ function item(assetId: string, caption: string): LessonVisualItem {
 const identity = { programId: 'program', importId: 'import', lessonId: 'lesson' };
 
 describe('LessonMultiVisualGallery', () => {
-  it('invia il nuovo ordine completo e aspetta la fotografia autorevole del chiamante', async () => {
-    const onReorder = vi.fn().mockResolvedValue(undefined);
+  it('mantiene l’ordine autorevole senza esporre controlli di riordino', () => {
     const first = item('11111111-1111-4111-8111-111111111111', 'Prima');
     const second = item('22222222-2222-4222-8222-222222222222', 'Seconda');
-    const view = render(
+    render(
       <LessonMultiVisualGallery
         identity={identity}
         manifest={[first, second]}
-        onReorder={onReorder}
         onRemove={vi.fn()}
       />,
     );
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Su' })[1]!);
-    await waitFor(() => expect(onReorder).toHaveBeenCalledWith([second.assetId, first.assetId]));
-    // La risposta della callable non viene scambiata per stato autorevole.
     expect(screen.getAllByRole('strong').map((node) => node.parentElement?.textContent)).toEqual([
       'Immagine 1Sezione',
       'Immagine 2Sezione',
     ]);
-
-    view.rerender(
-      <LessonMultiVisualGallery
-        identity={identity}
-        manifest={[second, first]}
-        onReorder={onReorder}
-        onRemove={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Seconda')).toBeTruthy();
-    expect(screen.getAllByText(/Prima|Seconda/)[0]!.textContent).toBe('Seconda');
+    expect(screen.queryByRole('button', { name: 'Su' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Giù' })).toBeNull();
   });
 
   it('rimuove tramite callback, mostra errori e mantiene target nominati', async () => {
@@ -73,7 +58,6 @@ describe('LessonMultiVisualGallery', () => {
       <LessonMultiVisualGallery
         identity={identity}
         manifest={[visual]}
-        onReorder={vi.fn()}
         onRemove={onRemove}
         onGenerate={vi.fn()}
       />,

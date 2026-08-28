@@ -37,7 +37,6 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
       <LessonMultiVisualGallery
         identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
         manifest={[item(1), item(2), item(3)]}
-        onReorder={vi.fn()}
         onRemove={vi.fn()}
         onGenerate={vi.fn()}
       />,
@@ -53,6 +52,7 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
       resolve(root, 'LessonMultiVisualWorkflowDialog.module.css'),
       'utf8',
     );
+    const shell = readFileSync(resolve(root, 'TeacherShell.module.css'), 'utf8');
     expect(gallery).toMatch(/repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
     expect(gallery).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*grid-template-columns:\s*1fr/);
     expect(dialog).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*min-height:\s*44px/);
@@ -61,5 +61,7 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
     );
     expect(gallery).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*min-height:\s*44px/);
     expect(`${gallery}\n${dialog}`).not.toMatch(/overflow-x:\s*(?:scroll|auto)/);
+    expect(shell).toMatch(/\.layout\s*\{[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/s);
+    expect(shell).toMatch(/\.main\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s);
   });
 });

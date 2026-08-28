@@ -3294,16 +3294,6 @@ function LessonDetail({
                 <LessonMultiVisualGallery
                   identity={{ programId, importId, lessonId: lesson.id }}
                   manifest={lesson.visuals.items}
-                  onReorder={async (nextAssetIds) => {
-                    await createMultiVisualClient(functions).reorder({
-                      programId,
-                      importId,
-                      lessonId: lesson.id,
-                      expectedAssetIds: lesson.visuals?.items.map((item) => item.assetId) ?? [],
-                      nextAssetIds,
-                    });
-                    await refreshMultiVisuals();
-                  }}
                   onRemove={async (assetId) => {
                     await createMultiVisualClient(functions).remove({
                       programId,
