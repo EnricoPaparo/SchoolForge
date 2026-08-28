@@ -1,6 +1,8 @@
 import type {
   LessonVisualPrivateManifest,
+  LessonVisualItem,
   LessonVisualPublicManifest,
+  LessonVisualsManifest,
 } from '../../../types/firestore.js';
 import type { Timestamp } from 'firebase/firestore';
 
@@ -49,6 +51,7 @@ const PRIVATE_MANIFEST_KEYS = [
   'sourceBodyHash',
   'approvedAt',
 ] as const;
+const MULTI_PRIVATE_MANIFEST_KEYS = [...PRIVATE_MANIFEST_KEYS, 'source'] as const;
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 
 function hasControlCharacters(value: string): boolean {
@@ -117,6 +120,11 @@ export type PrivateVisualManifestParseResult =
   | { kind: 'valid'; manifest: LessonVisualPrivateManifest }
   | { kind: 'malformed' };
 
+export type PrivateVisualsManifestParseResult =
+  | { kind: 'absent' }
+  | { kind: 'valid'; manifest: LessonVisualsManifest }
+  | { kind: 'malformed' };
+
 /** Manifest docente chiuso: assenza e corruzione sono esiti distinti. */
 export function parsePrivateVisualManifest(params: {
   value: unknown;
@@ -175,6 +183,55 @@ export function parsePrivateVisualManifest(params: {
   return { kind: 'valid', manifest: value as unknown as LessonVisualPrivateManifest };
 }
 
+/** Manifest multi-visuale privato: radice chiusa e ogni voce validata integralmente. */
+export function parsePrivateVisualsManifest(params: {
+  value: unknown;
+  ownerUid: unknown;
+  importId: unknown;
+  udaDir: unknown;
+}): PrivateVisualsManifestParseResult {
+  const { value, ownerUid, importId, udaDir } = params;
+  if (value === undefined || value === null) return { kind: 'absent' };
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ['contractVersion', 'items']) ||
+    value.contractVersion !== 'lesson-visuals/v1' ||
+    !Array.isArray(value.items) ||
+    value.items.length < 1 ||
+    value.items.length > 3
+  ) {
+    return { kind: 'malformed' };
+  }
+  const items: LessonVisualItem[] = [];
+  const assetIds = new Set<string>();
+  for (const item of value.items) {
+    if (!isPlainObject(item) || !hasExactKeys(item, MULTI_PRIVATE_MANIFEST_KEYS)) {
+      return { kind: 'malformed' };
+    }
+    const validSourceStyle =
+      (item.source === 'generated' && item.styleVersion === 'schoolforge-sketch/v1') ||
+      (item.source === 'uploaded' && item.styleVersion === 'uploaded/v1');
+    if (!validSourceStyle) return { kind: 'malformed' };
+    const legacyShape = { ...item, styleVersion: 'schoolforge-sketch/v1' };
+    delete (legacyShape as { source?: unknown }).source;
+    const parsed = parsePrivateVisualManifest({
+      value: legacyShape,
+      ownerUid,
+      importId,
+      udaDir,
+    });
+    if (parsed.kind !== 'valid' || assetIds.has(parsed.manifest.assetId)) {
+      return { kind: 'malformed' };
+    }
+    assetIds.add(parsed.manifest.assetId);
+    items.push(item as unknown as LessonVisualItem);
+  }
+  return {
+    kind: 'valid',
+    manifest: { contractVersion: 'lesson-visuals/v1', items },
+  };
+}
+
 /**
  * Valida il manifest **pubblico** di una lezione.
  *
@@ -225,6 +282,23 @@ export function readStudentVisualManifest(data: unknown): LessonVisualPublicMani
   if (!isPlainObject(data)) return null;
   if (data.completed !== true) return null;
   return readPublicVisualManifest(data.visual);
+}
+
+export function readStudentVisualManifests(data: unknown): LessonVisualPublicManifest[] {
+  if (!isPlainObject(data) || data.completed !== true || !isPlainObject(data.visuals)) return [];
+  const root = data.visuals;
+  if (
+    !hasExactKeys(root, ['contractVersion', 'items']) ||
+    root.contractVersion !== 'lesson-visuals/v1' ||
+    !Array.isArray(root.items) ||
+    root.items.length < 1 ||
+    root.items.length > 3
+  )
+    return [];
+  const parsed = root.items.map(readPublicVisualManifest);
+  if (!parsed.every((item): item is LessonVisualPublicManifest => item !== null)) return [];
+  if (new Set(parsed.map((item) => item.assetId)).size !== parsed.length) return [];
+  return parsed;
 }
 
 /** Byte pubblici di una lezione, come li scrive `publicLessonVisuals`. */
@@ -298,6 +372,61 @@ export function readPublicLessonVisualBytes(params: {
     width: manifest.width,
     height: manifest.height,
   };
+}
+
+/** Valida il documento dei byte multi-visuali contro il manifest pubblico. */
+export function readPublicLessonVisualBytesMulti(params: {
+  data: unknown;
+  publicLessonId: string;
+  manifests: LessonVisualPublicManifest[];
+}): Record<string, { assetId: string; dataUri: string; width: number; height: number }> | null {
+  if (!isPlainObject(params.data) || params.manifests.length === 0) return null;
+  if (
+    !hasExactKeys(params.data, [
+      'contractVersion',
+      'publicLessonId',
+      'programId',
+      'importId',
+      'bytes',
+    ]) ||
+    params.data.contractVersion !== 'lesson-visuals/v1' ||
+    params.data.publicLessonId !== params.publicLessonId ||
+    typeof params.data.programId !== 'string' ||
+    typeof params.data.importId !== 'string' ||
+    !isPlainObject(params.data.bytes)
+  )
+    return null;
+  const bytesRoot = params.data.bytes;
+  const expectedAssetIds = params.manifests.map((manifest) => manifest.assetId).sort();
+  const actualAssetIds = Object.keys(bytesRoot).sort();
+  if (
+    actualAssetIds.length !== expectedAssetIds.length ||
+    !actualAssetIds.every((assetId, index) => assetId === expectedAssetIds[index])
+  ) {
+    return null;
+  }
+  const result: Record<
+    string,
+    { assetId: string; dataUri: string; width: number; height: number }
+  > = {};
+  for (const manifest of params.manifests) {
+    const raw = bytesRoot[manifest.assetId];
+    if (
+      !isPlainObject(raw) ||
+      !hasExactKeys(raw, ['dataUri', 'mimeType', 'width', 'height']) ||
+      raw.mimeType !== 'image/webp' ||
+      !isWebpDataUri(raw.dataUri)
+    )
+      return null;
+    if (raw.width !== manifest.width || raw.height !== manifest.height) return null;
+    result[manifest.assetId] = {
+      assetId: manifest.assetId,
+      dataUri: raw.dataUri,
+      width: manifest.width,
+      height: manifest.height,
+    };
+  }
+  return result;
 }
 
 /**

@@ -20,6 +20,7 @@ import { canonicalVisualStorageRef } from './aiVisualManifest.js';
 import { validateLessonVisualPrivateManifest } from './aiVisualManifest.js';
 import { AiVisualError } from './aiVisualCore.js';
 import { isValidDocumentIdInput } from './firestoreDocumentId.js';
+import { validateLessonVisualItem } from './aiVisualMultiManifest.js';
 
 /**
  * VISUAL-ENRICHMENT-03C — i contratti puri dell'export binario.
@@ -81,7 +82,7 @@ describe('limiti del trasporto', () => {
    */
   it('il caso peggiore di un batch pieno sta nel tetto dichiarato', () => {
     expect(VISUAL_EXPORT_WORST_CASE_BYTES).toBe(
-      MAX_VISUAL_EXPORT_LESSONS_PER_BATCH * MAX_VISUAL_BYTES,
+      MAX_VISUAL_EXPORT_LESSONS_PER_BATCH * 3 * MAX_VISUAL_BYTES,
     );
     expect(VISUAL_EXPORT_WORST_CASE_BYTES).toBeLessThanOrEqual(MAX_VISUAL_EXPORT_TOTAL_BYTES);
   });
@@ -281,6 +282,45 @@ describe('serializeVisualManifestForExport', () => {
     expect(parsed.sourceBodyHash).toBe('b'.repeat(64));
     expect(parsed.mimeType).toBe('image/webp');
   });
+
+  it('serializza il manifest plurale includendo source in ordine deterministico', () => {
+    const singular = manifest();
+    const item = validateLessonVisualItem({
+      assetId: singular.assetId,
+      storageRef: singular.storageRef,
+      anchor: singular.anchor,
+      caption: singular.caption,
+      altText: singular.altText,
+      width: singular.width,
+      height: singular.height,
+      byteLength: singular.byteLength,
+      sha256: singular.sha256,
+      mimeType: singular.mimeType,
+      source: 'generated',
+      styleVersion: singular.styleVersion,
+      sourceBodyHash: singular.sourceBodyHash,
+      approvedAt: singular.approvedAt,
+    });
+    const parsed = JSON.parse(serializeVisualManifestForExport(item)) as Record<string, unknown>;
+
+    expect(parsed.source).toBe('generated');
+    expect(Object.keys(parsed)).toEqual([
+      'assetId',
+      'storageRef',
+      'anchor',
+      'caption',
+      'altText',
+      'width',
+      'height',
+      'byteLength',
+      'sha256',
+      'mimeType',
+      'source',
+      'styleVersion',
+      'sourceBodyHash',
+      'approvedAt',
+    ]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,7 +407,7 @@ describe('planVisualExportBatches', () => {
   it('divide oltre il limite conservando l’ordine canonico', () => {
     const ids = Array.from({ length: 40 }, (_, i) => `lesson-${i}`);
     const batches = planVisualExportBatches(ids);
-    expect(batches).toHaveLength(2);
+    expect(batches).toHaveLength(Math.ceil(ids.length / MAX_VISUAL_EXPORT_LESSONS_PER_BATCH));
     expect(batches[0]).toHaveLength(MAX_VISUAL_EXPORT_LESSONS_PER_BATCH);
     expect(batches.flat()).toEqual(ids);
   });

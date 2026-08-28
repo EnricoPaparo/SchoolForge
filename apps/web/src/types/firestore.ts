@@ -312,7 +312,7 @@ export interface LessonVisualPublicManifest {
 
 export interface LessonVisualsManifest {
   contractVersion: 'lesson-visuals/v1';
-  items: LessonVisualPrivateManifest[];
+  items: LessonVisualItem[];
 }
 
 export interface PublicLessonVisualsManifest {
@@ -328,6 +328,12 @@ export interface LessonVisualPrivateManifest extends LessonVisualPublicManifest 
   styleVersion: 'schoolforge-sketch/v1';
   sourceBodyHash: string;
   approvedAt: Timestamp;
+}
+
+/** MULTI-VISUAL — elemento privato: aggiunge la provenienza al legacy singolare. */
+export interface LessonVisualItem extends Omit<LessonVisualPrivateManifest, 'styleVersion'> {
+  source: 'generated' | 'uploaded';
+  styleVersion: 'schoolforge-sketch/v1' | 'uploaded/v1';
 }
 
 /**

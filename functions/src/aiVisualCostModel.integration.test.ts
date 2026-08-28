@@ -482,13 +482,14 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
   }, 120_000);
 
   /**
-   * Quaranta immagini superano il limite di 32 per richiesta: l'export reale
-   * usa due batch. Qui gli artefatti sono seminati direttamente invece di
+   * Quaranta lezioni superano il limite di 13 per richiesta, ridotto per
+   * coprire il caso peggiore di tre immagini ciascuna: l'export reale usa
+   * quattro batch. Qui gli artefatti sono seminati direttamente invece di
    * passare da bind/generazione/promozione — ciò che si misura è il **costo
    * dell'export**, che non dipende da come l'immagine è nata, e il percorso
    * completo è già provato dalla suite end-to-end.
    */
-  it('export con 40 visual — due batch, costo lineare e nessuna scrittura', async () => {
+  it('export con 40 visual — quattro batch, costo lineare e nessuna scrittura', async () => {
     const bytes = await sharp({
       create: { width: 32, height: 24, channels: 3, background: '#eef8f9' },
     })
@@ -527,9 +528,10 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
       ids.push(lessonId);
     }
 
-    // Due chiamate, come le farebbe il client: 32 + 8.
+    // Quattro chiamate, come le farebbe il client: 13 + 13 + 13 + 1.
     counters = emptyCounters();
-    for (const batch of [ids.slice(0, 32), ids.slice(32)]) {
+    for (let offset = 0; offset < ids.length; offset += 13) {
+      const batch = ids.slice(offset, offset + 13);
       await exportLessonVisualsForOwner({
         db: instrumentedDb(),
         bucket: instrumentedBucket(),
@@ -537,7 +539,7 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
         input: { programId: PROGRAM, importId: IMPORT, lessonIds: batch },
       });
     }
-    report.push({ operazione: 'export (40 visual, 2 batch)', ...counters });
+    report.push({ operazione: 'export (40 visual, 4 batch)', ...counters });
 
     const row = report.at(-1)!;
     expect(row.firestoreReads).toBe(40);

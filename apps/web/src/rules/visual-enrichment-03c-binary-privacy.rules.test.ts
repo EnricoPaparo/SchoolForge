@@ -20,6 +20,7 @@ const OWNER_UID = 'owner-uid';
 const STUDENT_UID = 'student-uid';
 const OTHER_TEACHER_UID = 'other-teacher-uid';
 const ASSET = '11111111-2222-4333-8444-555555555555';
+const ASSET_2 = '99999999-8888-4777-8666-555555555555';
 const VISUAL_PATH = `repository/${OWNER_UID}/imp-1/uda-01-reti/visuals/${ASSET}.webp`;
 const LESSON_PATH = `repository/${OWNER_UID}/imp-1/uda-01-reti/lezione-001.md`;
 const PAYLOAD = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
@@ -204,5 +205,56 @@ describe('publicLessonVisuals resta l’unica sorgente dei byte per lo studente'
     for (const forbidden of ['storageRef', 'sha256', 'sourceBodyHash', 'approvedAt', 'ownerUid']) {
       expect(snap.get(forbidden)).toBeUndefined();
     }
+  });
+
+  it('autorizza i byte multi solo quando le chiavi coincidono col manifest pubblico', async () => {
+    await seedStudentReadable();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      const item = (assetId: string) => ({
+        assetId,
+        anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after-heading' },
+        caption: 'Schema',
+        altText: 'Diagramma',
+        width: 1024,
+        height: 1024,
+      });
+      await setDoc(
+        doc(db, 'publicLessons/l1'),
+        {
+          visuals: {
+            contractVersion: 'lesson-visuals/v1',
+            items: [item(ASSET), item(ASSET_2)],
+          },
+          visual: null,
+        },
+        { merge: true },
+      );
+      const projection = (await getDoc(doc(db, 'publicLessons/l1'))).data()!;
+      delete projection.visual;
+      await setDoc(doc(db, 'publicLessons/l1'), projection);
+      await setDoc(doc(db, 'publicLessonVisuals/l1'), {
+        contractVersion: 'lesson-visuals/v1',
+        publicLessonId: 'l1',
+        programId: 'p1',
+        importId: 'i1',
+        bytes: {
+          [ASSET]: {
+            dataUri: 'data:image/webp;base64,UklGRg==',
+            mimeType: 'image/webp',
+            width: 1024,
+            height: 1024,
+          },
+          [ASSET_2]: {
+            dataUri: 'data:image/webp;base64,UklGRg==',
+            mimeType: 'image/webp',
+            width: 1024,
+            height: 1024,
+          },
+        },
+      });
+    });
+    const studentDb = testEnv.authenticatedContext(STUDENT_UID).firestore();
+    await assertSucceeds(getDoc(doc(studentDb, 'publicLessonVisuals/l1')));
   });
 });

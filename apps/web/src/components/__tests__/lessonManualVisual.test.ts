@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeLessonVisual } from '../lessonManualVisual.js';
+import { placeLessonVisual, placeLessonVisuals } from '../lessonManualVisual.js';
 import { parseLessonMarkdown } from '../lessonManualMarkdown.js';
 
 /**
@@ -103,6 +103,29 @@ describe('placeLessonVisual — ancoraggio', () => {
 
     const vero = placeLessonVisual({ markdown: md, anchorSlug: 'vero' });
     expect(vero.status).toBe('anchored');
+  });
+});
+
+describe('placeLessonVisuals — più ancore', () => {
+  const markdown = '## Prima\n\nTesto A.\n\n## Seconda\n\nTesto B.';
+
+  it('risolve sul corpo originale anche se il manifest è in ordine editoriale inverso', () => {
+    const result = placeLessonVisuals({
+      markdown,
+      anchorSlugs: ['seconda', 'prima'],
+    });
+    expect(result.missingVisualIndexes).toEqual([]);
+    expect(result.groups.map((group) => group.visualIndexes)).toEqual([[1], [0], []]);
+    expect(result.groups.map((group) => group.html).join('')).toContain('Testo B.');
+  });
+
+  it('mantiene insieme e in ordine due immagini sulla stessa ancora e accoda le mancanti', () => {
+    const result = placeLessonVisuals({
+      markdown,
+      anchorSlugs: ['prima', 'sparita', 'prima'],
+    });
+    expect(result.groups.map((group) => group.visualIndexes)).toEqual([[0, 2], []]);
+    expect(result.missingVisualIndexes).toEqual([1]);
   });
 });
 

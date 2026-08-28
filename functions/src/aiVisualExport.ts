@@ -25,6 +25,7 @@ import { MAX_VISUAL_BYTES } from './aiContentVisualProposal.js';
 import { AiVisualError } from './aiVisualCore.js';
 import { isValidDocumentIdInput } from './firestoreDocumentId.js';
 import type { LessonVisualPrivateManifest } from './aiVisualManifest.js';
+import type { LessonVisualItem } from './aiVisualMultiManifest.js';
 
 // ─── Limiti del trasporto ─────────────────────────────────────────────────────
 
@@ -40,18 +41,18 @@ import type { LessonVisualPrivateManifest } from './aiVisualManifest.js';
  *
  * Il tetto binario è quindi fissato **basso e per intero**: 8 MB di byte
  * effettivi per risposta, cioè ~10,7 MB di base64. Il numero di lezioni per
- * richiesta discende da lì e dal solo limite già congelato in VE-02 — 204.800
- * byte per immagine:
+ * richiesta discende da lì, dal massimo di tre immagini per lezione e dal
+ * limite già congelato in VE-02 — 204.800 byte per immagine:
  *
- *     32 lezioni × 204.800 byte = 6.553.600 byte ≤ 8.000.000
+ *     13 lezioni × 3 immagini × 204.800 byte = 7.987.200 byte ≤ 8.000.000
  *
- * Trentadue è il più grande multiplo comodo che sta nel caso peggiore lasciando
+ * Tredici è il massimo numero di lezioni che sta nel caso peggiore lasciando
  * spazio ai manifest. Non è un numero scelto a caso ed è verificato da un test
  * che ricalcola la disuguaglianza: se qualcuno alzasse il numero di lezioni
  * senza alzare il tetto, il test fallirebbe invece di lasciar passare una
  * risposta che in produzione verrebbe troncata.
  */
-export const MAX_VISUAL_EXPORT_LESSONS_PER_BATCH = 32;
+export const MAX_VISUAL_EXPORT_LESSONS_PER_BATCH = 13;
 
 /** Byte binari (non base64) ammessi in una singola risposta. */
 export const MAX_VISUAL_EXPORT_TOTAL_BYTES = 8_000_000;
@@ -143,6 +144,16 @@ export type VisualExportItem =
       /** WebP canonico in base64, byte per byte l'oggetto dello Storage. */
       base64: string;
       byteLength: number;
+    }
+  | {
+      lessonId: string;
+      status: 'multi';
+      assets: Array<{
+        assetId: string;
+        manifestJson: string;
+        base64: string;
+        byteLength: number;
+      }>;
     };
 
 export interface VisualExportResult {
@@ -172,6 +183,11 @@ const EXPORT_MANIFEST_KEY_ORDER = [
   'sourceBodyHash',
   'approvedAt',
 ] as const;
+const EXPORT_MULTI_MANIFEST_KEY_ORDER = [
+  ...EXPORT_MANIFEST_KEY_ORDER.slice(0, 10),
+  'source',
+  ...EXPORT_MANIFEST_KEY_ORDER.slice(10),
+] as const;
 
 const EXPORT_ANCHOR_KEY_ORDER = ['headingSlug', 'headingText', 'placement'] as const;
 
@@ -187,10 +203,13 @@ const EXPORT_ANCHOR_KEY_ORDER = ['headingSlug', 'headingText', 'placement'] as c
  * ha mai avute: URL pubbliche, download token, dati o identificativi del
  * provider, prompt, subject, costi, API key, dati studente.
  */
-export function serializeVisualManifestForExport(manifest: LessonVisualPrivateManifest): string {
+export function serializeVisualManifestForExport(
+  manifest: LessonVisualPrivateManifest | LessonVisualItem,
+): string {
   const approvedAtMs = manifest.approvedAt.toMillis();
   const ordered: Record<string, unknown> = {};
-  for (const key of EXPORT_MANIFEST_KEY_ORDER) {
+  const keys = 'source' in manifest ? EXPORT_MULTI_MANIFEST_KEY_ORDER : EXPORT_MANIFEST_KEY_ORDER;
+  for (const key of keys) {
     if (key === 'approvedAt') {
       ordered.approvedAt = new Date(approvedAtMs).toISOString();
       continue;
@@ -200,6 +219,10 @@ export function serializeVisualManifestForExport(manifest: LessonVisualPrivateMa
       for (const anchorKey of EXPORT_ANCHOR_KEY_ORDER)
         anchor[anchorKey] = manifest.anchor[anchorKey];
       ordered.anchor = anchor;
+      continue;
+    }
+    if (key === 'source') {
+      ordered.source = (manifest as LessonVisualItem).source;
       continue;
     }
     ordered[key] = manifest[key];
@@ -311,7 +334,7 @@ export function reconcileVisualExportBatch(params: {
 
 /** Il caso peggiore di un batch pieno deve stare nel tetto dichiarato. */
 export const VISUAL_EXPORT_WORST_CASE_BYTES =
-  MAX_VISUAL_EXPORT_LESSONS_PER_BATCH * MAX_VISUAL_BYTES;
+  MAX_VISUAL_EXPORT_LESSONS_PER_BATCH * 3 * MAX_VISUAL_BYTES;
 
 /**
  * Divide le lezioni in batch di dimensione ammessa, conservando l'ordine

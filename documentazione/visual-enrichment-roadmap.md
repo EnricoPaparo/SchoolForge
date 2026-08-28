@@ -1278,9 +1278,9 @@ rotta binaria del gateway avrebbe significato «leggimi questo oggetto», cioè 
 lettura arbitraria che tutta VE-03 ha evitato.
 
 **Limiti derivati, non scelti.** 8.000.000 byte binari per risposta; da lì e dal
-cap per immagine di VE-02 discende il massimo di 32 lezioni per richiesta
+cap per immagine di VE-02 discende il massimo di 13 lezioni per richiesta
 (32 × 204.800 = 6.553.600 ≤ 8.000.000). Un test ricalcola la disuguaglianza. Il
-client suddivide in batch da 32 con concorrenza 2, deduplica, verifica ordine e
+client suddivide in batch da 13 con concorrenza 2, deduplica, verifica ordine e
 duplicati per batch **e** sulla ricomposizione complessiva.
 
 **Fail-closed sull'archivio.** Una lezione senza `visual` è il caso normale e

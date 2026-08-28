@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import type { DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
@@ -113,6 +113,17 @@ import {
   createOpenAiImageTransport,
 } from './aiVisualProvider.js';
 import { parseVisualRunDocument, serializeVisualRun } from './aiVisualRunDoc.js';
+import {
+  projectLessonVisualsManifest,
+  validatePublicLessonVisualsManifest,
+  validateLessonVisualsManifest,
+  type LessonVisualsManifest,
+} from './aiVisualMultiManifest.js';
+import {
+  composePublicLessonVisualBytesDoc,
+  validatePublicLessonVisualBytesDoc,
+  type PublicLessonVisualBytesDoc,
+} from './aiVisualMultiPublicBytes.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import { isStorageNotFound, type BucketLike } from './repositoryGatewayCore.js';
@@ -1082,6 +1093,28 @@ function samePublicBytes(
   }
 }
 
+function samePublicVisuals(value: unknown, manifest: LessonVisualsManifest): boolean {
+  try {
+    return (
+      lifecycleFingerprint(validatePublicLessonVisualsManifest(value)) ===
+      lifecycleFingerprint(projectLessonVisualsManifest(manifest))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function samePublicMultiBytes(value: unknown, expected: PublicLessonVisualBytesDoc): boolean {
+  try {
+    return (
+      lifecycleFingerprint(validatePublicLessonVisualBytesDoc(value)) ===
+      lifecycleFingerprint(expected)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function setLessonCompletedForOwner(params: {
   db: Firestore;
   bucket: BucketLike;
@@ -1103,8 +1136,16 @@ export async function setLessonCompletedForOwner(params: {
           udaDir: pair.udaDir,
         })
       : null;
+  const multiManifest =
+    input.completed && pair.lesson.visuals !== undefined
+      ? validateLessonVisualsManifest(pair.lesson.visuals)
+      : null;
+  if (manifest && multiManifest) {
+    throw new AiVisualError('corrupted_state', 'Manifest singolare e multi presenti insieme.');
+  }
 
   let publicBytes: ReturnType<typeof composePublicLessonVisual> | null = null;
+  let publicMultiBytes: PublicLessonVisualBytesDoc | null = null;
   if (manifest) {
     let bytes: Uint8Array;
     try {
@@ -1123,24 +1164,60 @@ export async function setLessonCompletedForOwner(params: {
       importId: input.importId,
     });
   }
+  if (multiManifest) {
+    const entries = new Map<string, Uint8Array>();
+    for (const item of multiManifest.items) {
+      let bytes: Uint8Array;
+      try {
+        [bytes] = await bucket.file(item.storageRef).download();
+      } catch {
+        throw new AiVisualError(
+          'corrupted_state',
+          `I byte del visual ${item.assetId} non sono disponibili.`,
+        );
+      }
+      entries.set(item.assetId, bytes);
+    }
+    publicMultiBytes = composePublicLessonVisualBytesDoc({
+      manifest: multiManifest,
+      entries,
+      publicLessonId: pair.publicLessonId,
+      programId: input.programId,
+      importId: input.importId,
+    });
+  }
 
   const publicBytesSnap = await db.doc(`${PUBLIC_LESSON_VISUALS}/${pair.publicLessonId}`).get();
   const alreadyProjected = input.completed
     ? pair.completed &&
       pair.publicLesson.conceptMapMarkdown === privateMap &&
-      (manifest
-        ? samePublicVisual(pair.publicLesson.visual, manifest) &&
+      (multiManifest
+        ? pair.publicLesson.visual === undefined &&
+          samePublicVisuals(pair.publicLesson.visuals, multiManifest) &&
           publicBytesSnap.exists &&
-          samePublicBytes(publicBytesSnap.data(), publicBytes as NonNullable<typeof publicBytes>)
-        : pair.publicLesson.visual === undefined && !publicBytesSnap.exists)
+          samePublicMultiBytes(
+            publicBytesSnap.data(),
+            publicMultiBytes as NonNullable<typeof publicMultiBytes>,
+          )
+        : manifest
+          ? samePublicVisual(pair.publicLesson.visual, manifest) &&
+            pair.publicLesson.visuals === undefined &&
+            publicBytesSnap.exists &&
+            samePublicBytes(publicBytesSnap.data(), publicBytes as NonNullable<typeof publicBytes>)
+          : pair.publicLesson.visual === undefined &&
+            pair.publicLesson.visuals === undefined &&
+            !publicBytesSnap.exists)
     : !pair.completed &&
       pair.publicLesson.conceptMapMarkdown === undefined &&
       pair.publicLesson.visual === undefined &&
+      pair.publicLesson.visuals === undefined &&
       !publicBytesSnap.exists;
   if (alreadyProjected) return { status: 'replayed' };
 
   const preflightVisual = lifecycleFingerprint(pair.lesson.visual);
+  const preflightVisuals = lifecycleFingerprint(pair.lesson.visuals);
   const preflightPublicVisual = lifecycleFingerprint(pair.publicLesson.visual);
+  const preflightPublicVisuals = lifecycleFingerprint(pair.publicLesson.visuals);
   const preflightMap = lifecycleFingerprint(pair.lesson.conceptMapMarkdown);
   const preflightPublicMap = lifecycleFingerprint(pair.publicLesson.conceptMapMarkdown);
   await params.beforeTransaction?.();
@@ -1174,7 +1251,9 @@ export async function setLessonCompletedForOwner(params: {
     if (
       publicGate.completed !== pair.completed ||
       lifecycleFingerprint(lesson?.visual) !== preflightVisual ||
+      lifecycleFingerprint(lesson?.visuals) !== preflightVisuals ||
       lifecycleFingerprint(freshPublic?.visual) !== preflightPublicVisual ||
+      lifecycleFingerprint(freshPublic?.visuals) !== preflightPublicVisuals ||
       lifecycleFingerprint(lesson?.conceptMapMarkdown) !== preflightMap ||
       lifecycleFingerprint(freshPublic?.conceptMapMarkdown) !== preflightPublicMap
     ) {
@@ -1186,6 +1265,10 @@ export async function setLessonCompletedForOwner(params: {
       conceptMapMarkdown:
         input.completed && privateMap !== undefined ? privateMap : FieldValue.delete(),
       visual: input.completed && manifest ? projectLessonVisual(manifest) : FieldValue.delete(),
+      visuals:
+        input.completed && multiManifest
+          ? projectLessonVisualsManifest(multiManifest)
+          : FieldValue.delete(),
     };
     tx.update(lessonRef, {
       completed: input.completed,
@@ -1193,7 +1276,8 @@ export async function setLessonCompletedForOwner(params: {
     });
     tx.update(publicRef, publicUpdate);
     const publicVisualRef = db.doc(`${PUBLIC_LESSON_VISUALS}/${pair.publicLessonId}`);
-    if (input.completed && publicBytes) tx.set(publicVisualRef, publicBytes);
+    if (input.completed && publicMultiBytes) tx.set(publicVisualRef, publicMultiBytes);
+    else if (input.completed && publicBytes) tx.set(publicVisualRef, publicBytes);
     else tx.delete(publicVisualRef);
     tx.set(db.collection('auditEvents').doc(), {
       actorUid: ownerUid,
@@ -1852,8 +1936,60 @@ export async function exportLessonVisualsForOwner(params: {
     }
 
     const raw = lesson?.visual;
-    if (raw === undefined || raw === null) {
+    const rawMulti = lesson?.visuals;
+    if ((raw === undefined || raw === null) && (rawMulti === undefined || rawMulti === null)) {
       items.push({ lessonId, status: 'absent' });
+      continue;
+    }
+
+    if (rawMulti !== undefined && rawMulti !== null) {
+      if (raw !== undefined && raw !== null) {
+        throw new AiVisualError('corrupted_state', 'Manifest singolare e multi presenti insieme.');
+      }
+      const manifest = validateLessonVisualsManifest(rawMulti);
+      const assets: Extract<VisualExportItem, { status: 'multi' }>['assets'] = [];
+      for (const visual of manifest.items) {
+        const expectedRef = `repository/${ownerUid}/${input.importId}/${gate.udaDir}/visuals/${visual.assetId}.webp`;
+        if (visual.storageRef !== expectedRef) {
+          throw new AiVisualError('corrupted_state', 'Percorso multi-visuale non canonico.');
+        }
+        let bytes: Uint8Array;
+        try {
+          [bytes] = await bucket.file(expectedRef).download();
+        } catch (error) {
+          if (isStorageNotFound(error)) {
+            throw new AiVisualError(
+              'corrupted_state',
+              `L’immagine ${visual.assetId} non è più presente nell’archivio.`,
+            );
+          }
+          throw error;
+        }
+        const inspected = inspectWebp(bytes);
+        const digest = createHash('sha256').update(bytes).digest('hex');
+        if (
+          bytes.byteLength !== visual.byteLength ||
+          digest !== visual.sha256 ||
+          inspected.width !== visual.width ||
+          inspected.height !== visual.height
+        ) {
+          throw new AiVisualError('corrupted_state', 'Byte multi-visuali divergenti dal manifest.');
+        }
+        totalBytes += bytes.byteLength;
+        if (totalBytes > MAX_VISUAL_EXPORT_TOTAL_BYTES) {
+          throw new AiVisualError(
+            'visual_too_large',
+            `La risposta supera il limite di ${MAX_VISUAL_EXPORT_TOTAL_BYTES} byte.`,
+          );
+        }
+        assets.push({
+          assetId: visual.assetId,
+          manifestJson: serializeVisualManifestForExport(visual),
+          base64: Buffer.from(bytes).toString('base64'),
+          byteLength: bytes.byteLength,
+        });
+      }
+      items.push({ lessonId, status: 'multi', assets });
       continue;
     }
 

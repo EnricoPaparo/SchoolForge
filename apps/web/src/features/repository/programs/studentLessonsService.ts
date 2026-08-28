@@ -8,7 +8,7 @@ import type {
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeLessonContent } from './lessonContentSize.js';
 import { readPublicConceptMap } from './conceptMapContract.js';
-import { readStudentVisualManifest } from './lessonVisualContract.js';
+import { readStudentVisualManifest, readStudentVisualManifests } from './lessonVisualContract.js';
 
 export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
   id: string;
@@ -40,6 +40,7 @@ export type StudentLesson = { id: string } & Omit<
      * lezioni che non hanno immagini.
      */
     visual: LessonVisualPublicManifest | null;
+    visuals: LessonVisualPublicManifest[];
   };
 
 /**
@@ -129,6 +130,7 @@ export async function loadStudentLessons(
             conceptMapMarkdown: readPublicConceptMap(raw),
             // Stesso invariante della mappa, riapplicato in lettura.
             visual: readStudentVisualManifest(raw),
+            visuals: readStudentVisualManifests(raw),
           } as StudentLesson;
         })
         // STRUCTURE-IMPORT-02B: una lezione importata come scheletro ha corpo

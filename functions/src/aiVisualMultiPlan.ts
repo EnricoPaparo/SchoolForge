@@ -89,6 +89,7 @@ export interface VisualPlanAuthorizeInput {
   importId: string;
   lessonId: string;
   quantity: VisualPlanQuantitySelection;
+  replacementAssetId: string | null;
   titolo: unknown;
   sottotitolo: unknown;
   difficolta: unknown;
@@ -104,6 +105,7 @@ const AUTHORIZE_INPUT_KEYS = [
   'importId',
   'lessonId',
   'quantity',
+  'replacementAssetId',
   'titolo',
   'sottotitolo',
   'difficolta',
@@ -146,6 +148,10 @@ export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuth
   if (!isValidDocumentIdInput(lessonId)) invalidAuthorizeInput('lessonId non valido.');
 
   const quantity = parseAuthorizeQuantity(root.quantity);
+  const replacementAssetId = root.replacementAssetId;
+  if (replacementAssetId !== null && !isValidDocumentIdInput(replacementAssetId)) {
+    invalidAuthorizeInput('replacementAssetId non valido.');
+  }
 
   return {
     requestId,
@@ -153,6 +159,7 @@ export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuth
     importId,
     lessonId,
     quantity,
+    replacementAssetId,
     titolo: root.titolo,
     sottotitolo: root.sottotitolo,
     difficolta: root.difficolta,
@@ -860,6 +867,7 @@ export interface VisualPlanRun {
   quantity: VisualPlanQuantitySelection;
   sourceBodyHash: string;
   existingItemAssetIds: string[];
+  replacementAssetId: string | null;
   budgetCeiling: VisualPlanBudgetCeiling;
   slots: VisualPlanSlot[];
   settlement: VisualPlanSettlement;
@@ -882,6 +890,7 @@ const PLAN_KEYS = [
   'quantity',
   'sourceBodyHash',
   'existingItemAssetIds',
+  'replacementAssetId',
   'budgetCeiling',
   'slots',
   'settlement',
@@ -989,14 +998,10 @@ function validateExistingItemAssetIds(value: unknown): string[] {
  *   proposta coordinata non ha risposto (roadmap §8.3); `proposing` è lo
  *   stato scritto nella transazione che precede la chiamata al motore
  *   (§10.3, gateway), non un momento in cui gli slot possano già esistere;
- * - `proposed`: **almeno uno** slot, tutti non terminali con la forma
- *   esatta appena uscita dalla proposta coordinata — `decision: 'image'` ⇒
- *   `state: 'pending'` (non ancora generato), `decision: 'none'` ⇒
- *   `state: 'abandoned'` (già terminale in sé, ma il piano nel suo insieme
- *   non lo è finché resta almeno uno slot immagine `pending`) — e **almeno
- *   uno** slot con `decision: 'image'` (con zero slot immagine l'esito
- *   coerente è `abandoned`, mai `proposed`, stessa asimmetria di
- *   `completed` sopra).
+ * - `proposed`: almeno uno slot immagine resta `pending`; gli altri slot sono
+ *   `abandoned` perché `decision: 'none'` oppure perché il docente li ha
+ *   esclusi gratuitamente durante §8.4. Nessuno slot può avere già avviato
+ *   una generazione.
  */
 function assertVisualPlanStatusMatchesSlots(
   status: VisualPlanStatus,
@@ -1012,17 +1017,16 @@ function assertVisualPlanStatusMatchesSlots(
   }
 
   if (status === 'proposed') {
-    const hasImageSlot = slots.some((slot) => slot.decision === 'image');
-    if (!hasImageSlot) {
-      invalidSlot(
-        'status "proposed" richiede almeno uno slot immagine; con zero slot immagine l\'esito è "abandoned".',
-      );
+    const hasPendingImageSlot = slots.some(
+      (slot) => slot.decision === 'image' && slot.state === 'pending',
+    );
+    if (!hasPendingImageSlot) {
+      invalidSlot('status "proposed" richiede almeno uno slot immagine ancora pending.');
     }
     for (const slot of slots) {
-      const expectedState = slot.decision === 'image' ? 'pending' : 'abandoned';
-      if (slot.state !== expectedState) {
+      if (slot.state !== 'pending' && slot.state !== 'abandoned') {
         invalidSlot(
-          `status "proposed" richiede che ogni slot sia nella forma appena uscita dalla proposta coordinata (${slot.decision === 'image' ? '"pending"' : '"abandoned"'}).`,
+          'status "proposed" ammette solo slot pending o abbandonati prima della generazione.',
         );
       }
     }
@@ -1164,7 +1168,17 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
   }
 
   const existingItemAssetIds = validateExistingItemAssetIds(root.existingItemAssetIds);
-  if (existingItemAssetIds.length + quantity.ceiling > MAX_VISUALS_PER_LESSON) {
+  const replacementAssetId = root.replacementAssetId;
+  if (replacementAssetId !== null && !isUuidV4(replacementAssetId)) {
+    invalidSlot('replacementAssetId non valido.');
+  }
+  if (replacementAssetId !== null && !existingItemAssetIds.includes(replacementAssetId)) {
+    invalidSlot('replacementAssetId non appartiene alla fotografia iniziale.');
+  }
+  if (
+    existingItemAssetIds.length + quantity.ceiling - (replacementAssetId === null ? 0 : 1) >
+    MAX_VISUALS_PER_LESSON
+  ) {
     invalidSlot(
       'existingItemAssetIds e quantity.ceiling superano insieme il tetto di tre immagini.',
     );
@@ -1186,6 +1200,7 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
       publicLessonId,
       sourceBodyHash,
       existingItemAssetIds,
+      replacementAssetId,
       quantity,
     })
   ) {
@@ -1263,6 +1278,7 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
     quantity,
     sourceBodyHash,
     existingItemAssetIds,
+    replacementAssetId,
     budgetCeiling,
     slots,
     settlement,

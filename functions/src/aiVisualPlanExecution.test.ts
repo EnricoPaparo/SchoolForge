@@ -62,6 +62,7 @@ function plan(slots = [slot(0), slot(1), slot(2)]): VisualPlanRun {
     publicLessonId: 'public',
     sourceBodyHash: 'c'.repeat(64),
     existingItemAssetIds: [] as string[],
+    replacementAssetId: null,
     quantity: { mode: 'auto' as const, ceiling: 3 as const },
   };
   const value = {

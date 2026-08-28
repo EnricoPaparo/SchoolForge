@@ -35,6 +35,18 @@ const present = (lessonId: string, assetId = ASSET) => ({
   byteLength: 4,
 });
 const absent = (lessonId: string) => ({ lessonId, status: 'absent' });
+const multi = (lessonId: string) => ({
+  lessonId,
+  status: 'multi',
+  assets: [
+    {
+      assetId: ASSET,
+      manifestJson: '{}\n',
+      base64: 'UklGRg==',
+      byteLength: 4,
+    },
+  ],
+});
 
 function client() {
   return createVisualExportClient(functions);
@@ -53,7 +65,7 @@ describe('limiti duplicati dal server', () => {
    * comporrebbe batch che il server rifiuta.
    */
   it('coincidono con quelli dichiarati lato Functions', () => {
-    expect(VISUAL_EXPORT_LESSONS_PER_BATCH).toBe(32);
+    expect(VISUAL_EXPORT_LESSONS_PER_BATCH).toBe(13);
     expect(VISUAL_EXPORT_CONCURRENCY).toBe(2);
     expect(VISUAL_EXPORT_ZIP_PREFIX).toBe('visuals/');
   });
@@ -78,7 +90,7 @@ describe('fetchLessonVisuals — batching e ordine', () => {
   });
 
   it('divide in più batch oltre il limite e ricompone l’ordine canonico', async () => {
-    const ids = Array.from({ length: 40 }, (_, i) => `lesson-${i}`);
+    const ids = Array.from({ length: 20 }, (_, i) => `lesson-${i}`);
     mockCallable.mockReset();
     mockCallable.mockImplementation(async (payload: { lessonIds: string[] }) => ({
       data: { items: payload.lessonIds.map((id) => absent(id)) },
@@ -87,8 +99,8 @@ describe('fetchLessonVisuals — batching e ordine', () => {
     const items = await client().fetchLessonVisuals(request(ids));
 
     expect(mockCallable).toHaveBeenCalledTimes(2);
-    expect(mockCallable.mock.calls[0]?.[0].lessonIds).toHaveLength(32);
-    expect(mockCallable.mock.calls[1]?.[0].lessonIds).toHaveLength(8);
+    expect(mockCallable.mock.calls[0]?.[0].lessonIds).toHaveLength(13);
+    expect(mockCallable.mock.calls[1]?.[0].lessonIds).toHaveLength(7);
     expect(items.map((i) => i.lessonId)).toEqual(ids);
   });
 
@@ -98,7 +110,7 @@ describe('fetchLessonVisuals — batching e ordine', () => {
    * ogni export non si può confrontare con il precedente.
    */
   it('conserva l’ordine anche se il secondo batch risponde per primo', async () => {
-    const ids = Array.from({ length: 40 }, (_, i) => `lesson-${i}`);
+    const ids = Array.from({ length: 20 }, (_, i) => `lesson-${i}`);
     mockCallable.mockReset();
     let call = 0;
     mockCallable.mockImplementation(async (payload: { lessonIds: string[] }) => {
@@ -202,6 +214,26 @@ describe('fetchLessonVisuals — risposte non conformi', () => {
 
   it('rifiuta un elemento che non è un oggetto', async () => {
     for (const bad of [null, 'x', 42]) {
+      await expectRejection([bad], ['a']);
+    }
+  });
+
+  it('accetta il contratto multi chiuso', async () => {
+    mockCallable.mockReset();
+    mockCallable.mockResolvedValue({ data: { items: [multi('a')] } });
+    await expect(client().fetchLessonVisuals(request(['a']))).resolves.toEqual([multi('a')]);
+  });
+
+  it('rifiuta asset multi duplicati, proprietà extra e cardinalità fuori cap', async () => {
+    const valid = multi('a');
+    const asset = valid.assets[0]!;
+    for (const bad of [
+      { ...valid, assets: [] },
+      { ...valid, assets: [asset, asset] },
+      { ...valid, assets: [asset, asset, asset, asset] },
+      { ...valid, extra: true },
+      { ...valid, assets: [{ ...asset, storageRef: '../../arbitrary' }] },
+    ]) {
       await expectRejection([bad], ['a']);
     }
   });

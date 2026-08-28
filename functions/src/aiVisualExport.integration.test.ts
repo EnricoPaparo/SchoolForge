@@ -101,11 +101,12 @@ emulatorDescribe('VE-03C export binario — Firestore + Storage Emulator', () =>
   async function seedLesson(params: {
     lessonId: string;
     visual?: Record<string, unknown> | null;
+    visuals?: Record<string, unknown> | null;
     writeBlob?: boolean;
     blobBytes?: Buffer;
     ownerUid?: string;
   }) {
-    const { lessonId, visual, writeBlob = true, blobBytes, ownerUid = OWNER } = params;
+    const { lessonId, visual, visuals, writeBlob = true, blobBytes, ownerUid = OWNER } = params;
     await lessonRef(lessonId).set({
       ownerUid,
       importId: IMPORT,
@@ -115,6 +116,7 @@ emulatorDescribe('VE-03C export binario — Firestore + Storage Emulator', () =>
       publicLessonId: `${IMPORT}_${lessonId}`,
       completed: false,
       ...(visual ? { visual } : {}),
+      ...(visuals ? { visuals } : {}),
     });
     touchedLessons.push(lessonId);
     if (visual && writeBlob) {
@@ -123,6 +125,18 @@ emulatorDescribe('VE-03C export binario — Firestore + Storage Emulator', () =>
         metadata: { contentType: 'image/webp' },
       });
       touchedBlobs.push(ref);
+    }
+    if (visuals && writeBlob) {
+      const items = ((visuals as { items?: unknown }).items ?? []) as Array<
+        Record<string, unknown>
+      >;
+      for (const item of items) {
+        const ref = item.storageRef as string;
+        await bucket.file(ref).save(blobBytes ?? bytes, {
+          metadata: { contentType: 'image/webp' },
+        });
+        touchedBlobs.push(ref);
+      }
     }
   }
 
@@ -155,6 +169,47 @@ emulatorDescribe('VE-03C export binario — Firestore + Storage Emulator', () =>
     expect(item.byteLength).toBe(bytes.byteLength);
     // Prova byte-per-byte: ciò che esce è esattamente l'oggetto canonico.
     expect(Buffer.from(item.base64, 'base64').equals(bytes)).toBe(true);
+  });
+
+  it('restituisce 1..3 asset plurali nell’ordine autorevole del manifest', async () => {
+    const assetIds = [
+      '133e4567-e89b-42d3-a456-426614174000',
+      '143e4567-e89b-42d3-a456-426614174000',
+    ];
+    await seedLesson({
+      lessonId: 'l-multi',
+      visuals: {
+        contractVersion: 'lesson-visuals/v1',
+        items: assetIds.map((assetId) => ({
+          ...manifestFor(assetId),
+          source: 'generated',
+        })),
+      },
+    });
+
+    const { items } = await exportFor(['l-multi']);
+    const item = items[0];
+    expect(item?.status).toBe('multi');
+    if (item?.status !== 'multi') throw new Error('atteso multi');
+    expect(item.assets.map((asset) => asset.assetId)).toEqual(assetIds);
+    expect(item.assets.every((asset) => Buffer.from(asset.base64, 'base64').equals(bytes))).toBe(
+      true,
+    );
+    expect(JSON.parse(item.assets[0]!.manifestJson)).toMatchObject({ source: 'generated' });
+  });
+
+  it('fallisce chiuso se visual singolare e plurale coesistono', async () => {
+    const legacyId = '153e4567-e89b-42d3-a456-426614174000';
+    const multiId = '163e4567-e89b-42d3-a456-426614174000';
+    await seedLesson({
+      lessonId: 'l-conflict',
+      visual: manifestFor(legacyId),
+      visuals: {
+        contractVersion: 'lesson-visuals/v1',
+        items: [{ ...manifestFor(multiId), source: 'generated' }],
+      },
+    });
+    await expect(exportFor(['l-conflict'])).rejects.toMatchObject({ code: 'corrupted_state' });
   });
 
   it('il manifest esportato è quello serializzato in modo deterministico', async () => {

@@ -1291,10 +1291,10 @@ caricate per lezione. Contratto completo in
 | MULTI-VISUAL-00 | Contratto, cost model e prototipo responsive. | VISUAL-ENRICHMENT | **Chiuso.** PR #423. |
 | MULTI-VISUAL-01 | Tipi, manifest, adattatore legacy, ancore e validatori puri. | MULTI-VISUAL-00 | **Chiuso.** PR #425. |
 | MULTI-VISUAL-02 | Proposta coordinata interna `visual_plan_proposal`; upload PNG/JPEG/WebP owner-only, normalizzazione WebP condivisa, `VisualUploadRun`, replay/conflitto, staging create-only, abbandono e cleanup puntuale con prova di proprietà. | MULTI-VISUAL-01 | **Implementato, non distribuito.** Nessuna UI, Rule, proiezione studente, chiamata provider reale o deploy. |
-| MULTI-VISUAL-03 | Persistenza e lifecycle economico del piano, promozione condivisa, Rules, export e wiring TTL. | MULTI-VISUAL-02 | **Aperto.** |
+| MULTI-VISUAL-03 | Persistenza e lifecycle economico del piano, promozione condivisa, Rules, export e wiring TTL. | MULTI-VISUAL-02 | **Chiuso.** PR #429, #430 e #431. |
 | MULTI-VISUAL-03A | Autorizzazione economica unica, piano persistito, lease e proposta coordinata. | MULTI-VISUAL-02 | **Chiuso.** PR #429. |
-| MULTI-VISUAL-03B | Generazione/retry per slot, staging deterministico, settlement e promozione atomica add/replace con recovery. | MULTI-VISUAL-03A | **Implementato, non distribuito.** Nessuna UI o chiamata provider reale. |
-| MULTI-VISUAL-03C | Lifecycle editoriale, riordino/rimozione/cleanup, export e Rules finali. | MULTI-VISUAL-03B | **Aperto.** |
-| MULTI-VISUAL-04 | UI docente/studente, upload, galleria, riordino e integrazione con «Genera lezione». | MULTI-VISUAL-03 | **Aperto.** |
+| MULTI-VISUAL-03B | Generazione/retry per slot, staging deterministico, settlement e promozione atomica add/replace con recovery. | MULTI-VISUAL-03A | **Chiuso.** PR #430; non distribuito e nessuna chiamata provider reale. |
+| MULTI-VISUAL-03C | Lifecycle editoriale, riordino/rimozione/cleanup, export e Rules finali. | MULTI-VISUAL-03B | **Chiuso.** PR #431; non distribuito. |
+| MULTI-VISUAL-04 | UI docente/studente, galleria, quantità auto/esatta, revisione/generazione/promozione per slot, riordino/rimozione e rendering N-way. | MULTI-VISUAL-03 | **Implementato nel codice; rollout DEV e Gate UI ancora PENDING.** Dopo ogni promote/reorder/remove il solo `LessonDoc` interessato viene riletto e validato integralmente, quindi il tree locale si aggiorna senza refetch globale. Legacy `visual` resta leggibile e viene adottato dal server al primo piano multi. Upload e integrazione automatica con «Genera lezione» restano fuori da questa PR. |
 | MULTI-VISUAL-05 | Benchmark reale e rollout controllato. | MULTI-VISUAL-04 | **Aperto.** |
 | Gate GMULTI | Approvazione umana su qualità, flusso e responsive. | MULTI-VISUAL-05 | **PENDING.** |

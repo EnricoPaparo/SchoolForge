@@ -222,6 +222,24 @@ describe('LessonManualBody — la figura entra nel corpo', () => {
     );
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
+
+  it('rende più immagini alle rispettive ancore anche con ordine editoriale inverso', () => {
+    const markdown = '## Prima\n\nTesto A.\n\n## Seconda\n\nTesto B.';
+    const first = { ...VISUAL, anchorSlug: 'seconda', caption: 'Figura seconda' };
+    const second = { ...VISUAL, anchorSlug: 'prima', caption: 'Figura prima' };
+    const missing = { ...VISUAL, anchorSlug: 'sparita', caption: 'Figura in fondo' };
+    const { container } = render(
+      <MarkdownRenderer markdown={markdown} variant="lesson" visuals={[first, second, missing]} />,
+    );
+    const figures = [...container.querySelectorAll('figure')];
+    expect(figures.map((figure) => figure.querySelector('figcaption')?.textContent)).toEqual([
+      'Figura prima',
+      'Figura seconda',
+      'Figura in fondo',
+    ]);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('.lesson-manual__body')!.lastElementChild).toBe(figures[2]);
+  });
 });
 
 describe('MarkdownRenderer — la variante legacy non cambia', () => {

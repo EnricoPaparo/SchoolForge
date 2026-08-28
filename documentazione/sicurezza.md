@@ -882,7 +882,8 @@ l'unico writer.
 ### VISUAL-ENRICHMENT-03C — l'unica operazione binaria
 
 `aiVisualExportBatch` è owner-only e **non accetta percorsi**: input chiuso
-`{ programId, importId, lessonIds }`, al massimo 32 lezioni senza duplicati.
+`{ programId, importId, lessonIds }`, al massimo 13 lezioni senza duplicati
+(13 × 3 immagini × 204.800 byte resta entro il cap binario di 8 MB).
 `ownerUid`, `udaDir`, `assetId`, `storageRef`, `sha256`, `byteLength`,
 dimensioni e MIME sono derivati dal `LessonDoc`; nessuno dei nove è accettato dal
 client, nemmeno se inviato. Il gateway repository resta testuale: aggiungere lì
@@ -1044,3 +1045,18 @@ terminale incerto; byte divergenti rendono lo slot terminale corrotto. Il
 replay di promozione rilegge manifest privato, proiezione pubblica, byte
 pubblici e Storage canonico e li confronta esattamente: non usa mai il
 registro tecnico per mascherare una rimozione o una mutazione successiva.
+
+## MULTI-VISUAL-04 — confini client
+
+Il tree docente riceve `LessonDoc.visuals` soltanto da una rilettura puntuale
+successiva a promote/reorder/remove. Il parser web è chiuso e rifiuta campi
+extra, duplicati, cardinalità fuori 1..3, path/hash/timestamp incoerenti e la
+coppia `source/styleVersion` non canonica; uno stato malformato non viene
+mostrato né corretto. Il passaggio al formato array rimuove dal solo tree
+locale l'eventuale `visual` legacy, coerentemente con la scrittura server.
+
+Lato studente, manifest e mappa byte devono avere esattamente lo stesso
+insieme di `assetId`; radice e singole entry dei byte sono a chiavi chiuse.
+Un byte estraneo, mancante o divergente rende indisponibile l'intero gruppo,
+mai una figura parziale o appartenente a un'altra lezione. Nessun metadato
+privato raggiunge il renderer studente.

@@ -4,7 +4,9 @@ import {
   composeVisualDataUri,
   isWebpDataUri,
   parsePrivateVisualManifest,
+  parsePrivateVisualsManifest,
   readPublicLessonVisualBytes,
+  readPublicLessonVisualBytesMulti,
   readPublicVisualManifest,
   readStudentVisualManifest,
 } from '../lessonVisualContract.js';
@@ -127,6 +129,46 @@ describe('parsePrivateVisualManifest — refresh autorevole fail-closed', () => 
         'malformed',
       );
     }
+  });
+});
+
+describe('parsePrivateVisualsManifest — array autorevole fail-closed', () => {
+  const multiItem = (over: Record<string, unknown> = {}) => ({
+    ...privateManifest(),
+    source: 'generated',
+    ...over,
+  });
+  it('accetta la radice chiusa e conserva l’ordine', () => {
+    const second = '99999999-8888-4777-8666-555555555555';
+    const result = parsePrivateVisualsManifest(
+      privateParams({
+        contractVersion: 'lesson-visuals/v1',
+        items: [
+          multiItem(),
+          multiItem({
+            assetId: second,
+            storageRef: `repository/owner/i1/uda-01/visuals/${second}.webp`,
+          }),
+        ],
+      }),
+    );
+    expect(result.kind).toBe('valid');
+    if (result.kind === 'valid') {
+      expect(result.manifest.items.map((item) => item.assetId)).toEqual([ASSET, second]);
+    }
+  });
+
+  it.each([
+    { contractVersion: 'lesson-visuals/v1', items: [], extra: true },
+    { contractVersion: 'lesson-visuals/v2', items: [] },
+    { contractVersion: 'lesson-visuals/v1', items: [multiItem({ extra: true })] },
+    { contractVersion: 'lesson-visuals/v1', items: [multiItem(), multiItem()] },
+    {
+      contractVersion: 'lesson-visuals/v1',
+      items: [multiItem(), multiItem(), multiItem(), multiItem()],
+    },
+  ])('rifiuta radici, voci, duplicati e cardinalità non canonici', (value) => {
+    expect(parsePrivateVisualsManifest(privateParams(value)).kind).toBe('malformed');
   });
 });
 
@@ -312,6 +354,52 @@ describe('readPublicLessonVisualBytes — coerenza con il manifest', () => {
     ).toBeNull();
     expect(
       readPublicLessonVisualBytes({ data: null, publicLessonId: 'l1', manifest: parsed }),
+    ).toBeNull();
+  });
+});
+
+describe('readPublicLessonVisualBytesMulti — forma chiusa', () => {
+  const publicManifest = readPublicVisualManifest(manifest())!;
+  const valid = {
+    contractVersion: 'lesson-visuals/v1',
+    publicLessonId: 'l1',
+    programId: 'p1',
+    importId: 'i1',
+    bytes: {
+      [ASSET]: {
+        dataUri: 'data:image/webp;base64,UklGRg==',
+        mimeType: 'image/webp',
+        width: 1024,
+        height: 768,
+      },
+    },
+  };
+
+  it('accetta soltanto la coppia esatta manifest-byte', () => {
+    expect(
+      readPublicLessonVisualBytesMulti({
+        data: valid,
+        publicLessonId: 'l1',
+        manifests: [publicManifest],
+      }),
+    ).toHaveProperty(ASSET);
+  });
+
+  it.each([
+    { ...valid, extra: true },
+    { ...valid, bytes: { ...valid.bytes, alien: valid.bytes[ASSET] } },
+    {
+      ...valid,
+      bytes: { [ASSET]: { ...valid.bytes[ASSET], storageRef: 'privato' } },
+    },
+    { ...valid, publicLessonId: 'altra' },
+  ])('rifiuta extra, asset estranei e identità divergenti', (data) => {
+    expect(
+      readPublicLessonVisualBytesMulti({
+        data,
+        publicLessonId: 'l1',
+        manifests: [publicManifest],
+      }),
     ).toBeNull();
   });
 });

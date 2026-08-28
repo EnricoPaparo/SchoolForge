@@ -1393,6 +1393,36 @@ slot — il tetto era fissato alla quantità originale, non ricalcolato a
 runtime, per evitare che una riduzione su uno slot inneschi silenziosamente
 un'espansione su un altro).
 
+#### 8.4.1 Realizzazione server MULTI-VISUAL-04
+
+`aiVisualPlanEditSlot` è la sola porta di scrittura per questa revisione. Il
+payload è una unione chiusa:
+
+```ts
+type VisualPlanEditSlotInput =
+  | { requestId; editRequestId; programId; importId; lessonId; slotIndex;
+      abandon: false; subject; caption; altText;
+      anchorHeadingIndex; anchorHeadingText }
+  | { requestId; editRequestId; programId; importId; lessonId; slotIndex;
+      abandon: true };
+```
+
+La transazione rilegge `settings/owner`, piano, lease, `LessonDoc` e
+`publicLessons` e confronta il corpo fresco con `sourceBodyHash`; l'ancora è
+risolta contro gli heading freschi indice+testo. È modificabile soltanto uno
+slot `decision:'image'` ancora `pending` di un piano `proposed`: nessuno stato
+`generating|ready|failed|promoted|abandoned` può essere resuscitato o
+riscritto. Subject/caption/altText riusano i limiti VE e la modifica deve
+preservare la diversità fra slot; `rationale`, attempts, staged, promozione e
+settlement restano immutati.
+
+`editRequestId` ha un record opaco server-only in `visualPlanSlotEdits`.
+Replay identico restituisce il piano corrente con zero scritture; riuso dello
+stesso id con identità o contenuto diversi fallisce chiuso. L'abbandono
+riconcilia soltanto la prenotazione master già esistente alla capacità residua
+e chiude il lease se era l'ultimo slot pending: non crea prenotazioni di fase,
+non invoca provider e non genera alcun costo IA.
+
 ### 8.5 Generazione per slot — indipendente, con retry che non perde nulla
 
 Ogni slot con `decision: 'image'` e non abbandonato genera
@@ -2436,6 +2466,9 @@ verificata in Emulator (§17, §19).
 | **Tentativo respinto da `visual_plan_already_active`** (§10.3, Race A/B) | 0 | 1 lettura del lease, **zero scritture** | 0 | 1 |
 | **Proposta coordinata** (1 per piano, mai N) | 1 chiamata testo, `quality`, indipendente da `ceiling` nel numero di chiamate | **2W**: 1 aggiornamento `VisualPlanRun.slots`+`settlement.proposalActualCost`, 1 settlement sul ledger mensile (stessa disciplina già in vigore per `lesson`/`pool`/`concept_map`/`visual_proposal`) | 0 | 1 |
 | **Rilascio della quota non usata** (`ceiling − slot con decision:'image'`) | 0 | incluso nell'aggiornamento sopra — nessuna scrittura aggiuntiva | 0 | 0 |
+| **Revisione gratuita di uno slot pending** (`aiVisualPlanEditSlot`) | 0 | **7R + 4W** nel percorso callable: owner (preflight + rilettura transazionale), piano, lezione, proiezione, lease, chiave idempotente; scritture piano + chiave + audit + rinnovo lease | 0 | 1 |
+| **Abbandono gratuito di uno slot pending** | 0 | **8R + 5W**: come la revisione, più lettura/scrittura del ledger per ridurre la prenotazione master; sull'ultimo slot il write del lease è un delete | 0 | 1 |
+| **Replay identico della revisione** | 0 | **7R, 0W**: fonti fresche e chiave idempotente rilette, nessun timestamp/audit/lease riscritto | 0 | 1 |
 | **Rinnovo del lease** (a ogni transizione di stato del piano, §10.3) | 0 | incluso nella stessa transazione della transizione — nessuna scrittura aggiuntiva rispetto a quanto quella transizione già conta | 0 | 0 |
 | **Rilascio del lease** (piano terminale, §8.7) | 0 | incluso nella stessa transazione della transizione a stato terminale — 1 delete, nessuna scrittura aggiuntiva oltre a quella già contata dalla transizione stessa | 0 | 0 |
 
@@ -2940,11 +2973,11 @@ Nuovi in questa revisione:
 | **MULTI-VISUAL-00** | **Contratto e prototipo**, revisione 2: piano coordinato ad autorizzazione unica, selettore di quantità, identità di ancoraggio indice+testo, cap upload 2 MB, ingresso unico «Arricchisci», integrazione col flusso di generazione della lezione, manifest pubblico minimizzato, cost model per fase e asset. | VE-00→05A (documentali), `agent-orchestrator-roadmap.md` §12 | **Questo documento.** Nessun runtime. Gate GMULTI: PENDING. |
 | **MULTI-VISUAL-01** | **Tipi e validatori puri.** `LessonVisualsManifest`, `LessonVisualItem` (con `source` privato), `PublicLessonVisualItem` (senza `source`), `VisualAnchorSelector`, `VisualPlanRun`/`VisualPlanSlot`, validatore del vincolo di diversità (§7.4), risolutore d'ancora a indice+testo (§7.2) con test di collisione (§7.3), `adaptSingular` puro, costanti incluso `MAX_VISUAL_UPLOAD_INPUT_BYTES = 2_000_000`. Nessuna Function, nessuna UI, nessun provider. | MULTI-VISUAL-00 | **Implementato** — `functions/src/aiVisualMultiCore.ts`, `aiVisualMultiManifest.ts`, `aiVisualMultiAnchor.ts`, `aiVisualMultiPlan.ts` (92 test, PR draft verso `main`). Il risolutore d'ancora riusa `resolveAnchorByIndex`/`listAnchorableHeadings` di VE (`aiVisualPromotion.ts`), nessun parser Markdown parallelo. Upload binario, proposta coordinata, persistenza/lifecycle e UI restano fuori scope (MULTI-VISUAL-02→04). |
 | **MULTI-VISUAL-02** | **Catena binaria dell'upload** (cap 2 MB, allowlist PNG/JPEG/WebP non animati, `background=opaque`) e **proposta coordinata** (`kind: 'visual_plan_proposal'`, Structured Output ad array, vincolo di diversità applicato server-side). Nessuna UI, nessuna proiezione studente. | MULTI-VISUAL-01 | **Implementato.** Il nuovo kind è disponibile soltanto al motore interno: le callable IA generiche lo rifiutano prima di configurazione, budget, provider e scritture; MULTI-VISUAL-03 gli darà la porta autorizzata dal piano. L'upload persiste `VisualUploadRun`, normalizza con la pipeline Sharp condivisa, usa staging create-only e prova di proprietà nei metadati con delete condizionata alla generation. Cleanup TTL esposto come porta puntuale, senza scheduler o indice in questa fase. |
-| **MULTI-VISUAL-03** | **Persistenza e lifecycle del piano.** Epic contenitore dei tre slice 03A/03B/03C; resta aperto finché non sono chiusi tutti. | MULTI-VISUAL-02 | **Aperto.** |
+| **MULTI-VISUAL-03** | **Persistenza e lifecycle del piano.** Epic contenitore dei tre slice 03A/03B/03C. | MULTI-VISUAL-02 | **Chiuso.** PR #429, #430 e #431. |
 | **MULTI-VISUAL-03A** | **Autorizzazione e proposta coordinata.** `VisualPlanRun`, lease un-piano-per-lezione, prenotazione master a somma di cap, replay owner-only, adozione singolare atomica privata/pubblica e Rules server-only delle collezioni tecniche. Nessuna generazione/promozione per slot. | MULTI-VISUAL-02 | **Implementato.** |
-| **MULTI-VISUAL-03B** | **Esecuzione e promozione per slot.** Generazione/retry, staging e promozione atomica `add`/`replace`, settlement per slot e recovery. | MULTI-VISUAL-03A | **Implementato, non distribuito.** Callable `aiVisualPlanGenerateSlot` e `aiVisualPlanPromoteSlot`; test puri ed Emulator. |
-| **MULTI-VISUAL-03C** | **Lifecycle editoriale e proiezioni.** Riordino, rimozione, cleanup, Rules su `publicLessons.visuals`/`publicLessonVisuals` e batching export. | MULTI-VISUAL-03B | Aperto. |
-| **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, upload, galleria con riordino da tastiera, integrazione col flusso «Genera lezione» (testo salvato prima del piano visivo), rendering N-way, responsive desktop/mobile con semantica modale reale (focus trap, Escape, ripristino del focus). | MULTI-VISUAL-03 | Aperto. |
+| **MULTI-VISUAL-03B** | **Esecuzione e promozione per slot.** Generazione/retry, staging e promozione atomica `add`/`replace`, settlement per slot e recovery. | MULTI-VISUAL-03A | **Chiuso.** PR #430; callable `aiVisualPlanGenerateSlot` e `aiVisualPlanPromoteSlot`, test puri ed Emulator; non distribuito. |
+| **MULTI-VISUAL-03C** | **Lifecycle editoriale e proiezioni.** Riordino, rimozione, cleanup, Rules su `publicLessons.visuals`/`publicLessonVisuals` e batching export. | MULTI-VISUAL-03B | **Chiuso.** PR #431; non distribuito. |
+| **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, galleria con riordino, rendering N-way e responsive desktop/mobile con semantica modale reale. | MULTI-VISUAL-03 | **Implementato nel codice; rollout DEV e Gate UI PENDING.** Upload manuale e integrazione automatica con «Genera lezione» restano fuori da questa PR. |
 | **MULTI-VISUAL-05** | **Qualità e rollout controllato.** Benchmark su lezioni con più immagini, verifica del margine di §4 su documenti reali, smoke DEV con flag in sequenza, verifica del percorso di rollback, verifica diretta su dati di produzione della domanda aperta di §17.3. | MULTI-VISUAL-04 | Aperto. |
 | **Gate GMULTI** | **Approvazione umana.** | MULTI-VISUAL-05 | **PENDING.** |
 
@@ -3354,3 +3387,29 @@ sopravvissuti alla revisione 3. Sintesi puntuale:
    costo del lease (+1R+1W per autorizzazione, §12.1) e di
    `VisualUploadRun` (§12.3), tutte marcate STIMATO. Evidenza aggiornata
    in `evidenze/multi-visual-00-review.md` §12.
+
+---
+
+## 23. Realizzazione MULTI-VISUAL-04
+
+La UI usa un solo ingresso «Arricchisci». Una lezione nuova apre il piano
+multi con quantità automatica o esatta entro tre; una lezione con il solo
+manifest singolare conserva la gestione legacy finché il server non la adotta
+nel primo piano multi. La galleria non mantiene una copia ottimistica del
+manifest: promote, reorder e remove terminano con **una lettura puntuale** del
+solo `LessonDoc`, validazione chiusa e patch della sola lezione nel tree.
+
+Il renderer N-way risolve tutte le ancore sul Markdown originale prima di
+dividere il documento. L'ordine editoriale inverso, due immagini sulla stessa
+ancora e un'ancora mancante non possono quindi far scomparire sezioni o figure.
+Ogni frammento HTML attraversa la stessa sanificazione del renderer singolare.
+
+Costi passivi invariati: zero callable all'apertura della scheda e zero letture
+per lezioni senza manifest. Ogni mutazione riuscita aggiunge al percorso server
+già misurato **1 lettura Firestore puntuale client** per il refresh; nessuna
+query, listener, polling o rilettura globale. La lettura studente dei byte resta
+una sola per le 1..3 immagini annunciate dal manifest.
+
+Stato: codice e test implementati; rollout DEV, smoke reale e Gate GMULTI
+restano PENDING. Upload manuale e integrazione automatica con «Genera lezione»
+non vengono dichiarati completati da questa fase.

@@ -42,6 +42,9 @@ export {
   aiVisualPlanGenerateSlot,
   aiVisualPlanPromoteSlot,
 } from './aiVisualPlanExecutionGateway.js';
+// MULTI-VISUAL-04 — revisione gratuita pre-generazione di un singolo slot:
+// campi editoriali/ancora o abbandono, senza secret e senza provider.
+export { aiVisualPlanEditSlot } from './aiVisualPlanEditorialGateway.js';
 // MULTI-VISUAL-03C — lifecycle editoriale del manifest ad array. Le callable
 // rileggono sempre LessonDoc e proiezione nella transazione; nessun client può
 // scrivere direttamente manifest o documenti tecnici.

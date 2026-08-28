@@ -1,6 +1,10 @@
 import { useMemo, type ReactNode } from 'react';
 import { parseLessonMarkdown } from './lessonManualMarkdown.js';
-import { placeLessonVisual, type LessonVisualPlacement } from './lessonManualVisual.js';
+import {
+  placeLessonVisual,
+  placeLessonVisuals,
+  type LessonVisualPlacement,
+} from './lessonManualVisual.js';
 import { LessonVisualFigure } from './LessonVisualFigure.js';
 
 /**
@@ -38,11 +42,14 @@ export interface LessonVisualRender {
 export function LessonManualBody({
   markdown,
   visual,
+  visuals,
   onMissingAnchor,
 }: {
   markdown: string;
   /** Assente per la stragrande maggioranza delle lezioni: percorso legacy. */
   visual?: LessonVisualRender | null;
+  /** MULTI-VISUAL-04 — ulteriori figure approvate, nell'ordine editoriale. */
+  visuals?: LessonVisualRender[];
   /**
    * Notifica alla vista che l'ancora non si risolve più. Serve al solo docente,
    * che può riancorare; lo studente non riceve nulla di tecnico e vede
@@ -91,40 +98,87 @@ export function LessonManualBody({
     legacy?.html ??
     (placement !== null && split === null ? (placement as { html: string }).html : null);
 
+  const additionalVisuals = (visuals ?? []).filter(
+    (item) => item.anchorSlug !== visual?.anchorSlug,
+  );
+  const allVisuals = visual ? [visual, ...additionalVisuals] : additionalVisuals;
+  const multiPlacement = useMemo(
+    () =>
+      allVisuals.length > 0
+        ? placeLessonVisuals({
+            markdown,
+            anchorSlugs: allVisuals.map((item) => item.anchorSlug),
+          })
+        : null,
+    [allVisuals, markdown],
+  );
+  const renderFigure = (item: LessonVisualRender, key: string) => (
+    <LessonVisualFigure
+      key={key}
+      src={item.dataUri}
+      altText={item.altText}
+      caption={item.caption}
+      width={item.width}
+      height={item.height}
+      status={item.status}
+    />
+  );
+  const visualSequence: ReactNode[] | null = multiPlacement
+    ? [
+        ...multiPlacement.groups.flatMap((group, groupIndex) => [
+          <div
+            key={`visual-group-${groupIndex}`}
+            className="prose prose--manual"
+            dangerouslySetInnerHTML={{ __html: group.html }}
+          />,
+          ...group.visualIndexes.map((index) =>
+            renderFigure(allVisuals[index]!, `visual-${index}`),
+          ),
+        ]),
+        ...(multiPlacement.missingVisualIndexes.length > 0 && onMissingAnchor
+          ? [<div key="visual-missing-anchor-notice">{onMissingAnchor}</div>]
+          : []),
+        ...multiPlacement.missingVisualIndexes.map((index) =>
+          renderFigure(allVisuals[index]!, `visual-missing-${index}`),
+        ),
+      ]
+    : null;
+
   return (
     <div className="lesson-manual-scope">
       <div className="lesson-manual">
         <div className="lesson-manual__body">
-          {split === null ? (
-            /*
-             * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito
-             * da DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
-             */
-            <div
-              className="prose prose--manual"
-              dangerouslySetInnerHTML={{ __html: singleHtml ?? '' }}
-            />
-          ) : (
-            <>
-              {/*
-               * Due frammenti sanificati **separatamente**, con la figura in
-               * mezzo come nodo React. Nessuna concatenazione di stringhe dopo
-               * `sanitize`: le due metà non si toccano mai.
-               */}
+          {visualSequence ??
+            (split === null ? (
+              /*
+               * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito
+               * da DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
+               */
               <div
                 className="prose prose--manual"
-                dangerouslySetInnerHTML={{ __html: split.before }}
+                dangerouslySetInnerHTML={{ __html: singleHtml ?? '' }}
               />
-              {split.status === 'missing_anchor' && onMissingAnchor}
-              {figure}
-              {split.after !== '' && (
+            ) : (
+              <>
+                {/*
+                 * Due frammenti sanificati **separatamente**, con la figura in
+                 * mezzo come nodo React. Nessuna concatenazione di stringhe dopo
+                 * `sanitize`: le due metà non si toccano mai.
+                 */}
                 <div
                   className="prose prose--manual"
-                  dangerouslySetInnerHTML={{ __html: split.after }}
+                  dangerouslySetInnerHTML={{ __html: split.before }}
                 />
-              )}
-            </>
-          )}
+                {split.status === 'missing_anchor' && onMissingAnchor}
+                {figure}
+                {split.after !== '' && (
+                  <div
+                    className="prose prose--manual"
+                    dangerouslySetInnerHTML={{ __html: split.after }}
+                  />
+                )}
+              </>
+            ))}
         </div>
       </div>
     </div>

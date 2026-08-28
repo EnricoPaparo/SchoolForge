@@ -170,3 +170,57 @@ export function placeLessonVisual(params: {
 
   return { status: 'anchored', before: first.html, after: second.html };
 }
+
+export interface LessonVisualsPlacement {
+  /** Frammenti HTML sanificati in ordine documento; le figure seguono il frammento. */
+  groups: { html: string; visualIndexes: number[] }[];
+  /** Figure la cui ancora non esiste più, da mostrare in fondo. */
+  missingVisualIndexes: number[];
+}
+
+/**
+ * Versione multi-immagine del posizionatore. Risolve tutte le ancore sul corpo
+ * originale, quindi l'ordine editoriale delle immagini non può rendere
+ * irraggiungibile un heading precedente. Più figure sulla stessa ancora
+ * conservano il loro ordine nel manifest.
+ */
+export function placeLessonVisuals(params: {
+  markdown: string;
+  anchorSlugs: string[];
+}): LessonVisualsPlacement {
+  const tokens = lessonMarked.lexer(params.markdown);
+  const headings = collectHeadings(tokens);
+  const byToken = new Map<number, number[]>();
+  const missingVisualIndexes: number[] = [];
+  params.anchorSlugs.forEach((slug, visualIndex) => {
+    const tokenIndex = findAnchorTokenIndex(tokens, slug);
+    if (tokenIndex === -1) {
+      missingVisualIndexes.push(visualIndex);
+      return;
+    }
+    const indexes = byToken.get(tokenIndex) ?? [];
+    indexes.push(visualIndex);
+    byToken.set(tokenIndex, indexes);
+  });
+
+  const groups: { html: string; visualIndexes: number[] }[] = [];
+  let tokenCursor = 0;
+  let headingCursor = 0;
+  for (const tokenIndex of [...byToken.keys()].sort((a, b) => a - b)) {
+    const rendered = renderGroup(
+      sliceTokens(tokens, tokenCursor, tokenIndex + 1),
+      headings,
+      headingCursor,
+    );
+    groups.push({ html: rendered.html, visualIndexes: byToken.get(tokenIndex)! });
+    headingCursor = rendered.nextIndex;
+    tokenCursor = tokenIndex + 1;
+  }
+  const tail = renderGroup(
+    sliceTokens(tokens, tokenCursor, tokens.length),
+    headings,
+    headingCursor,
+  );
+  groups.push({ html: tail.html, visualIndexes: [] });
+  return { groups, missingVisualIndexes };
+}

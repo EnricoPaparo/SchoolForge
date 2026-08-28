@@ -108,7 +108,11 @@ export async function reorderMultiVisualForOwner(params: {
   const pair = await lifecycle(params.db, params.ownerUid, base);
   await params.db.runTransaction(async (tx) => {
     const lessonSnap = await tx.get(pair.lessonRef);
+    const publicSnap = await tx.get(pair.publicRef);
     const fresh = lessonSnap.data() as Record<string, unknown>;
+    const freshPublic = publicSnap.data() as Record<string, unknown>;
+    if (freshPublic.completed !== pair.publicLesson.completed)
+      fail('visual_plan_external_mutation', 'Lo stato pubblico della lezione è cambiato.');
     const current = mapOrNone(fresh.visuals);
     if (
       !current ||
@@ -118,7 +122,8 @@ export async function reorderMultiVisualForOwner(params: {
     const next = reorderVisualsManifest(current, reorder.nextAssetIds);
     const publicNext = projectEditorialVisuals(next);
     tx.update(pair.lessonRef, { visuals: next, visual: FieldValue.delete() });
-    tx.update(pair.publicRef, { visuals: publicNext, visual: FieldValue.delete() });
+    if (freshPublic.completed === true)
+      tx.update(pair.publicRef, { visuals: publicNext, visual: FieldValue.delete() });
     tx.set(params.db.collection('auditEvents').doc(), {
       actorUid: params.ownerUid,
       action: 'lesson.visualsReordered',
@@ -149,7 +154,11 @@ export async function removeMultiVisualForOwner(params: {
   let recovery: Omit<VisualCleanupRecoveryRecord, 'createdAt'> | null = null;
   await params.db.runTransaction(async (tx) => {
     const freshSnap = await tx.get(pair.lessonRef);
+    const publicSnap = await tx.get(pair.publicRef);
     const fresh = freshSnap.data() as Record<string, unknown>;
+    const freshPublic = publicSnap.data() as Record<string, unknown>;
+    if (freshPublic.completed !== pair.publicLesson.completed)
+      fail('visual_plan_external_mutation', 'Lo stato pubblico della lezione è cambiato.');
     const current = mapOrNone(fresh.visuals);
     if (!current) fail('invalid_input', 'Manifest multi-visuale assente.');
     const item = current.items.find((x) => x.assetId === assetId);
@@ -158,7 +167,7 @@ export async function removeMultiVisualForOwner(params: {
     const publicNext = projectEditorialVisuals(next);
     const bytesRef = params.db.doc(`${PUBLIC_BYTES}/${pair.publicLessonId}`);
     const bytesSnap = await tx.get(bytesRef);
-    if (bytesSnap.exists) {
+    if (freshPublic.completed === true && bytesSnap.exists) {
       const bytesDoc = validatePublicLessonVisualBytesDoc(bytesSnap.data());
       const nextBytes = { ...bytesDoc.bytes };
       delete nextBytes[assetId];
@@ -175,10 +184,11 @@ export async function removeMultiVisualForOwner(params: {
     };
     if (next) {
       tx.update(pair.lessonRef, { visuals: next });
-      tx.update(pair.publicRef, { visuals: publicNext });
+      if (freshPublic.completed === true) tx.update(pair.publicRef, { visuals: publicNext });
     } else {
       tx.update(pair.lessonRef, { visuals: FieldValue.delete() });
-      tx.update(pair.publicRef, { visuals: FieldValue.delete() });
+      if (freshPublic.completed === true)
+        tx.update(pair.publicRef, { visuals: FieldValue.delete() });
     }
     tx.set(params.db.doc(`${CLEANUPS}/${base.lessonId}_${assetId}`), {
       ...recovery,

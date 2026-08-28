@@ -23,7 +23,7 @@ import type { Functions } from 'firebase/functions';
  */
 
 /** Deve restare uguale a `MAX_VISUAL_EXPORT_LESSONS_PER_BATCH` lato Functions. */
-export const VISUAL_EXPORT_LESSONS_PER_BATCH = 32;
+export const VISUAL_EXPORT_LESSONS_PER_BATCH = 13;
 
 /** Deve restare uguale a `MAX_VISUAL_EXPORT_CONCURRENCY` lato Functions. */
 export const VISUAL_EXPORT_CONCURRENCY = 2;
@@ -46,6 +46,16 @@ export type VisualExportItem =
       manifestJson: string;
       base64: string;
       byteLength: number;
+    }
+  | {
+      lessonId: string;
+      status: 'multi';
+      assets: Array<{
+        assetId: string;
+        manifestJson: string;
+        base64: string;
+        byteLength: number;
+      }>;
     };
 
 export class VisualExportError extends Error {
@@ -75,6 +85,46 @@ function parseItem(raw: unknown, expectedLessonId: string): VisualExportItem {
   }
   if (item.status === 'absent') {
     return { lessonId: expectedLessonId, status: 'absent' };
+  }
+  if (item.status === 'multi') {
+    if (
+      Object.keys(item).sort().join(',') !== 'assets,lessonId,status' ||
+      !Array.isArray(item.assets) ||
+      item.assets.length < 1 ||
+      item.assets.length > 3
+    ) {
+      throw new VisualExportError('Risposta multi-visuale non valida.');
+    }
+    const seen = new Set<string>();
+    const assets = item.assets.map((raw) => {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        throw new VisualExportError('Asset multi-visuale non valido.');
+      }
+      const asset = raw as Record<string, unknown>;
+      if (
+        Object.keys(asset).sort().join(',') !== 'assetId,base64,byteLength,manifestJson' ||
+        typeof asset.assetId !== 'string' ||
+        !UUID_V4_RE.test(asset.assetId) ||
+        seen.has(asset.assetId) ||
+        typeof asset.manifestJson !== 'string' ||
+        asset.manifestJson.length === 0 ||
+        typeof asset.base64 !== 'string' ||
+        asset.base64.length === 0 ||
+        typeof asset.byteLength !== 'number' ||
+        !Number.isInteger(asset.byteLength) ||
+        asset.byteLength <= 0
+      ) {
+        throw new VisualExportError('Asset multi-visuale non valido.');
+      }
+      seen.add(asset.assetId);
+      return {
+        assetId: asset.assetId,
+        manifestJson: asset.manifestJson,
+        base64: asset.base64,
+        byteLength: asset.byteLength,
+      };
+    });
+    return { lessonId: expectedLessonId, status: 'multi', assets };
   }
   if (
     item.status !== 'present' ||
