@@ -42,6 +42,42 @@ export interface MultiVisualPlan {
   budgetCeiling: Record<string, unknown>;
   settlement: Record<string, unknown>;
 }
+
+type PlanEnvelope = { replayed: boolean; plan: MultiVisualPlan };
+type PromotionEnvelope = PlanEnvelope & { assetId: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parsePlan(value: unknown): MultiVisualPlan {
+  if (
+    !isRecord(value) ||
+    typeof value.requestId !== 'string' ||
+    typeof value.planHash !== 'string' ||
+    typeof value.status !== 'string' ||
+    !Array.isArray(value.slots) ||
+    !isRecord(value.budgetCeiling) ||
+    !isRecord(value.settlement)
+  ) {
+    throw new Error('multi_visual_invalid_response');
+  }
+  return value as unknown as MultiVisualPlan;
+}
+
+function parsePlanEnvelope(value: unknown): MultiVisualPlan {
+  if (!isRecord(value) || typeof value.replayed !== 'boolean') {
+    throw new Error('multi_visual_invalid_response');
+  }
+  return parsePlan(value.plan);
+}
+
+function activePlanRequestId(error: unknown): string | null {
+  const details = (error as { details?: unknown })?.details;
+  if (!isRecord(details) || details.code !== 'visual_plan_already_active') return null;
+  const requestId = details.requestId;
+  return typeof requestId === 'string' ? requestId : null;
+}
 export function describeMultiVisualError(error: unknown): string {
   const code = (error as { details?: { code?: unknown } })?.details?.code;
   if (code === 'budget_unavailable' || code === 'operation_budget_exceeded')
@@ -61,7 +97,7 @@ export function createMultiVisualClient(functions: Functions) {
   );
   const generate = httpsCallable<
     MultiVisualIdentity & { requestId: string; slotIndex: number },
-    MultiVisualPlan
+    PlanEnvelope
   >(functions, 'aiVisualPlanGenerateSlot');
   const promote = httpsCallable<
     MultiVisualIdentity & {
@@ -70,7 +106,7 @@ export function createMultiVisualClient(functions: Functions) {
       promotionRequestId: string;
       mode: { mode: 'add' } | { mode: 'replace'; replaceAssetId: string };
     },
-    MultiVisualPlan
+    PromotionEnvelope
   >(functions, 'aiVisualPlanPromoteSlot');
   const reorder = httpsCallable<
     MultiVisualIdentity & { expectedAssetIds: string[]; nextAssetIds: string[] },
@@ -92,12 +128,24 @@ export function createMultiVisualClient(functions: Functions) {
       anchorHeadingIndex?: number;
       anchorHeadingText?: string;
     },
-    MultiVisualPlan
+    PlanEnvelope
   >(functions, 'aiVisualPlanEditSlot');
   return {
-    authorize: (input: MultiVisualPlanRequest) => authorize(input).then((r) => r.data),
+    authorize: async (input: MultiVisualPlanRequest) => {
+      try {
+        return parsePlan((await authorize(input)).data);
+      } catch (error) {
+        const requestId = activePlanRequestId(error);
+        if (requestId === null || requestId === input.requestId) throw error;
+        // Una chiusura/ricarica del dialog non deve rendere irraggiungibile il
+        // piano già autorizzato. Il server comunica l'identità opaca solo al
+        // proprietario autenticato: la stessa callable ne esegue il replay,
+        // senza nuova prenotazione né nuova chiamata provider.
+        return parsePlan((await authorize({ ...input, requestId })).data);
+      }
+    },
     generateSlot: (input: MultiVisualIdentity & { requestId: string; slotIndex: number }) =>
-      generate(input).then((r) => r.data),
+      generate(input).then((r) => parsePlanEnvelope(r.data)),
     promoteSlot: (
       input: MultiVisualIdentity & {
         requestId: string;
@@ -105,7 +153,7 @@ export function createMultiVisualClient(functions: Functions) {
         promotionRequestId: string;
         mode: { mode: 'add' } | { mode: 'replace'; replaceAssetId: string };
       },
-    ) => promote(input).then((r) => r.data),
+    ) => promote(input).then((r) => parsePlanEnvelope(r.data)),
     reorder: (
       input: MultiVisualIdentity & { expectedAssetIds: string[]; nextAssetIds: string[] },
     ) => reorder(input).then((r) => r.data),
@@ -129,6 +177,6 @@ export function createMultiVisualClient(functions: Functions) {
             anchorHeadingIndex: number;
             anchorHeadingText: string;
           }),
-    ) => edit(input).then((r) => r.data),
+    ) => edit(input).then((r) => parsePlanEnvelope(r.data)),
   };
 }
