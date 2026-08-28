@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonMultiVisualWorkflowDialog } from '../LessonMultiVisualWorkflowDialog.js';
 import type { MultiVisualSlot } from '../../repository/programs/multiVisualClient.js';
@@ -111,6 +113,15 @@ describe('LessonMultiVisualWorkflowDialog', () => {
       expect.objectContaining({ quantity: { mode: 'exact', ceiling: 1 } }),
     );
     expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it('mostra sempre le proposte in una sola colonna', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/teacher/LessonMultiVisualWorkflowDialog.module.css'),
+      'utf8',
+    );
+    expect(css).toMatch(/\.slots\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+    expect(css).not.toContain('repeat(3');
   });
 
   it('genera, promuove e solo dopo richiede il refresh autorevole', async () => {
