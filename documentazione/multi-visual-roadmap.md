@@ -1,6 +1,9 @@
 # MULTI-VISUAL — Arricchimento visivo multi-immagine (contratto e roadmap)
 
-> **Stato: MULTI-VISUAL-02 — proposta coordinata e upload binario implementati.**
+> **Stato: MULTI-VISUAL-00→04 completati e distribuiti. Gate GMULTI: PASS.**
+> Il flusso multi-visuale è operativo in DEV e PROD: fino a tre immagini per
+> lezione, generate o caricate dal docente, con gestione, rendering, export e
+> cleanup. MULTI-VISUAL-05 resta un'attività opzionale di qualità.
 > MULTI-VISUAL-00 (contratto e prototipo) chiuso con PR #423. MULTI-VISUAL-01
 > aggiunge, in `functions/src/aiVisualMulti{Core,Manifest,Anchor,Plan}.ts`,
 > i tipi chiusi e i validatori fail-closed di `LessonVisualsManifest`,
@@ -13,7 +16,8 @@
 > `aiVisualUploadAbandon`. Restano invariati Rules, UI, proiezioni studente,
 > provider reali, segreti e deploy.
 > Pilota di `AGENT-ORCHESTRATOR` (`agent-orchestrator-roadmap.md` §12).
-> **Gate GMULTI: PENDING** (resta condizionato a MULTI-VISUAL-02→05).
+> Il gate umano è stato superato dopo smoke DEV desktop/mobile; il rollout PROD
+> è stato completato il 29 agosto 2026.
 >
 > **Revisione 2 (25 agosto 2026).** La prima review Codex ha respinto la
 > revisione 1 con dieci blocker UX/workflow. Corretti tutti — modello
@@ -2990,9 +2994,9 @@ Nuovi in questa revisione:
 | **MULTI-VISUAL-03A** | **Autorizzazione e proposta coordinata.** `VisualPlanRun`, lease un-piano-per-lezione, prenotazione master a somma di cap, replay owner-only, adozione singolare atomica privata/pubblica e Rules server-only delle collezioni tecniche. Nessuna generazione/promozione per slot. | MULTI-VISUAL-02 | **Implementato.** |
 | **MULTI-VISUAL-03B** | **Esecuzione e promozione per slot.** Generazione/retry, staging e promozione atomica `add`/`replace`, settlement per slot e recovery. | MULTI-VISUAL-03A | **Chiuso.** PR #430; callable `aiVisualPlanGenerateSlot` e `aiVisualPlanPromoteSlot`, test puri ed Emulator; non distribuito. |
 | **MULTI-VISUAL-03C** | **Lifecycle editoriale e proiezioni.** Riordino, rimozione, cleanup, Rules su `publicLessons.visuals`/`publicLessonVisuals` e batching export. | MULTI-VISUAL-03B | **Chiuso.** PR #431; non distribuito. |
-| **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, galleria con riordino, rendering N-way e responsive desktop/mobile con semantica modale reale. | MULTI-VISUAL-03 | **Implementato nel codice; rollout DEV e Gate UI PENDING.** Upload manuale e integrazione automatica con «Genera lezione» restano fuori da questa PR. |
+| **MULTI-VISUAL-04** | **UI.** «Arricchisci» in Azioni (unico ingresso), selettore di quantità, autorizzazione unica, revisione del piano, generazione con progresso e retry per asset, galleria con riordino, rendering N-way e responsive desktop/mobile con semantica modale reale. | MULTI-VISUAL-03 | **Chiuso e distribuito in DEV e PROD; Gate UI superato.** Upload manuale e integrazione automatica con «Genera lezione» restano fuori da questa PR. |
 | **MULTI-VISUAL-05** | **Qualità e rollout controllato.** Benchmark su lezioni con più immagini, verifica del margine di §4 su documenti reali, smoke DEV con flag in sequenza, verifica del percorso di rollback, verifica diretta su dati di produzione della domanda aperta di §17.3. | MULTI-VISUAL-04 | Aperto. |
-| **Gate GMULTI** | **Approvazione umana.** | MULTI-VISUAL-05 | **PENDING.** |
+| **Gate GMULTI** | **Approvazione umana.** | MULTI-VISUAL-05 | **PASS (29 agosto 2026).** Smoke DEV confermato dal docente; rollout PROD completato. |
 
 ---
 
