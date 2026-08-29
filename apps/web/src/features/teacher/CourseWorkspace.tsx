@@ -101,7 +101,7 @@ import { parseLessonMarkdown } from '../../components/lessonManualMarkdown.js';
 import { assignLessonHeadingSlugs } from '@schoolforge/lesson-contract';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonMultiVisualGallery } from './LessonMultiVisualGallery.js';
-import { LessonMultiVisualWorkflowDialog } from './LessonMultiVisualWorkflowDialog.js';
+import { LessonEnrichmentDialog } from './LessonEnrichmentDialog.js';
 import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
 import { createTeacherMultiVisualReader } from '../repository/programs/multiVisualReadClients.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
@@ -2362,7 +2362,6 @@ export function CourseWorkspace({
                 menuTriggerRef.current?.focus();
               }}
               onCloseMultiVisualDialog={() => setMultiVisualDialogOpen(false)}
-              onOpenMultiVisualDialog={() => setMultiVisualDialogOpen(true)}
               onVisualsChange={(visuals) => handleVisualsChange(selectedLesson.id, visuals)}
             />
           )}
@@ -2869,7 +2868,6 @@ function LessonDetail({
   multiVisualDialogOpen,
   onCloseVisualDialog,
   onCloseMultiVisualDialog,
-  onOpenMultiVisualDialog,
   onVisualsChange,
 }: {
   lesson: LessonItem;
@@ -2908,7 +2906,6 @@ function LessonDetail({
   multiVisualDialogOpen: boolean;
   onCloseVisualDialog: () => void;
   onCloseMultiVisualDialog: () => void;
-  onOpenMultiVisualDialog: () => void;
   onVisualsChange: (visuals: LessonVisualsManifest | null) => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
@@ -3303,12 +3300,11 @@ function LessonDetail({
                     });
                     await refreshMultiVisuals();
                   }}
-                  onGenerate={onOpenMultiVisualDialog}
                   bytes={multiVisualBytes}
                 />
               )}
               {multiVisualDialogOpen && importId && content && (
-                <LessonMultiVisualWorkflowDialog
+                <LessonEnrichmentDialog
                   functions={functions}
                   identity={{ programId, importId, lessonId: lesson.id }}
                   lessonAi={lessonAi}

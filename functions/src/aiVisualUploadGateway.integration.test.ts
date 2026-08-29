@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
-import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import { AiVisualMultiError } from './aiVisualMultiCore.js';
@@ -183,6 +183,52 @@ emulatorDescribe('VisualUploadRun — Firestore Emulator reale', () => {
   function runRef(requestId: string): FirebaseFirestore.DocumentReference {
     const id = computeOpaqueVisualUploadRunId(OWNER_UID, requestId);
     return db.doc(`visualUploadRuns/${id}`);
+  }
+
+  function uploadRefs(requestId: string): {
+    run: FirebaseFirestore.DocumentReference;
+    promotion: FirebaseFirestore.DocumentReference;
+    recovery: FirebaseFirestore.DocumentReference;
+  } {
+    const opaque = computeOpaqueVisualUploadRunId(OWNER_UID, requestId);
+    return {
+      run: db.doc(`visualUploadRuns/${opaque}`),
+      promotion: db.doc(`visualUploadPromotions/${opaque}`),
+      recovery: db.doc(`visualUploadPromotionRecoveries/${opaque}`),
+    };
+  }
+
+  async function acceptAndPromote(params: {
+    bucket: BucketLike;
+    nowMs: number;
+    mode?: { mode: 'add' } | { mode: 'replace'; replaceAssetId: string };
+    afterPromotionReads?: () => Promise<void>;
+  }): Promise<{ requestId: string; assetId: string }> {
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket: params.bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+      ),
+      nowMs: params.nowMs,
+    });
+    const result = await promoteVisualUploadForOwner({
+      db,
+      bucket: params.bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadPromoteInput({
+        requestId,
+        promotionRequestId: randomUUID(),
+        mode: params.mode ?? { mode: 'add' },
+      }),
+      nowMs: params.nowMs + 1,
+      afterPromotionReads: params.afterPromotionReads,
+    });
+    return { requestId, assetId: result.assetId };
   }
 
   it('crea un run al primo accept: normalizza una sola volta, scrive lo staging atteso', async () => {
@@ -1099,6 +1145,323 @@ emulatorDescribe('VisualUploadRun — Firestore Emulator reale', () => {
     expect(parseStoredVisualUploadRun((await runRef(requestId).get()).data())?.status).toBe(
       'expired',
     );
+  });
+
+  it('body/ancora stale dopo lo staging: abandon elimina canonico preparato e consuma il recovery', async () => {
+    await seedLesson();
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    const { bucket, files } = createFakeBucket();
+    const nowMs = Date.UTC(2026, 7, 25, 3);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+      ),
+      nowMs,
+    });
+    await db.doc(`publicLessons/${PUBLIC_LESSON_ID}`).update({
+      content: `${LESSON_BODY}\n\nTesto cambiato dopo l'accept.`,
+    });
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input: validateVisualUploadPromoteInput({
+          requestId,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'add' },
+        }),
+        nowMs: nowMs + 1,
+      }),
+    ).rejects.toMatchObject({ code: 'visual_promotion_anchor_stale' });
+    const prepared = (await refs.recovery.get()).data()!;
+    expect(prepared.status).toBe('prepared');
+    expect(files.has(prepared.storageRef as string)).toBe(true);
+
+    await expect(
+      abandonVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        requestId,
+        nowMs: nowMs + 2,
+      }),
+    ).resolves.toEqual({ status: 'abandoned' });
+    expect(files.has(prepared.storageRef as string)).toBe(false);
+    expect(files.has(prepared.stagingRef as string)).toBe(false);
+    expect((await refs.recovery.get()).exists).toBe(false);
+    expect((await refs.promotion.get()).exists).toBe(false);
+  });
+
+  it('cleanup fail-closed: byte canonici sostituiti non vengono eliminati né consumano il recovery', async () => {
+    await seedLesson();
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    const { bucket, files, deleteCalls } = createFakeBucket();
+    const nowMs = Date.UTC(2026, 7, 25, 3, 30);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+      ),
+      nowMs,
+    });
+    await db.doc(`publicLessons/${PUBLIC_LESSON_ID}`).update({ content: `${LESSON_BODY}\nmutato` });
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input: validateVisualUploadPromoteInput({
+          requestId,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'add' },
+        }),
+        nowMs: nowMs + 1,
+      }),
+    ).rejects.toMatchObject({ code: 'visual_promotion_anchor_stale' });
+    const prepared = (await refs.recovery.get()).data()!;
+    const replacement = Buffer.from('blob-canonico-sostitutivo');
+    files.set(prepared.storageRef as string, replacement);
+
+    await expect(
+      abandonVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        requestId,
+        nowMs: nowMs + 2,
+      }),
+    ).rejects.toMatchObject({ code: 'corrupted_state' });
+    expect(files.get(prepared.storageRef as string)).toEqual(replacement);
+    expect(deleteCalls).not.toContain(prepared.storageRef as string);
+    expect((await refs.recovery.get()).exists).toBe(true);
+  });
+
+  it('TTL ritenta e consuma un recovery prepared lasciato da una promozione stale', async () => {
+    await seedLesson();
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    const { bucket, files } = createFakeBucket();
+    const nowMs = Date.UTC(2026, 7, 25, 3, 45);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+      ),
+      nowMs,
+    });
+    await db.doc(`publicLessons/${PUBLIC_LESSON_ID}`).update({ content: `${LESSON_BODY}\nmutato` });
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input: validateVisualUploadPromoteInput({
+          requestId,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'add' },
+        }),
+        nowMs: nowMs + 1,
+      }),
+    ).rejects.toMatchObject({ code: 'visual_promotion_anchor_stale' });
+    const prepared = (await refs.recovery.get()).data()!;
+
+    await expect(
+      cleanupExpiredVisualUploadRun({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        requestId,
+        nowMs: nowMs + 24 * 60 * 60 * 1000 + 1,
+      }),
+    ).resolves.toEqual({ status: 'expired' });
+    expect(files.has(prepared.storageRef as string)).toBe(false);
+    expect(files.has(prepared.stagingRef as string)).toBe(false);
+    expect((await refs.recovery.get()).exists).toBe(false);
+    expect(parseStoredVisualUploadRun((await refs.run.get()).data())?.status).toBe('expired');
+  });
+
+  it('crash dopo commit abandoned: il replay cleanup elimina staging e canonico prepared', async () => {
+    await seedLesson();
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    const { bucket, files } = createFakeBucket();
+    const nowMs = Date.UTC(2026, 7, 25, 3, 50);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+      ),
+      nowMs,
+    });
+    await db.doc(`publicLessons/${PUBLIC_LESSON_ID}`).update({ content: `${LESSON_BODY}\nmutato` });
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input: validateVisualUploadPromoteInput({
+          requestId,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'add' },
+        }),
+        nowMs: nowMs + 1,
+      }),
+    ).rejects.toMatchObject({ code: 'visual_promotion_anchor_stale' });
+    const prepared = (await refs.recovery.get()).data()!;
+
+    await expect(
+      abandonVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        requestId,
+        nowMs: nowMs + 2,
+        afterAbandonCommit: async () => {
+          throw new Error('crash dopo commit abandoned');
+        },
+      }),
+    ).rejects.toThrow('crash dopo commit abandoned');
+    expect(parseStoredVisualUploadRun((await refs.run.get()).data())?.status).toBe('abandoned');
+    expect(files.has(prepared.storageRef as string)).toBe(true);
+    expect(files.has(prepared.stagingRef as string)).toBe(true);
+    expect((await refs.recovery.get()).exists).toBe(true);
+
+    await expect(
+      cleanupExpiredVisualUploadRun({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        requestId,
+        nowMs: nowMs + 3,
+      }),
+    ).resolves.toEqual({ status: 'terminal' });
+    expect(files.has(prepared.storageRef as string)).toBe(false);
+    expect(files.has(prepared.stagingRef as string)).toBe(false);
+    expect((await refs.recovery.get()).exists).toBe(false);
+  });
+
+  it('slot pieno dopo la copia canonica: abandon recupera il quarto asset senza toccare i tre live', async () => {
+    await seedLesson();
+    const { bucket, files } = createFakeBucket();
+    const nowMs = Date.UTC(2026, 7, 25, 4);
+    const live = [] as string[];
+    for (let index = 0; index < 3; index += 1) {
+      live.push((await acceptAndPromote({ bucket, nowMs: nowMs + index * 10 })).assetId);
+    }
+    const livePaths = (
+      await db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${LESSON_ID}`).get()
+    )
+      .data()!
+      .visuals.items.map((item: { storageRef: string }) => item.storageRef as string);
+    expect(live).toHaveLength(3);
+    expect(livePaths.every((path: string) => files.has(path))).toBe(true);
+
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+      ),
+      nowMs: nowMs + 40,
+    });
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input: validateVisualUploadPromoteInput({
+          requestId,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'add' },
+        }),
+        nowMs: nowMs + 41,
+      }),
+    ).rejects.toMatchObject({ code: 'visual_slot_full' });
+    const prepared = (await refs.recovery.get()).data()!;
+    expect(files.has(prepared.storageRef as string)).toBe(true);
+
+    await abandonVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      requestId,
+      nowMs: nowMs + 42,
+    });
+    expect(files.has(prepared.storageRef as string)).toBe(false);
+    expect(livePaths.every((path: string) => files.has(path))).toBe(true);
+    expect((await refs.recovery.get()).exists).toBe(false);
+  });
+
+  it('race replace: il target sparisce fra lettura e commit, poi abandon recupera solo il candidato', async () => {
+    await seedLesson();
+    const { bucket, files } = createFakeBucket();
+    const nowMs = Date.UTC(2026, 7, 25, 5);
+    const live = await acceptAndPromote({ bucket, nowMs });
+    const lessonRef = db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${LESSON_ID}`);
+    const livePath = (await lessonRef.get()).data()!.visuals.items[0].storageRef as string;
+
+    const requestId = randomUUID();
+    const refs = uploadRefs(requestId);
+    touchedRefs.push(refs.run, refs.promotion, refs.recovery);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: validateVisualUploadAcceptInput(
+        acceptInputPayload({ requestId, base64: await pngUploadBase64(48, 36) }),
+      ),
+      nowMs: nowMs + 10,
+    });
+    // La modifica concorrente avviene dopo accept (che congela ancora e
+    // sourceBodyHash) ma prima della transazione di promozione: il target
+    // autorizzato non è più live quando il server rilegge il LessonDoc.
+    await lessonRef.update({ visuals: FieldValue.delete() });
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input: validateVisualUploadPromoteInput({
+          requestId,
+          promotionRequestId: randomUUID(),
+          mode: { mode: 'replace', replaceAssetId: live.assetId },
+        }),
+        nowMs: nowMs + 11,
+      }),
+    ).rejects.toMatchObject({ code: 'visual_replace_target_missing' });
+    const prepared = (await refs.recovery.get()).data()!;
+    expect(files.has(prepared.storageRef as string)).toBe(true);
+
+    await abandonVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      requestId,
+      nowMs: nowMs + 12,
+    });
+    expect(files.has(prepared.storageRef as string)).toBe(false);
+    expect(files.has(livePath)).toBe(true);
+    expect((await refs.recovery.get()).exists).toBe(false);
   });
 
   it('un requestId scaduto è terminale: replay dello stato, nessun nuovo upload', async () => {

@@ -67,6 +67,9 @@ const PROMOTIONS = 'visualUploadPromotions';
 const RECOVERIES = 'visualUploadPromotionRecoveries';
 const PUBLIC_BYTES = 'publicLessonVisuals';
 const OPTIONS = { region: SCHOOLFORGE_FUNCTION_REGION, invoker: 'public' as const };
+const CANONICAL_PROOF_RUN_KEY = 'schoolforgeUploadPromotionRunId';
+const CANONICAL_PROOF_ASSET_KEY = 'schoolforgeUploadPromotionAssetId';
+const CANONICAL_PROOF_OWNER_KEY = 'schoolforgeUploadPromotionOwnerUid';
 
 function database(): Firestore {
   if (getApps().length === 0) initializeApp();
@@ -207,6 +210,198 @@ async function deleteIfPresent(bucket: BucketLike, path: string): Promise<void> 
   } catch (error) {
     if (!isStorageNotFound(error)) throw error;
   }
+}
+
+type MetadataFile = ReturnType<BucketLike['file']> & { getMetadata(): Promise<unknown> };
+
+/**
+ * Cancella il blob canonico lasciato dalla finestra save(Storage) ->
+ * transazione(Firestore) soltanto con una prova server-side completa e una
+ * precondizione sulla generation. Un oggetto sostituito o estraneo non viene
+ * mai eliminato.
+ */
+async function deleteProvenPreparedCanonical(params: {
+  bucket: BucketLike;
+  recovery: StoredVisualUploadPromotionRecovery;
+  normalizedSha256: string;
+  normalizedByteLength: number;
+}): Promise<'absent' | 'deleted'> {
+  const file = params.bucket.file(params.recovery.storageRef) as MetadataFile;
+  if (typeof file.getMetadata !== 'function') {
+    throw new AiVisualMultiError('corrupted_state', 'Metadata del blob canonico non leggibili.');
+  }
+  let metadata: Record<string, unknown>;
+  try {
+    const response = await file.getMetadata();
+    const candidate = Array.isArray(response) ? response[0] : null;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      throw new AiVisualMultiError('corrupted_state', 'Metadata del blob canonico non validi.');
+    }
+    metadata = candidate as Record<string, unknown>;
+  } catch (error) {
+    if (isStorageNotFound(error)) return 'absent';
+    throw error;
+  }
+  const custom = metadata.metadata;
+  if (
+    !custom ||
+    typeof custom !== 'object' ||
+    Array.isArray(custom) ||
+    (custom as Record<string, unknown>)[CANONICAL_PROOF_RUN_KEY] !==
+      params.recovery.opaqueUploadRunId ||
+    (custom as Record<string, unknown>)[CANONICAL_PROOF_ASSET_KEY] !== params.recovery.assetId ||
+    (custom as Record<string, unknown>)[CANONICAL_PROOF_OWNER_KEY] !== params.recovery.ownerUid ||
+    (custom as Record<string, unknown>).sha256 !== params.normalizedSha256
+  ) {
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'Il blob canonico non appartiene alla promozione preparata.',
+    );
+  }
+  const generation = metadata.generation;
+  if (
+    (typeof generation !== 'string' && typeof generation !== 'number') ||
+    String(generation).length === 0
+  ) {
+    throw new AiVisualMultiError('corrupted_state', 'Generation canonica non valida.');
+  }
+  let bytes: Uint8Array;
+  try {
+    [bytes] = await file.download();
+  } catch (error) {
+    if (isStorageNotFound(error)) return 'absent';
+    throw error;
+  }
+  if (
+    bytes.byteLength !== params.normalizedByteLength ||
+    sha256Hex(bytes) !== params.normalizedSha256
+  ) {
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'I byte canonici non appartengono alla promozione preparata.',
+    );
+  }
+  try {
+    await file.delete({ preconditionOpts: { ifGenerationMatch: generation } });
+    return 'deleted';
+  } catch (error) {
+    if (isStorageNotFound(error)) return 'absent';
+    if (isStoragePreconditionFailed(error)) {
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Il blob canonico è cambiato durante il cleanup.',
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Consuma un recovery `prepared` dopo che il run è terminale. La transazione
+ * di promozione e quella che rende terminale il run contendono lo stesso
+ * documento: quindi, dopo `abandoned|expired`, nessuna adozione legittima può
+ * ancora rendere live l'asset. La rilettura del LessonDoc resta una difesa
+ * fail-closed contro stati amministrativi corrotti.
+ */
+export async function cleanupPreparedVisualUploadPromotion(params: {
+  db: Firestore;
+  bucket: BucketLike;
+  ownerUid: string;
+  requestId: string;
+}): Promise<{ status: 'absent' | 'not_prepared' | 'consumed' }> {
+  const opaqueUploadRunId = computeOpaqueVisualUploadRunId(params.ownerUid, params.requestId);
+  const runRef = params.db.doc(`${RUNS}/${opaqueUploadRunId}`);
+  const promotionRef = params.db.doc(`${PROMOTIONS}/${opaqueUploadRunId}`);
+  const recoveryRef = params.db.doc(`${RECOVERIES}/${opaqueUploadRunId}`);
+  const [runSnap, promotionSnap, recoverySnap] = await Promise.all([
+    runRef.get(),
+    promotionRef.get(),
+    recoveryRef.get(),
+  ]);
+  if (!recoverySnap.exists) return { status: 'absent' };
+  if (!runSnap.exists)
+    throw new AiVisualMultiError('corrupted_state', 'Run assente durante il cleanup recovery.');
+  const run = parseRun(runSnap.data());
+  if (run.ownerUid !== params.ownerUid || run.requestId !== params.requestId)
+    throw new AiVisualMultiError('corrupted_state', 'Identità run divergente nel cleanup.');
+  const recovery = validateStoredVisualUploadPromotionRecovery(recoverySnap.data());
+  if (
+    recovery.ownerUid !== params.ownerUid ||
+    recovery.opaqueUploadRunId !== opaqueUploadRunId ||
+    recovery.stagingRef !== visualUploadStagingRef(params.ownerUid, opaqueUploadRunId)
+  )
+    throw new AiVisualMultiError('corrupted_state', 'Identità recovery divergente nel cleanup.');
+  if (recovery.status !== 'prepared' || promotionSnap.exists) return { status: 'not_prepared' };
+  if (run.status !== 'abandoned' && run.status !== 'expired')
+    throw new AiVisualMultiError(
+      'visual_upload_conflict',
+      'Il run non è terminale per il cleanup.',
+    );
+  if (!run.normalized || run.normalized.storageRef !== recovery.stagingRef)
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'Normalizzazione assente nel cleanup recovery.',
+    );
+
+  const lessonRef = params.db.doc(lessonPath(run.programId, run.importId, run.lessonId));
+  const lessonSnap = await lessonRef.get();
+  if (!lessonSnap.exists)
+    throw new AiVisualMultiError('corrupted_state', 'LessonDoc assente nel cleanup recovery.');
+  const manifest = readManifest(lessonSnap.data() as Record<string, unknown>);
+  if (
+    manifest?.items.some(
+      (item) => item.assetId === recovery.assetId || item.storageRef === recovery.storageRef,
+    )
+  ) {
+    throw new AiVisualMultiError(
+      'corrupted_state',
+      'Asset preparato già referenziato dalla lezione.',
+    );
+  }
+
+  await deleteProvenPreparedCanonical({
+    bucket: params.bucket,
+    recovery,
+    normalizedSha256: run.normalized.sha256,
+    normalizedByteLength: run.normalized.byteLength,
+  });
+
+  await params.db.runTransaction(async (tx) => {
+    const [freshRunSnap, freshPromotionSnap, freshRecoverySnap, freshLessonSnap] =
+      await Promise.all([
+        tx.get(runRef),
+        tx.get(promotionRef),
+        tx.get(recoveryRef),
+        tx.get(lessonRef),
+      ]);
+    if (!freshRecoverySnap.exists) return;
+    if (!freshRunSnap.exists || !freshLessonSnap.exists || freshPromotionSnap.exists)
+      throw new AiVisualMultiError(
+        'corrupted_state',
+        'Stato cambiato durante il cleanup recovery.',
+      );
+    const freshRun = parseRun(freshRunSnap.data());
+    const freshRecovery = validateStoredVisualUploadPromotionRecovery(freshRecoverySnap.data());
+    const freshManifest = readManifest(freshLessonSnap.data() as Record<string, unknown>);
+    if (
+      freshRun.ownerUid !== params.ownerUid ||
+      freshRun.requestId !== params.requestId ||
+      (freshRun.status !== 'abandoned' && freshRun.status !== 'expired') ||
+      freshRecovery.status !== 'prepared' ||
+      freshRecovery.ownerUid !== recovery.ownerUid ||
+      freshRecovery.opaqueUploadRunId !== recovery.opaqueUploadRunId ||
+      freshRecovery.assetId !== recovery.assetId ||
+      freshRecovery.storageRef !== recovery.storageRef ||
+      freshRecovery.promotionRequestId !== recovery.promotionRequestId ||
+      freshManifest?.items.some(
+        (item) => item.assetId === recovery.assetId || item.storageRef === recovery.storageRef,
+      )
+    ) {
+      throw new AiVisualMultiError('corrupted_state', 'Recovery cambiato durante il cleanup.');
+    }
+    tx.delete(recoveryRef);
+  });
+  return { status: 'consumed' };
 }
 
 async function verifyReplay(params: {
@@ -398,7 +593,12 @@ export async function promoteVisualUploadForOwner(params: {
       metadata: {
         contentType: 'image/webp',
         cacheControl: 'private,no-store',
-        metadata: { sha256: run.normalized.sha256 },
+        metadata: {
+          sha256: run.normalized.sha256,
+          [CANONICAL_PROOF_RUN_KEY]: opaqueUploadRunId,
+          [CANONICAL_PROOF_ASSET_KEY]: assetId,
+          [CANONICAL_PROOF_OWNER_KEY]: ownerUid,
+        },
       },
     });
   } catch (error) {

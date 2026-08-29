@@ -40,6 +40,7 @@ import { parseStoredVisualUploadRun, serializeVisualUploadRun } from './aiVisual
 import { VISUAL_STAGING_TTL_MS } from './aiContentVisualProposal.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { isStorageNotFound, type BucketLike, type FileLike } from './repositoryGatewayCore.js';
+import { cleanupPreparedVisualUploadPromotion } from './aiVisualUploadPromotionGateway.js';
 
 const VISUAL_UPLOAD_CALLABLE_OPTIONS = {
   region: SCHOOLFORGE_FUNCTION_REGION,
@@ -532,6 +533,7 @@ export async function abandonVisualUploadForOwner(params: {
   ownerUid: string;
   requestId: string;
   nowMs: number;
+  afterAbandonCommit?: () => Promise<void>;
 }): Promise<VisualUploadAbandonResult> {
   const opaqueUploadRunId = computeOpaqueVisualUploadRunId(params.ownerUid, params.requestId);
   const runRef = params.db.doc(`${VISUAL_UPLOAD_RUNS}/${opaqueUploadRunId}`);
@@ -585,6 +587,10 @@ export async function abandonVisualUploadForOwner(params: {
     },
   );
 
+  // Punto di iniezione test-only: dimostra la finestra crash fra il commit
+  // terminale e i delete Storage/recovery. Il replay TTL deve chiuderla.
+  await params.afterAbandonCommit?.();
+
   // Elimina lo staging **dopo** il commit — stesso percorso indipendentemente
   // dallo stato osservato; tollerato assente (già ripulito da un tentativo
   // precedente, §9.9: «non richiede la stessa conferma esplicita bloccante»).
@@ -593,6 +599,12 @@ export async function abandonVisualUploadForOwner(params: {
     storageRef: visualUploadStagingRef(params.ownerUid, opaqueUploadRunId),
     opaqueUploadRunId,
     rawBytesSha256: outcome.rawBytesSha256,
+  });
+  await cleanupPreparedVisualUploadPromotion({
+    db: params.db,
+    bucket: params.bucket,
+    ownerUid: params.ownerUid,
+    requestId: params.requestId,
   });
 
   return { status: outcome.status };
@@ -658,8 +670,14 @@ export async function cleanupExpiredVisualUploadRun(params: {
       // deve poter ritentare il solo path dimostrato dal normalized del run.
       return { status: 'terminal' as const, rawBytesSha256: existing.rawBytesSha256 };
     }
-    if (existing.status === 'promoted' || existing.status === 'abandoned') {
+    if (existing.status === 'promoted') {
       return { status: 'terminal' as const, rawBytesSha256: null };
+    }
+    if (existing.status === 'abandoned') {
+      // Un crash può avvenire dopo il commit `abandoned` ma prima dei delete
+      // Storage/recovery. Il replay deve quindi ritentare entrambi usando la
+      // stessa prova raw del run; `promoted`, invece, non va mai ripulito qui.
+      return { status: 'terminal' as const, rawBytesSha256: existing.rawBytesSha256 };
     }
     const expireMs = timestampToMillis(existing.expireAt);
     if (expireMs === null || expireMs > params.nowMs) {
@@ -678,6 +696,12 @@ export async function cleanupExpiredVisualUploadRun(params: {
       storageRef: visualUploadStagingRef(params.ownerUid, opaqueUploadRunId),
       opaqueUploadRunId,
       rawBytesSha256: decision.rawBytesSha256,
+    });
+    await cleanupPreparedVisualUploadPromotion({
+      db: params.db,
+      bucket: params.bucket,
+      ownerUid: params.ownerUid,
+      requestId: params.requestId,
     });
   }
   return { status: decision.status };

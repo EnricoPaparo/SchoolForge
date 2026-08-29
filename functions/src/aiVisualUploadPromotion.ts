@@ -98,6 +98,7 @@ export function validateStoredVisualUploadPromotion(value: unknown): StoredVisua
     !isUuidV4(root.promotionRequestId) ||
     !isUuidV4(root.assetId) ||
     !isCanonicalVisualStorageRef(root.storageRef, root.assetId) ||
+    root.storageRef.split('/')[1] !== root.ownerUid ||
     timestampToMillis(root.createdAt) === null
   )
     throw new AiVisualMultiError('corrupted_state', 'Identità della promozione upload non valida.');
@@ -157,6 +158,7 @@ export function validateStoredVisualUploadPromotionRecovery(
     !isUuidV4(root.promotionRequestId) ||
     !isUuidV4(root.assetId) ||
     !isCanonicalVisualStorageRef(root.storageRef, root.assetId) ||
+    root.storageRef.split('/')[1] !== root.ownerUid ||
     typeof root.stagingRef !== 'string' ||
     !isCanonicalVisualUploadStagingRef(root.stagingRef, root.opaqueUploadRunId) ||
     root.stagingRef.split('/')[1] !== root.ownerUid ||
@@ -176,6 +178,12 @@ export function validateStoredVisualUploadPromotionRecovery(
       !isCanonicalVisualStorageRef(root.supersededStorageRef, root.replacedAssetId))
   ) {
     throw new AiVisualMultiError('corrupted_state', 'Path superseded del recovery non valido.');
+  }
+  if (
+    root.supersededStorageRef !== null &&
+    root.supersededStorageRef.split('/')[1] !== root.ownerUid
+  ) {
+    throw new AiVisualMultiError('corrupted_state', 'Owner del path superseded non valido.');
   }
   const created = timestampToMillis(root.createdAt);
   const updated = timestampToMillis(root.updatedAt);

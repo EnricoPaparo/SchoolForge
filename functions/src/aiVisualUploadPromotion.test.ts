@@ -98,5 +98,24 @@ describe('visual upload promotion closed contracts', () => {
     expect(() => validateStoredVisualUploadPromotionRecovery({ ...recovery, extra: true })).toThrow(
       /chiavi non ammesse/,
     );
+    expect(() =>
+      validateStoredVisualUploadPromotionRecovery({
+        ...recovery,
+        storageRef: `repository/other/import/uda/visuals/${ASSET}.webp`,
+      }),
+    ).toThrow(/identità del recovery/i);
+    expect(() =>
+      validateStoredVisualUploadPromotion({
+        contractVersion: VISUAL_UPLOAD_PROMOTION_CONTRACT_VERSION,
+        ownerUid: 'owner',
+        opaqueUploadRunId: RUN,
+        promotionRequestId: PROMOTION,
+        mode: 'add',
+        replacedAssetId: null,
+        assetId: ASSET,
+        storageRef: `repository/other/import/uda/visuals/${ASSET}.webp`,
+        createdAt: now,
+      }),
+    ).toThrow(/identità della promozione/i);
   });
 });

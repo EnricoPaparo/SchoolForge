@@ -96,13 +96,9 @@
   .grid {
     grid-template-columns: 1fr;
   }
-  .header > button {
-    width: 100%;
-  }
   .actions {
     display: flex;
   }
-  .header > button,
   .actions button {
     min-height: 44px;
     width: 100%;

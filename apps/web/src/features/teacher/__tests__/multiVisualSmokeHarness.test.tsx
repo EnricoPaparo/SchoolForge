@@ -38,7 +38,6 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
         identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
         manifest={[item(1), item(2), item(3)]}
         onRemove={vi.fn()}
-        onGenerate={vi.fn()}
       />,
     );
     expect(container.querySelectorAll('article')).toHaveLength(3);
