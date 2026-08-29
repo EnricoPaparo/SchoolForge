@@ -11,6 +11,8 @@ import {
 } from './aiVisualUploadCore.js';
 import { parseStoredVisualUploadRun } from './aiVisualUploadRunDoc.js';
 import { normalizeVisualUploadBytes } from './aiVisualUploadNormalizer.js';
+import { validateVisualUploadPromoteInput } from './aiVisualUploadPromotion.js';
+import { promoteVisualUploadForOwner } from './aiVisualUploadPromotionGateway.js';
 import type { BucketLike, FileLike } from './repositoryGatewayCore.js';
 
 const { acceptVisualUploadForOwner, abandonVisualUploadForOwner, cleanupExpiredVisualUploadRun } =
@@ -211,6 +213,67 @@ emulatorDescribe('VisualUploadRun — Firestore Emulator reale', () => {
     expect(data.publicLessonId).toBe(PUBLIC_LESSON_ID);
     expect(data.udaDir).toBe(UDA_DIR);
     expect(data.normalized).toBeTruthy();
+  });
+
+  it('promuove atomicamente add e il replay non ricopia i byte', async () => {
+    await seedLesson();
+    const requestId = randomUUID();
+    const promotionRequestId = randomUUID();
+    const accepted = validateVisualUploadAcceptInput(
+      acceptInputPayload({ requestId, base64: await pngUploadBase64() }),
+    );
+    const { bucket, files, saveCalls } = createFakeBucket();
+    const opaque = computeOpaqueVisualUploadRunId(OWNER_UID, requestId);
+    const promotionRef = db.doc(`visualUploadPromotions/${opaque}`);
+    const recoveryRef = db.doc(`visualUploadPromotionRecoveries/${opaque}`);
+    const publicBytesRef = db.doc(`publicLessonVisuals/${PUBLIC_LESSON_ID}`);
+    touchedRefs.push(runRef(requestId), promotionRef, recoveryRef, publicBytesRef);
+    await acceptVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input: accepted,
+      nowMs: Date.UTC(2026, 7, 25),
+    });
+    const input = validateVisualUploadPromoteInput({
+      requestId,
+      promotionRequestId,
+      mode: { mode: 'add' },
+    });
+    const first = await promoteVisualUploadForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER_UID,
+      input,
+      nowMs: Date.UTC(2026, 7, 25, 0, 1),
+    });
+    expect(first.replayed).toBe(false);
+    expect((await runRef(requestId).get()).data()?.status).toBe('promoted');
+    const lesson = (
+      await db.doc(`programs/${PROGRAM_ID}/imports/${IMPORT_ID}/lessons/${LESSON_ID}`).get()
+    ).data()!;
+    expect(lesson.visuals.items[0]).toMatchObject({
+      assetId: first.assetId,
+      source: 'uploaded',
+      styleVersion: 'uploaded/v1',
+    });
+    expect(lesson).not.toHaveProperty('visual');
+    expect((await db.doc(`publicLessons/${PUBLIC_LESSON_ID}`).get()).data()).not.toHaveProperty(
+      'visuals',
+    );
+    expect((await publicBytesRef.get()).exists).toBe(false);
+    expect(files.has(visualUploadStagingRef(OWNER_UID, opaque))).toBe(false);
+    const writesAfterFirst = saveCalls.length;
+    await expect(
+      promoteVisualUploadForOwner({
+        db,
+        bucket,
+        ownerUid: OWNER_UID,
+        input,
+        nowMs: Date.UTC(2026, 7, 25, 0, 2),
+      }),
+    ).resolves.toEqual({ replayed: true, assetId: first.assetId });
+    expect(saveCalls).toHaveLength(writesAfterFirst);
   });
 
   it('risposta persa: stesso requestId, stessi byte, stessa ancora/editoriale ⇒ replay senza seconda normalizzazione', async () => {

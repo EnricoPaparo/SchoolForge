@@ -45,6 +45,11 @@ export const VISUAL_PLAN_PROMOTION_CONTRACT_VERSION = 'visual-plan-promotion/v1'
 export const VISUAL_PLAN_PROMOTION_RECOVERY_CONTRACT_VERSION =
   'visual-plan-promotion-recovery/v1' as const;
 
+/** Contratti tecnici della promozione di un upload manuale. */
+export const VISUAL_UPLOAD_PROMOTION_CONTRACT_VERSION = 'visual-upload-promotion/v1' as const;
+export const VISUAL_UPLOAD_PROMOTION_RECOVERY_CONTRACT_VERSION =
+  'visual-upload-promotion-recovery/v1' as const;
+
 /** `styleVersion` di un'immagine caricata dal docente — nessuna verifica di stile. */
 export const UPLOADED_VISUAL_STYLE_VERSION = 'uploaded/v1' as const;
 

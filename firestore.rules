@@ -456,6 +456,17 @@ service cloud.firestore {
     match /visualPlanPromotionRecoveries/{document=**} {
       allow read, write: if false;
     }
+    // MULTI-VISUAL-UPLOAD-01A — run, registro idempotente e recovery della
+    // promozione upload sono accessibili esclusivamente tramite Admin SDK.
+    match /visualUploadRuns/{document=**} {
+      allow read, write: if false;
+    }
+    match /visualUploadPromotions/{document=**} {
+      allow read, write: if false;
+    }
+    match /visualUploadPromotionRecoveries/{document=**} {
+      allow read, write: if false;
+    }
 
     // VE-03A/03B — ticket, replay di promozione, tombstone di abbandono e
     // record di recovery della rimozione contengono identità e path tecnici.
