@@ -19,7 +19,6 @@ import {
   IconGraduationCap,
   IconLayers,
   IconMoreHorizontal,
-  IconPanelLeft,
   IconPencil,
   IconPlus,
   IconSparkles,
@@ -353,7 +352,6 @@ export function CourseWorkspace({
 
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [collapsedUdas, setCollapsedUdas] = useState<Set<string>>(new Set());
-  const [lessonFocusMode, setLessonFocusMode] = useState(false);
 
   // Lesson content is loaded on demand, only when a lesson is selected.
   const [lessonContent, setLessonContent] = useState<string | null>(null);
@@ -655,13 +653,8 @@ export function CourseWorkspace({
     setReorderError(null);
     if (selection.kind !== 'lesson') {
       currentLessonRef.current = null;
-      setLessonFocusMode(false);
     }
   }, [selection]);
-
-  useEffect(() => {
-    if (isMobile) setLessonFocusMode(false);
-  }, [isMobile]);
 
   function toggleUdaCollapsed(udaDir: string) {
     setCollapsedUdas((prev) => {
@@ -1764,9 +1757,9 @@ export function CourseWorkspace({
         </div>
       </div>
 
-      <div className={`${styles.body}${lessonFocusMode ? ` ${styles.bodyFocus}` : ''}`}>
+      <div className={styles.body}>
         {/* Mobile: no sidebar at all — single-level progressive navigation. */}
-        {isMobile || lessonFocusMode ? null : (
+        {isMobile ? null : (
           <nav className={styles.sidebar} aria-label="Struttura corso">
             <div className={styles.sidebarHead}>
               <button
@@ -1818,6 +1811,7 @@ export function CourseWorkspace({
                         <button
                           type="button"
                           className={`${styles.udaTitleBtn}${udaSelected ? ` ${styles.selected}` : ''}`}
+                          aria-label={uda.dir}
                           aria-current={udaSelected ? 'true' : undefined}
                           onClick={() =>
                             guardedNav(() => {
@@ -1839,7 +1833,7 @@ export function CourseWorkspace({
                           >
                             <IconLayers size={14} />
                           </span>
-                          <span>{uda.dir}</span>
+                          <span>{resolveUdaTitle(uda.dir, uda.titolo)}</span>
                         </button>
                       </div>
                       {open && udaLessons.length > 0 && (
@@ -2271,20 +2265,6 @@ export function CourseWorkspace({
                 )}
                 <span>{selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}</span>
               </button>
-              {/* Structure toggle only where a desktop sidebar actually exists. */}
-              {!isMobile && (
-                <button
-                  type="button"
-                  className={styles.toolbarActionBtn}
-                  onClick={() => setLessonFocusMode((current) => !current)}
-                  aria-pressed={lessonFocusMode}
-                  title={lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
-                  aria-label={lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
-                >
-                  <IconPanelLeft size={15} />
-                  <span>{lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}</span>
-                </button>
-              )}
               {contentStatus.saved && <span className={styles.savedNote}>Contenuto salvato</span>}
               {infoStatus.saved && <span className={styles.savedNote}>Informazioni salvate</span>}
               {completedError && (
@@ -2659,7 +2639,9 @@ function CourseOverview({
                     <tr key={uda.id}>
                       <td className={styles.titleCell}>
                         {organizing ? (
-                          <span className={styles.rowStaticLabel}>{uda.dir}</span>
+                          <span className={styles.rowStaticLabel}>
+                            {resolveUdaTitle(uda.dir, uda.titolo)}
+                          </span>
                         ) : (
                           <button
                             type="button"
@@ -2667,7 +2649,7 @@ function CourseOverview({
                             aria-label={`Apri UDA ${uda.dir}`}
                             onClick={() => onSelectUda(uda.dir)}
                           >
-                            {uda.dir}
+                            {resolveUdaTitle(uda.dir, uda.titolo)}
                           </button>
                         )}
                       </td>
@@ -2675,7 +2657,7 @@ function CourseOverview({
                       <td className={styles.orderCell}>
                         {organizing ? (
                           <ReorderControls
-                            label={uda.dir}
+                            label={resolveUdaTitle(uda.dir, uda.titolo)}
                             isFirst={index === 0}
                             isLast={index === tree.udas.length - 1}
                             disabled={reorderBusy}
@@ -2731,7 +2713,7 @@ function UdaOverview({
 }) {
   return (
     <div>
-      <h3 className={styles.sectionTitle}>{uda.dir}</h3>
+      <h3 className={styles.sectionTitle}>{resolveUdaTitle(uda.dir, uda.titolo)}</h3>
       {uda.descrizione && <p className={styles.udaDescription}>{uda.descrizione}</p>}
       {uda.competenze.length > 0 && (
         <div className={styles.metaGroup}>

@@ -38,6 +38,7 @@
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
   background: var(--color-surface-raised);
+  grid-template-rows: auto auto minmax(2.5rem, auto) auto;
 }
 .meta {
   display: grid;
@@ -71,6 +72,8 @@
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: end;
+  margin-top: auto;
 }
 .actions button {
   flex: 0 1 auto;

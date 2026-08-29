@@ -68,10 +68,6 @@
   gap: 1rem;
   align-items: start;
 }
-.workspaceGridFocus {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
 .sidebar {
   min-width: 0;
   padding-right: 1rem;

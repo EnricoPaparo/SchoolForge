@@ -4,7 +4,6 @@ import {
   IconCircleCheck,
   IconFileText,
   IconLayers,
-  IconPanelLeft,
   IconPencil,
 } from '../../components/icons.js';
 import { CourseRecordCard } from '../../components/CourseRecordCard.js';
@@ -94,17 +93,44 @@ export function StudentDidatticaView() {
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
-    setState({ status: 'loading' });
-    loadStudentLessons(uid, db)
-      .then((result) => {
-        if (cancelled) return;
-        setState(result);
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'error' });
-      });
+    let refreshInFlight = false;
+
+    const load = (initial: boolean) => {
+      // Keep the current lesson visible while a background refresh runs. This
+      // matters when a teacher updates a public projection in another tab:
+      // returning to the student view must not briefly discard the selection.
+      if (initial) setState({ status: 'loading' });
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      loadStudentLessons(uid, db)
+        .then((result) => {
+          if (!cancelled) setState(result);
+        })
+        .catch(() => {
+          if (!cancelled && initial) setState({ status: 'error' });
+        })
+        .finally(() => {
+          refreshInFlight = false;
+        });
+    };
+
+    load(true);
+
+    // Student lessons are intentionally loaded through the public projection.
+    // Refreshing when the document becomes visible/focused closes the stale
+    // cross-tab/session window without adding a listener per lesson or any
+    // Storage reads. The public read boundary and fail-closed normalizers stay
+    // in loadStudentLessons.
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      load(false);
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
     };
   }, [uid]);
 
@@ -246,12 +272,6 @@ function StudentCourseWorkspace({
   const grouped = useMemo(() => lessonsByUda(lessons), [lessons]);
   const noteButtonRef = useRef<HTMLButtonElement>(null);
   const prevOpenRef = useRef<string | null>(null);
-  const [structureHidden, setStructureHidden] = useState(false);
-
-  useEffect(() => {
-    setStructureHidden(false);
-  }, [program.id]);
-
   useEffect(() => {
     if (!uid || !program.activeImportId) return;
     notes.loadIndex({
@@ -320,10 +340,8 @@ function StudentCourseWorkspace({
         </div>
       </header>
 
-      <div
-        className={`${styles.workspaceGrid}${structureHidden && !isMobile ? ` ${styles.workspaceGridFocus}` : ''}`}
-      >
-        {isMobile || !structureHidden ? (
+      <div className={styles.workspaceGrid}>
+        {!isMobile ? (
           <aside className={styles.sidebar} aria-label="Struttura del corso">
             <button
               type="button"
@@ -419,9 +437,6 @@ function StudentCourseWorkspace({
                   notesOpen={notes.openLessonId === selectedLesson.id}
                   hasSavedNote={notes.hasSavedNote(selectedLesson.id)}
                   noteButtonRef={noteButtonRef}
-                  isMobile={isMobile}
-                  structureHidden={structureHidden}
-                  onToggleStructure={() => setStructureHidden((current) => !current)}
                   onOpenNotes={() => {
                     if (uid == null) return;
                     const scrollTop = window.scrollY;
@@ -535,9 +550,6 @@ function LessonContent({
   notesOpen,
   hasSavedNote,
   noteButtonRef,
-  isMobile,
-  structureHidden,
-  onToggleStructure,
   onOpenNotes,
 }: {
   lesson: StudentLesson;
@@ -545,9 +557,6 @@ function LessonContent({
   notesOpen: boolean;
   hasSavedNote: boolean;
   noteButtonRef: React.RefObject<HTMLButtonElement>;
-  isMobile: boolean;
-  structureHidden: boolean;
-  onToggleStructure: () => void;
   onOpenNotes: () => void;
 }) {
   const title = resolveLessonTitle(lesson.filename, lesson.titolo).title;
@@ -705,19 +714,6 @@ function LessonContent({
           {lesson.sottotitolo && <p>{lesson.sottotitolo}</p>}
         </div>
         <div className={styles.lessonActions}>
-          {!isMobile && (
-            <button
-              type="button"
-              className={styles.lessonActionBtn}
-              aria-pressed={structureHidden}
-              aria-label={structureHidden ? 'Mostra struttura' : 'Nascondi struttura'}
-              title={structureHidden ? 'Mostra struttura' : 'Nascondi struttura'}
-              onClick={onToggleStructure}
-            >
-              <IconPanelLeft size={15} />
-              <span>{structureHidden ? 'Mostra struttura' : 'Nascondi struttura'}</span>
-            </button>
-          )}
           {canOpenNotes && (
             <button
               type="button"
