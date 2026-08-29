@@ -11,12 +11,18 @@
   display: grid;
   gap: 0.45rem;
   min-height: 8rem;
+  width: 100%;
+  min-width: 0;
   padding: 1.2rem;
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
   background: var(--color-surface-raised);
   color: var(--color-text);
   text-align: left;
+  align-items: start;
+  justify-content: start;
+  white-space: normal;
+  box-sizing: border-box;
 }
 .choice:hover,
 .choice:focus-visible {
@@ -29,6 +35,8 @@
 .choice span {
   color: var(--color-text-muted);
   line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .actions {
   display: flex;
