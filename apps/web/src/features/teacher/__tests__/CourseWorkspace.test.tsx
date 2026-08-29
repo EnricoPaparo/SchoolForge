@@ -858,7 +858,7 @@ describe('CourseWorkspace — Firestore projection primary source (MOB-01C)', ()
 });
 
 describe('CourseWorkspace — sidebar and semantics', () => {
-  it('offers lesson focus mode without a global sidebar collapse control', async () => {
+  it('keeps the course structure visible while reading a lesson', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lez 1' })]);
     mockFetchLessonContent.mockResolvedValue('Corpo lezione.');
@@ -868,15 +868,9 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     expect(screen.queryByRole('button', { name: /comprimi struttura corso/i })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
-    // Structure toggle lives on the toolbar (outside the "Azioni" menu) now.
-    fireEvent.click(screen.getByRole('button', { name: 'Nascondi struttura' }));
-    expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull();
-    expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Mostra struttura' }));
     expect(screen.getByRole('navigation', { name: 'Struttura corso' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy();
   });
 
   it('uses a semantic structure: nav + button rows with no nested interactive controls', async () => {
@@ -2115,7 +2109,7 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
     expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
-    expect(screen.getByRole('heading', { name: 'uda-01-reti' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Reti' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
   });
@@ -2150,7 +2144,7 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: '← Indietro' }));
-    expect(screen.getByRole('heading', { name: 'uda-01-reti' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Reti' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '← Indietro' }));
     expect(screen.getByRole('table')).toBeTruthy();
     // At the course level the button returns to the library.
@@ -2220,15 +2214,13 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
     expect(screen.getByRole('button', { name: 'Fine' })).toBeTruthy();
     // First row: up disabled; last row: down disabled.
     expect(
-      (screen.getByRole('button', { name: 'Sposta su — uda-01-reti' }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole('button', { name: 'Sposta su — Reti' }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
-      (screen.getByRole('button', { name: 'Sposta giù — uda-03-db' }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole('button', { name: 'Sposta giù — Db' }) as HTMLButtonElement).disabled,
     ).toBe(true);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — Reti' }));
     await waitFor(() => expect(mockReorderUda).toHaveBeenCalledOnce());
     expect(mockReorderUda.mock.calls[0][0]).toMatchObject({
       udaId: 'uda-uda-01-reti',
@@ -2280,7 +2272,7 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
     );
     await organizeUdas();
     const before = screen.getAllByRole('cell').map((c) => c.textContent);
-    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — Reti' }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByText(/nuovo ordine delle uda/i)).toBeTruthy();
     // Order unchanged (uda-01 still before uda-02 in the DOM).
@@ -2294,7 +2286,7 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
       () => new Promise((r) => (resolve = () => r({ order: 1, neighborOrder: 0 }))),
     );
     await organizeUdas();
-    const down = screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' });
+    const down = screen.getByRole('button', { name: 'Sposta giù — Reti' });
     fireEvent.click(down);
     fireEvent.click(down);
     expect(mockReorderUda).toHaveBeenCalledTimes(1);
@@ -2308,7 +2300,7 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
       () => new Promise((r) => (resolve = () => r({ order: 1, neighborOrder: 0 }))),
     );
     await organizeUdas();
-    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — Reti' }));
     cleanup();
     expect(() => {
       resolve();
@@ -2319,7 +2311,7 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
     await organizeUdas();
     // No confirm dialog; arrows are shown immediately.
     expect(screen.queryByRole('alertdialog', { name: 'Modifiche non salvate' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sposta giù — Reti' })).toBeTruthy();
   });
 });
 
@@ -2336,11 +2328,10 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     );
   }
 
-  it('keeps only "Segna svolta" and the structure toggle outside the "Azioni" menu (desktop)', async () => {
+  it('keeps only "Segna svolta" outside the "Azioni" menu (desktop)', async () => {
     await openLessonDesktop();
     // Both visible on the toolbar without opening the menu.
     expect(screen.getByRole('button', { name: /^Segna svolta/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Nascondi struttura' })).toBeTruthy();
 
     // The menu holds the remaining actions and NOT these two.
     fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
@@ -2353,11 +2344,10 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     expect(within(menu).queryByRole('menuitem', { name: /struttura/i })).toBeNull();
   });
 
-  it('never duplicates the svolta / structure actions inside and outside the menu', async () => {
+  it('never duplicates the svolta action inside and outside the menu', async () => {
     await openLessonDesktop();
     fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
     expect(screen.getAllByRole('button', { name: /^Segna svolta/i })).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: 'Nascondi struttura' })).toHaveLength(1);
   });
 
   it('does not expose the structure command on mobile (no sidebar to toggle)', async () => {

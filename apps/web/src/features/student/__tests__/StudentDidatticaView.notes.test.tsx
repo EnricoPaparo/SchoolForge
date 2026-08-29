@@ -160,24 +160,6 @@ describe('StudentDidatticaView — Appunti entry point', () => {
     expect(mockLoadNoteIndex).toHaveBeenCalledOnce();
   });
 
-  it('hides and restores the desktop structure while keeping the lesson expanded', async () => {
-    render(<StudentDidatticaView />);
-    await openCourseAndSelectLesson();
-    const hide = await screen.findByRole('button', { name: 'Nascondi struttura' });
-    expect(hide.getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('complementary', { name: 'Struttura del corso' })).toBeTruthy();
-
-    fireEvent.click(hide);
-    expect(screen.queryByRole('complementary', { name: 'Struttura del corso' })).toBeNull();
-    expect(screen.getByText('Corpo lezione')).toBeTruthy();
-    const show = screen.getByRole('button', { name: 'Mostra struttura' });
-    expect(show.getAttribute('aria-pressed')).toBe('true');
-
-    fireEvent.click(show);
-    expect(screen.getByRole('complementary', { name: 'Struttura del corso' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Nascondi struttura' })).toBeTruthy();
-  });
-
   it('opens the dedicated mobile view under the mobile breakpoint', async () => {
     setMatchMedia(true);
     render(<StudentDidatticaView />);

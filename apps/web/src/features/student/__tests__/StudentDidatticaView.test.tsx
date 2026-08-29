@@ -115,7 +115,6 @@ describe('StudentDidatticaView — SDUX-01', () => {
     expect(screen.getByText('Concetti fondamentali')).toBeTruthy();
     expect(screen.getByText(/internet, rete/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Scarica PDF/i })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Nascondi struttura' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Appunti/ })).toBeTruthy();
   });
 
@@ -159,6 +158,21 @@ describe('StudentDidatticaView — SDUX-01', () => {
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
     expect(screen.getByLabelText('Corsi disponibili')).toBeTruthy();
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the public projection when the student window regains focus', async () => {
+    loadWithData();
+    render(<StudentDidatticaView />);
+    await screen.findByLabelText('Corsi disponibili');
+
+    mockLoadStudentLessons.mockResolvedValueOnce({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { 'prog-a': [{ ...LESSON_1, content: 'Versione aggiornata.' }] },
+    });
+    fireEvent(window, new Event('focus'));
+
+    await waitFor(() => expect(mockLoadStudentLessons).toHaveBeenCalledTimes(2));
   });
 });
 
