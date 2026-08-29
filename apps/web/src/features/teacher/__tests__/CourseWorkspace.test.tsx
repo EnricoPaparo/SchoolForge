@@ -571,7 +571,9 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     await openVisualLesson(null);
     clickMenuAction('Azioni lezione', 'Arricchisci');
 
-    await screen.findByRole('heading', { name: 'Aggiungi immagini alla lezione' });
+    await screen.findByRole('heading', { name: 'Arricchisci la lezione' });
+    expect(screen.getByRole('button', { name: /Genera con IA/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Carica immagine/ })).toBeTruthy();
     expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
     expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
@@ -586,6 +588,8 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     expect(screen.getByTestId('md').dataset.visualCaption).toBe(current.caption);
 
     clickMenuAction('Azioni lezione', 'Arricchisci');
+    await screen.findByRole('heading', { name: 'Arricchisci la lezione' });
+    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
     await screen.findByRole('heading', { name: 'Aggiungi immagini alla lezione' });
     expect(screen.getByRole('button', { name: 'Sostituisci' })).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Rimuovi' }) as HTMLButtonElement).disabled).toBe(
@@ -676,9 +680,7 @@ describe('CourseWorkspace — visual workflow wiring (VE-04B)', () => {
     );
     expect(mockListLessons).toHaveBeenCalledTimes(1);
     clickMenuAction('Azioni lezione', 'Arricchisci');
-    expect(
-      await screen.findByRole('heading', { name: 'Aggiungi immagini alla lezione' }),
-    ).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Arricchisci la lezione' })).toBeTruthy();
     expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
   });
 });

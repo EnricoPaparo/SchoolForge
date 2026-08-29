@@ -1317,6 +1317,8 @@ export interface RemovalRecoveryDoc extends LessonLifecycleInput {
   udaDir: string;
   storageRef: string;
   assetId: string;
+  /** Presente solo per cleanup multi; il primo elemento coincide coi campi legacy sopra. */
+  assets?: Array<{ storageRef: string; assetId: string }>;
   createdAt: Timestamp;
 }
 
@@ -1375,6 +1377,7 @@ export function parseRemovalRecovery(params: {
     'storageRef',
     'assetId',
     'createdAt',
+    ...(Object.prototype.hasOwnProperty.call(root, 'assets') ? ['assets'] : []),
   ].sort();
   const actual = Object.keys(root).sort();
   if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) {
@@ -1408,6 +1411,38 @@ export function parseRemovalRecovery(params: {
     corruptedRemovalRecovery();
   }
   if (root.storageRef !== expectedStorageRef) corruptedRemovalRecovery();
+  if (root.assets !== undefined) {
+    if (!Array.isArray(root.assets) || root.assets.length < 1 || root.assets.length > 3) {
+      corruptedRemovalRecovery();
+    }
+    const seen = new Set<string>();
+    for (const entry of root.assets) {
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
+        corruptedRemovalRecovery();
+      const asset = entry as Record<string, unknown>;
+      const assetKeys = Object.keys(asset).sort();
+      if (
+        assetKeys.length !== 2 ||
+        assetKeys[0] !== 'assetId' ||
+        assetKeys[1] !== 'storageRef' ||
+        !validRecoverySegment(asset.assetId) ||
+        typeof asset.storageRef !== 'string'
+      ) {
+        corruptedRemovalRecovery();
+      }
+      const canonical = canonicalVisualStorageRef({
+        ownerUid: root.ownerUid as string,
+        importId: root.importId as string,
+        udaDir: root.udaDir as string,
+        assetId: asset.assetId,
+      });
+      if (asset.storageRef !== canonical || seen.has(asset.assetId)) corruptedRemovalRecovery();
+      seen.add(asset.assetId);
+    }
+    const first = root.assets[0] as Record<string, unknown>;
+    if (first.assetId !== root.assetId || first.storageRef !== root.storageRef)
+      corruptedRemovalRecovery();
+  }
   if (!(root.createdAt instanceof Timestamp)) corruptedRemovalRecovery();
   try {
     const createdAtMs = root.createdAt.toMillis();
@@ -1427,20 +1462,32 @@ async function finishRemovalStorageCleanup(params: {
   const lessonSnap = await params.db
     .doc(lessonPath(params.recovery.programId, params.recovery.importId, params.recovery.lessonId))
     .get();
-  const current = lessonSnap.data()?.visual;
+  const lesson = lessonSnap.data();
+  const currentRefs = [
+    (lesson?.visual as Record<string, unknown> | undefined)?.storageRef,
+    ...(
+      (lesson?.visuals as { items?: Array<Record<string, unknown>> } | undefined)?.items ?? []
+    ).map((item) => item.storageRef),
+  ];
   // Un nuovo manifest che riusa esattamente il path rende il cleanup vecchio
   // non sicuro. Un asset nuovo ha invece un UUID/path diverso.
   if (
-    typeof current === 'object' &&
-    current !== null &&
-    (current as Record<string, unknown>).storageRef === params.recovery.storageRef
+    (
+      params.recovery.assets ?? [
+        { storageRef: params.recovery.storageRef, assetId: params.recovery.assetId },
+      ]
+    ).some((asset) => currentRefs.includes(asset.storageRef))
   ) {
     throw new AiVisualError('run_conflict', 'Il visual è stato sostituito durante il cleanup.');
   }
-  try {
-    await params.bucket.file(params.recovery.storageRef).delete();
-  } catch (error) {
-    if (!isStorageNotFound(error)) throw error;
+  for (const asset of params.recovery.assets ?? [
+    { storageRef: params.recovery.storageRef, assetId: params.recovery.assetId },
+  ]) {
+    try {
+      await params.bucket.file(asset.storageRef).delete();
+    } catch (error) {
+      if (!isStorageNotFound(error)) throw error;
+    }
   }
   await params.recoveryRef.delete();
 }
@@ -1630,11 +1677,39 @@ export async function cleanupVisualArtifactsForDelete(params: {
         // Manifest malformato: si rimuovono i riferimenti Firestore ma non si
         // costruisce e non si tenta alcun path Storage.
       }
+    } else if (pair.lesson.visuals !== undefined) {
+      try {
+        const manifest = validateLessonVisualsManifest(pair.lesson.visuals);
+        const assets = manifest.items.map(({ storageRef, assetId }) => ({ storageRef, assetId }));
+        for (const asset of assets) {
+          const expected = canonicalVisualStorageRef({
+            ownerUid: params.ownerUid,
+            importId: params.input.importId,
+            udaDir: pair.udaDir,
+            assetId: asset.assetId,
+          });
+          if (asset.storageRef !== expected) throw new Error('non-canonical');
+        }
+        recovery = {
+          ownerUid: params.ownerUid,
+          ...input,
+          publicLessonId: pair.publicLessonId,
+          udaDir: pair.udaDir,
+          storageRef: assets[0]!.storageRef,
+          assetId: assets[0]!.assetId,
+          assets,
+        };
+      } catch {
+        // Come per il singolare malformato: rimuove i riferimenti, non inventa path.
+      }
     }
     prepared.push({
       input,
       pair,
-      fingerprint: lifecycleFingerprint(pair.lesson.visual),
+      fingerprint: lifecycleFingerprint({
+        visual: pair.lesson.visual,
+        visuals: pair.lesson.visuals,
+      }),
       recovery,
       existingRecovery: existing.kind === 'valid' ? existing.recovery : null,
       recoveryRef,
@@ -1674,7 +1749,8 @@ export async function cleanupVisualArtifactsForDelete(params: {
       if (
         !gate.ok ||
         gate.publicLessonId !== item.pair.publicLessonId ||
-        lifecycleFingerprint(lesson?.visual) !== item.fingerprint
+        lifecycleFingerprint({ visual: lesson?.visual, visuals: lesson?.visuals }) !==
+          item.fingerprint
       ) {
         throw new AiVisualError('run_conflict', 'Una lezione è cambiata durante il cleanup.');
       }
@@ -1694,8 +1770,8 @@ export async function cleanupVisualArtifactsForDelete(params: {
     }
     for (const { item, lessonRef, publicRef } of fresh) {
       tx.delete(params.db.doc(`${PUBLIC_LESSON_VISUALS}/${item.pair.publicLessonId}`));
-      tx.update(publicRef, { visual: FieldValue.delete() });
-      tx.update(lessonRef, { visual: FieldValue.delete() });
+      tx.update(publicRef, { visual: FieldValue.delete(), visuals: FieldValue.delete() });
+      tx.update(lessonRef, { visual: FieldValue.delete(), visuals: FieldValue.delete() });
       if (item.recovery) {
         tx.set(item.recoveryRef, {
           ...item.recovery,
@@ -1724,7 +1800,7 @@ export async function cleanupVisualArtifactsForDelete(params: {
       recoveryRef: item.recoveryRef,
       recovery: committedRecovery.recovery,
     });
-    blobs += 1;
+    blobs += item.recovery.assets?.length ?? 1;
   }
   return { status: 'completed', lessons: prepared.length, blobs };
 }

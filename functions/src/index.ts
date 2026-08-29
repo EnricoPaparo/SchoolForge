@@ -28,8 +28,10 @@ export {
 // MULTI-VISUAL-02 — catena binaria dell'upload docente: accettazione owner-
 // only (cap 2 MB, allowlist PNG/JPEG/WebP, normalizzazione Sharp condivisa
 // con VE, staging deterministico), abbandono e cleanup TTL. Zero provider,
-// zero budget IA, zero secret. Nessuna promozione: resta MULTI-VISUAL-03.
+// zero budget IA e zero secret. UPLOAD-01A aggiunge l'adozione atomica
+// add/replace, ancora senza UI o provider.
 export { aiVisualUploadAccept, aiVisualUploadAbandon } from './aiVisualUploadGateway.js';
+export { aiVisualUploadPromote } from './aiVisualUploadPromotionGateway.js';
 // MULTI-VISUAL-03A — autorizzazione owner-only del piano visivo coordinato:
 // lease deterministico un-piano-per-lezione, prenotazione unica del tetto
 // economico e proposta coordinata (kind: 'visual_plan_proposal') tramite il

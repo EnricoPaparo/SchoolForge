@@ -7,13 +7,11 @@ export function LessonMultiVisualGallery({
   identity,
   manifest,
   onRemove,
-  onGenerate,
   bytes = {},
 }: {
   identity: MultiVisualIdentity;
   manifest: LessonVisualItem[];
   onRemove: (assetId: string) => Promise<void>;
-  onGenerate?: () => void;
   bytes?: Record<string, string>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -44,16 +42,6 @@ export function LessonMultiVisualGallery({
           <h4>Immagini della lezione</h4>
           <p>{items.length} di 3 immagini</p>
         </div>
-        {onGenerate && (
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={onGenerate}
-            disabled={busy || items.length >= 3}
-          >
-            Aggiungi immagine
-          </button>
-        )}
       </div>
       {error && (
         <p role="alert" className={styles.error}>

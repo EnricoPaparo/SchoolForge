@@ -55,16 +55,11 @@ describe('LessonMultiVisualGallery', () => {
     const visual = item('11111111-1111-4111-8111-111111111111', 'Una figura');
     const onRemove = vi.fn().mockRejectedValue(new Error('no'));
     render(
-      <LessonMultiVisualGallery
-        identity={identity}
-        manifest={[visual]}
-        onRemove={onRemove}
-        onGenerate={vi.fn()}
-      />,
+      <LessonMultiVisualGallery identity={identity} manifest={[visual]} onRemove={onRemove} />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Rimuovi' }));
     await screen.findByRole('alert');
     expect(onRemove).toHaveBeenCalledWith(visual.assetId);
-    expect(screen.getByRole('button', { name: 'Aggiungi immagine' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Aggiungi immagine' })).toBeNull();
   });
 });
