@@ -56,14 +56,30 @@ const baseSlot: MultiVisualSlot = {
   promotedAssetId: null,
 };
 
-function makePlan(slots: MultiVisualSlot[] = [baseSlot]) {
+function makePlan(
+  slots: MultiVisualSlot[] = [baseSlot],
+  costs: {
+    proposalActualCost?: number | null;
+    generationCap?: number;
+    slotCosts?: Array<{ slotIndex: number; attempts: number; actualCost: number | null }>;
+  } = {},
+) {
   return {
     planHash: 'a'.repeat(64),
     requestId: '11111111-1111-4111-8111-111111111111',
     status: 'proposed',
     slots,
-    budgetCeiling: {},
-    settlement: {},
+    budgetCeiling: {
+      reservationKey: 'visual-plan:test',
+      proposalCap: 20_000,
+      generationCap: costs.generationCap ?? 10_000,
+      maxAttemptsPerSlot: 2,
+      totalReserved: 80_000,
+    },
+    settlement: {
+      proposalActualCost: costs.proposalActualCost ?? 5_000,
+      slots: costs.slotCosts ?? [],
+    },
   };
 }
 
@@ -132,6 +148,21 @@ describe('LessonMultiVisualWorkflowDialog', () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(mocks.authorize).toHaveBeenCalledOnce();
     expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it('mostra costo effettivo e stima residua dell’operazione', async () => {
+    mocks.authorize.mockResolvedValue(
+      makePlan([baseSlot], { proposalActualCost: 5_000, generationCap: 10_000 }),
+    );
+    renderDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stima immagini' }));
+
+    const costs = await screen.findByRole('region', {
+      name: 'Costi della generazione immagini',
+    });
+    expect(within(costs).getByText('0.005000 USD')).toBeTruthy();
+    expect(within(costs).getByText('0.020000 USD')).toBeTruthy();
   });
 
   it('modifica soggetto, didascalia, testo alternativo e posizione', async () => {
@@ -396,6 +427,9 @@ describe('LessonMultiVisualWorkflowDialog', () => {
       (screen.getByRole('button', { name: 'Stima immagini' }) as HTMLButtonElement).disabled,
     ).toBe(true);
     fireEvent.click(screen.getAllByRole('button', { name: 'Sostituisci' })[1]!);
+    expect(screen.getByText('Sostituzione attiva')).toBeTruthy();
+    expect(screen.getByText(/prenderà il posto di «CPU 2»/)).toBeTruthy();
+    expect(screen.queryByLabelText('Quantità')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Stima immagini' }));
     await screen.findByRole('button', { name: 'Genera e applica 1 immagine' });
     expect(mocks.authorize).toHaveBeenCalledWith(
@@ -422,6 +456,9 @@ describe('LessonMultiVisualWorkflowDialog', () => {
     );
     expect(css).toMatch(/\.slots\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
     expect(css).toMatch(/\.slotActions\s*\{[^}]*display:\s*flex/s);
+    expect(css).toMatch(/\.slotDetails\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
+    expect(css).toMatch(/\.currentItem\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/s);
+    expect(css).not.toMatch(/var\(--(?:border|surface|surface-raised|primary|text-muted)\)/);
     expect(css).toMatch(
       /@media\s*\(max-width:\s*640px\)[\s\S]*\.slotActions\s*\{[^}]*flex-direction:\s*column/,
     );

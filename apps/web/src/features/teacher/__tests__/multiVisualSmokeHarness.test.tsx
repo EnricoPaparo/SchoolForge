@@ -56,6 +56,7 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
     expect(gallery).toMatch(/repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
     expect(gallery).toMatch(/\.gallery\s*\{[^}]*border-top:\s*1px/s);
     expect(gallery).toMatch(/\.header\s*\{[^}]*border-bottom:\s*1px/s);
+    expect(gallery).toMatch(/\.srOnly\s*\{[^}]*position:\s*absolute[^}]*top:\s*0[^}]*left:\s*0/s);
     expect(gallery).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*grid-template-columns:\s*1fr/);
     expect(dialog).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*min-height:\s*44px/);
     expect(dialog).toMatch(/\.slotDetails\s*>\s*div\s*\{[^}]*border:/s);
@@ -64,6 +65,9 @@ describe('MULTI-VISUAL-04 — smoke harness CSS reale', () => {
     );
     expect(gallery).toMatch(/@media\s*\(max-width:\s*640px\)[\s\S]*min-height:\s*44px/);
     expect(`${gallery}\n${dialog}`).not.toMatch(/overflow-x:\s*(?:scroll|auto)/);
+    expect(`${gallery}\n${dialog}`).not.toMatch(
+      /var\(--(?:border|surface|surface-raised|primary|text-muted)\)/,
+    );
     expect(shell).toMatch(/\.layout\s*\{[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/s);
     expect(shell).toMatch(/\.main\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s);
   });

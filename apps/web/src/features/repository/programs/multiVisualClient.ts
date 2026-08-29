@@ -39,8 +39,22 @@ export interface MultiVisualPlan {
   requestId: string;
   status: string;
   slots: MultiVisualSlot[];
-  budgetCeiling: Record<string, unknown>;
-  settlement: Record<string, unknown>;
+  budgetCeiling: {
+    reservationKey: string;
+    reservationMonthKey?: string;
+    proposalCap: number;
+    generationCap: number;
+    maxAttemptsPerSlot: number;
+    totalReserved: number;
+  };
+  settlement: {
+    proposalActualCost: number | null;
+    slots: Array<{
+      slotIndex: number;
+      attempts: number;
+      actualCost: number | null;
+    }>;
+  };
 }
 
 type PlanEnvelope = { replayed: boolean; plan: MultiVisualPlan };

@@ -8,6 +8,7 @@ import {
 } from '../repository/programs/multiVisualClient.js';
 import type { Functions } from 'firebase/functions';
 import type { LessonVisualItem } from '../../types/firestore.js';
+import { formatMicroUsd } from '../repository/pools/aiContentClient.js';
 import styles from './LessonMultiVisualWorkflowDialog.module.css';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,6 +36,23 @@ function isFatalWorkflowError(error: unknown): boolean {
     'visual_plan_expired',
     'corrupted_state',
   ].includes(typeof code === 'string' ? code : '');
+}
+
+function visualPlanCosts(plan: MultiVisualPlan) {
+  const knownSlotCosts = plan.settlement.slots.reduce(
+    (total, entry) => total + (entry.actualCost ?? 0),
+    0,
+  );
+  const hasUnknownActualCost =
+    plan.settlement.proposalActualCost === null ||
+    plan.settlement.slots.some((entry) => entry.actualCost === null);
+  const actualKnown = (plan.settlement.proposalActualCost ?? 0) + knownSlotCosts;
+  const remainingEstimate = plan.slots.reduce((total, slot) => {
+    if (!canGenerateOrPromote(slot)) return total;
+    const remainingAttempts = Math.max(0, plan.budgetCeiling.maxAttemptsPerSlot - slot.attempts);
+    return total + remainingAttempts * plan.budgetCeiling.generationCap;
+  }, 0);
+  return { actualKnown, hasUnknownActualCost, remainingEstimate };
 }
 
 export function LessonMultiVisualWorkflowDialog({
@@ -340,6 +358,8 @@ export function LessonMultiVisualWorkflowDialog({
   }
 
   const actionableSlots = plan?.slots.filter(canGenerateOrPromote) ?? [];
+  const selectedReplacement =
+    currentVisuals.find((item) => item.assetId === replaceAssetId) ?? null;
 
   return (
     <DialogShell
@@ -351,18 +371,22 @@ export function LessonMultiVisualWorkflowDialog({
       {!plan ? (
         <>
           <p>
-            Puoi aggiungere fino a {freeSlots} immagini. «Stima immagini» prepara subito le
-            proposte; dopo la revisione un unico comando genera e applica quelle confermate.
+            {freeSlots > 0
+              ? `Puoi aggiungere fino a ${freeSlots} immagini. «Stima immagini» prepara subito le proposte; dopo la revisione un unico comando genera e applica quelle confermate.`
+              : 'Hai raggiunto il limite di 3 immagini. Selezionane una da sostituire oppure rimuovila.'}
           </p>
           {currentVisuals.length > 0 && (
             <div className={styles.currentList} aria-label="Immagini attuali">
               <h4>Immagini attuali</h4>
               {currentVisuals.map((item, index) => (
-                <div className={styles.currentItem} key={item.assetId}>
-                  <span>
+                <div
+                  className={`${styles.currentItem}${replaceAssetId === item.assetId ? ` ${styles.currentItemSelected}` : ''}`}
+                  key={item.assetId}
+                >
+                  <span className={styles.currentLabel}>
                     {index + 1}. {item.anchor.headingText}
                   </span>
-                  <span className={styles.inlineActions}>
+                  <span className={styles.currentActions}>
                     <button
                       type="button"
                       className="btn-secondary"
@@ -374,17 +398,17 @@ export function LessonMultiVisualWorkflowDialog({
                       }}
                       disabled={busy}
                     >
-                      Sostituisci
+                      {replaceAssetId === item.assetId ? 'Selezionata' : 'Sostituisci'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      onClick={() => void removeExisting(item.assetId)}
+                      disabled={busy || legacySingular}
+                    >
+                      Rimuovi
                     </button>
                   </span>
-                  <button
-                    type="button"
-                    className="btn-danger"
-                    onClick={() => void removeExisting(item.assetId)}
-                    disabled={busy || legacySingular}
-                  >
-                    Rimuovi
-                  </button>
                 </div>
               ))}
             </div>
@@ -395,9 +419,12 @@ export function LessonMultiVisualWorkflowDialog({
               dell’adozione puoi sostituirla, ma non rimuoverla.
             </p>
           )}
-          {replaceAssetId && (
-            <p role="status">
-              La nuova immagine sostituirà quella selezionata.
+          {selectedReplacement && (
+            <div role="status" className={styles.replacementNotice}>
+              <span>
+                <strong>Sostituzione attiva</strong>
+                La nuova immagine prenderà il posto di «{selectedReplacement.anchor.headingText}».
+              </span>
               <button
                 type="button"
                 className="btn-secondary"
@@ -406,32 +433,34 @@ export function LessonMultiVisualWorkflowDialog({
               >
                 Annulla sostituzione
               </button>
-            </p>
+            </div>
           )}
-          <label>
-            Quantità
-            <select
-              value={quantityMode === 'auto' ? 'auto' : String(exactQuantity)}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value === 'auto') setQuantityMode('auto');
-                else {
-                  setQuantityMode('exact');
-                  setExactQuantity(Number(value) as 1 | 2 | 3);
-                }
-              }}
-              disabled={busy || Boolean(replaceAssetId) || existingCount >= 3}
-            >
-              <option value="auto">Auto (1–{freeSlots})</option>
-              {[1, 2, 3]
-                .filter((value) => value <= (replaceAssetId ? 1 : ceiling))
-                .map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-            </select>
-          </label>
+          {!replaceAssetId && freeSlots > 0 && (
+            <label>
+              Quantità
+              <select
+                value={quantityMode === 'auto' ? 'auto' : String(exactQuantity)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === 'auto') setQuantityMode('auto');
+                  else {
+                    setQuantityMode('exact');
+                    setExactQuantity(Number(value) as 1 | 2 | 3);
+                  }
+                }}
+                disabled={busy}
+              >
+                <option value="auto">Auto (1–{freeSlots})</option>
+                {[1, 2, 3]
+                  .filter((value) => value <= ceiling)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
           {error && (
             <p role="alert" className={styles.error}>
               {error}
@@ -459,6 +488,7 @@ export function LessonMultiVisualWorkflowDialog({
         </>
       ) : (
         <>
+          <VisualPlanCostSummary plan={plan} />
           {summary ? (
             <section className={styles.summary} aria-labelledby="multi-visual-summary-title">
               <h3 id="multi-visual-summary-title">Immagini applicate alla lezione</h3>
@@ -497,7 +527,15 @@ export function LessonMultiVisualWorkflowDialog({
             <div className={styles.slots}>
               {plan.slots.map((slot) => (
                 <article key={slot.slotIndex} className={styles.slot}>
-                  <h4>Immagine {slot.slotIndex + 1}</h4>
+                  <header className={styles.slotHeader}>
+                    <span className={styles.slotNumber} aria-hidden="true">
+                      {slot.slotIndex + 1}
+                    </span>
+                    <div>
+                      <h4>Immagine {slot.slotIndex + 1}</h4>
+                      {slot.anchor && <p>Dopo «{slot.anchor.headingText}»</p>}
+                    </div>
+                  </header>
                   {slot.decision === 'image' ? (
                     <>
                       {editingSlot === slot.slotIndex && slot.state === 'pending' ? (
@@ -572,11 +610,11 @@ export function LessonMultiVisualWorkflowDialog({
                       ) : (
                         <>
                           <dl className={styles.slotDetails}>
-                            <div>
+                            <div className={styles.detailWide}>
                               <dt>Soggetto</dt>
                               <dd>{slot.subject}</dd>
                             </div>
-                            <div>
+                            <div className={styles.detailWide}>
                               <dt>Utilità didattica</dt>
                               <dd>{slot.rationale}</dd>
                             </div>
@@ -588,7 +626,7 @@ export function LessonMultiVisualWorkflowDialog({
                               <dt>Testo alternativo</dt>
                               <dd>{slot.altText}</dd>
                             </div>
-                            <div>
+                            <div className={styles.detailWide}>
                               <dt>Posizione</dt>
                               <dd>{slot.anchor?.headingText}</dd>
                             </div>
@@ -657,5 +695,29 @@ export function LessonMultiVisualWorkflowDialog({
         </>
       )}
     </DialogShell>
+  );
+}
+
+function VisualPlanCostSummary({ plan }: { plan: MultiVisualPlan }) {
+  const costs = visualPlanCosts(plan);
+  return (
+    <section className={styles.costSummary} aria-label="Costi della generazione immagini">
+      <div>
+        <span>Costo effettivo finora</span>
+        <strong>
+          {costs.hasUnknownActualCost
+            ? `${formatMicroUsd(costs.actualKnown)} + una quota non conoscibile`
+            : formatMicroUsd(costs.actualKnown)}
+        </strong>
+      </div>
+      <div>
+        <span>Stima massima residua</span>
+        <strong>{formatMicroUsd(costs.remainingEstimate)}</strong>
+      </div>
+      <p>
+        La stima residua comprende gli eventuali tentativi ancora autorizzati; il costo effettivo si
+        aggiorna dopo ogni immagine.
+      </p>
+    </section>
   );
 }
