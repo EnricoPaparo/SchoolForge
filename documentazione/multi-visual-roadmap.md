@@ -2504,6 +2504,30 @@ ceiling = 2  →  totalReserved = proposalCap + generationCap × 2 × 2 = propos
 ceiling = 3  →  totalReserved = proposalCap + generationCap × 3 × 2 = proposalCap + 6 × generationCap
 ```
 
+### 12.1.1 Delta della Generazione lezione completa IA
+
+La variante completa non cambia il cost model MULTI-VISUAL e non aggrega i
+suoi costi nel run AIGEN del contenuto. Dopo il salvataggio canonico autorizza
+un normale piano `{ mode:'auto', ceiling:3 }`: il modello può restituire da
+zero a tre slot `image`, e la quota degli slot `none` viene rilasciata con la
+stessa disciplina del piano ordinario.
+
+La conferma dell'utente è unica, ma la disclosure economica mantiene separati:
+
+- preview, prenotazione e settlement AIGEN del contenuto;
+- `proposalCap` del piano coordinato;
+- `generationCap × tentativi` per ciascuna immagine effettivamente tentata.
+
+Non esiste una nuova chiamata provider «lezione completa», né una preview
+combinata: l'orchestrazione somma solo a posteriori gli actual cost già esposti
+dai due motori, senza presentare la stima del solo contenuto come totale. Retry
+e replay non aggiungono una nuova classe di costo: riusano le identità del run,
+del piano e delle promozioni; gli slot già conclusi non sono richiamati.
+
+La prima versione richiede zero immagini preesistenti, quindi usa soltanto
+promozioni `add` e non sostiene costi di rimozione o sostituzione. Non aggiunge
+listener, polling, scheduler, Function, Rule, documento tecnico o provider.
+
 Il tetto **non dipende** da quante proposte risulteranno `decision:
 'image'` né da quanti tentativi saranno davvero necessari: è calcolato sul
 massimo possibile (`ceiling` slot, `maxAttemptsPerSlot` tentativi ciascuno)

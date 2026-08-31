@@ -68,6 +68,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 19. [visual-enrichment-roadmap.md](visual-enrichment-roadmap.md) — **VISUAL-ENRICHMENT**: arricchimento visivo delle lezioni, evoluto nel flusso multi-visuale. VE-00→04 e il rollout multi-visuale sono operativi; VE-05 resta il benchmark qualitativo opzionale. Evidenza benchmark: [evidenze/visual-enrichment-05a-benchmark.md](evidenze/visual-enrichment-05a-benchmark.md).
 20. [agent-orchestrator-roadmap.md](agent-orchestrator-roadmap.md) — **AGENT-ORCHESTRATOR**: protocollo leggero Codex→Claude→CI→review, con GitHub come registro durevole e recovery delle quote. Il pilot multi-visuale è stato completato con gate umano superato.
 21. [multi-visual-roadmap.md](multi-visual-roadmap.md) — **MULTI-VISUAL**: fino a tre immagini per lezione, generate o caricate dal docente, con gestione, rendering, export e cleanup. **MULTI-VISUAL-00→04 completati e distribuiti in DEV e PROD; Gate GMULTI PASS.** Prototipo: [prototipi/lesson-multi-visual.html](prototipi/lesson-multi-visual.html).
+22. [ai-content-generation-roadmap.md](ai-content-generation-roadmap.md) — **Generazione lezione completa IA**: variante UI che riusa la generazione contenuto e il piano MULTI-VISUAL esistenti in un solo flusso `contenuto → salvataggio canonico → immagini auto 0–3`, senza nuovi endpoint o provider. La prima versione è ammessa solo su lezioni senza immagini preesistenti e prevede una sola conferma economica con disclosure separata dei due costi.
 
 ## Per sviluppare un modulo
 
