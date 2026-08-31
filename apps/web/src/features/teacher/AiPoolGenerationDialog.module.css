@@ -24,6 +24,11 @@
   min-width: 0;
 }
 
+.depthOptions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .choice {
   display: flex;
   flex-direction: column;
@@ -310,6 +315,9 @@
 }
 
 @media (max-width: 360px) {
+  .depthOptions {
+    grid-template-columns: 1fr;
+  }
   .reviewMeta {
     grid-template-columns: 1fr;
   }

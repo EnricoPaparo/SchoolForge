@@ -315,7 +315,7 @@ export function AiCompleteLessonGenerationDialog({
               Profondità
             </span>
             <div
-              className={styles.optionRow}
+              className={`${styles.optionRow} ${styles.depthOptions}`}
               role="radiogroup"
               aria-labelledby="ai-complete-depth-label"
             >

@@ -1,10 +1,12 @@
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
   increment,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -429,6 +431,52 @@ export async function updateLessonMarkdownBody(params: {
       'Il contenuto della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
     );
   }
+}
+
+/** Clears all lesson-owned learning content while preserving its metadata. */
+export async function clearLessonContentState(params: {
+  programId: string;
+  importId: string;
+  lessonId: string;
+  ownerUid: string;
+  db: Firestore;
+}): Promise<void> {
+  const { programId, importId, lessonId, ownerUid, db } = params;
+  await runTransaction(db, async (tx) => {
+    const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
+    const lessonSnap = await tx.get(lessonRef);
+    if (!lessonSnap.exists()) throw new Error('Lezione non trovata.');
+    const lesson = lessonSnap.data() as LessonDoc;
+    if (lesson.ownerUid !== ownerUid || lesson.importId !== importId) {
+      throw new Error('Lezione non autorizzata.');
+    }
+    const publicLessonId = resolvePublicLessonId(lesson, lessonId);
+    const publicRef = doc(db, 'publicLessons', publicLessonId);
+    const publicSnap = await tx.get(publicRef);
+    tx.update(lessonRef, {
+      conceptMapMarkdown: deleteField(),
+      visual: deleteField(),
+      visuals: deleteField(),
+      completed: false,
+      completedAt: deleteField(),
+    });
+    if (publicSnap.exists()) {
+      tx.update(publicRef, {
+        content: '',
+        conceptMapMarkdown: deleteField(),
+        visual: deleteField(),
+        visuals: deleteField(),
+      });
+    }
+    tx.set(doc(collection(db, 'auditEvents')), {
+      actorUid: ownerUid,
+      action: 'lesson.contentCleared',
+      targetId: lessonId,
+      outcome: 'success',
+      reason: 'content, questions, concept map and visuals cleared; metadata preserved',
+      timestamp: serverTimestamp(),
+    });
+  });
 }
 
 export interface NewLessonFields {

@@ -266,7 +266,7 @@ export function AiLessonGenerationDialog({
               Profondità
             </span>
             <div
-              className={styles.optionRow}
+              className={`${styles.optionRow} ${styles.depthOptions}`}
               role="radiogroup"
               aria-labelledby="ai-lesson-depth-label"
               aria-describedby="ai-lesson-depth-help"
