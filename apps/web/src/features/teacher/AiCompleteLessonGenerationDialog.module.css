@@ -21,6 +21,10 @@
   gap: 0.55rem;
 }
 
+.depthOptions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .choice {
   display: flex;
   min-width: 0;
@@ -92,6 +96,9 @@
 }
 
 @media (max-width: 36rem) {
+  .depthOptions {
+    grid-template-columns: 1fr;
+  }
   .optionRow {
     grid-template-columns: 1fr;
   }

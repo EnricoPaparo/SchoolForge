@@ -57,6 +57,7 @@ import {
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
+  clearLessonContentState,
   RepositoryDeleteBlockedError,
 } from '../repository/editor/repositoryEditorService.js';
 import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEditorGuards.js';
@@ -104,6 +105,7 @@ import { LessonEnrichmentDialog } from './LessonEnrichmentDialog.js';
 import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
 import { createTeacherMultiVisualReader } from '../repository/programs/multiVisualReadClients.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
+import { deletePool } from '../repository/pools/poolEditorService.js';
 import {
   MarkdownBodyEditor,
   LessonMetadataForm,
@@ -300,7 +302,8 @@ type WsDialog =
   | { kind: 'editUda'; udaId: string }
   | { kind: 'deleteUda'; udaId: string }
   | { kind: 'newLesson' }
-  | { kind: 'deleteLesson'; lessonId: string };
+  | { kind: 'deleteLesson'; lessonId: string }
+  | { kind: 'clearLesson'; lessonId: string };
 
 type Tree = { udas: UdaItem[]; lessons: LessonItem[] };
 
@@ -1585,6 +1588,80 @@ export function CourseWorkspace({
     });
   }
 
+  function handleClearLesson(lessonId: string) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    const lesson = tree?.lessons.find((l) => l.id === lessonId);
+    if (!lesson) return;
+    void withBusy(async () => {
+      try {
+        if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
+          await deletePool({
+            programId: card.programId,
+            importId,
+            lessonId,
+            ownerUid,
+            db,
+            storage,
+          });
+        }
+        if (lesson.visual || lesson.visuals) {
+          await createVisualLifecycleClient(functions).cleanupForDelete({
+            programId: card.programId,
+            importId,
+            lessonIds: [lessonId],
+          });
+        }
+        await updateLessonMarkdownBody({
+          programId: card.programId,
+          importId,
+          lessonId,
+          body: '',
+          ownerUid,
+          db,
+          storage,
+        });
+        await clearLessonContentState({
+          programId: card.programId,
+          importId,
+          lessonId,
+          ownerUid,
+          db,
+        });
+        if (!mountedRef.current) return;
+        const next: Tree = {
+          udas: tree?.udas ?? [],
+          lessons: (tree?.lessons ?? []).map((l) =>
+            l.id === lessonId
+              ? {
+                  ...l,
+                  poolStatus: 'absent' as const,
+                  questionCount: 0,
+                  poolStorageRef: null,
+                  completed: false,
+                  conceptMapMarkdown: undefined,
+                  visual: undefined,
+                  visuals: undefined,
+                }
+              : l,
+          ),
+        };
+        setTree(next);
+        patchCardCounts(next);
+        setLessonContent('');
+        setContentDirty(false);
+        setPoolDirty(false);
+        setConceptMapDirty(false);
+        setEditingContent(false);
+        setContentStatus({ busy: false, error: null, saved: true });
+        closeDialog();
+      } catch (err) {
+        if (mountedRef.current)
+          setWsError(err instanceof Error ? err.message : 'Impossibile pulire la lezione.');
+      }
+    });
+  }
+
   // ── Organize mode + reorder (DUX-04C) ───────────────────────────────────
   // Entering Organize goes through the dirty guard: an unsaved editor must be
   // resolved first (never silently discarded).
@@ -2272,6 +2349,16 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
+                    onClick={() =>
+                      openDialog({ kind: 'clearLesson', lessonId: selectedLesson!.id })
+                    }
+                  >
+                    <IconTrash size={15} />
+                    Pulisci lezione
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     className={styles.menuDanger}
                     onClick={() =>
                       openDialog({ kind: 'deleteLesson', lessonId: selectedLesson.id })
@@ -2614,6 +2701,24 @@ export function CourseWorkspace({
               onConfirm={() =>
                 lessonBlockers ? closeDialog() : handleDeleteLesson(wsDialog.lessonId)
               }
+            />
+          );
+        })()}
+      {wsDialog.kind === 'clearLesson' &&
+        (() => {
+          const lesson = tree?.lessons.find((l) => l.id === wsDialog.lessonId);
+          if (!lesson) return null;
+          const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
+          return (
+            <ConfirmDialog
+              title="Pulisci lezione"
+              message={`Svuotare "${title}"? Verranno rimossi contenuto, domande, mappa concettuale e immagini. I metadati della lezione (titolo, UDA, difficoltà, concetti e obiettivi) resteranno intatti.`}
+              confirmLabel="Pulisci"
+              danger
+              busy={wsBusy}
+              error={wsError}
+              onCancel={closeDialog}
+              onConfirm={() => handleClearLesson(wsDialog.lessonId)}
             />
           );
         })()}
