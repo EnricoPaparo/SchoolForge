@@ -152,7 +152,9 @@ export function AiCompleteLessonGenerationDialog({
       if (!mountedRef.current) return;
       setPreview(next);
       setPreviewRequest(request);
-      setPhase('confirm');
+      // Modalità pilota automatico: la preview è un preflight tecnico senza
+      // una seconda conferma. Dopo la stima parte subito il percorso completo.
+      await generateAndComplete(request);
     } catch (cause) {
       if (!mountedRef.current) return;
       setError(describeAiContentError(cause));
@@ -167,25 +169,46 @@ export function AiCompleteLessonGenerationDialog({
     runningRef.current = true;
     setError(null);
     setErrorStage('generate');
-    setPhase('generating');
     try {
-      const next = await callables.generate(previewRequest);
-      if (!mountedRef.current) return;
-      const validated = validateLessonDraftResult(next);
-      if (!validated.ok) {
-        setError(validated.error);
-        setPhase('error');
-        return;
-      }
-      setContentResult(next);
-      setDraftBody(validated.body);
-      setPhase('review');
+      await generateAndComplete(previewRequest);
     } catch (cause) {
       if (!mountedRef.current) return;
       setError(describeAiContentError(cause));
       setPhase('error');
     } finally {
       runningRef.current = false;
+    }
+  }
+
+  async function generateAndComplete(request: AiLessonContentRequest) {
+    setErrorStage('generate');
+    setPhase('generating');
+    const next = await callables.generate(request);
+    if (!mountedRef.current) return;
+    const validated = validateLessonDraftResult(next);
+    if (!validated.ok) {
+      setError(validated.error);
+      setPhase('error');
+      return;
+    }
+    setContentResult(next);
+    setDraftBody(validated.body);
+    setErrorStage('complete');
+    setProgress({ stage: 'content', label: 'Salvataggio del contenuto…' });
+    setPhase('completing');
+    try {
+      const completed = await onCompleteDraft(validated.body, updateProgress);
+      if (!mountedRef.current) return;
+      setSummary(completed);
+      setProgress(null);
+      setPhase('summary');
+    } catch {
+      if (!mountedRef.current) return;
+      setProgress(null);
+      setError(
+        'Completamento interrotto. Il contenuto non verrà rigenerato: puoi riprovare gli elementi mancanti.',
+      );
+      setPhase('error');
     }
   }
 
@@ -370,7 +393,7 @@ export function AiCompleteLessonGenerationDialog({
               disabled={!canEstimate}
               onClick={() => void requestPreview()}
             >
-              Calcola stima completa
+              Genera tutto
             </button>
           </div>
         </div>
