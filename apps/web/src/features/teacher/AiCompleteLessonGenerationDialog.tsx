@@ -24,6 +24,7 @@ import {
   type LessonDepth,
 } from '../repository/pools/aiContentClient.js';
 import { validateLessonDraftResult } from '../repository/pools/aiLessonDraft.js';
+import { QuestionCountStepper } from './QuestionCountStepper.js';
 import styles from './AiCompleteLessonGenerationDialog.module.css';
 
 export type CompleteLessonProgress =
@@ -67,6 +68,14 @@ type Phase =
   | 'error';
 
 type ErrorStage = 'preview' | 'generate' | 'complete';
+type CountsDraft = { aperta: string; chiusa_singola: string; chiusa_multipla: string };
+
+function parseCount(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
 
 function progressLabel(progress: CompleteLessonProgress): string {
   if (progress.label?.trim()) return progress.label.trim();
@@ -106,10 +115,10 @@ export function AiCompleteLessonGenerationDialog({
   const [phase, setPhase] = useState<Phase>('configure');
   const [depth, setDepth] = useState<LessonDepth>(DEFAULT_LESSON_DEPTH);
   const [level, setLevel] = useState<PoolLevel>(DEFAULT_POOL_LEVEL);
-  const [counts, setCounts] = useState<PoolCounts>({
-    aperta: 5,
-    chiusa_singola: 3,
-    chiusa_multipla: 2,
+  const [counts, setCounts] = useState<CountsDraft>({
+    aperta: '5',
+    chiusa_singola: '3',
+    chiusa_multipla: '2',
   });
   const [guidance, setGuidance] = useState('');
   const [preview, setPreview] = useState<AiLessonPreviewResult | null>(null);
@@ -135,11 +144,25 @@ export function AiCompleteLessonGenerationDialog({
   const missingRequirements = missingLessonRequirements(context);
   const preflightOk = missingRequirements.length === 0;
   const guidanceValid = guidance.length <= MAX_TEACHER_GUIDANCE_CHARS;
-  const questionTotal = counts.aperta + counts.chiusa_singola + counts.chiusa_multipla;
+  const parsedCounts = {
+    aperta: parseCount(counts.aperta),
+    chiusa_singola: parseCount(counts.chiusa_singola),
+    chiusa_multipla: parseCount(counts.chiusa_multipla),
+  };
+  const questionTotal = Object.values(parsedCounts).every((value) => value !== null)
+    ? (parsedCounts.aperta ?? 0) +
+      (parsedCounts.chiusa_singola ?? 0) +
+      (parsedCounts.chiusa_multipla ?? 0)
+    : null;
   const countsValid =
-    Object.values(counts).every((value) => Number.isInteger(value) && value >= 0) &&
-    questionTotal >= 1 &&
-    questionTotal <= MAX_POOL_TOTAL_QUESTIONS;
+    questionTotal !== null && questionTotal >= 1 && questionTotal <= MAX_POOL_TOTAL_QUESTIONS;
+  const validatedCounts: PoolCounts | null = countsValid
+    ? {
+        aperta: parsedCounts.aperta!,
+        chiusa_singola: parsedCounts.chiusa_singola!,
+        chiusa_multipla: parsedCounts.chiusa_multipla!,
+      }
+    : null;
   const canEstimate = preflightOk && guidanceValid && countsValid;
   const busy = phase === 'previewing' || phase === 'generating' || phase === 'completing';
   const totalActualCostMicroUsd =
@@ -214,6 +237,7 @@ export function AiCompleteLessonGenerationDialog({
   }
 
   async function generateAndComplete(request: AiLessonContentRequest) {
+    if (!validatedCounts) throw new Error('Quantità di domande non valida.');
     setErrorStage('generate');
     setPhase('generating');
     const next = await callables.generate(request);
@@ -230,7 +254,10 @@ export function AiCompleteLessonGenerationDialog({
     setProgress({ stage: 'content', label: 'Salvataggio del contenuto…' });
     setPhase('completing');
     try {
-      const completed = await onCompleteDraft(validated.body, updateProgress, { level, counts });
+      const completed = await onCompleteDraft(validated.body, updateProgress, {
+        level,
+        counts: validatedCounts,
+      });
       if (!mountedRef.current) return;
       setSummary(completed);
       setProgress(null);
@@ -250,14 +277,17 @@ export function AiCompleteLessonGenerationDialog({
   }
 
   async function completeDraft() {
-    if (runningRef.current || !draftBody) return;
+    if (runningRef.current || !draftBody || !validatedCounts) return;
     runningRef.current = true;
     setError(null);
     setErrorStage('complete');
     setProgress({ stage: 'content' });
     setPhase('completing');
     try {
-      const next = await onCompleteDraft(draftBody, updateProgress, { level, counts });
+      const next = await onCompleteDraft(draftBody, updateProgress, {
+        level,
+        counts: validatedCounts,
+      });
       if (!mountedRef.current) return;
       setSummary(next);
       setProgress(null);
@@ -372,29 +402,42 @@ export function AiCompleteLessonGenerationDialog({
 
           <fieldset className={styles.questionCounts}>
             <legend className={styles.fieldLabel}>Domande da generare</legend>
-            {(
-              [
-                ['aperta', 'Aperte'],
-                ['chiusa_singola', 'Risposta singola'],
-                ['chiusa_multipla', 'Risposta multipla'],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key} className={styles.countField}>
-                <span>{label}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={MAX_POOL_TOTAL_QUESTIONS}
-                  value={counts[key]}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    setCounts((current) => ({ ...current, [key]: value }));
-                    invalidateEstimate();
-                  }}
-                />
-              </label>
-            ))}
-            <span className={styles.questionTotal}>Totale: {questionTotal}</span>
+            <QuestionCountStepper
+              label="Aperte"
+              rawValue={counts.aperta}
+              parsedValue={parsedCounts.aperta}
+              onChange={(value) => {
+                setCounts((current) => ({ ...current, aperta: value }));
+                invalidateEstimate();
+              }}
+              canIncrement={questionTotal !== null && questionTotal < MAX_POOL_TOTAL_QUESTIONS}
+              decrementLabel="Diminuisci domande aperte"
+              incrementLabel="Aumenta domande aperte"
+            />
+            <QuestionCountStepper
+              label="Risposta singola"
+              rawValue={counts.chiusa_singola}
+              parsedValue={parsedCounts.chiusa_singola}
+              onChange={(value) => {
+                setCounts((current) => ({ ...current, chiusa_singola: value }));
+                invalidateEstimate();
+              }}
+              canIncrement={questionTotal !== null && questionTotal < MAX_POOL_TOTAL_QUESTIONS}
+              decrementLabel="Diminuisci domande a risposta singola"
+              incrementLabel="Aumenta domande a risposta singola"
+            />
+            <QuestionCountStepper
+              label="Risposta multipla"
+              rawValue={counts.chiusa_multipla}
+              parsedValue={parsedCounts.chiusa_multipla}
+              onChange={(value) => {
+                setCounts((current) => ({ ...current, chiusa_multipla: value }));
+                invalidateEstimate();
+              }}
+              canIncrement={questionTotal !== null && questionTotal < MAX_POOL_TOTAL_QUESTIONS}
+              decrementLabel="Diminuisci domande a risposta multipla"
+              incrementLabel="Aumenta domande a risposta multipla"
+            />
           </fieldset>
 
           <div className={styles.field}>

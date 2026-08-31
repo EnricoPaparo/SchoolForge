@@ -124,15 +124,12 @@ describe('AiCompleteLessonGenerationDialog', () => {
     }));
 
     expect(screen.queryByText('Profilo modello')).toBeNull();
-    expect(screen.getByRole('spinbutton', { name: 'Aperte' })).toHaveProperty('value', '5');
-    expect(screen.getByRole('spinbutton', { name: 'Risposta singola' })).toHaveProperty(
-      'value',
-      '3',
-    );
-    expect(screen.getByRole('spinbutton', { name: 'Risposta multipla' })).toHaveProperty(
-      'value',
-      '2',
-    );
+    expect(screen.getByRole('textbox', { name: 'Aperte' })).toHaveProperty('value', '5');
+    expect(screen.getByRole('textbox', { name: 'Risposta singola' })).toHaveProperty('value', '3');
+    expect(screen.getByRole('textbox', { name: 'Risposta multipla' })).toHaveProperty('value', '2');
+    expect(screen.queryByText(/Totale:/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Diminuisci domande aperte' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Aumenta domande aperte' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Equilibrato/ }).getAttribute('aria-checked')).toBe(
       'true',
     );
