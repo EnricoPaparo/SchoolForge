@@ -507,6 +507,11 @@ describe('guardie strutturali 03B', () => {
     new URL('./aiVisualPlanExecutionGateway.ts', import.meta.url),
     'utf8',
   );
+  it('isola la normalizzazione immagini con memoria sufficiente e concorrenza singola', () => {
+    expect(gateway).toContain("memory: '512MiB' as const");
+    expect(gateway).toContain('concurrency: 1');
+    expect(gateway).toContain('timeoutSeconds: 120');
+  });
   it('separa il cap di fase dal master e ricampiona il clock dopo il provider', () => {
     expect(gateway).toContain('markPending(withPhase, phaseKey, nowMs)');
     expect(gateway).not.toContain('markPending(ledger, current.budgetCeiling.reservationKey');

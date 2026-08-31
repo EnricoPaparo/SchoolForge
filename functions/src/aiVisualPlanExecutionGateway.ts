@@ -105,7 +105,17 @@ const PROMOTIONS = 'visualPlanPromotions';
 const PROMOTION_RECOVERIES = 'visualPlanPromotionRecoveries';
 
 const COMMON_OPTIONS = { region: SCHOOLFORGE_FUNCTION_REGION, invoker: 'public' as const };
-const GENERATE_OPTIONS = { ...COMMON_OPTIONS, secrets: [AI_VISUAL_OPENAI_API_KEY] };
+// La generazione tiene contemporaneamente in memoria i byte provider e la
+// normalizzazione Sharp/WebP. I log reali DEV hanno misurato picchi 258–277 MiB:
+// 256 MiB terminava il processo a metà dei piani multi-immagine. Concorrenza 1
+// impedisce inoltre a due normalizzazioni di condividere la stessa istanza.
+const GENERATE_OPTIONS = {
+  ...COMMON_OPTIONS,
+  secrets: [AI_VISUAL_OPENAI_API_KEY],
+  memory: '512MiB' as const,
+  concurrency: 1,
+  timeoutSeconds: 120,
+};
 
 function database(): Firestore {
   if (getApps().length === 0) initializeApp();

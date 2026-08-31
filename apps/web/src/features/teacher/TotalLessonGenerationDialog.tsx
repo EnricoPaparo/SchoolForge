@@ -193,6 +193,7 @@ export function TotalLessonGenerationDialog({
     const canRetry =
       !visualResult.ok &&
       imagesFailed > 0 &&
+      visualResult.failures.some((failure) => failure.retryable) &&
       !visualResult.failures.some((failure) => failure.terminal);
 
     return {
@@ -203,7 +204,11 @@ export function TotalLessonGenerationDialog({
       imagesSkipped,
       imagesFailed,
       actualCostMicroUsd,
-      message: visualResult.ok ? undefined : 'Puoi ritentare soltanto le immagini mancanti.',
+      message: visualResult.ok
+        ? undefined
+        : canRetry
+          ? 'Puoi ritentare soltanto le immagini mancanti.'
+          : 'Le immagini non completate non possono essere ripetute in sicurezza in questo piano.',
       ...(canRetry ? { retry: (nextProgress) => completeDraft(body, nextProgress, options) } : {}),
     };
   }
