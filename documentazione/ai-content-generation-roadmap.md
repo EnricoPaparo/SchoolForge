@@ -536,7 +536,8 @@ Tutti gli esempi restano **ordini di grandezza sotto** il cap per operazione (25
 La **Generazione lezione completa IA** è una variante di orchestrazione web,
 non un nuovo motore. Il pulsante esistente diventa «Genera contenuto IA» e il
 nuovo «Genera completa con IA» riusa, nello stesso dialog, la configurazione e
-la preview AIGEN già disponibili. Dopo l'unica conferma dell'utente il flusso è:
+la stima tecnica AIGEN già disponibili. Il click sul comando è l'unica
+conferma: dopo il preflight il flusso parte automaticamente e prosegue con:
 
 1. generazione e validazione fail-closed del contenuto;
 2. salvataggio canonico del corpo della lezione;
@@ -553,7 +554,7 @@ immagini preesistenti**: sostituire il corpo renderebbe potenzialmente obsolete
 immagini e ancore già approvate, e la variante semplice non le elimina né le
 sostituisce implicitamente.
 
-L'utente riceve **una sola conferma economica**. La schermata distingue però in
+L'utente riceve **una sola conferma economica implicita nel comando**. La schermata distingue però in
 modo esplicito: (a) stima e tetto del contenuto, restituiti dalla preview AIGEN;
 e (b) costo separato del piano e delle eventuali immagini, fino a tre,
 contabilizzato dal runtime MULTI-VISUAL. Il valore del contenuto non è mai

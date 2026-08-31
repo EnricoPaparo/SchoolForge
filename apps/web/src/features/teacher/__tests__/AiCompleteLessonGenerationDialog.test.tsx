@@ -112,10 +112,9 @@ async function goToReview(
   }),
 ) {
   renderDialog(callables, onCompleteDraft);
-  fireEvent.click(screen.getByRole('button', { name: 'Calcola stima completa' }));
-  await screen.findByText(/Costo stimato contenuto/);
-  fireEvent.click(screen.getByRole('button', { name: 'Genera contenuto' }));
-  await screen.findByRole('button', { name: 'Usa e completa la lezione' });
+  fireEvent.click(screen.getByRole('button', { name: 'Genera tutto' }));
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
@@ -136,13 +135,9 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(screen.queryByLabelText('Quantità')).toBeNull();
     expect(screen.queryByText(/Auto \(1/)).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima completa' }));
-    await screen.findByText(/Costo stimato contenuto/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera tutto' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(previewRequests).toHaveLength(1);
-    expect(generateRequests).toHaveLength(0);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Genera contenuto' }));
-    await screen.findByRole('button', { name: 'Usa e completa la lezione' });
     expect(generateRequests).toHaveLength(1);
     expect(generateRequests[0]).toEqual(previewRequests[0]);
   });
@@ -160,7 +155,6 @@ describe('AiCompleteLessonGenerationDialog', () => {
     });
     await goToReview(callables, onCompleteDraft);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Usa e completa la lezione' }));
     await screen.findByText('Generazione immagine 2 di 3…');
     expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
     expect(onCompleteDraft).toHaveBeenCalledWith(
@@ -178,8 +172,6 @@ describe('AiCompleteLessonGenerationDialog', () => {
       callables,
       vi.fn(async () => ({ imagesApplied: 0, imagesSkipped: 0, imagesFailed: 0 })),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Usa e completa la lezione' }));
-
     expect(
       await screen.findByText('Il modello non ha individuato immagini didatticamente necessarie.'),
     ).toBeTruthy();
@@ -199,7 +191,6 @@ describe('AiCompleteLessonGenerationDialog', () => {
       retry,
     }));
     await goToReview(callables, onCompleteDraft);
-    fireEvent.click(screen.getByRole('button', { name: 'Usa e completa la lezione' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Riprova elementi mancanti' }));
 
     await screen.findByText('Sono state applicate 2 immagini.');
@@ -217,7 +208,6 @@ describe('AiCompleteLessonGenerationDialog', () => {
     cleanup();
     await goToReviewWithClose(callables, async () => never, onClose);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Usa e completa la lezione' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.keyDown(dialog, { key: 'Escape' });
     fireEvent.click(dialog.parentElement!);
@@ -231,8 +221,7 @@ async function goToReviewWithClose(
   onClose: () => void,
 ) {
   renderDialog(callables, onCompleteDraft, onClose);
-  fireEvent.click(screen.getByRole('button', { name: 'Calcola stima completa' }));
-  await screen.findByText(/Costo stimato contenuto/);
-  fireEvent.click(screen.getByRole('button', { name: 'Genera contenuto' }));
-  await screen.findByRole('button', { name: 'Usa e completa la lezione' });
+  fireEvent.click(screen.getByRole('button', { name: 'Genera tutto' }));
+  await Promise.resolve();
+  await Promise.resolve();
 }
