@@ -27,32 +27,13 @@
 
 .questionCounts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
   min-width: 0;
   margin: 0;
   padding: 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-}
-
-.countField {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.85rem;
-}
-
-.countField input {
-  width: 100%;
-  min-width: 0;
-}
-
-.questionTotal {
-  align-self: end;
-  padding-bottom: 0.45rem;
-  color: var(--color-text-muted);
 }
 
 .replaceWarning {
@@ -142,9 +123,6 @@
     grid-template-columns: 1fr;
   }
 
-  .questionTotal {
-    padding-bottom: 0;
-  }
   .optionRow {
     grid-template-columns: 1fr;
   }
