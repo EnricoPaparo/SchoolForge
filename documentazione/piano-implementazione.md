@@ -1298,3 +1298,10 @@ caricate per lezione. Contratto completo in
 | MULTI-VISUAL-04 | UI docente/studente, galleria, quantità auto/esatta, revisione/generazione/promozione per slot, riordino/rimozione e rendering N-way. | MULTI-VISUAL-03 | **Implementato nel codice; rollout DEV e Gate UI ancora PENDING.** Dopo ogni promote/reorder/remove il solo `LessonDoc` interessato viene riletto e validato integralmente, quindi il tree locale si aggiorna senza refetch globale. Legacy `visual` resta leggibile e viene adottato dal server al primo piano multi. Upload e integrazione automatica con «Genera lezione» restano fuori da questa PR. |
 | MULTI-VISUAL-05 | Benchmark reale e rollout controllato. | MULTI-VISUAL-04 | **Aperto.** |
 | Gate GMULTI | Approvazione umana su qualità, flusso e responsive. | MULTI-VISUAL-05 | **PENDING.** |
+
+### Generazione lezione completa IA
+
+| Pacchetto | Sintesi | Dipendenze | Stato |
+|---|---|---|---|
+| AIGEN-COMPLETE-01 | Aggiunge «Genera completa con IA» accanto a «Genera contenuto IA» e orchestra senza passaggi intermedi `generate content → save → visual plan auto 0–3 → generate/promote → refresh`. Una sola conferma economica con disclosure distinta; progresso per fase e immagine; retry/idempotenza per la sola fase incompleta; esito parziale esplicito e nessun rollback delle immagini promosse. | AIGEN-03, MULTI-VISUAL-04 | **Implementato su branch di sviluppo.** Solo lezioni con zero immagini preesistenti. Modifiche web e test; nessuna nuova Function, Rule, collection, configurazione, dipendenza o provider. |
+| Gate GCOMPLETE | Smoke DEV su 0/1/3 immagini, nessuna immagine utile, errore di salvataggio, errore/retry di uno slot, budget insufficiente, replay e responsive mobile. Verifica che il costo contenuto non sia mostrato come totale e che non partano nuove spese dopo un esito incerto. | AIGEN-COMPLETE-01 | **PENDING.** |

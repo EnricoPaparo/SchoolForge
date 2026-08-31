@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LessonMetadata } from '../repository/validation/types.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { functions } from '../../lib/firebase.js';
@@ -9,6 +9,18 @@ import {
   type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import { AiLessonGenerationDialog } from './AiLessonGenerationDialog.js';
+import {
+  AiCompleteLessonGenerationDialog,
+  type CompleteLessonCompletionSummary,
+  type CompleteLessonProgress as CompleteLessonDialogProgress,
+} from './AiCompleteLessonGenerationDialog.js';
+import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
+import {
+  createCompleteLessonGenerationState,
+  runCompleteLessonGeneration,
+  type CompleteLessonGenerationState,
+  type CompleteLessonProgress as CompleteLessonCoreProgress,
+} from '../repository/programs/completeLessonGeneration.js';
 import styles from './lessonEditors.module.css';
 
 /**
@@ -26,6 +38,17 @@ export interface LessonAiButtonContext {
   /** AIGEN-CONTEXT-01: indice compatto dell'UDA (dall'albero già in memoria). */
   udaContext?: LessonUdaContext | null;
   defaultModelProfile?: PoolModelProfile;
+}
+
+export interface CompleteLessonEditorContext {
+  identity: { programId: string; importId: string; lessonId: string };
+  existingVisualCount: number;
+  /** Persistenza canonica awaitable: aggiorna il corpo senza smontare l'editor. */
+  onPersistBody: (body: string) => Promise<void>;
+  /** Rilegge il manifest autorevole dopo le promozioni concluse. */
+  onRefreshVisuals: () => Promise<void>;
+  /** Chiamato quando il docente chiude un riepilogo già applicato. */
+  onFinished: () => void;
 }
 
 /**
@@ -73,6 +96,7 @@ export function MarkdownBodyEditor({
   onCancel,
   onDirtyChange,
   lessonAi,
+  completeLesson,
 }: {
   initial: string;
   status: EditStatus;
@@ -81,12 +105,123 @@ export function MarkdownBodyEditor({
   onDirtyChange: (dirty: boolean) => void;
   /** AIGEN-03 — abilita «Genera con IA» (solo in modifica corpo Markdown). */
   lessonAi?: LessonAiButtonContext;
+  completeLesson?: CompleteLessonEditorContext;
 }) {
   const [draft, setDraft] = useState(initial);
   const [tab, setTab] = useState<'editor' | 'preview'>('editor');
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [completeApplied, setCompleteApplied] = useState(false);
+  const completeStateRef = useRef<CompleteLessonGenerationState | null>(null);
   const dirty = draft !== initial;
   const aiCallables = useMemo(() => createAiLessonCallables(functions), []);
+
+  function adaptProgress(
+    progress: CompleteLessonCoreProgress,
+    onProgress: (progress: CompleteLessonDialogProgress) => void,
+  ) {
+    switch (progress.phase) {
+      case 'saving_body':
+        onProgress({ stage: 'content', label: progress.message });
+        break;
+      case 'planning_images':
+        onProgress({ stage: 'analysis', label: progress.message });
+        break;
+      case 'generating_image':
+      case 'promoting_image':
+        onProgress({
+          stage: 'images',
+          current: progress.current,
+          total: progress.total,
+          label: progress.message,
+        });
+        break;
+      case 'completed':
+      case 'partial_failure':
+        onProgress({ stage: 'finalizing', label: progress.message });
+        break;
+    }
+  }
+
+  async function runCompleteDraft(
+    body: string,
+    onProgress: (progress: CompleteLessonDialogProgress) => void,
+  ): Promise<CompleteLessonCompletionSummary> {
+    if (!lessonAi || !completeLesson) throw new Error('complete_lesson_unavailable');
+    if (!completeStateRef.current) {
+      completeStateRef.current = createCompleteLessonGenerationState({
+        identity: completeLesson.identity,
+        body,
+        visualContext: {
+          titolo: lessonAi.titolo,
+          sottotitolo: lessonAi.sottotitolo,
+          difficolta: lessonAi.difficolta,
+          concettiChiave: lessonAi.concettiChiave ?? [],
+          obiettivi: lessonAi.obiettivi ?? [],
+          udaTitle: lessonAi.udaTitle,
+          udaContext: lessonAi.udaContext,
+        },
+        contentRequestId: crypto.randomUUID(),
+      });
+    }
+    const client = createMultiVisualClient(functions);
+    const result = await runCompleteLessonGeneration(
+      completeStateRef.current,
+      {
+        persistBody: ({ body: canonicalBody }) => completeLesson.onPersistBody(canonicalBody),
+        authorizeVisualPlan: (input) => client.authorize(input),
+        generateVisualSlot: (input) => client.generateSlot(input),
+        promoteVisualSlot: (input) => client.promoteSlot(input),
+      },
+      {
+        onProgress: (progress) => adaptProgress(progress, onProgress),
+        onStateChange: (state) => {
+          completeStateRef.current = state;
+        },
+      },
+    );
+    completeStateRef.current = result.state;
+    const plan = result.state.plan;
+    if (!plan) {
+      // Persist/authorize possono essere ritentati dalla stessa callback: lo state
+      // conserva il corpo già scritto e non richiama mai il generatore testuale.
+      throw new Error('complete_lesson_plan_unavailable');
+    }
+    const imagesApplied = plan.slots.filter((slot) => Boolean(slot.promotedAssetId)).length;
+    const imagesSkipped = plan.slots.filter(
+      (slot) => slot.decision !== 'image' || slot.state === 'abandoned',
+    ).length;
+    const imagesFailed = plan.slots.filter(
+      (slot) => slot.decision === 'image' && !slot.promotedAssetId && slot.state !== 'abandoned',
+    ).length;
+    const actualCosts = [
+      plan.settlement.proposalActualCost,
+      ...plan.settlement.slots.map((slot) => slot.actualCost),
+    ];
+    const actualCostMicroUsd = actualCosts.some((cost) => cost === null)
+      ? null
+      : actualCosts.reduce<number>((total, cost) => total + (cost ?? 0), 0);
+    if (imagesApplied > 0) await completeLesson.onRefreshVisuals();
+    setCompleteApplied(true);
+
+    const canRetry =
+      !result.ok && imagesFailed > 0 && !result.failures.some((failure) => failure.terminal);
+    return {
+      imagesApplied,
+      imagesSkipped,
+      imagesFailed,
+      actualCostMicroUsd,
+      message: result.ok
+        ? undefined
+        : 'Il contenuto è salvo; puoi ritentare solo le immagini mancanti.',
+      ...(canRetry
+        ? {
+            retry: (nextProgress: (progress: CompleteLessonDialogProgress) => void) =>
+              runCompleteDraft(body, nextProgress),
+          }
+        : {}),
+    };
+  }
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -114,6 +249,29 @@ export function MarkdownBodyEditor({
             : {})}
           onUseDraft={(body) => setDraft(body)}
           onClose={() => setAiDialogOpen(false)}
+        />
+      )}
+      {completeDialogOpen && lessonAi && completeLesson && (
+        <AiCompleteLessonGenerationDialog
+          context={{
+            titolo: lessonAi.titolo ?? null,
+            sottotitolo: lessonAi.sottotitolo ?? null,
+            difficolta: lessonAi.difficolta ?? null,
+            udaTitle: lessonAi.udaTitle ?? null,
+            udaContext: lessonAi.udaContext ?? null,
+            concettiChiave: lessonAi.concettiChiave ?? [],
+            obiettivi: lessonAi.obiettivi ?? [],
+            currentBody: draft,
+          }}
+          callables={aiCallables}
+          {...(lessonAi.defaultModelProfile
+            ? { defaultModelProfile: lessonAi.defaultModelProfile }
+            : {})}
+          onCompleteDraft={runCompleteDraft}
+          onClose={() => {
+            setCompleteDialogOpen(false);
+            if (completeApplied) completeLesson.onFinished();
+          }}
         />
       )}
       <div className={styles.editorTabs} role="tablist" aria-label="Editor contenuto">
@@ -170,7 +328,25 @@ export function MarkdownBodyEditor({
             disabled={status.busy}
             title="Genera una bozza con l’IA"
           >
-            <IconSparkles size={14} /> Genera con IA
+            <IconSparkles size={14} /> Genera contenuto IA
+          </button>
+        )}
+        {lessonAi && completeLesson && (
+          <button
+            type="button"
+            onClick={() => {
+              completeStateRef.current = null;
+              setCompleteApplied(false);
+              setCompleteDialogOpen(true);
+            }}
+            disabled={status.busy || completeLesson.existingVisualCount > 0}
+            title={
+              completeLesson.existingVisualCount > 0
+                ? 'Rimuovi prima le immagini esistenti per generare una lezione completa.'
+                : 'Genera contenuto e immagini con un unico flusso'
+            }
+          >
+            <IconSparkles size={14} /> Genera completa con IA
           </button>
         )}
         <StatusLine status={status} dirty={dirty} />

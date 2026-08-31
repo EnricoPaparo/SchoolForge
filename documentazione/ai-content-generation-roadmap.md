@@ -531,7 +531,52 @@ Tutti gli esempi restano **ordini di grandezza sotto** il cap per operazione (25
 - **pool** applicato **tramite servizio canonico** (`poolEditorService`) dopo conferma;
 - **lezione** inserita **soltanto nel draft locale dirty** e salvata **separatamente** dal docente col `Salva` canonico.
 
-### 8.1 Error codes (congelati per AIGEN-01)
+### 8.1 Generazione lezione completa IA
+
+La **Generazione lezione completa IA** è una variante di orchestrazione web,
+non un nuovo motore. Il pulsante esistente diventa «Genera contenuto IA» e il
+nuovo «Genera completa con IA» riusa, nello stesso dialog, la configurazione e
+la preview AIGEN già disponibili. Dopo l'unica conferma dell'utente il flusso è:
+
+1. generazione e validazione fail-closed del contenuto;
+2. salvataggio canonico del corpo della lezione;
+3. autorizzazione del piano MULTI-VISUAL con quantità `{ mode: 'auto', ceiling: 3 }`;
+4. scelta del modello fra **zero e tre** immagini didatticamente utili;
+5. generazione e promozione sequenziale degli slot scelti;
+6. refresh autorevole della lezione e riepilogo finale.
+
+Il salvataggio precede obbligatoriamente le immagini: il piano visuale rilegge
+il corpo autorevole e lega proposta, ancore e promozioni al suo
+`sourceBodyHash`. Un draft locale non può quindi alimentare direttamente il
+piano. La prima versione è disponibile soltanto quando la lezione ha **zero
+immagini preesistenti**: sostituire il corpo renderebbe potenzialmente obsolete
+immagini e ancore già approvate, e la variante semplice non le elimina né le
+sostituisce implicitamente.
+
+L'utente riceve **una sola conferma economica**. La schermata distingue però in
+modo esplicito: (a) stima e tetto del contenuto, restituiti dalla preview AIGEN;
+e (b) costo separato del piano e delle eventuali immagini, fino a tre,
+contabilizzato dal runtime MULTI-VISUAL. Il valore del contenuto non è mai
+presentato come totale complessivo. Non viene aggiunta una preview combinata.
+
+L'orchestrazione è a esito parziale e non promette atomicità attraverso
+provider, Storage e Firestore. Se il contenuto non è generato non parte alcun
+salvataggio; se il salvataggio fallisce si ritenta quel salvataggio senza
+rigenerare; se il testo è salvato ma il piano fallisce, il testo resta
+autorevole e si ritenta soltanto il piano. Gli slot indipendenti continuano e
+si ritentano singolarmente; un errore incerto, di budget o di mutazione esterna
+arresta invece ogni nuova spesa. Le immagini già promosse non vengono rimosse
+da un rollback. Il riepilogo dichiara sempre «contenuto salvato» e il numero di
+immagini applicate.
+
+`requestId` del contenuto e del piano e `promotionRequestId` per slot restano
+stabili durante retry e replay. Il flusso riusa esclusivamente
+`aiContentPreview`/`aiContentGenerate`, `aiVisualPlanAuthorize`,
+`aiVisualPlanGenerateSlot` e `aiVisualPlanPromoteSlot`, oltre al salvataggio e
+al refresh canonici esistenti: **nessuna nuova Function, callable, collezione,
+Rule, configurazione, dipendenza o integrazione provider**.
+
+### 8.2 Error codes (congelati per AIGEN-01)
 Riuso dei codici esistenti (`unauthenticated`, `not_owner`, `feature_disabled`, `provider_config_invalid`, `invalid_input`, `limit_exceeded`, `operation_budget_exceeded`, `daily_budget_exceeded`, `budget_exceeded`, `budget_unavailable`) **estesi** con codici AIGEN dedicati:
 - `content_too_large` — input oltre i cap §3.4/§6.6;
 - `output_invalid` — output provider non conforme allo schema/validazioni;
@@ -562,6 +607,7 @@ Contenuti e stati rappresentati sono elencati nella sezione «Prototipi» del ta
 | **AIGEN-01** ✅ | Core server condiviso (`aiContentCore`/`aiContentEngine`), callable `aiContentPreview`/`aiContentGenerate`, `aiContentRuns` + lease/idempotenza/TTL, integrazione budget, schemi Structured Output, prompt builder. **Nessuna UI.** | AIGEN-00 | **Implementato** — Functions verdi (payload, ordine fail-closed, cost/budget, idempotenza/replay/takeover, output validation, prompt injection, lost-lease), Rules `aiContentRuns` server-only con emulator test; provider reale disabilitato dal kill switch; nessun deploy. Smoke DEV + TTL policy pendenti. |
 | **AIGEN-02** ✅ | UI + applicazione generazione **pool** (dialog, preview, editor proposte, `Aggiungi/Crea pool` via service canonico). | AIGEN-01 | **Implementato** — client tipizzato `aiContentClient` (payload chiuso, stessa `requestId` preview/generate, error mapping sanitizzato); dialog `AiPoolGenerationDialog` (config→stima→conferma→generazione→revisione editabile→applicazione, il dialog non si chiude fra stima e generazione); mapper puro `aiPoolMapper` (ID `ia-<n>` deterministici non collidenti, opzioni `a/b/c`, `maxCharacters` default 2000, `maxPoints===difficolta`, no `peso`) → `parsePool` autorevole; pulsanti «Genera con IA» accanto a «Crea pool» e nella toolbar del pool; applicazione via `savePool` canonico (append su pool esistente senza toccare le domande attuali). Test web verdi; nessun autosave IA; nessuna nuova Function/Rules/indice; nessuna chiamata OpenAI nei test. Smoke DEV pendente. |
 | **AIGEN-03** ✅ | UI + applicazione generazione **lezione** (pulsante nel MarkdownBodyEditor, dialog, `Usa questa bozza` → draft dirty, salvataggio canonico). | AIGEN-01 | **Implementato** — client lezione in `aiContentClient` (payload chiuso `kind:'lesson'`, stessa `requestId` preview/generate), dialog `AiLessonGenerationDialog` (config→stima→conferma→generazione→anteprima Markdown→«Usa questa bozza»), validatore fail-closed `aiLessonDraft` (kind/body/front-matter/dimensione via `assertLessonContentSize`), pulsante «Genera con IA» nel `MarkdownBodyEditor` **solo in modifica**; «Usa questa bozza» sostituisce solo il draft locale (dirty, nessuna write). Anteprima via `MarkdownRenderer` (DOMPurify). Test web verdi; nessun salvataggio automatico; dirty guard/Annulla e sanitizzazione invariati; nessuna nuova Function/Rules/indice/schema; nessuna chiamata OpenAI nei test. Smoke DEV pendente. |
+| **AIGEN-COMPLETE-01** | **Generazione lezione completa IA**: variante web `contenuto → salvataggio canonico → piano auto 0–3 → generazione/promozione slot`, una sola conferma con costi separati, progresso continuo e retry parziale idempotente. | AIGEN-03, MULTI-VISUAL-04 | **Pianificato.** Prima versione solo con zero immagini preesistenti; riuso esclusivo di callable, provider, budget e persistenza esistenti; nessun nuovo backend. |
 | **LESSON-MANUAL-02** 📐 | Protocollo qualitativo del prompt lezione attuale: 6 scenari congelati, rubrica 15×0–4, blocker, review docente e attribuzione prompt/renderer/metadati/variabilità. | AIGEN-03, AIGEN-CONTEXT-01, LESSON-MANUAL-01 | **Progettato; verdetto NON DISPONIBILE.** Nessun campione, chiamata provider o costo in questa fase. Esecuzione reale solo dopo stima e autorizzazione esplicita. |
 | **LESSON-MANUAL-03** ✅ | Runner locale del primo lotto qualitativo: dataset/payload fail-closed, piano costi `economy`, esecuzione protetta, output Markdown originali e report gitignored. | LESSON-MANUAL-02 | **Implementato; solo dry-run eseguito.** 6 chiamate, ≤12 tentativi, stima 78.698 µUSD, tetto 169.910 µUSD; zero secret/rete/costo. Esecuzione reale richiede nuova autorizzazione. |
 | **Gate GAIGEN** | Rollout DEV, smoke owner/costi/sicurezza. | AIGEN-01/02/03 | Smoke DEV desktop/mobile/Brave; kill switch verificato; budget rispettato; nessun dato sensibile persistito; nessun fallback silenzioso; conferma manuale del responsabile. |

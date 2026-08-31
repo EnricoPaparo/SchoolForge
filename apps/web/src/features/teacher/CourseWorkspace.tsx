@@ -1332,6 +1332,42 @@ export function CourseWorkspace({
     })();
   }
 
+  /**
+   * Generazione completa: rende canonico il corpo ma lascia montato l'editor,
+   * perché il piano immagini deve leggere esattamente quel corpo e il docente
+   * deve poter seguire riepilogo/retry nello stesso dialog.
+   */
+  async function handlePersistGeneratedContent(lesson: LessonItem, body: string): Promise<void> {
+    if (!card.activeImportId) throw new Error('Import attivo non disponibile.');
+    const importId = card.activeImportId;
+    const lessonId = lesson.id;
+    setContentStatus({ busy: true, error: null, saved: false });
+    try {
+      await updateLessonMarkdownBody({
+        programId: card.programId,
+        importId,
+        lessonId,
+        body,
+        ownerUid,
+        db,
+        storage,
+      });
+      if (!mountedRef.current || currentLessonRef.current !== lessonId) return;
+      setLessonContent(body);
+      setContentDirty(false);
+      setContentStatus({ busy: false, error: null, saved: true });
+    } catch (err) {
+      if (mountedRef.current && currentLessonRef.current === lessonId) {
+        setContentStatus({
+          busy: false,
+          error: err instanceof Error ? err.message : 'Impossibile salvare il contenuto.',
+          saved: false,
+        });
+      }
+      throw err;
+    }
+  }
+
   function handleSaveInfo(lesson: LessonItem, fields: LessonMetadata) {
     if (!card.activeImportId) return;
     const importId = card.activeImportId;
@@ -2317,6 +2353,14 @@ export function CourseWorkspace({
               contentStatus={contentStatus}
               infoStatus={infoStatus}
               onSaveContent={(body) => handleSaveContent(selectedLesson, body)}
+              onPersistGeneratedContent={(body) =>
+                handlePersistGeneratedContent(selectedLesson, body)
+              }
+              onCompleteContent={() => {
+                setEditingContent(false);
+                setContentDirty(false);
+                setContentStatus({ busy: false, error: null, saved: true });
+              }}
               onSaveInfo={(fields) => handleSaveInfo(selectedLesson, fields)}
               onCancelContent={() => {
                 setEditingContent(false);
@@ -2835,6 +2879,8 @@ function LessonDetail({
   contentStatus,
   infoStatus,
   onSaveContent,
+  onPersistGeneratedContent,
+  onCompleteContent,
   onSaveInfo,
   onCancelContent,
   onCancelInfo,
@@ -2873,6 +2919,8 @@ function LessonDetail({
   contentStatus: EditStatus;
   infoStatus: EditStatus;
   onSaveContent: (body: string) => void;
+  onPersistGeneratedContent: (body: string) => Promise<void>;
+  onCompleteContent: () => void;
   onSaveInfo: (fields: LessonMetadata) => void;
   onCancelContent: () => void;
   onCancelInfo: () => void;
@@ -3193,6 +3241,17 @@ function LessonDetail({
             onCancel={onCancelContent}
             onDirtyChange={onContentDirtyChange}
             lessonAi={lessonAi}
+            {...(importId
+              ? {
+                  completeLesson: {
+                    identity: { programId, importId, lessonId: lesson.id },
+                    existingVisualCount: lesson.visuals?.items.length ?? (manifest ? 1 : 0),
+                    onPersistBody: onPersistGeneratedContent,
+                    onRefreshVisuals: refreshMultiVisuals,
+                    onFinished: onCompleteContent,
+                  },
+                }
+              : {})}
           />
         ) : (
           activeTab === 'contenuto' && (

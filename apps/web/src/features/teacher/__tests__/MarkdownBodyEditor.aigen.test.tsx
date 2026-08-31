@@ -73,7 +73,7 @@ describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
         onDirtyChange={() => {}}
       />,
     );
-    expect(screen.queryByRole('button', { name: /Genera con IA/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Genera contenuto IA/ })).toBeNull();
     rerender(
       <MarkdownBodyEditor
         initial="Testo iniziale"
@@ -84,7 +84,7 @@ describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
         lessonAi={{ titolo: 'Le reti' }}
       />,
     );
-    expect(screen.getByRole('button', { name: /Genera con IA/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Genera contenuto IA/ })).toBeTruthy();
   });
 
   it('«Usa questa bozza» replaces the local draft and marks dirty, without calling onSave', async () => {
@@ -100,7 +100,7 @@ describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
         lessonAi={FULL_LESSON_AI}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Genera contenuto IA/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Calcola stima' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Genera bozza' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Usa questa bozza' }));
@@ -123,7 +123,7 @@ describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
         lessonAi={FULL_LESSON_AI}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Genera contenuto IA/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Calcola stima' }));
     // Close from the estimate step.
     fireEvent.click(await screen.findByRole('button', { name: 'Modifica configurazione' }));
