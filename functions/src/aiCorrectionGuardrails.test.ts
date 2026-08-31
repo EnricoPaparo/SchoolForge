@@ -37,8 +37,8 @@ const VALID_CONFIG_RAW = {
   model: OPENAI_PRODUCTION_MODEL,
   environment: 'dev',
   limits: { ...DEV_LIMITS },
-  maxOperationCostMicroUsd: 250_000,
-  dailyBudgetMicroUsd: 1_000_000,
+  maxOperationCostMicroUsd: 5_000_000,
+  dailyBudgetMicroUsd: 5_000_000,
   monthlyBudgetMicroUsd: 5_000_000,
   configVersion: 'cfg-1',
   priceListVersion: DEFAULT_PRICE_LIST_VERSION,
@@ -50,8 +50,8 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
     expect(cfg).not.toBeNull();
     expect(isRealProviderEnabled(cfg)).toBe(true);
     expect(cfg!.model).toBe(OPENAI_PRODUCTION_MODEL);
-    expect(cfg!.maxOperationCostMicroUsd).toBe(250_000);
-    expect(cfg!.dailyBudgetMicroUsd).toBe(1_000_000);
+    expect(cfg!.maxOperationCostMicroUsd).toBe(5_000_000);
+    expect(cfg!.dailyBudgetMicroUsd).toBe(5_000_000);
     expect(cfg!.monthlyBudgetMicroUsd).toBe(5_000_000);
   });
 
@@ -170,8 +170,8 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
   );
 
   it.each([
-    ['maxOperationCostMicroUsd', 250_000],
-    ['dailyBudgetMicroUsd', 1_000_000],
+    ['maxOperationCostMicroUsd', 5_000_000],
+    ['dailyBudgetMicroUsd', 5_000_000],
     ['monthlyBudgetMicroUsd', 5_000_000],
   ] as const)('%s: ceiling and lower positive values pass; zero/over fail', (key, ceiling) => {
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling })).not.toBeNull();

@@ -314,8 +314,8 @@ Questi punti non erano decisi in M5-00. Il docente li ha approvati il **17 lugli
 | # | Decisione | Nota |
 |---|---|---|
 | HG-M5-1 | **APPROVATO — provider e modello** | OpenAI Responses API, Structured Outputs, snapshot pinned `gpt-5.4-nano-2026-03-17`; alias mobile vietato. |
-| HG-M5-2 | **APPROVATO — budget per operazione** | Hard ceiling 250.000 micro-USD applicato a `costReservationMicroUsd`, comprensivo dei tentativi. |
-| HG-M5-3 | **APPROVATO — budget giornaliero/mensile** | Hard ceiling 1.000.000 micro-USD/giorno UTC e 5.000.000 micro-USD/mese UTC. |
+| HG-M5-2 | **APPROVATO — budget per operazione** | Hard ceiling aggiornato a 5.000.000 micro-USD, applicato a `costReservationMicroUsd` comprensivo dei tentativi; consente batch Quality fino a 25 consegne. |
+| HG-M5-3 | **APPROVATO — budget giornaliero/mensile** | Hard ceiling 5.000.000 micro-USD/giorno UTC e 5.000.000 micro-USD/mese UTC: il limite mensile complessivo resta invariato. |
 | HG-M5-4 | **APPROVATO — retention** | `expireAt` server-generated a 30 giorni; policy TTL reale rinviata a M5-05E-2. |
 
 Questi erano i residui al termine di E-1; attivazione e smoke sono stati poi completati e Gate G7 è chiuso da M5-08. Gli altri ceiling tecnici DEV restano non aumentabili dalla configurazione.
@@ -489,7 +489,7 @@ Aggiunge il **retry applicativo unico** del provider OpenAI (con backoff, jitter
 Il docente ha approvato il 17 luglio 2026 le decisioni **HG-M5-1/2/3/4**, formalizzate in [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md). In quella fase l’approvazione era solo decisionale; rollout e chiusura sono avvenuti successivamente e sono registrati da M5-08.
 
 - **Modello/listino:** OpenAI Responses API con Structured Outputs, snapshot pinned `gpt-5.4-nano-2026-03-17`; alias mobile vietato. Listino corrente `v2-2026-07-17-hg-m5`: input 200.000 e output 1.250.000 micro-USD/M token. Il listino v1 resta soltanto storico; la config reale accetta esclusivamente la coppia approvata.
-- **Config fail-closed:** `maxOperationCostMicroUsd` ≤ 250.000, `dailyBudgetMicroUsd` ≤ 1.000.000, `monthlyBudgetMicroUsd` ≤ 5.000.000; tutti obbligatori, interi e positivi. Assenza, tipo errato, zero o superamento ceiling invalidano l’intero documento.
+- **Config fail-closed:** `maxOperationCostMicroUsd` ≤ 5.000.000, `dailyBudgetMicroUsd` ≤ 5.000.000, `monthlyBudgetMicroUsd` ≤ 5.000.000; tutti obbligatori, interi e positivi. Assenza, tipo errato, zero o superamento ceiling invalidano l’intero documento. Il riallineamento del 31 agosto 2026 elimina il falso blocco dei batch Quality senza aumentare il tetto mensile complessivo.
 - **Ordine economico:** auth/owner → config/kill switch → classificazione/limiti → grader e prenotazione comprensiva dei tentativi → hard ceiling operazione → lease → reserve atomica giornaliera+mensile → pending → provider. `operation_budget_exceeded` avviene prima di lease/ledger/provider; `daily_budget_exceeded` e `budget_exceeded` prima del provider.
 - **Ledger:** lo stesso `aiBudgetLedger/{YYYY-MM}` conserva `dailySpentMicroUsd` e prenotazioni con `dayKey` UTC. Spesa, reserved attive e pending concorrono al giorno; le pending scadute restano prudenzialmente contabilizzate. Reconcile usa giorno/mese originali anche oltre mezzanotte.
 - **Retention:** `AI_RUN_RETENTION_DAYS = 30`; `expireAt` server-generated resta testato con clock iniettato. Nessuna cancellazione avviene senza la policy TTL reale.
