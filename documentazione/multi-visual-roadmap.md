@@ -2512,7 +2512,7 @@ un normale piano `{ mode:'auto', ceiling:3 }`: il modello può restituire da
 zero a tre slot `image`, e la quota degli slot `none` viene rilasciata con la
 stessa disciplina del piano ordinario.
 
-La conferma dell'utente è unica, ma la disclosure economica mantiene separati:
+Il comando dell'utente è unico. La contabilizzazione mantiene separati:
 
 - preview, prenotazione e settlement AIGEN del contenuto;
 - `proposalCap` del piano coordinato;
@@ -2520,7 +2520,7 @@ La conferma dell'utente è unica, ma la disclosure economica mantiene separati:
 
 Non esiste una nuova chiamata provider «lezione completa», né una preview
 combinata: l'orchestrazione somma solo a posteriori gli actual cost già esposti
-dai due motori, senza presentare la stima del solo contenuto come totale. Retry
+dai motori di contenuto, mappa, pool e immagini. Retry
 e replay non aggiungono una nuova classe di costo: riusano le identità del run,
 del piano e delle promozioni; gli slot già conclusi non sono richiamati.
 

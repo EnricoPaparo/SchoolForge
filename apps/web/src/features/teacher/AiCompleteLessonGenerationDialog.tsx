@@ -8,24 +8,28 @@ import {
   newRequestId,
   missingLessonRequirements,
   DEFAULT_LESSON_DEPTH,
-  DEFAULT_POOL_MODEL_PROFILE,
+  DEFAULT_POOL_LEVEL,
   LESSON_DEPTH_OPTIONS,
   LESSON_REQUIRED_FIELD_LABELS,
   MAX_TEACHER_GUIDANCE_CHARS,
-  POOL_MODEL_PROFILE_OPTIONS,
+  MAX_POOL_TOTAL_QUESTIONS,
+  POOL_LEVEL_OPTIONS,
+  type PoolCounts,
+  type PoolLevel,
   type AiLessonCallables,
   type AiLessonContentRequest,
   type AiLessonGenerateResult,
   type AiLessonPreviewResult,
   type LessonAiContext,
   type LessonDepth,
-  type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import { validateLessonDraftResult } from '../repository/pools/aiLessonDraft.js';
 import styles from './AiCompleteLessonGenerationDialog.module.css';
 
 export type CompleteLessonProgress =
   | { stage: 'content'; label?: string }
+  | { stage: 'map'; label?: string }
+  | { stage: 'pool'; label?: string }
   | { stage: 'analysis'; label?: string }
   | { stage: 'images'; current: number; total: number; label?: string }
   | { stage: 'finalizing'; label?: string };
@@ -35,6 +39,8 @@ export type CompleteLessonRetry = (
 ) => Promise<CompleteLessonCompletionSummary>;
 
 export interface CompleteLessonCompletionSummary {
+  mapGenerated?: boolean;
+  questionsGenerated?: number;
   imagesApplied: number;
   imagesSkipped: number;
   imagesFailed: number;
@@ -43,6 +49,11 @@ export interface CompleteLessonCompletionSummary {
   message?: string;
   /** Se presente ritenta soltanto gli elementi rimasti, senza rigenerare il contenuto. */
   retry?: CompleteLessonRetry;
+}
+
+export interface CompleteLessonOptions {
+  level: PoolLevel;
+  counts: PoolCounts;
 }
 
 type Phase =
@@ -64,6 +75,10 @@ function progressLabel(progress: CompleteLessonProgress): string {
       return 'Preparazione del contenuto…';
     case 'analysis':
       return 'Analisi dei concetti e scelta delle immagini…';
+    case 'map':
+      return 'Generazione della mappa concettuale…';
+    case 'pool':
+      return 'Generazione delle domande…';
     case 'images':
       return `Generazione immagine ${progress.current} di ${progress.total}…`;
     case 'finalizing':
@@ -75,21 +90,27 @@ export function AiCompleteLessonGenerationDialog({
   context,
   callables,
   onCompleteDraft,
+  onBeforeGenerate,
   onClose,
-  defaultModelProfile = DEFAULT_POOL_MODEL_PROFILE,
 }: {
   context: LessonAiContext;
   callables: AiLessonCallables;
   onCompleteDraft: (
     body: string,
     onProgress: (progress: CompleteLessonProgress) => void,
+    options: CompleteLessonOptions,
   ) => Promise<CompleteLessonCompletionSummary>;
+  onBeforeGenerate?: () => Promise<void>;
   onClose: () => void;
-  defaultModelProfile?: PoolModelProfile;
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
-  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(defaultModelProfile);
   const [depth, setDepth] = useState<LessonDepth>(DEFAULT_LESSON_DEPTH);
+  const [level, setLevel] = useState<PoolLevel>(DEFAULT_POOL_LEVEL);
+  const [counts, setCounts] = useState<PoolCounts>({
+    aperta: 5,
+    chiusa_singola: 3,
+    chiusa_multipla: 2,
+  });
   const [guidance, setGuidance] = useState('');
   const [preview, setPreview] = useState<AiLessonPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiLessonContentRequest | null>(null);
@@ -114,13 +135,24 @@ export function AiCompleteLessonGenerationDialog({
   const missingRequirements = missingLessonRequirements(context);
   const preflightOk = missingRequirements.length === 0;
   const guidanceValid = guidance.length <= MAX_TEACHER_GUIDANCE_CHARS;
-  const canEstimate = preflightOk && guidanceValid;
+  const questionTotal = counts.aperta + counts.chiusa_singola + counts.chiusa_multipla;
+  const countsValid =
+    Object.values(counts).every((value) => Number.isInteger(value) && value >= 0) &&
+    questionTotal >= 1 &&
+    questionTotal <= MAX_POOL_TOTAL_QUESTIONS;
+  const canEstimate = preflightOk && guidanceValid && countsValid;
   const busy = phase === 'previewing' || phase === 'generating' || phase === 'completing';
+  const totalActualCostMicroUsd =
+    summary?.actualCostMicroUsd === undefined
+      ? undefined
+      : summary.actualCostMicroUsd === null || contentResult?.actualCostMicroUsd == null
+        ? null
+        : summary.actualCostMicroUsd + contentResult.actualCostMicroUsd;
 
   function currentRequest(): AiLessonContentRequest {
     return buildLessonContentRequest({
       requestId: requestIdRef.current,
-      modelProfile,
+      modelProfile: 'quality',
       depth,
       context,
       teacherGuidance: guidance,
@@ -152,6 +184,7 @@ export function AiCompleteLessonGenerationDialog({
       if (!mountedRef.current) return;
       setPreview(next);
       setPreviewRequest(request);
+      await onBeforeGenerate?.();
       // Modalità pilota automatico: la preview è un preflight tecnico senza
       // una seconda conferma. Dopo la stima parte subito il percorso completo.
       await generateAndComplete(request);
@@ -197,7 +230,7 @@ export function AiCompleteLessonGenerationDialog({
     setProgress({ stage: 'content', label: 'Salvataggio del contenuto…' });
     setPhase('completing');
     try {
-      const completed = await onCompleteDraft(validated.body, updateProgress);
+      const completed = await onCompleteDraft(validated.body, updateProgress, { level, counts });
       if (!mountedRef.current) return;
       setSummary(completed);
       setProgress(null);
@@ -224,7 +257,7 @@ export function AiCompleteLessonGenerationDialog({
     setProgress({ stage: 'content' });
     setPhase('completing');
     try {
-      const next = await onCompleteDraft(draftBody, updateProgress);
+      const next = await onCompleteDraft(draftBody, updateProgress, { level, counts });
       if (!mountedRef.current) return;
       setSummary(next);
       setProgress(null);
@@ -282,35 +315,6 @@ export function AiCompleteLessonGenerationDialog({
       {phase === 'configure' && (
         <div className={styles.config}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel} id="ai-complete-profile-label">
-              Profilo modello
-            </span>
-            <div
-              className={styles.optionRow}
-              role="radiogroup"
-              aria-labelledby="ai-complete-profile-label"
-            >
-              {POOL_MODEL_PROFILE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={modelProfile === option.value}
-                  className={`${styles.choice} ${modelProfile === option.value ? styles.choiceSelected : ''}`}
-                  onClick={() => {
-                    setModelProfile(option.value);
-                    invalidateEstimate();
-                  }}
-                >
-                  <span className={styles.choiceLabel}>{option.label}</span>
-                  <span className={styles.choiceMeta}>{option.description}</span>
-                  <span className={styles.choiceMeta}>Modello: {option.modelId}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-complete-depth-label">
               Profondità
             </span>
@@ -337,6 +341,61 @@ export function AiCompleteLessonGenerationDialog({
               ))}
             </div>
           </div>
+
+          <div className={styles.field}>
+            <span className={styles.fieldLabel} id="ai-complete-pool-level-label">
+              Difficoltà delle domande
+            </span>
+            <div
+              className={`${styles.optionRow} ${styles.depthOptions}`}
+              role="radiogroup"
+              aria-labelledby="ai-complete-pool-level-label"
+            >
+              {POOL_LEVEL_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={level === option.value}
+                  className={`${styles.choice} ${level === option.value ? styles.choiceSelected : ''}`}
+                  onClick={() => {
+                    setLevel(option.value);
+                    invalidateEstimate();
+                  }}
+                >
+                  <span className={styles.choiceLabel}>{option.label}</span>
+                  <span className={styles.choiceMeta}>Difficoltà {option.difficultyLabel}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <fieldset className={styles.questionCounts}>
+            <legend className={styles.fieldLabel}>Domande da generare</legend>
+            {(
+              [
+                ['aperta', 'Aperte'],
+                ['chiusa_singola', 'Risposta singola'],
+                ['chiusa_multipla', 'Risposta multipla'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className={styles.countField}>
+                <span>{label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_POOL_TOTAL_QUESTIONS}
+                  value={counts[key]}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setCounts((current) => ({ ...current, [key]: value }));
+                    invalidateEstimate();
+                  }}
+                />
+              </label>
+            ))}
+            <span className={styles.questionTotal}>Totale: {questionTotal}</span>
+          </fieldset>
 
           <div className={styles.field}>
             <label className={styles.fieldLabel} htmlFor="ai-complete-guidance">
@@ -383,6 +442,17 @@ export function AiCompleteLessonGenerationDialog({
             </p>
           )}
 
+          {!countsValid && (
+            <p role="alert" className="text-error">
+              Inserisci da 1 a {MAX_POOL_TOTAL_QUESTIONS} domande complessive.
+            </p>
+          )}
+
+          <p className={styles.replaceWarning}>
+            Contenuto, immagini, mappa concettuale e domande esistenti verranno completamente
+            sostituiti. I metadati della lezione resteranno invariati.
+          </p>
+
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
               Annulla
@@ -393,7 +463,7 @@ export function AiCompleteLessonGenerationDialog({
               disabled={!canEstimate}
               onClick={() => void requestPreview()}
             >
-              Genera tutto
+              Sostituisci e genera tutto
             </button>
           </div>
         </div>
@@ -408,10 +478,6 @@ export function AiCompleteLessonGenerationDialog({
             automaticamente dal modello, senza passaggi intermedi.
           </p>
           <ul className={styles.estimateList}>
-            <li>
-              Profilo:{' '}
-              {POOL_MODEL_PROFILE_OPTIONS.find((item) => item.value === modelProfile)?.label}
-            </li>
             <li>Profondità: {LESSON_DEPTH_OPTIONS.find((item) => item.value === depth)?.label}</li>
             <li>
               Token stimati contenuto: {preview.estimatedInputTokens + preview.maxOutputTokens}
@@ -467,6 +533,10 @@ export function AiCompleteLessonGenerationDialog({
         <>
           <section className={styles.summary} aria-labelledby="ai-complete-summary-title">
             <h4 id="ai-complete-summary-title">Lezione completata</h4>
+            {summary.mapGenerated && <p>Mappa concettuale generata e applicata.</p>}
+            {summary.questionsGenerated !== undefined && (
+              <p>{summary.questionsGenerated} domande generate e applicate.</p>
+            )}
             {summary.imagesApplied === 0 && summary.imagesFailed === 0 ? (
               <p>Il modello non ha individuato immagini didatticamente necessarie.</p>
             ) : (
@@ -490,11 +560,11 @@ export function AiCompleteLessonGenerationDialog({
                   : `${summary.imagesFailed} immagini non sono state completate.`}
               </p>
             )}
-            {summary.actualCostMicroUsd !== undefined && (
+            {totalActualCostMicroUsd !== undefined && (
               <p>
-                {summary.actualCostMicroUsd === null
-                  ? 'Costo esatto del completamento non disponibile.'
-                  : `Costo reale completamento: ${formatMicroUsd(summary.actualCostMicroUsd)}.`}
+                {totalActualCostMicroUsd === null
+                  ? 'Costo reale totale non completamente disponibile.'
+                  : `Costo reale totale: ${formatMicroUsd(totalActualCostMicroUsd)}.`}
               </p>
             )}
             {summary.message && <p>{summary.message}</p>}

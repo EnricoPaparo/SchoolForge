@@ -83,18 +83,15 @@ function makeCallables() {
 
 function renderDialog(
   callables: AiLessonCallables,
-  onCompleteDraft: (
-    body: string,
-    onProgress: Parameters<
-      ComponentProps<typeof AiCompleteLessonGenerationDialog>['onCompleteDraft']
-    >[1],
-  ) => Promise<CompleteLessonCompletionSummary>,
+  onCompleteDraft: ComponentProps<typeof AiCompleteLessonGenerationDialog>['onCompleteDraft'],
   onClose: () => void = vi.fn(),
+  onBeforeGenerate: () => Promise<void> = async () => undefined,
 ) {
   render(
     <AiCompleteLessonGenerationDialog
       context={CONTEXT}
       callables={callables}
+      onBeforeGenerate={onBeforeGenerate}
       onCompleteDraft={onCompleteDraft}
       onClose={onClose}
     />,
@@ -112,13 +109,13 @@ async function goToReview(
   }),
 ) {
   renderDialog(callables, onCompleteDraft);
-  fireEvent.click(screen.getByRole('button', { name: 'Genera tutto' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
   await Promise.resolve();
   await Promise.resolve();
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
-  it('riusa configurazione e payload contenuto, senza chiedere la quantità immagini', async () => {
+  it('usa Quality invisibile e propone 5/3/2 domande equilibrate', async () => {
     const { callables, previewRequests, generateRequests } = makeCallables();
     renderDialog(callables, async () => ({
       imagesApplied: 0,
@@ -126,7 +123,17 @@ describe('AiCompleteLessonGenerationDialog', () => {
       imagesFailed: 0,
     }));
 
-    expect(screen.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe(
+    expect(screen.queryByText('Profilo modello')).toBeNull();
+    expect(screen.getByRole('spinbutton', { name: 'Aperte' })).toHaveProperty('value', '5');
+    expect(screen.getByRole('spinbutton', { name: 'Risposta singola' })).toHaveProperty(
+      'value',
+      '3',
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Risposta multipla' })).toHaveProperty(
+      'value',
+      '2',
+    );
+    expect(screen.getByRole('radio', { name: /Equilibrato/ }).getAttribute('aria-checked')).toBe(
       'true',
     );
     expect(screen.getByRole('radio', { name: /Completa/ }).getAttribute('aria-checked')).toBe(
@@ -135,11 +142,33 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(screen.queryByLabelText('Quantità')).toBeNull();
     expect(screen.queryByText(/Auto \(1/)).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Genera tutto' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(previewRequests).toHaveLength(1);
     expect(generateRequests).toHaveLength(1);
     expect(generateRequests[0]).toEqual(previewRequests[0]);
+    expect(generateRequests[0]?.modelProfile).toBe('quality');
+  });
+
+  it('pulisce dopo la preview e prima della generazione a pagamento', async () => {
+    const { callables } = makeCallables();
+    const onBeforeGenerate = vi.fn(async () => undefined);
+    renderDialog(
+      callables,
+      async () => ({ imagesApplied: 0, imagesSkipped: 0, imagesFailed: 0 }),
+      vi.fn(),
+      onBeforeGenerate,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+    await screen.findByText('Il modello non ha individuato immagini didatticamente necessarie.');
+    expect(onBeforeGenerate).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(callables.preview).mock.invocationCallOrder[0]).toBeLessThan(
+      onBeforeGenerate.mock.invocationCallOrder[0]!,
+    );
+    expect(onBeforeGenerate.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(callables.generate).mock.invocationCallOrder[0]!,
+    );
   });
 
   it('delega il draft validato e mostra il progresso immagini accessibile', async () => {
@@ -160,6 +189,10 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(onCompleteDraft).toHaveBeenCalledWith(
       '## Reti\n\nContenuto completo.',
       expect.any(Function),
+      {
+        level: 'balanced',
+        counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
+      },
     );
 
     resolveCompletion({ imagesApplied: 3, imagesSkipped: 0, imagesFailed: 0 });
@@ -221,7 +254,7 @@ async function goToReviewWithClose(
   onClose: () => void,
 ) {
   renderDialog(callables, onCompleteDraft, onClose);
-  fireEvent.click(screen.getByRole('button', { name: 'Genera tutto' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
   await Promise.resolve();
   await Promise.resolve();
 }
