@@ -105,7 +105,8 @@ import { LessonEnrichmentDialog } from './LessonEnrichmentDialog.js';
 import { createMultiVisualClient } from '../repository/programs/multiVisualClient.js';
 import { createTeacherMultiVisualReader } from '../repository/programs/multiVisualReadClients.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
-import { deletePool } from '../repository/pools/poolEditorService.js';
+import { deletePool, savePool } from '../repository/pools/poolEditorService.js';
+import { TotalLessonGenerationDialog } from './TotalLessonGenerationDialog.js';
 import {
   MarkdownBodyEditor,
   LessonMetadataForm,
@@ -350,6 +351,7 @@ export function CourseWorkspace({
   const [menuOpen, setMenuOpen] = useState(false);
   const [visualDialogOpen, setVisualDialogOpen] = useState(false);
   const [multiVisualDialogOpen, setMultiVisualDialogOpen] = useState(false);
+  const [completeLessonDialogOpen, setCompleteLessonDialogOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -482,6 +484,22 @@ export function CourseWorkspace({
       : null;
   const selectedUda =
     selection.kind === 'uda' ? (tree?.udas.find((u) => u.dir === selection.udaDir) ?? null) : null;
+  const selectedLessonAiContext: LessonAiButtonContext | null = selectedLesson
+    ? {
+        titolo: lessonMetadata.titolo ?? selectedLesson.titolo ?? null,
+        sottotitolo: lessonMetadata.sottotitolo ?? null,
+        difficolta: lessonMetadata.difficolta ?? null,
+        udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
+        concettiChiave: lessonMetadata.concettiChiave,
+        obiettivi: lessonMetadata.obiettivi,
+        udaContext: buildLessonUdaContext({
+          lessons: tree?.lessons ?? [],
+          udaDir: selectedLesson.udaDir,
+          uda: tree?.udas.find((u) => u.dir === selectedLesson.udaDir) ?? null,
+          currentLessonId: selectedLesson.id,
+        }),
+      }
+    : null;
 
   useEffect(() => {
     setVisualDialogOpen(false);
@@ -1588,72 +1606,76 @@ export function CourseWorkspace({
     });
   }
 
-  function handleClearLesson(lessonId: string) {
-    if (!card.activeImportId) return;
+  async function clearLessonData(lessonId: string): Promise<void> {
+    if (!card.activeImportId) throw new Error('Importazione attiva non disponibile.');
     const importId = card.activeImportId;
     const lesson = tree?.lessons.find((l) => l.id === lessonId);
-    if (!lesson) return;
+    if (!lesson) throw new Error('Lezione non trovata.');
+    if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
+      await deletePool({
+        programId: card.programId,
+        importId,
+        lessonId,
+        ownerUid,
+        db,
+        storage,
+      });
+    }
+    if (lesson.visual || lesson.visuals) {
+      await createVisualLifecycleClient(functions).cleanupForDelete({
+        programId: card.programId,
+        importId,
+        lessonIds: [lessonId],
+      });
+    }
+    await updateLessonMarkdownBody({
+      programId: card.programId,
+      importId,
+      lessonId,
+      body: '',
+      ownerUid,
+      db,
+      storage,
+    });
+    await clearLessonContentState({
+      programId: card.programId,
+      importId,
+      lessonId,
+      ownerUid,
+      db,
+    });
+    if (!mountedRef.current) return;
+    const next: Tree = {
+      udas: tree?.udas ?? [],
+      lessons: (tree?.lessons ?? []).map((l) =>
+        l.id === lessonId
+          ? {
+              ...l,
+              poolStatus: 'absent' as const,
+              questionCount: 0,
+              poolStorageRef: null,
+              completed: false,
+              conceptMapMarkdown: undefined,
+              visual: undefined,
+              visuals: undefined,
+            }
+          : l,
+      ),
+    };
+    setTree(next);
+    patchCardCounts(next);
+    setLessonContent('');
+    setContentDirty(false);
+    setPoolDirty(false);
+    setConceptMapDirty(false);
+    setEditingContent(false);
+    setContentStatus({ busy: false, error: null, saved: true });
+  }
+
+  function handleClearLesson(lessonId: string) {
     void withBusy(async () => {
       try {
-        if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
-          await deletePool({
-            programId: card.programId,
-            importId,
-            lessonId,
-            ownerUid,
-            db,
-            storage,
-          });
-        }
-        if (lesson.visual || lesson.visuals) {
-          await createVisualLifecycleClient(functions).cleanupForDelete({
-            programId: card.programId,
-            importId,
-            lessonIds: [lessonId],
-          });
-        }
-        await updateLessonMarkdownBody({
-          programId: card.programId,
-          importId,
-          lessonId,
-          body: '',
-          ownerUid,
-          db,
-          storage,
-        });
-        await clearLessonContentState({
-          programId: card.programId,
-          importId,
-          lessonId,
-          ownerUid,
-          db,
-        });
-        if (!mountedRef.current) return;
-        const next: Tree = {
-          udas: tree?.udas ?? [],
-          lessons: (tree?.lessons ?? []).map((l) =>
-            l.id === lessonId
-              ? {
-                  ...l,
-                  poolStatus: 'absent' as const,
-                  questionCount: 0,
-                  poolStorageRef: null,
-                  completed: false,
-                  conceptMapMarkdown: undefined,
-                  visual: undefined,
-                  visuals: undefined,
-                }
-              : l,
-          ),
-        };
-        setTree(next);
-        patchCardCounts(next);
-        setLessonContent('');
-        setContentDirty(false);
-        setPoolDirty(false);
-        setConceptMapDirty(false);
-        setEditingContent(false);
-        setContentStatus({ busy: false, error: null, saved: true });
+        await clearLessonData(lessonId);
         closeDialog();
       } catch (err) {
         if (mountedRef.current)
@@ -2319,6 +2341,25 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
+                    disabled={
+                      lessonLoading ||
+                      lessonError !== null ||
+                      lessonContent === null ||
+                      anyDirty ||
+                      editingContent ||
+                      editingInfo
+                    }
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setCompleteLessonDialogOpen(true);
+                    }}
+                  >
+                    <IconSparkles size={15} />
+                    Generazione completa IA
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     aria-label="Arricchisci"
                     aria-describedby={
                       visualBlockedReason
@@ -2401,24 +2442,7 @@ export function CourseWorkspace({
             <LessonDetail
               lesson={selectedLesson}
               metadata={lessonMetadata}
-              lessonAi={{
-                titolo: lessonMetadata.titolo ?? selectedLesson.titolo ?? null,
-                sottotitolo: lessonMetadata.sottotitolo ?? null,
-                difficolta: lessonMetadata.difficolta ?? null,
-                // UDA title già in memoria dall'albero: nessuna nuova query.
-                udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
-                concettiChiave: lessonMetadata.concettiChiave,
-                obiettivi: lessonMetadata.obiettivi,
-                // AIGEN-CONTEXT-01 + STRUCTURE-IMPORT-03: indice e contesto
-                // generale dell'UDA dallo stesso albero già caricato
-                // (`tree.lessons` è già in ordine canonico): zero nuove letture.
-                udaContext: buildLessonUdaContext({
-                  lessons: tree?.lessons ?? [],
-                  udaDir: selectedLesson.udaDir,
-                  uda: tree?.udas.find((u) => u.dir === selectedLesson.udaDir) ?? null,
-                  currentLessonId: selectedLesson.id,
-                }),
-              }}
+              lessonAi={selectedLessonAiContext!}
               content={lessonContent}
               loading={lessonLoading}
               error={lessonError}
@@ -2440,14 +2464,6 @@ export function CourseWorkspace({
               contentStatus={contentStatus}
               infoStatus={infoStatus}
               onSaveContent={(body) => handleSaveContent(selectedLesson, body)}
-              onPersistGeneratedContent={(body) =>
-                handlePersistGeneratedContent(selectedLesson, body)
-              }
-              onCompleteContent={() => {
-                setEditingContent(false);
-                setContentDirty(false);
-                setContentStatus({ busy: false, error: null, saved: true });
-              }}
               onSaveInfo={(fields) => handleSaveInfo(selectedLesson, fields)}
               onCancelContent={() => {
                 setEditingContent(false);
@@ -2474,6 +2490,45 @@ export function CourseWorkspace({
               }}
               onCloseMultiVisualDialog={() => setMultiVisualDialogOpen(false)}
               onVisualsChange={(visuals) => handleVisualsChange(selectedLesson.id, visuals)}
+            />
+          )}
+          {completeLessonDialogOpen && selectedLesson && card.activeImportId && (
+            <TotalLessonGenerationDialog
+              key={selectedLesson.id}
+              context={{ ...selectedLessonAiContext!, currentBody: lessonContent ?? '' }}
+              identity={{
+                programId: card.programId,
+                importId: card.activeImportId,
+                lessonId: selectedLesson.id,
+              }}
+              onClear={() => clearLessonData(selectedLesson.id)}
+              onPersistBody={(body) => handlePersistGeneratedContent(selectedLesson, body)}
+              onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
+              onSavePool={async (pool) => {
+                await savePool({
+                  programId: card.programId,
+                  importId: card.activeImportId!,
+                  lessonId: selectedLesson.id,
+                  pool,
+                  ownerUid,
+                  db,
+                  storage,
+                });
+                handlePoolCountChange(selectedLesson.id, pool.questions.length, 'valid');
+              }}
+              onRefreshVisuals={async () => {
+                const visuals = await readAuthoritativePrivateVisuals({
+                  programId: card.programId,
+                  importId: card.activeImportId!,
+                  lessonId: selectedLesson.id,
+                  db,
+                });
+                handleVisualsChange(selectedLesson.id, visuals);
+              }}
+              onClose={() => {
+                setCompleteLessonDialogOpen(false);
+                menuTriggerRef.current?.focus();
+              }}
             />
           )}
         </div>
@@ -2984,8 +3039,6 @@ function LessonDetail({
   contentStatus,
   infoStatus,
   onSaveContent,
-  onPersistGeneratedContent,
-  onCompleteContent,
   onSaveInfo,
   onCancelContent,
   onCancelInfo,
@@ -3024,8 +3077,6 @@ function LessonDetail({
   contentStatus: EditStatus;
   infoStatus: EditStatus;
   onSaveContent: (body: string) => void;
-  onPersistGeneratedContent: (body: string) => Promise<void>;
-  onCompleteContent: () => void;
   onSaveInfo: (fields: LessonMetadata) => void;
   onCancelContent: () => void;
   onCancelInfo: () => void;
@@ -3346,17 +3397,6 @@ function LessonDetail({
             onCancel={onCancelContent}
             onDirtyChange={onContentDirtyChange}
             lessonAi={lessonAi}
-            {...(importId
-              ? {
-                  completeLesson: {
-                    identity: { programId, importId, lessonId: lesson.id },
-                    existingVisualCount: lesson.visuals?.items.length ?? (manifest ? 1 : 0),
-                    onPersistBody: onPersistGeneratedContent,
-                    onRefreshVisuals: refreshMultiVisuals,
-                    onFinished: onCompleteContent,
-                  },
-                }
-              : {})}
           />
         ) : (
           activeTab === 'contenuto' && (

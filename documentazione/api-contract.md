@@ -1389,8 +1389,11 @@ Non introduce API Firebase. È una composizione client dei contratti esistenti:
 
 ```ts
 type CompleteLessonPhase =
+  | 'clearing'
   | 'generating_content'
   | 'saving_content'
+  | 'generating_map'
+  | 'generating_pool'
   | 'planning_images'
   | 'generating_images'
   | 'refreshing'
@@ -1399,17 +1402,21 @@ type CompleteLessonPhase =
 
 type CompleteLessonResult = {
   body: string;
+  mapGenerated: boolean;
+  questionsGenerated: number;
   appliedImages: 0 | 1 | 2 | 3;
   partial: boolean;
 };
 ```
 
-L'ordine vincolante è `aiContentGenerate(kind:'lesson')` → salvataggio
-canonico del corpo → `aiVisualPlanAuthorize` con
+L'ordine vincolante è preview/validazione → cleanup canonico della lezione
+(metadati esclusi) → `aiContentGenerate(kind:'lesson')` → salvataggio canonico
+del corpo → generazione/salvataggio mappa → generazione/sostituzione pool →
+`aiVisualPlanAuthorize` con
 `quantity:{mode:'auto',ceiling:3}` e `replacementAssetId:null` →, per ogni slot
 `image`, `aiVisualPlanGenerateSlot` → `aiVisualPlanPromoteSlot(mode:'add')` →
-refresh autorevole. Il flusso è rifiutato dal client se il manifest corrente
-contiene già immagini.
+refresh autorevole. Le immagini correnti vengono eliminate dal cleanup, quindi
+non possono restare ancorate al vecchio corpo.
 
 La stessa operazione logica conserva la `requestId` del contenuto, la
 `requestId` del piano e una `promotionRequestId` stabile per ciascuno slot. Un
@@ -1417,10 +1424,10 @@ retry riparte dalla prima fase incompleta e non rigenera né ripromuove risultat
 già conclusi. `partial:true` significa che il corpo è stato salvato ma zero o
 più immagini non sono state applicate; non autorizza rollback impliciti.
 
-La conferma economica è unica ma separa il costo AIGEN del contenuto dal costo
-MULTI-VISUAL di proposta e immagini. Nessun importo del solo contenuto può
-essere etichettato come totale. Non esistono nuove callable, nuovi payload
-server, nuovi provider o nuove collezioni per questa feature.
+Il comando utente è unico. Il riepilogo somma gli actual cost disponibili di
+contenuto, mappa, pool, proposta visuale e immagini; se una componente non è
+conoscibile il totale è dichiarato incompleto. Non esistono nuove callable,
+nuovi payload server, provider o collezioni per questa feature.
 
 ### Client e refresh autorevole
 

@@ -487,6 +487,26 @@ describe('CourseWorkspace — selection', () => {
     expect(screen.queryByText('Stima della proposta testuale')).toBeNull();
   });
 
+  it('apre la generazione totale dalle Azioni lezione senza eseguire chiamate IA', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Completa' })]);
+    mockFetchLessonContent.mockResolvedValue('# Completa\n\n## Sezione\n\nCorpo.');
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Completa' }));
+    await screen.findByTestId('md');
+
+    clickMenuAction('Azioni lezione', 'Generazione completa IA');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Genera lezione completa con IA' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sostituisci e genera tutto' })).toBeTruthy();
+    expect(screen.queryByText('Profilo modello')).toBeNull();
+    expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
+    expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
+  });
+
   it('ignores an out-of-order stale fetch: the last selected lesson wins', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([

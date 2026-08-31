@@ -533,26 +533,26 @@ Tutti gli esempi restano **ordini di grandezza sotto** il cap per operazione (25
 
 ### 8.1 Generazione lezione completa IA
 
-La **Generazione lezione completa IA** è una variante di orchestrazione web,
-non un nuovo motore. Il pulsante esistente diventa «Genera contenuto IA» e il
-nuovo «Genera completa con IA» riusa, nello stesso dialog, la configurazione e
-la stima tecnica AIGEN già disponibili. Il click sul comando è l'unica
-conferma: dopo il preflight il flusso parte automaticamente e prosegue con:
+La **Generazione completa IA** è una variante di orchestrazione web, non un
+nuovo motore. Il comando vive nelle **Azioni lezione**; «Genera contenuto IA»
+resta nell'editor per il solo corpo. Il profilo è fissato internamente a
+**Quality** per tutte le fasi. Il docente sceglie profondità, difficoltà e
+quantità delle domande (default 5 aperte, 3 singole, 2 multiple), poi impartisce
+un unico comando. Dopo il preflight senza scritture il flusso prosegue con:
 
-1. generazione e validazione fail-closed del contenuto;
-2. salvataggio canonico del corpo della lezione;
-3. autorizzazione del piano MULTI-VISUAL con quantità `{ mode: 'auto', ceiling: 3 }`;
-4. scelta del modello fra **zero e tre** immagini didatticamente utili;
-5. generazione e promozione sequenziale degli slot scelti;
-6. refresh autorevole della lezione e riepilogo finale.
+1. pulizia canonica di contenuto, mappa, pool e immagini, preservando tutti i metadati;
+2. generazione, validazione e salvataggio canonico del nuovo contenuto;
+3. generazione e salvataggio della mappa concettuale;
+4. generazione e sostituzione del pool configurato;
+5. autorizzazione del piano MULTI-VISUAL `{ mode: 'auto', ceiling: 3 }`;
+6. scelta, generazione e promozione di **zero-tre** immagini utili;
+7. refresh autorevole e riepilogo finale con costi effettivi disponibili.
 
 Il salvataggio precede obbligatoriamente le immagini: il piano visuale rilegge
 il corpo autorevole e lega proposta, ancore e promozioni al suo
 `sourceBodyHash`. Un draft locale non può quindi alimentare direttamente il
-piano. La prima versione è disponibile soltanto quando la lezione ha **zero
-immagini preesistenti**: sostituire il corpo renderebbe potenzialmente obsolete
-immagini e ancore già approvate, e la variante semplice non le elimina né le
-sostituisce implicitamente.
+piano. Le immagini preesistenti vengono eliminate dal cleanup esplicito prima
+della generazione: non sopravvivono asset o ancore riferiti al vecchio corpo.
 
 L'utente riceve **una sola conferma economica implicita nel comando**. La schermata distingue però in
 modo esplicito: (a) stima e tetto del contenuto, restituiti dalla preview AIGEN;
@@ -561,14 +561,12 @@ contabilizzato dal runtime MULTI-VISUAL. Il valore del contenuto non è mai
 presentato come totale complessivo. Non viene aggiunta una preview combinata.
 
 L'orchestrazione è a esito parziale e non promette atomicità attraverso
-provider, Storage e Firestore. Se il contenuto non è generato non parte alcun
-salvataggio; se il salvataggio fallisce si ritenta quel salvataggio senza
-rigenerare; se il testo è salvato ma il piano fallisce, il testo resta
-autorevole e si ritenta soltanto il piano. Gli slot indipendenti continuano e
-si ritentano singolarmente; un errore incerto, di budget o di mutazione esterna
-arresta invece ogni nuova spesa. Le immagini già promosse non vengono rimosse
-da un rollback. Il riepilogo dichiara sempre «contenuto salvato» e il numero di
-immagini applicate.
+provider, Storage e Firestore. Preview e validazione precedono la pulizia; una
+volta iniziata la sostituzione, ogni fase conclusa viene memorizzata nel client
+del dialog e il retry riparte dalla prima fase incompleta senza ripetere una
+chiamata già pagata. Un errore incerto, di budget o di mutazione esterna arresta
+ogni nuova spesa. Il riepilogo dichiara mappa, numero di domande e immagini
+applicate.
 
 `requestId` del contenuto e del piano e `promotionRequestId` per slot restano
 stabili durante retry e replay. Il flusso riusa esclusivamente
