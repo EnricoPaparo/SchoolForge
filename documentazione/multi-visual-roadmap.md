@@ -2524,6 +2524,12 @@ dai motori di contenuto, mappa, pool e immagini. Retry
 e replay non aggiungono una nuova classe di costo: riusano le identità del run,
 del piano e delle promozioni; gli slot già conclusi non sono richiamati.
 
+La callable binaria `aiVisualPlanGenerateSlot` usa **512 MiB**, timeout 120 s e
+concorrenza per istanza pari a **1**. Il dimensionamento deriva dai picchi reali
+DEV di 258–277 MiB osservati durante provider + normalizzazione WebP: il limite
+precedente di 256 MiB poteva terminare il processo dopo il primo slot. Le altre
+callable restano al profilo ordinario; non viene introdotto alcun costo passivo.
+
 La prima versione richiede zero immagini preesistenti, quindi usa soltanto
 promozioni `add` e non sostiene costi di rimozione o sostituzione. Non aggiunge
 listener, polling, scheduler, Function, Rule, documento tecnico o provider.
