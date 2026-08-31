@@ -158,8 +158,8 @@ Cause concorrenti, in ordine di peso stimato:
 
 | # | Decisione | Blocca | Stato |
 |---|---|---|---|
-| D1 | Tetto di costo per operazione: resta condiviso con la correzione IA o diventa dedicato alla generazione di contenuti? | LESSON-DEPTH-03 | **chiusa:** resta condiviso a 0,25 USD. |
-| D2 | Nuovi valori di tetto per operazione, budget giornaliero e mensile. | LESSON-DEPTH-03 | **chiusa:** restano 0,25 / 1 / 5 USD; coerenti con i costi reali. |
+| D1 | Tetto di costo per operazione: resta condiviso con la correzione IA o diventa dedicato alla generazione di contenuti? | LESSON-DEPTH-03 | **chiusa:** resta condiviso; dal 31 agosto 2026 il ceiling è 5 USD. |
+| D2 | Nuovi valori di tetto per operazione, budget giornaliero e mensile. | LESSON-DEPTH-03 | **chiusa:** 5 / 5 / 5 USD; il budget mensile complessivo resta invariato. |
 | D3 | Il ciclo di misura viene eseguito dal docente in locale (l'ambiente di sviluppo non ha `OPENAI_API_KEY`). | LESSON-DEPTH-02 | **chiusa:** tuning e holdout eseguiti localmente dal docente. |
 | D4 | `Approfondita` diventa il default della UI, oppure resta `Completa` con una descrizione più esplicita? | LESSON-DEPTH-04 | **chiusa:** `Completa` resta il default; descrizioni e ruolo dei metadati resi espliciti. |
 
@@ -350,8 +350,8 @@ Oggi il vincolo non è tecnico ma economico, ed è a tre livelli:
 
 | Limite | Valore | Alzabile da Firestore | Note |
 |---|---|---|---|
-| `MAX_OPERATION_COST_MICRO_USD` | 0,25 USD | no, solo abbassabile | condiviso con la correzione IA |
-| `MAX_DAILY_BUDGET_MICRO_USD` | 1 USD | no, solo abbassabile | |
+| `MAX_OPERATION_COST_MICRO_USD` | 5 USD | no, solo abbassabile | condiviso con la correzione IA |
+| `MAX_DAILY_BUDGET_MICRO_USD` | 5 USD | no, solo abbassabile | |
 | `MAX_MONTHLY_BUDGET_MICRO_USD` | 5 USD | no, solo abbassabile | **il muro vero** |
 
 Tre fatti da tenere fermi:

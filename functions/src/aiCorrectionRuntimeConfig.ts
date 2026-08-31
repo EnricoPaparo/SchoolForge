@@ -46,9 +46,17 @@ export interface AiRuntimeLimits {
   maxApplicationRetries: number;
 }
 
-/** Hard ceiling approvati HG-M5-2/3, non aumentabili via Firestore. */
-export const MAX_OPERATION_COST_MICRO_USD = 250_000;
-export const MAX_DAILY_BUDGET_MICRO_USD = 1_000_000;
+/**
+ * Hard ceiling approvati per il runtime, non aumentabili via Firestore.
+ *
+ * Il tetto precedente di 0,25 USD per operazione era incompatibile con un
+ * normale batch Quality: la prenotazione crash-safe copre fino a due tentativi
+ * per consegna e tre sole consegne potevano già superarlo. Operazione e giorno
+ * possono ora usare l'intero budget mensile, che resta invariato a 5 USD e
+ * continua a essere l'hard stop economico complessivo.
+ */
+export const MAX_OPERATION_COST_MICRO_USD = 5_000_000;
+export const MAX_DAILY_BUDGET_MICRO_USD = 5_000_000;
 export const MAX_MONTHLY_BUDGET_MICRO_USD = 5_000_000;
 
 /**
@@ -62,9 +70,9 @@ export interface AiRuntimeConfig {
   model: string;
   environment: 'dev';
   limits: AiRuntimeLimits;
-  /** Limite per singola operazione, positivo e ≤ 0,25 USD. */
+  /** Limite per singola operazione, positivo e ≤ 5 USD. */
   maxOperationCostMicroUsd: number;
-  /** Budget giornaliero UTC, positivo e ≤ 1 USD. */
+  /** Budget giornaliero UTC, positivo e ≤ 5 USD. */
   dailyBudgetMicroUsd: number;
   /** Budget mensile UTC, positivo e ≤ 5 USD. */
   monthlyBudgetMicroUsd: number;

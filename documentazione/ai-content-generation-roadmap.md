@@ -94,7 +94,7 @@ Ispezione read-only dell'infrastruttura esistente. Percorsi verificati il 23 lug
 ### 1.4 Limiti tecnici già presenti nel repository (vincolanti)
 
 - **Documento Firestore ≤ 1 MiB.** Il corpo lezione condivide il documento `publicLessons`/`lessons`: il cap riusato è `MAX_LESSON_CONTENT_BYTES = 700_000` byte UTF-8.
-- **Costo per operazione ≤ 250_000 µUSD (0,25 USD)**, budget giornaliero ≤ 1 USD, mensile ≤ 5 USD (`aiCorrectionRuntimeConfig`). Non aumentabili via Firestore.
+- **Costo per operazione ≤ 5 USD**, budget giornaliero ≤ 5 USD e mensile ≤ 5 USD (`aiCorrectionRuntimeConfig`). Il budget mensile resta l'hard stop complessivo; i tetti operazione/giorno sono stati riallineati il 31 agosto 2026 per consentire batch Quality fino a 25 consegne senza confondere la prenotazione prudenziale con il costo reale. Non aumentabili via Firestore.
 - **Un solo retry applicativo** (`maxApplicationRetries = 1`) e **timeout 60 s** per tentativo.
 - **Pool v2**: difficoltà intera 1–5, `maxPoints === difficolta`, no `peso`, `maxCharacters` solo aperte.
 

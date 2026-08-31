@@ -2733,6 +2733,36 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(grade).not.toHaveBeenCalled();
   });
 
+  it('allows 25 Quality submissions under the unchanged 5 USD monthly hard stop', async () => {
+    const store = new FakeStore();
+    const submissionIds = Array.from({ length: 25 }, (_, index) => {
+      const student = `quality-${index + 1}`;
+      seedOneOpenOneClosed(store, student);
+      return sid(student);
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+    const grader = {
+      ...realGrader(grade, { maxOutput: 8_000, inputBound: 10_000 }),
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+    };
+    const deps = openaiDeps(store, grader, NOW);
+    deps.loadRuntimeConfig = async () => ({
+      ...ENABLED_RUNTIME_CONFIG,
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      maxOperationCostMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: FIVE_USD,
+      monthlyBudgetMicroUsd: FIVE_USD,
+    });
+
+    const result = await runExecution(req(submissionIds), deps);
+
+    // 25 × 2 tentativi × (10k input × $1/M + 8k output × $6/M) = $2,90.
+    expect(result.costReservationMicroUsd).toBe(2_900_000);
+    expect(result.costReservationMicroUsd).toBeLessThanOrEqual(FIVE_USD);
+    expect(grade).toHaveBeenCalledTimes(25);
+  });
+
   it('returns daily_budget_exceeded before provider calls when the UTC day is exhausted', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
