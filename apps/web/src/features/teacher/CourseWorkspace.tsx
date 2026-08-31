@@ -2349,7 +2349,9 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => openDialog({ kind: 'clearLesson', lessonId: selectedLesson!.id })}
+                    onClick={() =>
+                      openDialog({ kind: 'clearLesson', lessonId: selectedLesson!.id })
+                    }
                   >
                     <IconTrash size={15} />
                     Pulisci lezione
