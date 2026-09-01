@@ -315,14 +315,15 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect((await leaseRef(lessonId).get()).exists).toBe(false);
     expect(await ledgerReservationCount()).toBe(0);
 
-    const replay = await call(payload, Date.now(), {
-      mode: 'disabled',
-      callProviderOverride: async () => {
-        providerCalls += 1;
-        throw new Error('provider non deve essere richiamato');
-      },
-    });
-    expect(replay.status).toBe('abandoned');
+    await expect(
+      call(payload, Date.now(), {
+        mode: 'disabled',
+        callProviderOverride: async () => {
+          providerCalls += 1;
+          throw new Error('provider non deve essere richiamato');
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'provider_unavailable' });
     expect(providerCalls).toBe(1);
   });
 

@@ -55,6 +55,7 @@ import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/
 import {
   AiContentError,
   computeBudgetReservationKey,
+  computeOpaqueRunId,
   resolveAiContentMode,
   resolveContentModel,
   timestampToMillis,
@@ -811,6 +812,32 @@ export async function authorizeVisualPlanForOwner(params: {
       );
     }
     if (!isUnsettled(existing.status)) {
+      // Un fallimento fatturabile della proposta chiude il piano come
+      // `abandoned` per liberare lease e budget. Senza questo controllo, il
+      // replay di quel record sarebbe indistinguibile da una decisione valida
+      // "nessuna immagine" e la UI mentirebbe. La lettura aggiuntiva avviene
+      // soltanto per l'ambiguo `abandoned` senza slot, prima di config, lezione,
+      // lease o provider.
+      if (existing.status === 'abandoned' && existing.slots.length === 0) {
+        const proposalRunSnap = await db
+          .doc(`aiContentRuns/${computeOpaqueRunId(ownerUid, input.requestId)}`)
+          .get();
+        if (proposalRunSnap.exists) {
+          const proposalRun = parseStoredRunDocument(proposalRunSnap.data());
+          if (!proposalRun || proposalRun.kind !== 'visual_plan_proposal') {
+            throw new AiVisualMultiError(
+              'corrupted_state',
+              'Run della proposta visiva in stato incoerente.',
+            );
+          }
+          if (proposalRun.status === 'failed') {
+            throw new AiContentError(
+              'provider_unavailable',
+              'La proposta visiva precedente non è stata completata.',
+            );
+          }
+        }
+      }
       // Percorso rapido: il piano è già risolto, restituito byte-per-byte.
       return existing;
     }

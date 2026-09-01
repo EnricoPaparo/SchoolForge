@@ -208,6 +208,18 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(screen.queryByRole('button', { name: 'Riprova elementi mancanti' })).toBeNull();
   });
 
+  it('non descrive un piano visuale fallito come nessuna immagine necessaria', async () => {
+    const { callables } = makeCallables();
+    await goToReview(callables, async () => {
+      throw { details: { code: 'provider_invalid_output' } };
+    });
+
+    expect(await screen.findByText('La risposta generata non è valida. Riprova.')).toBeTruthy();
+    expect(
+      screen.queryByText('Il modello non ha individuato immagini didatticamente necessarie.'),
+    ).toBeNull();
+  });
+
   it('ritenta solo il residuo fornito dal riepilogo senza rigenerare il contenuto', async () => {
     const { callables } = makeCallables();
     const retry = vi.fn(async (onProgress) => {

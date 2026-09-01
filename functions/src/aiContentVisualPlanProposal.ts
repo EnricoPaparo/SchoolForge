@@ -26,6 +26,7 @@ import {
   MAX_VISUAL_CAPTION_CHARS,
   MAX_VISUAL_RATIONALE_CHARS,
   MAX_VISUAL_REASON_CHARS,
+  MAX_VISUAL_SUBJECT_CHARS,
   assertProposalField,
   assertValidVisualSubject,
 } from './aiContentVisualProposal.js';
@@ -59,6 +60,61 @@ export type VisualPlanProposalDecision = VisualPlanProposalNone | VisualPlanProp
 
 const NONE_KEYS = ['decision', 'reason'] as const;
 const IMAGE_KEYS = ['decision', 'subject', 'rationale', 'anchor', 'caption', 'altText'] as const;
+
+/**
+ * Ripara soltanto un lieve sforamento del `subject` grezzo del provider.
+ *
+ * Il campo serve come prompt visivo, non come contenuto editoriale mostrato
+ * all'utente. Un modello può rispettare forma e semantica ma superare di poco
+ * il tetto non esprimibile nello Structured Output supportato. In quel caso
+ * conserviamo una frase completa quando possibile, altrimenti tagliamo
+ * all'ultimo confine di parola e aggiungiamo un'ellissi. Sforamenti oltre il
+ * 50% restano invalidi: non trasformiamo un output fuori controllo in una
+ * proposta apparentemente valida.
+ *
+ * La riparazione vive esclusivamente sull'envelope grezzo. Il parser dei run
+ * persistiti continua a essere fail-closed e non normalizza mai dati salvati.
+ */
+function repairProviderSubject(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const points = [...value];
+  if (points.length <= MAX_VISUAL_SUBJECT_CHARS) return value;
+  if (points.length > Math.floor(MAX_VISUAL_SUBJECT_CHARS * 1.5)) return value;
+
+  const prefix = points.slice(0, MAX_VISUAL_SUBJECT_CHARS);
+  const minimumUsefulCut = Math.floor(MAX_VISUAL_SUBJECT_CHARS * 0.55);
+  let cut = -1;
+  for (let index = prefix.length - 1; index >= minimumUsefulCut; index -= 1) {
+    if (/[.!?]/u.test(prefix[index] ?? '')) {
+      cut = index + 1;
+      break;
+    }
+  }
+  if (cut < 0) {
+    for (let index = prefix.length - 2; index >= minimumUsefulCut; index -= 1) {
+      if (/\s/u.test(prefix[index] ?? '')) {
+        cut = index;
+        break;
+      }
+    }
+  }
+  if (cut < 0) return value;
+
+  let repaired = prefix.slice(0, cut).join('').trimEnd();
+  const lastOpenLabel = repaired.lastIndexOf('«');
+  const lastClosedLabel = repaired.lastIndexOf('»');
+  if (lastOpenLabel > lastClosedLabel) repaired = repaired.slice(0, lastOpenLabel).trimEnd();
+  if (repaired.length === 0) return value;
+  if (!/[.!?]$/u.test(repaired)) repaired += '…';
+  return repaired;
+}
+
+function repairProviderDecision(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const root = value as Record<string, unknown>;
+  if (root.decision !== 'image') return value;
+  return { ...root, subject: repairProviderSubject(root.subject) };
+}
 
 function invalidOutput(message: string): never {
   throw new AiContentError('provider_invalid_output', message);
@@ -157,7 +213,9 @@ export function validateVisualPlanProposalEnvelope(
   if (raw.length > MAX_VISUALS_PER_LESSON) {
     invalidOutput('La proposta coordinata eccede il tetto assoluto di tre immagini.');
   }
-  return raw.map((item: unknown) => validateVisualPlanProposalDecision(item));
+  return raw.map((item: unknown) =>
+    validateVisualPlanProposalDecision(repairProviderDecision(item)),
+  );
 }
 
 /**

@@ -173,7 +173,37 @@ export function TotalLessonGenerationDialog({
     );
     visualStateRef.current = visualResult.state;
     const plan = visualResult.state.plan;
-    if (!plan) throw new Error('Piano immagini non disponibile.');
+    if (!plan) {
+      const proposalFailure = visualResult.failures.find(
+        (failure) => failure.stage === 'authorize_plan',
+      );
+      if (
+        proposalFailure?.code === 'provider_invalid_output' ||
+        proposalFailure?.code === 'provider_unavailable'
+      ) {
+        // Il piano server ha liquidato il tentativo fatturabile e non può
+        // essere riusato. Un retry esplicito dell'utente deve quindi creare una
+        // nuova identità visuale, conservando corpo, mappa e pool già conclusi.
+        visualStateRef.current = {
+          ...createCompleteLessonGenerationState({
+            identity,
+            body,
+            visualContext: {
+              titolo: context.titolo,
+              sottotitolo: context.sottotitolo,
+              difficolta: context.difficolta,
+              concettiChiave: context.concettiChiave ?? [],
+              obiettivi: context.obiettivi ?? [],
+              udaTitle: context.udaTitle,
+              udaContext: context.udaContext,
+            },
+            contentRequestId: newRequestId(),
+          }),
+          bodyPersisted: true,
+        };
+      }
+      throw proposalFailure?.cause ?? new Error('Piano immagini non disponibile.');
+    }
     const imagesApplied = plan.slots.filter((slot) => Boolean(slot.promotedAssetId)).length;
     const imagesSkipped = plan.slots.filter(
       (slot) => slot.decision !== 'image' || slot.state === 'abandoned',

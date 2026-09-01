@@ -262,12 +262,10 @@ export function AiCompleteLessonGenerationDialog({
       setSummary(completed);
       setProgress(null);
       setPhase('summary');
-    } catch {
+    } catch (cause) {
       if (!mountedRef.current) return;
       setProgress(null);
-      setError(
-        'Completamento interrotto. Il contenuto non verrà rigenerato: puoi riprovare gli elementi mancanti.',
-      );
+      setError(describeAiContentError(cause));
       setPhase('error');
     }
   }
@@ -292,12 +290,10 @@ export function AiCompleteLessonGenerationDialog({
       setSummary(next);
       setProgress(null);
       setPhase('summary');
-    } catch {
+    } catch (cause) {
       if (!mountedRef.current) return;
       setProgress(null);
-      setError(
-        'Completamento interrotto. Il contenuto non verrà rigenerato: puoi riprovare gli elementi mancanti.',
-      );
+      setError(describeAiContentError(cause));
       setPhase('error');
     } finally {
       runningRef.current = false;
