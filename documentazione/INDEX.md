@@ -45,6 +45,11 @@ gli smoke reali e la conferma docente sono registrati nella checklist finale.
 
 SchoolForge è un repository didattico Markdown-first per un solo docente. Se è la prima volta, parti dal [brief](brief.md) per capire problema, visione e perimetro, poi consulta il [glossario](glossario.md) per il vocabolario condiviso (verifica, tentativo, pool, canale cartaceo/digitale, lock nome+cognome). Tutta la documentazione è in italiano e la baseline è la versione 4.1.
 
+Per il passaggio fra account e la ripresa del ruolo di orchestratore usare
+[agent-account-handoff.md](agent-account-handoff.md); il prompt iniziale
+copiabile è in
+[prompts/schoolforge-orchestrator-bootstrap.md](prompts/schoolforge-orchestrator-bootstrap.md).
+
 ## Ordine di lettura consigliato
 
 1. [brief.md](brief.md) — visione, perimetro, decisioni di prodotto.
@@ -67,6 +72,9 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 18. [pool-quality-roadmap.md](pool-quality-roadmap.md) — protocollo anti-overfitting per misurare e migliorare i pool IA: 12 fonti congelate (8 tuning + 4 holdout), confronto Economy/Quality, rubrica 10×0–4, blocker e runner protetto. **POOL-TUNE-00→03 completati; Gate GPOOL-QUALITY PASS esclusivamente per `pool-tune-02-candidate-a-v1` + profilo `quality`** (Economy resta non qualificato). **POOL-ROLLOUT-01 distribuito su DEV; smoke reale (nuovo pool, append, review, salvataggio canonico) confermato dal docente** — vedi [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md).
 19. [visual-enrichment-roadmap.md](visual-enrichment-roadmap.md) — **VISUAL-ENRICHMENT**: arricchimento visivo delle lezioni, evoluto nel flusso multi-visuale. VE-00→04 e il rollout multi-visuale sono operativi; VE-05 resta il benchmark qualitativo opzionale. Evidenza benchmark: [evidenze/visual-enrichment-05a-benchmark.md](evidenze/visual-enrichment-05a-benchmark.md).
 20. [agent-orchestrator-roadmap.md](agent-orchestrator-roadmap.md) — **AGENT-ORCHESTRATOR**: protocollo leggero Codex→Claude→CI→review, con GitHub come registro durevole e recovery delle quote. Il pilot multi-visuale è stato completato con gate umano superato.
+    Per cambiare account senza perdere il contesto operativo, usare
+    [agent-account-handoff.md](agent-account-handoff.md) e il relativo
+    [prompt bootstrap](prompts/schoolforge-orchestrator-bootstrap.md).
 21. [multi-visual-roadmap.md](multi-visual-roadmap.md) — **MULTI-VISUAL**: fino a tre immagini per lezione, generate o caricate dal docente, con gestione, rendering, export e cleanup. **MULTI-VISUAL-00→04 completati e distribuiti in DEV e PROD; Gate GMULTI PASS.** Prototipo: [prototipi/lesson-multi-visual.html](prototipi/lesson-multi-visual.html).
 22. [ai-content-generation-roadmap.md](ai-content-generation-roadmap.md) — **Generazione completa IA**: comando nelle Azioni lezione che, dopo un preflight senza spesa, sostituisce contenuto, mappa, pool e immagini preservando i metadati; orchestra in profilo Quality i motori esistenti e conclude con immagini auto 0–3, senza nuovi endpoint o provider.
 
