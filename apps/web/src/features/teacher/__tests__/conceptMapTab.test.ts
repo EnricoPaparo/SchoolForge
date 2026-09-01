@@ -172,6 +172,16 @@ describe('il workspace applica davvero la regola', () => {
     expect(workspaceSource).toContain('saveLessonConceptMap({');
     expect(workspaceSource).toContain('conceptMapMarkdown: markdown');
   });
+
+  it('il riepilogo del pool non può ripristinare una fotografia precedente alla mappa', () => {
+    const handler =
+      /function handlePoolCountChange\([\s\S]*?\n  }\n\n  async function selectLesson/.exec(
+        workspaceSource,
+      )?.[0] ?? '';
+    expect(handler).toContain('setTree((prev) =>');
+    expect(handler).toContain('lessons: prev.lessons.map');
+    expect(handler).not.toContain('setTree({ udas: tree.udas, lessons })');
+  });
 });
 
 describe('codice morto rimosso', () => {

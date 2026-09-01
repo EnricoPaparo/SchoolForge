@@ -537,14 +537,27 @@ export function CourseWorkspace({
     poolStatus: PoolCountStatus,
   ) {
     if (!tree) return;
-    // Compute the next lessons deterministically, keep the state updater pure
-    // (it only sets the value), and notify the parent exactly once — outside
-    // the updater — so React Strict Mode's double-invoke can't fire the
-    // external callback twice.
-    const lessons = tree.lessons.map((l) =>
-      l.id === lessonId ? { ...l, questionCount, poolStatus } : l,
+    // Il salvataggio del pool può arrivare nello stesso flusso asincrono che ha
+    // appena applicato la mappa concettuale. Usare qui `tree` (la fotografia
+    // catturata dal render che ha avviato il flusso) ripristinerebbe la lezione
+    // precedente e farebbe sparire la mappa soltanto dalla UI. La mutazione
+    // funzionale parte invece sempre dall'albero più recente e modifica
+    // esclusivamente il riepilogo del pool.
+    setTree((prev) =>
+      prev
+        ? {
+            udas: prev.udas,
+            lessons: prev.lessons.map((lesson) =>
+              lesson.id === lessonId ? { ...lesson, questionCount, poolStatus } : lesson,
+            ),
+          }
+        : prev,
     );
-    setTree({ udas: tree.udas, lessons });
+    // La notifica esterna resta fuori dall'updater (che React può rieseguire in
+    // Strict Mode) e viene emessa una volta sola.
+    const lessons = tree.lessons.map((lesson) =>
+      lesson.id === lessonId ? { ...lesson, questionCount, poolStatus } : lesson,
+    );
     onProgramQuestionsChange?.(
       card.programId,
       lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0),
