@@ -175,7 +175,7 @@ describe('il workspace applica davvero la regola', () => {
 
   it('il riepilogo del pool non può ripristinare una fotografia precedente alla mappa', () => {
     const handler =
-      /function handlePoolCountChange\([\s\S]*?\n  }\n\n  async function selectLesson/.exec(
+      /function handlePoolCountChange\([\s\S]*?\n {2}}\n\n {2}async function selectLesson/.exec(
         workspaceSource,
       )?.[0] ?? '';
     expect(handler).toContain('setTree((prev) =>');
