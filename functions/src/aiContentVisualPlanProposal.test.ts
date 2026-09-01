@@ -497,6 +497,45 @@ describe('schema Structured Output della proposta coordinata', () => {
   });
 });
 
+describe('riparazione confinata del subject grezzo del provider', () => {
+  it('compatta un lieve sforamento su una frase completa prima della validazione', () => {
+    const firstSentence = `Schema didattico con tre blocchi collegati e una sequenza operativa chiara ${'x'.repeat(240)}.`;
+    const overlong = `${firstSentence} Dettaglio secondario ${'y'.repeat(150)}`;
+    expect([...overlong].length).toBeGreaterThan(MAX_VISUAL_SUBJECT_CHARS);
+    expect([...overlong].length).toBeLessThanOrEqual(MAX_VISUAL_SUBJECT_CHARS * 1.5);
+
+    const [decision] = validateVisualPlanProposalEnvelope(
+      envelope([imageDecision({ subject: overlong })]),
+      3,
+    );
+
+    expect(decision?.decision).toBe('image');
+    if (decision?.decision !== 'image') return;
+    expect(decision.subject).toBe(firstSentence);
+    expect([...decision.subject].length).toBeLessThanOrEqual(MAX_VISUAL_SUBJECT_CHARS);
+  });
+
+  it('non normalizza uno sforamento fuori controllo', () => {
+    expect(() =>
+      validateVisualPlanProposalEnvelope(
+        envelope([
+          imageDecision({ subject: 'x'.repeat(Math.floor(MAX_VISUAL_SUBJECT_CHARS * 1.5) + 1) }),
+        ]),
+        3,
+      ),
+    ).toThrow(/Soggetto/);
+  });
+
+  it('lascia byte-identico un subject già valido', () => {
+    const subject = 'Schema essenziale di nodi collegati in una rete locale.';
+    const [decision] = validateVisualPlanProposalEnvelope(
+      envelope([imageDecision({ subject })]),
+      3,
+    );
+    expect(decision?.decision === 'image' ? decision.subject : null).toBe(subject);
+  });
+});
+
 // ─── Provider mock ─────────────────────────────────────────────────────────────
 
 describe('provider mock', () => {
