@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
-import { AiContentError, computeBudgetReservationKey } from './aiContentCore.js';
+import { AiContentError, computeBudgetReservationKey, timestampToMillis } from './aiContentCore.js';
 import { monthKeyFromMs } from './aiCorrectionBudget.js';
 import { AiVisualMultiError, computeVisualPlanHash } from './aiVisualMultiCore.js';
 import {
@@ -18,6 +18,7 @@ import {
 import { computeOpaqueVisualPlanId, VISUAL_PLAN_CONTRACT_VERSION } from './aiVisualMultiCore.js';
 import {
   computeVisualPlanLeaseId,
+  validateVisualPlanLease,
   VISUAL_PLAN_LEASE_CONTRACT_VERSION,
   type VisualPlanLease,
 } from './aiVisualPlanLease.js';
@@ -260,6 +261,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     touchedRefs.push(planRef(requestId), leaseRef(lessonId));
 
     const plan = await call(authorizePayload({ requestId, lessonId }), Date.now(), {
+      visualMode: 'openai',
       callProviderOverride: async () => ({
         status: 'ok',
         output: {
@@ -284,6 +286,8 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect(plan.slots).toHaveLength(1);
     expect(plan.slots[0]?.decision).toBe('image');
     expect(plan.settlement.proposalActualCost).toBeGreaterThan(0);
+    // Il provider resta simulato; solo la stima del costo immagini è reale.
+    expect(plan.budgetCeiling.generationCap).toBeGreaterThan(0);
     const ledger = await db.doc(`aiBudgetLedger/${plan.budgetCeiling.reservationMonthKey}`).get();
     const reservation = ledger.data()?.reservations?.[plan.budgetCeiling.reservationKey];
     expect(reservation?.microUsd).toBe(
@@ -376,11 +380,36 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     await seedLesson(lessonId, publicLessonId);
     const requestIdA = randomUUID();
     const requestIdB = randomUUID();
+    const inputA = validateVisualPlanAuthorizeInput(
+      authorizePayload({ requestId: requestIdA, lessonId }),
+    );
+    const inputB = validateVisualPlanAuthorizeInput(
+      authorizePayload({ requestId: requestIdB, lessonId }),
+    );
+    const nowMs = Date.now();
     touchedRefs.push(planRef(requestIdA), planRef(requestIdB), leaseRef(lessonId));
 
+    // Sola acquisizione: la proposta mock vuota rilascerebbe subito il lease,
+    // consentendo correttamente a entrambe le richieste di riuscire in sequenza.
     const results = await Promise.allSettled([
-      call(authorizePayload({ requestId: requestIdA, lessonId })),
-      call(authorizePayload({ requestId: requestIdB, lessonId })),
+      createVisualPlanForOwner({
+        db,
+        ownerUid: OWNER_UID,
+        input: inputA,
+        opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestIdA),
+        config: AI_CONFIG,
+        visualMode: 'mock',
+        nowMs,
+      }),
+      createVisualPlanForOwner({
+        db,
+        ownerUid: OWNER_UID,
+        input: inputB,
+        opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestIdB),
+        config: AI_CONFIG,
+        visualMode: 'mock',
+        nowMs,
+      }),
     ]);
 
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
@@ -393,6 +422,11 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect((rejection as AiVisualMultiError).details).toMatchObject({
       opaquePlanId: expect.any(String),
     });
+
+    const leaseSnap = await leaseRef(lessonId).get();
+    expect(leaseSnap.exists).toBe(true);
+    const lease = validateVisualPlanLease(leaseSnap.data());
+    expect(timestampToMillis(lease.expireAt)).toBeGreaterThan(nowMs);
   });
 
   it('risposta persa dopo completed AIGEN viene ripresa come replay senza seconda chiamata provider', async () => {
@@ -642,7 +676,8 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
       input,
       opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, requestId),
       config: AI_CONFIG,
-      visualMode: 'mock',
+      // Stima positiva delle immagini, senza alcuna invocazione provider.
+      visualMode: 'openai',
       nowMs: startedAt,
     });
     const leaseDocument = validateVisualPlanLease((await leaseRef(lessonId).get()).data());
@@ -684,18 +719,27 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     const lessonId = `lesson-${randomUUID()}`;
     const publicLessonId = `public-${lessonId}`;
     await seedLesson(lessonId, publicLessonId);
+    const staleRequestId = randomUUID();
+    // Il lease stantio è internamente coerente (il proprio opaquePlanId
+    // deriva dal proprio requestId) ma appartiene a una richiesta DIVERSA
+    // da quella che tenterà la riacquisizione: altrimenti l'invariante che
+    // rifiuta un lease il cui opaquePlanId coincide con quello corrente in
+    // assenza di un piano persistito (lease e piano sono scritti in modo
+    // atomico) scatterebbe a torto su questa fixture, che non ha mai
+    // persistito un piano.
     const staleLease: VisualPlanLease = {
       contractVersion: VISUAL_PLAN_LEASE_CONTRACT_VERSION,
       ownerUid: OWNER_UID,
       programId: PROGRAM_ID,
       importId: IMPORT_ID,
       lessonId,
-      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, randomUUID()),
-      requestId: randomUUID(),
+      opaquePlanId: computeOpaqueVisualPlanId(OWNER_UID, staleRequestId),
+      requestId: staleRequestId,
       createdAt: Timestamp.fromMillis(Date.now() - 100_000),
       updatedAt: Timestamp.fromMillis(Date.now() - 100_000),
       expireAt: Timestamp.fromMillis(Date.now() - 1_000),
     };
+    expect(() => validateVisualPlanLease(staleLease)).not.toThrow();
     await leaseRef(lessonId).set(staleLease);
     touchedRefs.push(leaseRef(lessonId));
 
@@ -1016,28 +1060,55 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     });
   });
 
-  it('race lettura→commit: una mutazione relazionale forza il retry e impedisce piano, lease e budget', async () => {
+  it('race lettura→commit: un abort simulato dopo la lettura autoritativa e una mutazione reale tra i tentativi impediscono piano, lease e budget', async () => {
     const lessonId = `lesson-race-${randomUUID()}`;
     const publicLessonId = `public-${lessonId}`;
     await seedLesson(lessonId, publicLessonId);
     const requestId = randomUUID();
     touchedRefs.push(planRef(requestId), leaseRef(lessonId));
-    let mutated = false;
 
-    await expect(
-      call(authorizePayload({ requestId, lessonId }), Date.now(), {
-        afterAuthoritativeRead: async () => {
-          if (mutated) return;
+    let callbackCount = 0;
+    let mutated = false;
+    const originalRunTransaction = db.runTransaction.bind(db);
+    const spy = vi.spyOn(db, 'runTransaction').mockImplementation((updateFunction, options) =>
+      originalRunTransaction(async (transaction) => {
+        callbackCount += 1;
+        if (callbackCount === 2) {
+          // Il primo tentativo è già stato annullato (rollback completato):
+          // nessun lock è attivo quando applichiamo questa mutazione reale,
+          // prima che il secondo tentativo esegua le proprie letture.
           mutated = true;
           await db.doc(`publicLessons/${publicLessonId}`).update({ completed: true });
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'invalid_input' });
+        }
+        return updateFunction(transaction);
+      }, options),
+    );
 
-    expect(mutated).toBe(true);
-    expect((await planRef(requestId).get()).exists).toBe(false);
-    expect((await leaseRef(lessonId).get()).exists).toBe(false);
-    expect(await ledgerReservationCount()).toBe(0);
+    try {
+      await expect(
+        call(authorizePayload({ requestId, lessonId }), Date.now(), {
+          afterAuthoritativeRead: async () => {
+            if (callbackCount === 1) {
+              // Iniezione deliberata di un ABORTED (code 10) DOPO che il
+              // primo tentativo ha realmente eseguito le proprie letture
+              // autoritative, per innescare il retry genuino del client
+              // Firestore.
+              throw Object.assign(new Error('simulated contention'), { code: 10 });
+            }
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_input' });
+
+      expect(callbackCount).toBe(2);
+      expect(mutated).toBe(true);
+      const publicSnap = await db.doc(`publicLessons/${publicLessonId}`).get();
+      expect(publicSnap.data()?.completed).toBe(true);
+      expect((await planRef(requestId).get()).exists).toBe(false);
+      expect((await leaseRef(lessonId).get()).exists).toBe(false);
+      expect(await ledgerReservationCount()).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('cap pieno: autorizza soltanto la sostituzione esatta, senza nuova capacità', async () => {
