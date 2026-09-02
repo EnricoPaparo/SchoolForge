@@ -1378,6 +1378,8 @@ export async function promoteVisualPlanSlotForOwner(params: {
 }
 
 const ERROR_MAP: Partial<Record<string, FunctionsErrorCode>> = {
+  unauthenticated: 'unauthenticated',
+  not_owner: 'permission-denied',
   invalid_input: 'invalid-argument',
   corrupted_state: 'data-loss',
   visual_plan_expired: 'failed-precondition',
