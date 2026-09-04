@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLoadLessons = vi.fn();
@@ -6,13 +6,22 @@ const mockLoadNote = vi.fn();
 const mockLoadNoteIndex = vi.fn();
 const mockCreateNote = vi.fn();
 const mockDeleteNote = vi.fn();
+let mockUid: string | null = 'student-uid';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../../lib/auth.js', () => ({
-  useAuth: () => ({ user: { uid: 'student-uid' }, loading: false }),
+  useAuth: () => ({ user: mockUid ? { uid: mockUid } : null, loading: false }),
 }));
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
-  loadStudentLessons: (...a: unknown[]) => mockLoadLessons(...a),
+  loadStudentLibrary: async (...args: unknown[]) => {
+    const result = await mockLoadLessons(...args);
+    if (result.status !== 'ok') return result;
+    return { status: 'ok', classId: 'class-a', programs: result.programs };
+  },
+  loadStudentCourseLessons: async (program: { id: string }) => {
+    const result = await mockLoadLessons.getMockImplementation()?.();
+    return result.lessonsByProgram[program.id] ?? [];
+  },
 }));
 vi.mock('../studentLessonNotesService.js', async () => {
   const actual = (await vi.importActual('../studentLessonNotesService.js')) as Record<
@@ -70,6 +79,7 @@ function setMatchMedia(isMobile: boolean) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUid = 'student-uid';
   setMatchMedia(false);
   mockLoadNote.mockResolvedValue({ state: 'missing' });
   mockLoadNoteIndex.mockResolvedValue({ lessonIds: [], bootstrapped: false });
@@ -82,7 +92,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 async function openCourseAndSelectLesson() {
   fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
@@ -97,6 +110,104 @@ async function openCourseAndSelectLesson() {
 }
 
 describe('StudentDidatticaView — Appunti entry point', () => {
+  it('keeps a dirty draft across successful and offline automatic refreshes, including recovery', async () => {
+    let now = 100_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
+      target: { value: 'Draft da conservare' },
+    });
+    now += 60_001;
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(mockLoadLessons).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('Aggiornamento…')).toBeNull());
+    expect((screen.getByLabelText('Testo degli appunti') as HTMLTextAreaElement).value).toBe(
+      'Draft da conservare',
+    );
+    mockLoadLessons.mockRejectedValueOnce(new Error('offline'));
+    now += 60_001;
+    fireEvent(window, new Event('focus'));
+    await screen.findByText(/Impossibile caricare il corso/);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    now += 60_001;
+    fireEvent(window, new Event('focus'));
+    const recovered = await screen.findByLabelText('Testo degli appunti');
+    expect((recovered as HTMLTextAreaElement).value).toBe('Draft da conservare');
+    expect(mockLoadNote).toHaveBeenCalledOnce();
+    expect(mockCreateNote).not.toHaveBeenCalled();
+  });
+
+  it('guards explicit refresh and library navigation before discarding dirty notes', async () => {
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
+      target: { value: 'Draft protetto' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(mockLoadLessons).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Resta e continua' }));
+    expect((screen.getByLabelText('Testo degli appunti') as HTMLTextAreaElement).value).toBe(
+      'Draft protetto',
+    );
+    fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resta e continua' }));
+    expect(screen.queryByLabelText('Corsi disponibili')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esci senza salvare' }));
+    await waitFor(() => expect(mockLoadLessons).toHaveBeenCalledTimes(2));
+  });
+
+  it('drops note state on import invalidation and never restores an old note response', async () => {
+    let resolveOld!: (result: unknown) => void;
+    mockLoadNote.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    await waitFor(() => expect(mockLoadNote).toHaveBeenCalledOnce());
+    mockLoadLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [{ id: 'p1', title: 'Informatica', classIds: ['class-a'], activeImportId: 'i2' }],
+      lessonsByProgram: { p1: [{ ...LESSON, id: 'i2_lesson-1', importId: 'i2' }] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna' }));
+    await waitFor(() => expect(mockLoadNoteIndex).toHaveBeenCalledTimes(2));
+    await act(async () => resolveOld({ state: 'existing', note: { content: 'Nota obsoleta' } }));
+    expect(screen.queryByDisplayValue('Nota obsoleta')).toBeNull();
+    expect(screen.queryByLabelText('Testo degli appunti')).toBeNull();
+  });
+
+  it('drops pending note reads on logout/account change', async () => {
+    let resolveOld!: (result: unknown) => void;
+    mockLoadNote.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    const view = render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    await waitFor(() => expect(mockLoadNote).toHaveBeenCalledOnce());
+    mockUid = null;
+    view.rerender(<StudentDidatticaView />);
+    expect(screen.queryByText('Informatica')).toBeNull();
+    mockUid = 'other-student';
+    view.rerender(<StudentDidatticaView />);
+    await act(async () =>
+      resolveOld({ state: 'existing', note: { content: 'Nota privata precedente' } }),
+    );
+    await screen.findByRole('button', { name: 'Apri il corso Informatica' });
+    expect(screen.queryByDisplayValue('Nota privata precedente')).toBeNull();
+    expect(mockLoadLessons).toHaveBeenLastCalledWith('other-student', expect.anything());
+  });
+
   it('shows the Appunti command only once a real lesson is selected', async () => {
     render(<StudentDidatticaView />);
     await openCourseAndSelectLesson();

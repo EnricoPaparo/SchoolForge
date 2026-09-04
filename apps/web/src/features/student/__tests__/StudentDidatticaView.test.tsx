@@ -11,10 +11,21 @@ vi.mock('../../../lib/auth.js', () => ({
 
 const mockLoadStudentLessons = vi.fn();
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
-  loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
+  loadStudentLibrary: async (...args: unknown[]) => {
+    const result = await mockLoadStudentLessons(...args);
+    if (result.status !== 'ok') return result;
+    return { status: 'ok', classId: 'class-a', programs: result.programs };
+  },
+  loadStudentCourseLessons: async (program: { id: string }) => {
+    const result = await mockLoadStudentLessons.getMockImplementation()?.();
+    return result.lessonsByProgram[program.id] ?? [];
+  },
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -77,17 +88,17 @@ describe('StudentDidatticaView — SDUX-01', () => {
     );
   });
 
-  it('renders all read-only course cards with progress and no redundant search or open action', async () => {
+  it('renders compact read-only course cards without counts or progress', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
     const list = await screen.findByLabelText('Corsi disponibili');
     expect(within(list).getByText('Informatica')).toBeTruthy();
     expect(within(list).getByText('Matematica')).toBeTruthy();
     const card = within(screen.getByRole('listitem', { name: 'Corso Informatica' }));
-    expect(card.getByText('UDA').parentElement?.textContent).toBe('UDA2');
-    expect(card.getByText('Lezioni').parentElement?.textContent).toBe('Lezioni2');
-    expect(card.getByText('1/2 lezioni')).toBeTruthy();
-    expect(card.getByRole('progressbar', { name: 'Avanzamento Informatica' })).toBeTruthy();
+    expect(card.queryByText('UDA')).toBeNull();
+    expect(card.queryByText('Lezioni')).toBeNull();
+    expect(card.queryByRole('progressbar')).toBeNull();
+    expect(card.getByText('Apri corso →')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(within(list).getByText('Informatica')).toBeTruthy();
@@ -102,13 +113,13 @@ describe('StudentDidatticaView — SDUX-01', () => {
     render(<StudentDidatticaView />);
     fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     expect(screen.getByRole('region', { name: 'Corso Informatica' })).toBeTruthy();
-    expect(screen.getByText('2 UDA · 1/2 lezioni svolte')).toBeTruthy();
+    expect(await screen.findByText('2 UDA · 1/2 lezioni svolte')).toBeTruthy();
     expect(
       screen
         .getByRole('progressbar', { name: 'Avanzamento lezioni' })
         .getAttribute('aria-valuenow'),
     ).toBe('50');
-    const structure = screen.getByRole('complementary', { name: 'Struttura del corso' });
+    const structure = await screen.findByRole('complementary', { name: 'Struttura del corso' });
     fireEvent.click(within(structure).getByRole('button', { name: /Reti/ }));
     fireEvent.click(within(structure).getByRole('button', { name: /Internet e reti/ }));
     expect(await screen.findByText('Contenuto della lezione.')).toBeTruthy();
@@ -144,7 +155,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
     });
     render(<StudentDidatticaView />);
     fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
-    const structure = screen.getByRole('complementary', { name: 'Struttura del corso' });
+    const structure = await screen.findByRole('complementary', { name: 'Struttura del corso' });
     fireEvent.click(within(structure).getByRole('button', { name: /Reti/ }));
     fireEvent.click(within(structure).getByRole('button', { name: /Internet e reti/ }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('temporaneamente'));
@@ -170,6 +181,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
       programs: [PROGRAM_A],
       lessonsByProgram: { 'prog-a': [{ ...LESSON_1, content: 'Versione aggiornata.' }] },
     });
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001);
     fireEvent(window, new Event('focus'));
 
     await waitFor(() => expect(mockLoadStudentLessons).toHaveBeenCalledTimes(2));
