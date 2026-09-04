@@ -9,7 +9,15 @@ vi.mock('../../../lib/auth.js', () => ({
 
 const mockLoadStudentLessons = vi.fn();
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
-  loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
+  loadStudentLibrary: async (...args: unknown[]) => {
+    const result = await mockLoadStudentLessons(...args);
+    if (result.status !== 'ok') return result;
+    return { status: 'ok', classId: 'class-a', programs: result.programs };
+  },
+  loadStudentCourseLessons: async (program: { id: string }) => {
+    const result = await mockLoadStudentLessons.getMockImplementation()?.();
+    return result.lessonsByProgram[program.id] ?? [];
+  },
 }));
 
 /**
@@ -56,14 +64,14 @@ function loadWith(lessons: Record<string, unknown>[]) {
 async function openLesson(name = 'Internet e reti') {
   render(<StudentDidatticaView />);
   fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
-  const structure = screen.getByRole('complementary', { name: 'Struttura del corso' });
+  const structure = await screen.findByRole('complementary', { name: 'Struttura del corso' });
   fireEvent.click(within(structure).getByRole('button', { name: /Reti/ }));
   fireEvent.click(within(structure).getByRole('button', { name: new RegExp(name) }));
 }
 
 /** Passa a un'altra lezione dalla struttura, senza ricaricare la vista. */
-function switchLesson(name: string) {
-  const structure = screen.getByRole('complementary', { name: 'Struttura del corso' });
+async function switchLesson(name: string) {
+  const structure = await screen.findByRole('complementary', { name: 'Struttura del corso' });
   fireEvent.click(within(structure).getByRole('button', { name: new RegExp(name) }));
 }
 
@@ -201,7 +209,7 @@ describe('cambio lezione', () => {
       screen.getByRole('tab', { name: 'Mappa concettuale' }).getAttribute('aria-selected'),
     ).toBe('true');
 
-    switchLesson('Il Web');
+    await switchLesson('Il Web');
     // La mappa della lezione precedente non deve restare selezionata su una
     // lezione diversa: si riparte sempre dal contenuto.
     expect(screen.getByRole('tab', { name: 'Contenuto' }).getAttribute('aria-selected')).toBe(

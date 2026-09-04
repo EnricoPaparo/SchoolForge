@@ -16,7 +16,7 @@ vi.mock('../../students/studentsService.js', () => ({
   getOwnStudentDoc: (...args: unknown[]) => mockGetOwnStudentDoc(...args),
 }));
 
-import { loadStudentLessons } from '../studentLessonsService.js';
+import { loadStudentLibrary, loadStudentCourseLessons } from '../studentLessonsService.js';
 import type { Firestore } from 'firebase/firestore';
 
 const fakeDb = {} as Firestore;
@@ -33,11 +33,11 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('loadStudentLessons — no class assigned', () => {
+describe('loadStudentLibrary — no class assigned', () => {
   it('returns no-class when classId is null', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: null });
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const result = await loadStudentLibrary(STUDENT_UID, fakeDb);
     expect(result).toEqual({ status: 'no-class' });
     expect(mockGetDocs).not.toHaveBeenCalled();
   });
@@ -45,12 +45,33 @@ describe('loadStudentLessons — no class assigned', () => {
   it('returns no-class when the student document does not exist', async () => {
     mockGetOwnStudentDoc.mockResolvedValue(null);
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const result = await loadStudentLibrary(STUDENT_UID, fakeDb);
     expect(result).toEqual({ status: 'no-class' });
   });
 });
 
-describe('loadStudentLessons — program filtering', () => {
+describe('loadStudentLibrary — program filtering', () => {
+  it('reads own class and assigned metadata once, with zero publicLessons reads for many courses', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockResolvedValue(
+      docsFor('programs', [
+        { id: 'a', data: { title: 'Alfa', classIds: ['class-a'], activeImportId: 'i1' } },
+        { id: 'b', data: { title: 'Beta', classIds: ['class-a'], activeImportId: 'i2' } },
+        { id: 'c', data: { title: 'Gamma', classIds: ['class-a'], activeImportId: null } },
+      ]),
+    );
+    expect(await loadStudentLibrary(STUDENT_UID, fakeDb)).toMatchObject({
+      status: 'ok',
+      classId: 'class-a',
+    });
+    expect(mockGetOwnStudentDoc).toHaveBeenCalledOnce();
+    expect(mockGetOwnStudentDoc).toHaveBeenCalledWith(STUDENT_UID, fakeDb);
+    expect(mockGetDocs).toHaveBeenCalledOnce();
+    expect(mockGetDocs).toHaveBeenCalledWith({
+      __collRef: { __collection: 'programs' },
+      __clauses: [{ field: 'classIds', op: 'array-contains', value: 'class-a' }],
+    });
+  });
   it('returns only programs whose classIds includes the student class', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockImplementation((q: { __collRef: { __collection: string } }) => {
@@ -67,7 +88,7 @@ describe('loadStudentLessons — program filtering', () => {
       return Promise.resolve(docsFor('publicLessons', []));
     });
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const result = await loadStudentLibrary(STUDENT_UID, fakeDb);
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') return;
     expect(result.programs).toEqual([
@@ -82,7 +103,7 @@ describe('loadStudentLessons — program filtering', () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockResolvedValue(docsFor('programs', []));
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const result = await loadStudentLibrary(STUDENT_UID, fakeDb);
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') return;
     expect(result.programs).toEqual([]);
@@ -102,13 +123,13 @@ describe('loadStudentLessons — program filtering', () => {
       return Promise.resolve(docsFor('publicLessons', []));
     });
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const result = await loadStudentLibrary(STUDENT_UID, fakeDb);
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.programs.map((p) => p.title)).toEqual(['Alfa', 'Zeta']);
   });
 });
 
-describe('loadStudentLessons — lesson sorting', () => {
+describe('loadStudentCourseLessons — lesson sorting', () => {
   it('sorts lessons by udaDir then filename, stably', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockImplementation((q: { __collRef: { __collection: string } }) => {
@@ -167,7 +188,12 @@ describe('loadStudentLessons — lesson sorting', () => {
       );
     });
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    const result = {
+      ...library,
+      lessonsByProgram: { p1: await loadStudentCourseLessons(library.programs[0]!, fakeDb) },
+    };
     if (result.status !== 'ok') throw new Error('expected ok');
     const order = result.lessonsByProgram['p1']!.map((l) => `${l.udaDir}/${l.filename}`);
     expect(order).toEqual([
@@ -209,7 +235,12 @@ describe('loadStudentLessons — lesson sorting', () => {
       );
     });
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    const result = {
+      ...library,
+      lessonsByProgram: { p1: await loadStudentCourseLessons(library.programs[0]!, fakeDb) },
+    };
     if (result.status !== 'ok') throw new Error('expected ok');
     const lesson = result.lessonsByProgram['p1']![0]!;
     expect(lesson).not.toHaveProperty('poolStatus');
@@ -218,7 +249,7 @@ describe('loadStudentLessons — lesson sorting', () => {
   });
 });
 
-describe('loadStudentLessons — M3F-08 content projection', () => {
+describe('loadStudentCourseLessons — M3F-08 content projection', () => {
   function singleLessonSnap(data: Record<string, unknown>) {
     return (q: { __collRef: { __collection: string } }) => {
       if (q.__collRef.__collection === 'programs') {
@@ -256,16 +287,90 @@ describe('loadStudentLessons — M3F-08 content projection', () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockImplementation(singleLessonSnap({ content: 'Corpo della lezione.' }));
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    const result = {
+      ...library,
+      lessonsByProgram: { p1: await loadStudentCourseLessons(library.programs[0]!, fakeDb) },
+    };
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.lessonsByProgram['p1']![0]!.content).toBe('Corpo della lezione.');
+  });
+
+  it('keeps course-only normalization, skeleton filtering, maps and single/multi visuals', async () => {
+    const visual = {
+      assetId: '11111111-2222-4333-8444-555555555555',
+      anchor: { headingSlug: 'reti', headingText: 'Reti', placement: 'after-heading' },
+      caption: 'Schema',
+      altText: 'Diagramma',
+      width: 1024,
+      height: 768,
+    };
+    const base = {
+      programId: 'p1',
+      importId: 'i1',
+      udaDir: 'uda-01',
+      filename: 'a.md',
+      content: 'Corpo',
+    };
+    mockGetDocs.mockResolvedValue(
+      docsFor('publicLessons', [
+        { id: 'skeleton', data: { ...base, content: '   ' } },
+        {
+          id: 'later',
+          data: {
+            ...base,
+            order: 2,
+            completed: true,
+            conceptMapMarkdown: '## Reti\n- Nodo',
+            visual,
+          },
+        },
+        {
+          id: 'first',
+          data: {
+            ...base,
+            order: 1,
+            completed: true,
+            visuals: { contractVersion: 'lesson-visuals/v1', items: [visual] },
+          },
+        },
+        {
+          id: 'hidden-map',
+          data: {
+            ...base,
+            order: 3,
+            completed: false,
+            conceptMapMarkdown: '## Reti\n- Nodo',
+            visual,
+            visuals: [visual],
+          },
+        },
+      ]),
+    );
+    const lessons = await loadStudentCourseLessons(
+      { id: 'p1', title: 'Corso', classIds: ['class-a'], activeImportId: 'i1' },
+      fakeDb,
+    );
+    expect(lessons.map((l) => l.id)).toEqual(['first', 'later', 'hidden-map']);
+    expect(lessons[0]?.visuals).toEqual([visual]);
+    expect(lessons[1]?.visual).toEqual(visual);
+    expect(lessons[1]?.conceptMapMarkdown).toContain('Nodo');
+    expect(lessons[2]).toMatchObject({ conceptMapMarkdown: null, visual: null, visuals: [] });
+    expect(mockGetDocs).toHaveBeenCalledOnce();
+    expect(mockGetOwnStudentDoc).not.toHaveBeenCalled();
   });
 
   it('normalizes a legacy document with no content field to null (no Storage fallback)', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockImplementation(singleLessonSnap({}));
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    const result = {
+      ...library,
+      lessonsByProgram: { p1: await loadStudentCourseLessons(library.programs[0]!, fakeDb) },
+    };
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.lessonsByProgram['p1']![0]!.content).toBeNull();
   });
@@ -274,13 +379,18 @@ describe('loadStudentLessons — M3F-08 content projection', () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockImplementation(singleLessonSnap({ content: 42 }));
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    const result = {
+      ...library,
+      lessonsByProgram: { p1: await loadStudentCourseLessons(library.programs[0]!, fakeDb) },
+    };
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.lessonsByProgram['p1']![0]!.content).toBeNull();
   });
 });
 
-describe('loadStudentLessons — active import gating (HARD-02B-1)', () => {
+describe('loadStudentCourseLessons — active import gating (HARD-02B-1)', () => {
   it('does not query publicLessons for a program without activeImportId, returning an empty list', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     const publicLessonsCalls: unknown[] = [];
@@ -296,7 +406,12 @@ describe('loadStudentLessons — active import gating (HARD-02B-1)', () => {
       return Promise.resolve(docsFor('publicLessons', []));
     });
 
-    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    const result = {
+      ...library,
+      lessonsByProgram: { p1: await loadStudentCourseLessons(library.programs[0]!, fakeDb) },
+    };
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.lessonsByProgram['p1']).toEqual([]);
     expect(publicLessonsCalls).toHaveLength(0);
@@ -319,7 +434,9 @@ describe('loadStudentLessons — active import gating (HARD-02B-1)', () => {
       },
     );
 
-    await loadStudentLessons(STUDENT_UID, fakeDb);
+    const library = await loadStudentLibrary(STUDENT_UID, fakeDb);
+    if (library.status !== 'ok') throw new Error('expected ok');
+    await loadStudentCourseLessons(library.programs[0]!, fakeDb);
     expect(capturedClauses).toEqual(
       expect.arrayContaining([
         { field: 'programId', op: '==', value: 'p1' },

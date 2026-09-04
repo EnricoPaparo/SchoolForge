@@ -18,7 +18,7 @@ type CourseRecordCardProps = {
   progress?: RecordCardProgress;
   actions?: ReactNode;
   accentProgressOnInteraction?: boolean;
-  /** Teacher library only: metadata and a persistent opening cue, no metrics. */
+  /** Lightweight course library: metadata and a persistent opening cue, no metrics. */
   compact?: boolean;
 };
 

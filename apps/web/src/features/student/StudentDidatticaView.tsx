@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  IconBookOpen,
-  IconCircleCheck,
-  IconFileText,
-  IconLayers,
-  IconPencil,
-} from '../../components/icons.js';
+import { IconBookOpen, IconFileText, IconLayers, IconPencil } from '../../components/icons.js';
 import { CourseRecordCard } from '../../components/CourseRecordCard.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
 import { ConfirmDialog } from '../../components/ConfirmDialog.js';
@@ -13,7 +7,6 @@ import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
 import { useIsMobile } from '../../lib/useIsMobile.js';
 import {
-  loadStudentLessons,
   type StudentLesson,
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
@@ -23,13 +16,8 @@ import { readStudentVisualBytesMulti } from '../repository/programs/multiVisualR
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
 import { LessonNotesPanel } from './LessonNotesPanel.js';
 import { useLessonNotes, type LessonNotesController } from './useLessonNotes.js';
+import { useStudentDidattica } from './useStudentDidattica.js';
 import styles from './StudentDidatticaView.module.css';
-
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'no-class' }
-  | { status: 'ok'; programs: StudentProgram[]; lessonsByProgram: Record<string, StudentLesson[]> };
 
 type Selection =
   | { kind: 'course' }
@@ -63,24 +51,33 @@ function lessonsByUda(lessons: StudentLesson[]): Map<string, StudentLesson[]> {
  */
 export function StudentDidatticaView() {
   const { user } = useAuth();
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [openProgramId, setOpenProgramId] = useState<string | null>(null);
+  // Auth changes synchronously tear down all course/note state, including timers.
+  return user ? <StudentDidatticaSession key={user.uid} uid={user.uid} /> : null;
+}
+
+function StudentDidatticaSession({ uid }: { uid: string }) {
+  const data = useStudentDidattica(uid, db);
+  const context = JSON.stringify([
+    uid,
+    data.library.status === 'ok' ? data.library.classId : null,
+    data.contextVersion,
+  ]);
+  return <StudentDidatticaContent key={context} uid={uid} data={data} />;
+}
+
+function StudentDidatticaContent({
+  uid,
+  data,
+}: {
+  uid: string;
+  data: ReturnType<typeof useStudentDidattica>;
+}) {
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
   const notes = useLessonNotes(db);
   const isMobile = useIsMobile();
   const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
 
-  const uid = user?.uid;
-
-  /**
-   * Dirty guard for every navigation controlled by this view (lesson/UDA/
-   * course change, back to library). When the open note has unsaved changes,
-   * defer the navigation behind a confirmation; when clean, close the panel
-   * and proceed immediately. External navigation (StudentShell section switch,
-   * sign-out, Modalità verifica) is handled by unmounting the whole view — see
-   * the residual-limit note in the PR/docs.
-   */
   function guardNavigation(action: () => void) {
     const openId = notes.openLessonId;
     if (openId && notes.isDirty(openId)) {
@@ -90,159 +87,126 @@ export function StudentDidatticaView() {
     if (openId) notes.close();
     action();
   }
-  useEffect(() => {
-    if (!uid) return;
-    let cancelled = false;
-    let refreshInFlight = false;
 
-    const load = (initial: boolean) => {
-      // Keep the current lesson visible while a background refresh runs. This
-      // matters when a teacher updates a public projection in another tab:
-      // returning to the student view must not briefly discard the selection.
-      if (initial) setState({ status: 'loading' });
-      if (refreshInFlight) return;
-      refreshInFlight = true;
-      loadStudentLessons(uid, db)
-        .then((result) => {
-          if (!cancelled) setState(result);
-        })
-        .catch(() => {
-          if (!cancelled && initial) setState({ status: 'error' });
-        })
-        .finally(() => {
-          refreshInFlight = false;
-        });
-    };
-
-    load(true);
-
-    // Student lessons are intentionally loaded through the public projection.
-    // Refreshing when the document becomes visible/focused closes the stale
-    // cross-tab/session window without adding a listener per lesson or any
-    // Storage reads. The public read boundary and fail-closed normalizers stay
-    // in loadStudentLessons.
-    const refresh = () => {
-      if (document.visibilityState === 'hidden') return;
-      load(false);
-    };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, [uid]);
-
-  if (state.status === 'loading')
-    return (
-      <p aria-busy="true" className="state-loading">
-        Caricamento…
-      </p>
-    );
-  if (state.status === 'error')
-    return (
-      <p role="alert" className="text-error">
-        Impossibile caricare la didattica.
-      </p>
-    );
-  if (state.status === 'no-class') {
-    return (
-      <p className="state-empty">
-        Nessuna classe assegnata. Chiedi al docente di assegnarti una classe.
-      </p>
-    );
-  }
-
-  const openProgram = state.programs.find((program) => program.id === openProgramId) ?? null;
-  const openLessons = openProgram ? (state.lessonsByProgram[openProgram.id] ?? []) : [];
-
-  function openCourse(programId: string) {
-    setOpenProgramId(programId);
-    setSelection({ kind: 'course' });
-    setExpandedUdas(new Set());
-  }
-
-  function backToLibrary() {
-    setOpenProgramId(null);
-    setSelection({ kind: 'course' });
-    setExpandedUdas(new Set());
-  }
-
-  if (openProgram) {
-    return (
-      <>
-        <StudentCourseWorkspace
-          program={openProgram}
-          lessons={openLessons}
-          selection={selection}
-          expandedUdas={expandedUdas}
-          onSelectionChange={(next) => guardNavigation(() => setSelection(next))}
-          onExpandedUdasChange={setExpandedUdas}
-          onBack={() => guardNavigation(backToLibrary)}
-          uid={uid ?? null}
-          notes={notes}
-          isMobile={isMobile}
-        />
-        {pendingNav && (
-          <ConfirmDialog
-            title="Modifiche non salvate"
-            message="Ci sono modifiche non salvate agli appunti. Se continui le perdi."
-            confirmLabel="Esci senza salvare"
-            cancelLabel="Resta e continua"
-            danger
-            busy={notes.current?.saveState === 'saving'}
-            onCancel={() => setPendingNav(null)}
-            onConfirm={() => {
-              if (!notes.discardAndClose()) return;
-              pendingNav.run();
-              setPendingNav(null);
-            }}
-          />
-        )}
-      </>
-    );
-  }
-
+  const state = data.library;
   return (
-    <section aria-label="Didattica" className={styles.library}>
-      {state.programs.length === 0 ? (
-        <p className="state-empty">Nessun corso assegnato alla tua classe.</p>
-      ) : (
-        <div className={styles.courseList} role="list" aria-label="Corsi disponibili">
-          {state.programs.map((program) => {
-            const lessons = state.lessonsByProgram[program.id] ?? [];
-            const udaCount = new Set(lessons.map((lesson) => lesson.udaDir)).size;
-            const completedLessons = lessons.filter((lesson) => lesson.completed).length;
-            const completionPercentage =
-              lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
-            return (
-              <CourseRecordCard
-                key={program.id}
-                title={program.title}
-                openLabel={`Apri il corso ${program.title}`}
-                onOpen={() => openCourse(program.id)}
-                metrics={[
-                  { label: 'UDA', value: udaCount, icon: <IconLayers size={17} /> },
-                  { label: 'Lezioni', value: lessons.length, icon: <IconFileText size={17} /> },
-                  {
-                    label: 'Svolte',
-                    value: completedLessons,
-                    icon: <IconCircleCheck size={17} />,
-                  },
-                ]}
-                progress={{
-                  label: `Avanzamento ${program.title}`,
-                  value: completionPercentage,
-                  text: `${completedLessons}/${lessons.length} lezioni`,
-                }}
-                accentProgressOnInteraction
-              />
-            );
-          })}
-        </div>
+    <>
+      <div className={styles.refreshBar}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={data.refreshing}
+          onClick={() => {
+            // Refresh may discover a revoked class/import. Obtain explicit
+            // consent before such a refresh can discard a dirty draft.
+            if (notes.current?.dirty)
+              guardNavigation(() => {
+                void data.refresh(true);
+              });
+            else void data.refresh(true);
+          }}
+        >
+          Aggiorna
+        </button>
+        {data.refreshing && <span role="status">Aggiornamento…</span>}
+      </div>
+      {state.status === 'loading' && (
+        <p aria-busy="true" className="state-loading">
+          Caricamento…
+        </p>
       )}
-    </section>
+      {state.status === 'error' && (
+        <p role="alert" className="text-error">
+          Impossibile caricare la didattica. Riprova con Aggiorna.
+        </p>
+      )}
+      {state.status === 'ok' && data.libraryError && !data.program && (
+        <p role="alert" className="text-error">
+          Impossibile aggiornare la didattica. Riprova con Aggiorna.
+        </p>
+      )}
+      {state.status === 'no-class' && (
+        <p className="state-empty">
+          Nessuna classe assegnata. Chiedi al docente di assegnarti una classe.
+        </p>
+      )}
+      {state.status === 'ok' &&
+        (data.program ? (
+          data.course.status === 'ok' ? (
+            <StudentCourseWorkspace
+              program={data.program}
+              lessons={data.course.lessons}
+              selection={selection}
+              expandedUdas={expandedUdas}
+              onSelectionChange={(next) => guardNavigation(() => setSelection(next))}
+              onExpandedUdasChange={setExpandedUdas}
+              onBack={() => guardNavigation(() => data.back())}
+              uid={uid}
+              notes={notes}
+              isMobile={isMobile}
+            />
+          ) : (
+            <section aria-label={`Corso ${data.program.title}`}>
+              <button
+                type="button"
+                className={styles.backBtn}
+                onClick={() => guardNavigation(() => data.back())}
+              >
+                ← Libreria
+              </button>
+              <h2>{data.program.title}</h2>
+              {data.course.status === 'error' ? (
+                <p role="alert" className="text-error">
+                  Impossibile caricare il corso. Riprova con Aggiorna.
+                </p>
+              ) : (
+                <p aria-busy="true" className="state-loading">
+                  Caricamento corso…
+                </p>
+              )}
+            </section>
+          )
+        ) : (
+          <section aria-label="Didattica" className={styles.library}>
+            {state.programs.length === 0 ? (
+              <p className="state-empty">Nessun corso assegnato alla tua classe.</p>
+            ) : (
+              <div className={styles.courseList} role="list" aria-label="Corsi disponibili">
+                {state.programs.map((program) => (
+                  <CourseRecordCard
+                    key={program.id}
+                    title={program.title}
+                    openLabel={`Apri il corso ${program.title}`}
+                    onOpen={() => {
+                      setSelection({ kind: 'course' });
+                      setExpandedUdas(new Set());
+                      data.open(program.id);
+                    }}
+                    metrics={[]}
+                    compact
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
+      {pendingNav && (
+        <ConfirmDialog
+          title="Modifiche non salvate"
+          message="Ci sono modifiche non salvate agli appunti. Se continui le perdi."
+          confirmLabel="Esci senza salvare"
+          cancelLabel="Resta e continua"
+          danger
+          busy={notes.current?.saveState === 'saving'}
+          onCancel={() => setPendingNav(null)}
+          onConfirm={() => {
+            if (!notes.discardAndClose()) return;
+            pendingNav.run();
+            setPendingNav(null);
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -564,7 +528,7 @@ function LessonContent({
   /**
    * La mappa esiste per lo studente solo se è **nella proiezione**: il
    * normalizzatore autorevole (`readPublicConceptMap`, applicato al confine da
-   * `loadStudentLessons`) ha già deciso, e qui non si rilegge nulla.
+   * `loadStudentCourseLessons`) ha già deciso, e qui non si rilegge nulla.
    */
   const hasConceptMap =
     typeof lesson.conceptMapMarkdown === 'string' && lesson.conceptMapMarkdown.length > 0;

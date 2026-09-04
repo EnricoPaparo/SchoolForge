@@ -27,7 +27,15 @@ vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: mockUser, signOut: mockSignOut }),
 }));
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
-  loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
+  loadStudentLibrary: async (...args: unknown[]) => {
+    const result = await mockLoadStudentLessons(...args);
+    if (result.status !== 'ok') return result;
+    return { status: 'ok', classId: 'class-a', programs: result.programs };
+  },
+  loadStudentCourseLessons: async (program: { id: string }) => {
+    const result = await mockLoadStudentLessons.getMockImplementation()?.();
+    return result.lessonsByProgram[program.id] ?? [];
+  },
 }));
 vi.mock('../../repository/verifications/studentVerificationsService.js', () => ({
   loadStudentVerifications: (...args: unknown[]) => mockLoadStudentVerifications(...args),

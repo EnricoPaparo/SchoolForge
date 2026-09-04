@@ -51,30 +51,26 @@ export function isEmptySkeleton(content: string | null): boolean {
   return typeof content === 'string' && content.trim() === '';
 }
 
-export type StudentLessonsResult =
+export type StudentLibraryResult =
   | { status: 'no-class' }
   | {
       status: 'ok';
+      classId: string;
       programs: StudentProgram[];
-      lessonsByProgram: Record<string, StudentLesson[]>;
     };
 
 /**
  * Reads only what an approved student is allowed to see (Security Rules
  * enforce the same class-matching independently — this mirrors, not
  * replaces, that check): their own classId, the programs assigned to that
- * class (`classIds` array-contains), and the `publicLessons` projection for
- * each matched program. Never reads a program's `imports/**` subcollection
+ * class (`classIds` array-contains). No lesson bodies/maps/visuals are read to
+ * populate the library. Never reads a program's `imports/**` subcollection
  * (technical lessons, questionIndex, pool) — those stay owner-only.
- *
- * A program is queried one at a time (`where('programId', '==', id)`)
- * rather than combined with `in`, so the corresponding Security Rule only
- * ever needs to resolve a single, query-fixed program path per request.
  */
-export async function loadStudentLessons(
+export async function loadStudentLibrary(
   uid: string,
   db: Firestore,
-): Promise<StudentLessonsResult> {
+): Promise<StudentLibraryResult> {
   const studentDoc = await getOwnStudentDoc(uid, db);
   const classId = studentDoc?.classId ?? null;
   if (!classId) return { status: 'no-class' };
@@ -94,66 +90,72 @@ export async function loadStudentLessons(
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 
-  const lessonsByProgram: Record<string, StudentLesson[]> = {};
-  await Promise.all(
-    programs.map(async (program) => {
-      // A program with no active import has no visible projection: skip the
-      // query entirely (an empty lesson list), rather than reading stale/legacy
-      // projections that no longer belong to any active import. The Security
-      // Rule enforces the same `importId == activeImportId` constraint
-      // server-side (HARD-02B-1).
-      if (!program.activeImportId) {
-        lessonsByProgram[program.id] = [];
-        return;
-      }
-      const lessonsSnap = await getDocs(
-        query(
-          collection(db, 'publicLessons'),
-          where('programId', '==', program.id),
-          where('importId', '==', program.activeImportId),
-        ),
-      );
-      lessonsByProgram[program.id] = lessonsSnap.docs
-        .map((d) => {
-          const raw = d.data() as Partial<PublicLessonDoc>;
-          return {
-            id: d.id,
-            ...raw,
-            order: raw.order ?? Number.MAX_SAFE_INTEGER,
-            sottotitolo: raw.sottotitolo ?? null,
-            difficolta: raw.difficolta ?? null,
-            concettiChiave: raw.concettiChiave ?? [],
-            obiettivi: raw.obiettivi ?? [],
-            content: normalizeLessonContent(raw.content),
-            // L'invariante di visibilità è riapplicato in lettura: una
-            // proiezione non svolta legge `null` anche se contenesse il campo.
-            conceptMapMarkdown: readPublicConceptMap(raw),
-            // Stesso invariante della mappa, riapplicato in lettura.
-            visual: readStudentVisualManifest(raw),
-            visuals: readStudentVisualManifests(raw),
-          } as StudentLesson;
-        })
-        // STRUCTURE-IMPORT-02B: una lezione importata come scheletro ha corpo
-        // vuoto. Mostrarla produrrebbe una card che non porta nulla, quindi
-        // viene omessa finché il docente non salva o genera un contenuto reale
-        // — il salvataggio canonico aggiorna `publicLessons.content` e la
-        // rende visibile senza altre letture e senza un secondo percorso di
-        // pubblicazione.
-        //
-        // Filtro di prodotto, **non** un confine di sicurezza: la proiezione
-        // resta tecnicamente leggibile secondo le Rules correnti.
-        //
-        // `null` non è filtrato: è una proiezione legacy priva del campo
-        // `content` (pre M3F-08), che la UI gestisce già a parte.
-        .filter((lesson) => !isEmptySkeleton(lesson.content))
-        .sort(
-          (a, b) =>
-            a.udaDir.localeCompare(b.udaDir) ||
-            (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
-            a.filename.localeCompare(b.filename),
-        );
-    }),
-  );
+  return { status: 'ok', classId, programs };
+}
 
-  return { status: 'ok', programs, lessonsByProgram };
+/**
+ * Reads only the selected public projection. One query-fixed program/import
+ * lets Security Rules independently check the current assignment and import;
+ * no private imports, Storage fallback, prefetch or multi-program query.
+ */
+export async function loadStudentCourseLessons(
+  program: StudentProgram,
+  db: Firestore,
+): Promise<StudentLesson[]> {
+  // A program with no active import has no visible projection: skip the
+  // query entirely (an empty lesson list), rather than reading stale/legacy
+  // projections that no longer belong to any active import. The Security
+  // Rule enforces the same `importId == activeImportId` constraint
+  // server-side (HARD-02B-1).
+  if (!program.activeImportId) {
+    return [];
+  }
+  const lessonsSnap = await getDocs(
+    query(
+      collection(db, 'publicLessons'),
+      where('programId', '==', program.id),
+      where('importId', '==', program.activeImportId),
+    ),
+  );
+  return (
+    lessonsSnap.docs
+      .map((d) => {
+        const raw = d.data() as Partial<PublicLessonDoc>;
+        return {
+          id: d.id,
+          ...raw,
+          order: raw.order ?? Number.MAX_SAFE_INTEGER,
+          sottotitolo: raw.sottotitolo ?? null,
+          difficolta: raw.difficolta ?? null,
+          concettiChiave: raw.concettiChiave ?? [],
+          obiettivi: raw.obiettivi ?? [],
+          content: normalizeLessonContent(raw.content),
+          // L'invariante di visibilità è riapplicato in lettura: una
+          // proiezione non svolta legge `null` anche se contenesse il campo.
+          conceptMapMarkdown: readPublicConceptMap(raw),
+          // Stesso invariante della mappa, riapplicato in lettura.
+          visual: readStudentVisualManifest(raw),
+          visuals: readStudentVisualManifests(raw),
+        } as StudentLesson;
+      })
+      // STRUCTURE-IMPORT-02B: una lezione importata come scheletro ha corpo
+      // vuoto. Mostrarla produrrebbe una card che non porta nulla, quindi
+      // viene omessa finché il docente non salva o genera un contenuto reale
+      // — il salvataggio canonico aggiorna `publicLessons.content` e la
+      // rende visibile senza altre letture e senza un secondo percorso di
+      // pubblicazione.
+      //
+      // Filtro di prodotto, **non** un confine di sicurezza: la proiezione
+      // resta tecnicamente leggibile secondo le Rules correnti.
+      //
+      // `null` non è filtrato: è una proiezione legacy priva del campo
+      // `content` (pre M3F-08), che la UI gestisce già a parte.
+      .filter((lesson) => !isEmptySkeleton(lesson.content))
+      .sort(
+        (a, b) =>
+          a.udaDir.localeCompare(b.udaDir) ||
+          (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+          a.filename.localeCompare(b.filename),
+      )
+  );
 }
