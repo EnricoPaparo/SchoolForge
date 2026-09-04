@@ -451,7 +451,14 @@ export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, 
 
 /** `aiContentGenerate` — ordine fail-closed completo. Una sola generazione logica. */
 export const aiContentGenerate = onCall(
-  { region: SCHOOLFORGE_FUNCTION_REGION, secrets: [OPENAI_API_KEY] },
+  {
+    region: SCHOOLFORGE_FUNCTION_REGION,
+    secrets: [OPENAI_API_KEY],
+    // A cold start plus a long Quality response can legitimately exceed the
+    // platform default of 60 seconds. Keep this bounded and aligned with the
+    // visual generation slot; provider/runtime budgets stay unchanged.
+    timeoutSeconds: 120,
+  },
   async (request) => {
     const database = db();
     const mode = contentMode();
