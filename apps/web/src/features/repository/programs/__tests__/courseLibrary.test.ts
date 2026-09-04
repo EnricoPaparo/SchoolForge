@@ -26,7 +26,7 @@ beforeEach(() => {
 });
 
 describe('loadCourseLibrary', () => {
-  it('aggregates the card metrics from the existing services (counts, anno, class names)', async () => {
+  it('loads only card metadata, without structural counts', async () => {
     mockListPrograms.mockResolvedValue([
       { id: 'p1', title: 'Reti', activeImportId: 'i1', classIds: ['cA', 'cB'] },
     ]);
@@ -52,17 +52,15 @@ describe('loadCourseLibrary', () => {
         annoScolastico: '2025/2026',
         classIds: ['cA', 'cB'],
         classNames: ['4A INF', '5A INF'],
-        udaCount: 3,
-        lessonsTotal: 4,
-        lessonsDone: 2,
-        questionsTotal: 9,
         hasImport: true,
         activeImportId: 'i1',
       },
     ]);
+    expect(mockListUdas).not.toHaveBeenCalled();
+    expect(mockListLessons).not.toHaveBeenCalled();
   });
 
-  it('handles a program with no active import: no tree reads, zeros, Senza anno', async () => {
+  it('handles a program with no active import: no per-program reads, Senza anno', async () => {
     mockListPrograms.mockResolvedValue([
       { id: 'p1', title: 'Bozza', activeImportId: null, classIds: [] },
     ]);
@@ -74,10 +72,6 @@ describe('loadCourseLibrary', () => {
       programId: 'p1',
       annoScolastico: null,
       classNames: [],
-      udaCount: 0,
-      lessonsTotal: 0,
-      lessonsDone: 0,
-      questionsTotal: 0,
       hasImport: false,
     });
     // No per-program tree reads for a program that was never imported.
@@ -86,7 +80,7 @@ describe('loadCourseLibrary', () => {
     expect(mockGetImportMeta).not.toHaveBeenCalled();
   });
 
-  it('spends the documented query budget: 1 listPrograms + 1 listClasses + 3 reads per imported program', async () => {
+  it('spends only 1 listPrograms + 1 listClasses + 1 metadata read per imported program', async () => {
     mockListPrograms.mockResolvedValue([
       { id: 'p1', title: 'A', activeImportId: 'i1', classIds: [] },
       { id: 'p2', title: 'B', activeImportId: 'i2', classIds: [] },
@@ -101,10 +95,12 @@ describe('loadCourseLibrary', () => {
 
     expect(mockListPrograms).toHaveBeenCalledTimes(1);
     expect(mockListClasses).toHaveBeenCalledTimes(1);
-    // Only the two imported programs trigger the 3 per-program reads.
-    expect(mockListUdas).toHaveBeenCalledTimes(2);
-    expect(mockListLessons).toHaveBeenCalledTimes(2);
+    // Even multiple imported courses do not load their UDA/lesson collections.
+    expect(mockListUdas).not.toHaveBeenCalled();
+    expect(mockListLessons).not.toHaveBeenCalled();
     expect(mockGetImportMeta).toHaveBeenCalledTimes(2);
+    expect(mockGetImportMeta).toHaveBeenCalledWith('p1', 'i1', db);
+    expect(mockGetImportMeta).toHaveBeenCalledWith('p2', 'i2', db);
   });
 
   it('drops class ids that no longer resolve to a class name', async () => {

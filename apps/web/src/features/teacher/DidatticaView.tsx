@@ -23,9 +23,6 @@ import { CourseRecordCard } from '../../components/CourseRecordCard.js';
 import { RecordActionsMenu } from './RecordActionsMenu.js';
 import {
   IconBookOpen,
-  IconCircleQuestion,
-  IconFileCheck,
-  IconLayers,
   IconPencil,
   IconPlus,
   IconSearch,
@@ -179,10 +176,6 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
         annoScolastico: created.annoScolastico,
         classIds: [],
         classNames: [],
-        udaCount: 0,
-        lessonsTotal: 0,
-        lessonsDone: 0,
-        questionsTotal: 0,
         hasImport: true,
         activeImportId: created.importId,
       };
@@ -242,10 +235,6 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
         annoScolastico: result.annoScolastico,
         classIds: [],
         classNames: [],
-        udaCount: result.udaCount,
-        lessonsTotal: result.lessonCount,
-        lessonsDone: 0,
-        questionsTotal: result.questionCount,
         hasImport: true,
         activeImportId: result.importId,
       };
@@ -341,19 +330,26 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
           card={openCard}
           ownerUid={ownerUid}
           onBack={() => setOpenProgramId(null)}
-          onProgramQuestionsChange={(programId, questionsTotal) =>
+          onCardPatch={(programId, patch) => {
+            // Structural mutation notifications are not library state anymore.
+            const metadataPatch: Partial<CourseCard> = {};
+            for (const key of [
+              'title',
+              'annoScolastico',
+              'classIds',
+              'classNames',
+              'hasImport',
+              'activeImportId',
+            ] as const) {
+              if (key in patch) Object.assign(metadataPatch, { [key]: patch[key] });
+            }
+            if (Object.keys(metadataPatch).length === 0) return;
             setCards(
               (prev) =>
-                prev?.map((c) => (c.programId === programId ? { ...c, questionsTotal } : c)) ??
+                prev?.map((c) => (c.programId === programId ? { ...c, ...metadataPatch } : c)) ??
                 prev,
-            )
-          }
-          onCardPatch={(programId, patch) =>
-            setCards(
-              (prev) =>
-                prev?.map((c) => (c.programId === programId ? { ...c, ...patch } : c)) ?? prev,
-            )
-          }
+            );
+          }}
           onCourseDeleted={(programId) => {
             setCards((prev) => prev?.filter((c) => c.programId !== programId) ?? prev);
             setOpenProgramId(null);
@@ -556,10 +552,12 @@ type TeacherCourseCardProps = {
 
 function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCardProps) {
   const yearLabel = card.annoScolastico ?? 'Senza anno';
-  const classesLabel = card.classNames.length > 0 ? card.classNames.join(', ') : 'Nessuna';
+  const classesLabel =
+    card.classNames.length > 0 ? card.classNames.join(', ') : 'Nessuna classe assegnata';
 
   return (
     <CourseRecordCard
+      compact
       title={card.title}
       openLabel={`Apri il corso ${card.title}`}
       onOpen={onOpen}
@@ -567,19 +565,7 @@ function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCa
         { label: 'Anno', value: yearLabel },
         { label: 'Classi', value: classesLabel, title: classesLabel },
       ]}
-      metrics={[
-        { label: 'UDA', value: card.udaCount, icon: <IconLayers size={17} /> },
-        {
-          label: 'Lezioni',
-          value: `${card.lessonsDone}/${card.lessonsTotal}`,
-          icon: <IconFileCheck size={17} />,
-        },
-        {
-          label: 'Domande',
-          value: card.questionsTotal,
-          icon: <IconCircleQuestion size={17} />,
-        },
-      ]}
+      metrics={[]}
       actions={
         <RecordActionsMenu ariaLabel={`Azioni corso — ${card.title}`} cue="Apri menu azioni →">
           <button

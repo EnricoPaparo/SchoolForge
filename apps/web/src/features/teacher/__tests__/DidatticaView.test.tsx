@@ -64,10 +64,6 @@ function card(overrides: Partial<CourseCard> = {}): CourseCard {
     annoScolastico: '2025/2026',
     classIds: ['c-4a'],
     classNames: ['4A INF'],
-    udaCount: 3,
-    lessonsTotal: 12,
-    lessonsDone: 9,
-    questionsTotal: 41,
     hasImport: true,
     activeImportId: 'i1',
     ...overrides,
@@ -93,9 +89,11 @@ describe('DidatticaView — loading and rendering', () => {
     const courseCard = within(screen.getByRole('listitem', { name: /corso sistemi e reti/i }));
     expect(courseCard.getByText('2025/2026')).toBeTruthy();
     expect(courseCard.getByText('4A INF')).toBeTruthy();
-    expect(courseCard.getByText('3')).toBeTruthy(); // UDA
-    expect(courseCard.getByText('9/12')).toBeTruthy(); // lezioni svolte/totali
-    expect(courseCard.getByText('41')).toBeTruthy(); // domande
+    expect(courseCard.queryByText('UDA')).toBeNull();
+    expect(courseCard.queryByText('Lezioni')).toBeNull();
+    expect(courseCard.queryByText('Domande')).toBeNull();
+    expect(courseCard.getByText('Apri corso →')).toBeTruthy();
+    expect(screen.getByRole('listitem').querySelector('dl')).toBeNull();
     expect(courseCard.getByRole('button', { name: /apri il corso sistemi e reti/i })).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
   });
@@ -231,6 +229,15 @@ describe('DidatticaView — open course', () => {
       'Rinomina corso',
       'Elimina corso',
     ]);
+    // Native buttons remain focusable; Escape restores keyboard focus without opening the course.
+    const renameAction = screen.getByRole('menuitem', { name: /rinomina corso — con azioni/i });
+    renameAction.focus();
+    expect(document.activeElement).toBe(renameAction);
+    fireEvent.keyDown(renameAction, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByText('WORKSPACE: Con Azioni')).toBeNull();
+    fireEvent.click(trigger);
 
     fireEvent.click(screen.getByRole('menuitem', { name: /rinomina corso — con azioni/i }));
     expect(screen.getByRole('dialog', { name: 'Rinomina corso' })).toBeTruthy();
@@ -334,9 +341,10 @@ describe('DidatticaView — create and import refresh the library', () => {
     expect(mockLoadCourseLibrary).toHaveBeenCalledOnce();
     const courseCard = within(screen.getByRole('listitem', { name: /corso importato/i }));
     expect(courseCard.getByText('2025/2026')).toBeTruthy();
-    expect(courseCard.getByText('2')).toBeTruthy();
-    expect(courseCard.getByText('0/5')).toBeTruthy();
-    expect(courseCard.getByText('10')).toBeTruthy();
+    expect(courseCard.getByText('Nessuna classe assegnata')).toBeTruthy();
+    expect(courseCard.queryByText('UDA')).toBeNull();
+    expect(courseCard.queryByText('0/5')).toBeNull();
+    expect(courseCard.queryByText('Domande')).toBeNull();
   });
 
   it('reveals a committed import even when the previous year filter would hide it', async () => {

@@ -848,6 +848,7 @@ export function ProgramInfoDialog({
   importId,
   ownerUid,
   counts,
+  countsError = false,
   classNames,
   onSaved,
   onClose,
@@ -855,7 +856,13 @@ export function ProgramInfoDialog({
   programId: string;
   importId: string | null;
   ownerUid: string;
-  counts: { udaCount: number; lessonsDone: number; lessonsTotal: number; questionsTotal: number };
+  counts: {
+    udaCount: number;
+    lessonsDone: number;
+    lessonsTotal: number;
+    questionsTotal: number;
+  } | null;
+  countsError?: boolean;
   classNames: string[];
   onSaved: (metadata: ProgrammaMeta) => void;
   onClose: () => void;
@@ -926,14 +933,25 @@ export function ProgramInfoDialog({
       <dl className={styles.infoList}>
         <dt>Import</dt>
         <dd>{importId ? 'Attivo' : 'Nessuno'}</dd>
-        <dt>UDA totali</dt>
-        <dd>{counts.udaCount}</dd>
-        <dt>Lezioni svolte</dt>
-        <dd>
-          {counts.lessonsDone} / {counts.lessonsTotal}
-        </dd>
-        <dt>Domande disponibili</dt>
-        <dd>{counts.questionsTotal}</dd>
+        {counts ? (
+          <>
+            <dt>UDA totali</dt>
+            <dd>{counts.udaCount}</dd>
+            <dt>Lezioni svolte</dt>
+            <dd>
+              {counts.lessonsDone} / {counts.lessonsTotal}
+            </dd>
+            <dt>Domande disponibili</dt>
+            <dd>{counts.questionsTotal}</dd>
+          </>
+        ) : (
+          <>
+            <dt>Statistiche</dt>
+            <dd aria-busy={!countsError}>
+              {countsError ? 'Statistiche non disponibili.' : 'Caricamento statistiche…'}
+            </dd>
+          </>
+        )}
         <dt>Classi</dt>
         <dd>{classNames.length > 0 ? classNames.join(', ') : 'Nessuna'}</dd>
         {meta === undefined && importId ? (

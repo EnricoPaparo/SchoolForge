@@ -26,7 +26,7 @@ import {
   IconTrash,
   IconUpload,
 } from '../../components/icons.js';
-import type { CourseCard } from '../repository/programs/courseLibrary.js';
+import type { CourseCard, CourseStatistics } from '../repository/programs/courseLibrary.js';
 import {
   deleteProgram,
   getImportMeta,
@@ -265,18 +265,15 @@ function cardToProgram(card: CourseCard): ProgramItem {
 
 type CourseWorkspaceProps = {
   /**
-   * The library card for the course being opened. The summary strip reuses
-   * the counters DUX-01 already computed (anno, classi, UDA, lezioni,
-   * domande) so the workspace never recomputes them; `activeImportId` lets
-   * it load this one course's tree without re-reading the program list.
+   * Lightweight library metadata. Statistics derive exclusively from this
+   * course's loaded tree, without re-reading the program list.
    */
   card: CourseCard;
   ownerUid: string;
   onBack: () => void;
   /**
-   * Called when a pool edit changes the course's total question count, so the
-   * library card counter can be updated in place without re-reading the whole
-   * library (DUX-03 item 8).
+   * Optional notification retained for consumers of pool-edit results.
+   * The compact library no longer needs this callback.
    */
   onProgramQuestionsChange?: (programId: string, questionsTotal: number) => void;
   /**
@@ -284,7 +281,7 @@ type CourseWorkspaceProps = {
    * (title, classes, counts, active import) — avoids reloading the whole
    * library.
    */
-  onCardPatch?: (programId: string, patch: Partial<CourseCard>) => void;
+  onCardPatch?: (programId: string, patch: Partial<CourseCard & CourseStatistics>) => void;
   /** DUX-04A: the course was deleted — drop its card and leave the workspace. */
   onCourseDeleted?: (programId: string) => void;
 };
@@ -724,8 +721,8 @@ export function CourseWorkspace({
     setLessonBlockers(null);
   }
 
-  // Patches the library card's derived counters from a freshly-updated tree,
-  // so the card and the summary strip stay correct without a library reload.
+  // Preserve mutation notifications for existing consumers; workspace summaries
+  // use the tree directly and never depend on a parent's handling of this patch.
   function patchCardCounts(next: Tree) {
     onCardPatch?.(card.programId, {
       udaCount: next.udas.length,
@@ -1810,13 +1807,23 @@ export function CourseWorkspace({
     })();
   }
 
-  const pct = card.lessonsTotal > 0 ? Math.round((card.lessonsDone / card.lessonsTotal) * 100) : 0;
   const yearLabel = card.annoScolastico ?? 'Senza anno';
-  // Once the tree is loaded, derive the domande total from it so a pool edit
-  // updates the strip live; before that, fall back to the card's counter.
-  const questionsTotal = tree
-    ? tree.lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0)
-    : card.questionsTotal;
+  const counts: CourseStatistics | null =
+    tree && !treeError
+      ? {
+          udaCount: tree.udas.length,
+          lessonsTotal: tree.lessons.length,
+          lessonsDone: tree.lessons.filter((lesson) => lesson.completed).length,
+          questionsTotal: tree.lessons.reduce(
+            (sum, lesson) => sum + (lesson.questionCount ?? 0),
+            0,
+          ),
+        }
+      : null;
+  const pct =
+    counts && counts.lessonsTotal > 0
+      ? Math.round((counts.lessonsDone / counts.lessonsTotal) * 100)
+      : 0;
 
   // Back keeps its navigation meaning even while organizing. The selection
   // effect clears Organize, while "Fine" remains the explicit exit control.
@@ -1868,7 +1875,7 @@ export function CourseWorkspace({
         </div>
       )}
 
-      <div className={styles.summaryStrip}>
+      <div className={styles.summaryStrip} role="group" aria-label="Riepilogo corso">
         <span className={styles.pill}>{yearLabel}</span>
         {card.classNames.length > 0 ? (
           card.classNames.map((name) => (
@@ -1882,27 +1889,39 @@ export function CourseWorkspace({
         <span className={styles.sep} aria-hidden="true">
           ·
         </span>
-        <span>
-          <strong>{card.udaCount}</strong> UDA
-        </span>
-        <span className={styles.sep} aria-hidden="true">
-          ·
-        </span>
-        <span>
-          <strong>
-            {card.lessonsDone}/{card.lessonsTotal}
-          </strong>{' '}
-          lezioni svolte
-        </span>
-        <span className={styles.sep} aria-hidden="true">
-          ·
-        </span>
-        <span>
-          <strong>{questionsTotal}</strong> domande
-        </span>
-        <div className={styles.progressTrack} role="img" aria-label={`Avanzamento lezioni ${pct}%`}>
-          <div className={styles.progressFill} style={{ width: `${pct}%` }} />
-        </div>
+        {counts ? (
+          <>
+            <span>
+              <strong>{counts.udaCount}</strong> UDA
+            </span>
+            <span className={styles.sep} aria-hidden="true">
+              ·
+            </span>
+            <span>
+              <strong>
+                {counts.lessonsDone}/{counts.lessonsTotal}
+              </strong>{' '}
+              lezioni svolte
+            </span>
+            <span className={styles.sep} aria-hidden="true">
+              ·
+            </span>
+            <span>
+              <strong>{counts.questionsTotal}</strong> domande
+            </span>
+            <div
+              className={styles.progressTrack}
+              role="img"
+              aria-label={`Avanzamento lezioni ${pct}%`}
+            >
+              <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+            </div>
+          </>
+        ) : (
+          <span aria-busy={!treeError}>
+            {treeError ? 'Statistiche non disponibili.' : 'Caricamento statistiche…'}
+          </span>
+        )}
       </div>
 
       <div className={styles.body}>
@@ -1921,13 +1940,13 @@ export function CourseWorkspace({
               </button>
             </div>
 
-            {tree === null ? (
-              <p aria-busy="true" className="state-loading">
-                Caricamento…
-              </p>
-            ) : treeError ? (
+            {treeError ? (
               <p role="alert" className="text-error">
                 {treeError}
+              </p>
+            ) : tree === null ? (
+              <p aria-busy="true" className="state-loading">
+                Caricamento…
               </p>
             ) : tree.udas.length === 0 ? (
               <p className="state-empty">Nessuna UDA in questo corso.</p>
@@ -2191,6 +2210,7 @@ export function CourseWorkspace({
             <CourseOverview
               card={card}
               tree={tree}
+              treeError={treeError}
               lessonsByUda={lessonsByUda}
               organizing={organizing}
               reorderBusy={reorderBusy}
@@ -2643,12 +2663,8 @@ export function CourseWorkspace({
           programId={card.programId}
           importId={card.activeImportId}
           ownerUid={ownerUid}
-          counts={{
-            udaCount: tree?.udas.length ?? card.udaCount,
-            lessonsDone: tree?.lessons.filter((l) => l.completed).length ?? card.lessonsDone,
-            lessonsTotal: tree?.lessons.length ?? card.lessonsTotal,
-            questionsTotal,
-          }}
+          counts={counts}
+          countsError={Boolean(treeError)}
           classNames={card.classNames}
           onSaved={(metadata) =>
             onCardPatch?.(card.programId, { annoScolastico: metadata.annoScolastico })
@@ -2799,6 +2815,7 @@ export function CourseWorkspace({
 function CourseOverview({
   card,
   tree,
+  treeError,
   lessonsByUda,
   organizing,
   reorderBusy,
@@ -2808,6 +2825,7 @@ function CourseOverview({
 }: {
   card: CourseCard;
   tree: Tree | null;
+  treeError: string | null;
   lessonsByUda: Map<string, LessonItem[]>;
   organizing: boolean;
   reorderBusy: boolean;
@@ -2820,6 +2838,10 @@ function CourseOverview({
       {!card.hasImport ? (
         <p className="state-empty">
           Nessun contenuto importato. Importa uno ZIP dalla libreria per popolare questo corso.
+        </p>
+      ) : treeError ? (
+        <p role="alert" className="text-error">
+          {treeError}
         </p>
       ) : tree === null ? (
         <p aria-busy="true" className="state-loading">

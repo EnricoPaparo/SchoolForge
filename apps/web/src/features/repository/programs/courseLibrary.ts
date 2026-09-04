@@ -1,18 +1,19 @@
 import type { Firestore } from 'firebase/firestore';
 import { listClasses } from '../classes/classesService.js';
-import {
-  getImportMeta,
-  listLessons,
-  listPrograms,
-  listUdas,
-  type ProgramItem,
-} from './programsService.js';
-import { filterCommittedLessons } from './committedUdas.js';
+import { getImportMeta, listPrograms, type ProgramItem } from './programsService.js';
+
+/** Statistics belong to the opened workspace, never to library reads. */
+export type CourseStatistics = {
+  udaCount: number;
+  lessonsTotal: number;
+  lessonsDone: number;
+  questionsTotal: number;
+};
 
 /**
  * One card in the Didattica library (DUX-01). Deliberately flat and
  * self-contained: everything the card renders is here, so the view never
- * re-derives counts or resolves class names itself.
+ * resolves class names itself. Structural statistics are loaded only on open.
  *
  * `annoScolastico` is `null` when the active import carried no
  * `programma.md` metadata (or the program has no active import at all) —
@@ -25,10 +26,6 @@ export type CourseCard = {
   /** Assigned class ids (source of truth). Kept alongside the resolved names. */
   classIds: string[];
   classNames: string[];
-  udaCount: number;
-  lessonsTotal: number;
-  lessonsDone: number;
-  questionsTotal: number;
   /** False when the program has never been populated by a ZIP import yet. */
   hasImport: boolean;
   /**
@@ -44,20 +41,11 @@ export type CourseCard = {
  * exist (DUX-01) — no new Firestore document, index, Rule or Cloud
  * Function, and no Storage read (no Markdown, no pool files).
  *
- * Reads, deliberately matching the budget established by the legacy "Corsi"
- * view (removed in DUX-04D), so the consolidated Didattica experience keeps
- * the same metrics without adding queries:
+ * Read budget for the compact library (COURSE-CARDS-LITE-01):
  *   - `listPrograms` — 1 query (all programs of the owner)
  *   - `listClasses`  — 1 query (all classes, only to resolve class names)
- *   - per program that has an active import: `listUdas` + `listLessons` +
- *     `getImportMeta` — 3 reads, run in parallel.
- *
- * The per-program reads are necessary for the required per-card metrics
- * (UDA count, lezioni svolte/totali, numero domande) which live on the
- * UDA/lesson documents themselves — never on a denormalized counter — and
- * for the school year (on the import's `programmaMeta`). Storage content
- * and pools are never touched. Any cheaper aggregate would require a new
- * denormalized document/index, explicitly out of scope for DUX-01.
+ *   - per program that has an active import: `getImportMeta` — 1 read for
+ *     the school year. No UDA, lesson, Storage or pool reads.
  *
  * No realtime listener: this is a one-shot read, re-run explicitly by the
  * view after a create/import/rename/delete.
@@ -86,25 +74,13 @@ async function buildCard(
       annoScolastico: null,
       classIds,
       classNames,
-      udaCount: 0,
-      lessonsTotal: 0,
-      lessonsDone: 0,
-      questionsTotal: 0,
       hasImport: false,
       activeImportId: null,
     };
   }
 
   const importId = program.activeImportId;
-  const [udas, allLessons, programmaMeta] = await Promise.all([
-    listUdas(program.id, importId, db),
-    listLessons(program.id, importId, db),
-    getImportMeta(program.id, importId, db),
-  ]);
-  // Ignore lessons staged for a not-yet-committed UDA (no UdaDoc) — reader
-  // coherence for the "Importa UDA" staged append. No extra read: both lists
-  // are already loaded above.
-  const lessons = filterCommittedLessons(udas, allLessons);
+  const programmaMeta = await getImportMeta(program.id, importId, db);
 
   return {
     programId: program.id,
@@ -112,10 +88,6 @@ async function buildCard(
     annoScolastico: programmaMeta?.annoScolastico ?? null,
     classIds,
     classNames,
-    udaCount: udas.length,
-    lessonsTotal: lessons.length,
-    lessonsDone: lessons.filter((l) => l.completed).length,
-    questionsTotal: lessons.reduce((sum, l) => sum + (l.questionCount ?? 0), 0),
     hasImport: true,
     activeImportId: importId,
   };

@@ -22,6 +22,7 @@ export type RecordCardProgress = {
 
 export type RecordCardActionLayout =
   | 'corner'
+  | 'course-compact'
   | 'grid'
   | 'footer'
   | 'verification'
@@ -140,7 +141,9 @@ export function RecordCard({
                 ? styles.cardActionsClassAdmin
                 : actionLayout === 'submission'
                   ? styles.cardActionsSubmission
-                  : styles.cardActionsCorner;
+                  : actionLayout === 'course-compact'
+                    ? styles.cardCourseCompact
+                    : styles.cardActionsCorner;
   const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
   /**
    * Solo la variante verifica **docente** promuove la CTA a fascia autonoma:
@@ -238,7 +241,7 @@ export function RecordCard({
               riga metadati su desktop, ultima fascia su mobile). */}
           {interactionCue && !cueOutsideIdentity && (
             <span className={styles.openCta} aria-hidden="true">
-              {interactionCue}
+              {actionLayout === 'course-compact' ? initialCue : interactionCue}
             </span>
           )}
         </header>
@@ -257,25 +260,27 @@ export function RecordCard({
           </span>
         )}
 
-        <dl className={styles.metrics}>
-          {metrics.map((metric) => (
-            <div
-              className={`${styles.metric} ${metric.interactive ? styles.metricInteractive : ''}`}
-              key={metric.label}
-              data-metric-label={metric.label}
-            >
-              {metric.icon && (
-                <span className={styles.metricIcon} aria-hidden="true">
-                  {metric.icon}
-                </span>
-              )}
-              <dt>{metric.label}</dt>
-              <dd>{metric.value}</dd>
-            </div>
-          ))}
-        </dl>
+        {actionLayout !== 'course-compact' && (
+          <dl className={styles.metrics}>
+            {metrics.map((metric) => (
+              <div
+                className={`${styles.metric} ${metric.interactive ? styles.metricInteractive : ''}`}
+                key={metric.label}
+                data-metric-label={metric.label}
+              >
+                {metric.icon && (
+                  <span className={styles.metricIcon} aria-hidden="true">
+                    {metric.icon}
+                  </span>
+                )}
+                <dt>{metric.label}</dt>
+                <dd>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
 
-        {progress && (
+        {progress && actionLayout !== 'course-compact' && (
           <div className={styles.progress}>
             <div className={styles.progressText}>
               <span>{progress.label}</span>
