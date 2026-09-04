@@ -214,18 +214,6 @@ export function useStudentDidattica(uid: string, db: Firestore) {
       },
     };
   }, [uid, db]);
-  useEffect(() => {
-    const dispose = session.mount();
-    const refresh = () => {
-      if (document.visibilityState !== 'hidden') void session.refresh();
-    };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      dispose();
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, [session]);
+  useEffect(() => session.mount(), [session]);
   return session;
 }

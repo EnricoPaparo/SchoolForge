@@ -88,28 +88,31 @@ function StudentDidatticaContent({
     action();
   }
 
+  // Refresh may discover a revoked class/import. Obtain explicit consent
+  // before such a refresh can discard a dirty draft.
+  function retryRefresh() {
+    if (notes.current?.dirty)
+      guardNavigation(() => {
+        void data.refresh(true);
+      });
+    else void data.refresh(true);
+  }
+
+  // Protects F5/tab-close only while a draft would otherwise be lost silently;
+  // no localStorage, no polling — just a listener bound to the dirty window.
+  useEffect(() => {
+    if (!notes.current?.dirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [notes.current?.dirty]);
+
   const state = data.library;
   return (
     <>
-      <div className={styles.refreshBar}>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={data.refreshing}
-          onClick={() => {
-            // Refresh may discover a revoked class/import. Obtain explicit
-            // consent before such a refresh can discard a dirty draft.
-            if (notes.current?.dirty)
-              guardNavigation(() => {
-                void data.refresh(true);
-              });
-            else void data.refresh(true);
-          }}
-        >
-          Aggiorna
-        </button>
-        {data.refreshing && <span role="status">Aggiornamento…</span>}
-      </div>
       {state.status === 'loading' && (
         <p aria-busy="true" className="state-loading">
           Caricamento…
@@ -117,12 +120,28 @@ function StudentDidatticaContent({
       )}
       {state.status === 'error' && (
         <p role="alert" className="text-error">
-          Impossibile caricare la didattica. Riprova con Aggiorna.
+          Impossibile caricare la didattica.{' '}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={data.refreshing}
+            onClick={retryRefresh}
+          >
+            Riprova
+          </button>
         </p>
       )}
       {state.status === 'ok' && data.libraryError && !data.program && (
         <p role="alert" className="text-error">
-          Impossibile aggiornare la didattica. Riprova con Aggiorna.
+          Impossibile aggiornare la didattica.{' '}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={data.refreshing}
+            onClick={retryRefresh}
+          >
+            Riprova
+          </button>
         </p>
       )}
       {state.status === 'no-class' && (
@@ -157,7 +176,15 @@ function StudentDidatticaContent({
               <h2>{data.program.title}</h2>
               {data.course.status === 'error' ? (
                 <p role="alert" className="text-error">
-                  Impossibile caricare il corso. Riprova con Aggiorna.
+                  Impossibile caricare il corso.{' '}
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={data.refreshing}
+                    onClick={retryRefresh}
+                  >
+                    Riprova
+                  </button>
                 </p>
               ) : (
                 <p aria-busy="true" className="state-loading">
