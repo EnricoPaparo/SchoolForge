@@ -171,20 +171,89 @@ describe('StudentDidatticaView — SDUX-01', () => {
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes the public projection when the student window regains focus', async () => {
+  it('never shows a fixed refresh control and never reloads on focus/visibility', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
     await screen.findByLabelText('Corsi disponibili');
 
+    expect(screen.queryByRole('button', { name: 'Aggiorna' })).toBeNull();
+
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001);
+    fireEvent(window, new Event('focus'));
+    fireEvent(document, new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Aggiorna' })).toBeNull();
+  });
+});
+
+describe('StudentDidatticaView — contextual retry', () => {
+  it('shows a Riprova button on a library load error, disables it mid-attempt, and retries once', async () => {
+    mockLoadStudentLessons.mockRejectedValueOnce(new Error('boom'));
+    render(<StudentDidatticaView />);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Impossibile caricare la didattica.');
+    const retry = screen.getByRole('button', { name: 'Riprova' }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+
+    const pending = new Promise(() => {});
+    mockLoadStudentLessons.mockReturnValueOnce(pending);
+    fireEvent.click(retry);
+    expect((screen.getByRole('button', { name: 'Riprova' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(mockLoadStudentLessons).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers the library after a successful Riprova retry', async () => {
+    mockLoadStudentLessons.mockRejectedValueOnce(new Error('boom'));
+    render(<StudentDidatticaView />);
+    await screen.findByRole('alert');
     mockLoadStudentLessons.mockResolvedValueOnce({
       status: 'ok',
       programs: [PROGRAM_A],
-      lessonsByProgram: { 'prog-a': [{ ...LESSON_1, content: 'Versione aggiornata.' }] },
+      lessonsByProgram: { 'prog-a': [] },
     });
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001);
-    fireEvent(window, new Event('focus'));
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await screen.findByLabelText('Corsi disponibili');
+    expect(mockLoadStudentLessons).toHaveBeenCalledTimes(2);
+  });
 
-    await waitFor(() => expect(mockLoadStudentLessons).toHaveBeenCalledTimes(2));
+  it('coalesces a rapid double-click on the library Riprova into a single retry', async () => {
+    mockLoadStudentLessons.mockRejectedValueOnce(new Error('boom'));
+    render(<StudentDidatticaView />);
+    await screen.findByRole('alert');
+    mockLoadStudentLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { 'prog-a': [] },
+    });
+    const retry = screen.getByRole('button', { name: 'Riprova' });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    await screen.findByLabelText('Corsi disponibili');
+    expect(mockLoadStudentLessons).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a Riprova button on a course load error and retries only the course', async () => {
+    let attempt = 0;
+    mockLoadStudentLessons.mockImplementation(async () => {
+      attempt++;
+      if (attempt === 2) throw new Error('offline');
+      return { status: 'ok', programs: [PROGRAM_A], lessonsByProgram: { 'prog-a': [LESSON_1] } };
+    });
+    render(<StudentDidatticaView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Impossibile caricare il corso.');
+    const retry = screen.getByRole('button', { name: 'Riprova' });
+    fireEvent.click(retry);
+    const structure = await screen.findByRole('complementary', { name: 'Struttura del corso' });
+    await waitFor(() =>
+      expect(within(structure).getByRole('button', { name: /Reti/ })).toBeTruthy(),
+    );
+    expect(attempt).toBeGreaterThanOrEqual(4);
   });
 });
 

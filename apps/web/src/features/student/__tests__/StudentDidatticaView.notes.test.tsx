@@ -110,58 +110,27 @@ async function openCourseAndSelectLesson() {
 }
 
 describe('StudentDidatticaView — Appunti entry point', () => {
-  it('keeps a dirty draft across successful and offline automatic refreshes, including recovery', async () => {
-    let now = 100_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now);
-    render(<StudentDidatticaView />);
-    await openCourseAndSelectLesson();
-    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
-    fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
-      target: { value: 'Draft da conservare' },
-    });
-    now += 60_001;
-    fireEvent(window, new Event('focus'));
-    await waitFor(() => expect(mockLoadLessons).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText('Aggiornamento…')).toBeNull());
-    expect((screen.getByLabelText('Testo degli appunti') as HTMLTextAreaElement).value).toBe(
-      'Draft da conservare',
-    );
-    mockLoadLessons.mockRejectedValueOnce(new Error('offline'));
-    now += 60_001;
-    fireEvent(window, new Event('focus'));
-    await screen.findByText(/Impossibile caricare il corso/);
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    now += 60_001;
-    fireEvent(window, new Event('focus'));
-    const recovered = await screen.findByLabelText('Testo degli appunti');
-    expect((recovered as HTMLTextAreaElement).value).toBe('Draft da conservare');
-    expect(mockLoadNote).toHaveBeenCalledOnce();
-    expect(mockCreateNote).not.toHaveBeenCalled();
-  });
-
-  it('guards explicit refresh and library navigation before discarding dirty notes', async () => {
+  it('guards library navigation before discarding a dirty note', async () => {
     render(<StudentDidatticaView />);
     await openCourseAndSelectLesson();
     fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
     fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
       target: { value: 'Draft protetto' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna' }));
+    fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
     expect(await screen.findByRole('dialog')).toBeTruthy();
-    expect(mockLoadLessons).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Resta e continua' }));
     expect((screen.getByLabelText('Testo degli appunti') as HTMLTextAreaElement).value).toBe(
       'Draft protetto',
     );
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Resta e continua' }));
-    expect(screen.queryByLabelText('Corsi disponibili')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna' }));
     fireEvent.click(screen.getByRole('button', { name: 'Esci senza salvare' }));
-    await waitFor(() => expect(mockLoadLessons).toHaveBeenCalledTimes(2));
+    expect(await screen.findByLabelText('Corsi disponibili')).toBeTruthy();
   });
 
-  it('drops note state on import invalidation and never restores an old note response', async () => {
+  it('drops note state on import invalidation discovered during a Riprova retry, never restoring a stale note response', async () => {
+    let now = 100_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
     let resolveOld!: (result: unknown) => void;
     mockLoadNote.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -172,16 +141,61 @@ describe('StudentDidatticaView — Appunti entry point', () => {
     await openCourseAndSelectLesson();
     fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
     await waitFor(() => expect(mockLoadNote).toHaveBeenCalledOnce());
+
+    // Not dirty yet (the note load is still pending), so back navigation is unguarded.
+    fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
+    now += 60_001;
+    mockLoadLessons.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
+    await screen.findByText(/Impossibile caricare il corso/);
+
     mockLoadLessons.mockResolvedValue({
       status: 'ok',
       programs: [{ id: 'p1', title: 'Informatica', classIds: ['class-a'], activeImportId: 'i2' }],
       lessonsByProgram: { p1: [{ ...LESSON, id: 'i2_lesson-1', importId: 'i2' }] },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
     await waitFor(() => expect(mockLoadNoteIndex).toHaveBeenCalledTimes(2));
     await act(async () => resolveOld({ state: 'existing', note: { content: 'Nota obsoleta' } }));
     expect(screen.queryByDisplayValue('Nota obsoleta')).toBeNull();
     expect(screen.queryByLabelText('Testo degli appunti')).toBeNull();
+  });
+
+  it('guards a beforeunload only while the open note is dirty, and clears the listener on save or unmount', async () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const view = render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+
+    const clean = new Event('beforeunload', { cancelable: true });
+    fireEvent(window, clean);
+    expect(clean.defaultPrevented).toBe(false);
+
+    fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
+      target: { value: 'Draft non salvato' },
+    });
+    expect(addSpy.mock.calls.some(([type]) => type === 'beforeunload')).toBe(true);
+    const dirty = new Event('beforeunload', { cancelable: true });
+    fireEvent(window, dirty);
+    expect(dirty.defaultPrevented).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(mockCreateNote).toHaveBeenCalledOnce());
+    await screen.findByRole('button', { name: 'Appunti, appunti salvati' });
+    const afterSave = new Event('beforeunload', { cancelable: true });
+    fireEvent(window, afterSave);
+    expect(afterSave.defaultPrevented).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Testo degli appunti'), {
+      target: { value: 'Draft non salvato di nuovo' },
+    });
+    const dirtyAgain = new Event('beforeunload', { cancelable: true });
+    fireEvent(window, dirtyAgain);
+    expect(dirtyAgain.defaultPrevented).toBe(true);
+
+    view.unmount();
+    expect(removeSpy.mock.calls.some(([type]) => type === 'beforeunload')).toBe(true);
   });
 
   it('drops pending note reads on logout/account change', async () => {

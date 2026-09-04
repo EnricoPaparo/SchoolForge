@@ -118,22 +118,43 @@ describe('student metadata and last-course cache', () => {
     await act(async () => b.resolve([lesson('b')]));
     expect(lessons(hook)).toEqual(['a']);
   });
-  it('throttles duplicate focus/visibility events and refreshes only the selected expired course', async () => {
+  it('mounts once and registers no focus/visibility listeners', async () => {
+    const addWindowSpy = vi.spyOn(window, 'addEventListener');
+    const addDocSpy = vi.spyOn(document, 'addEventListener');
+    await ready();
+    expect(mockLibrary).toHaveBeenCalledOnce();
+    expect(addWindowSpy.mock.calls.some(([type]) => type === 'focus')).toBe(false);
+    expect(addDocSpy.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(false);
+  });
+  it('ignores focus and visibilitychange events entirely, even past the freshness TTL', async () => {
     const hook = await ready();
     await open(hook);
     act(() => {
       fireEvent(window, new Event('focus'));
       fireEvent(document, new Event('visibilitychange'));
     });
-    expect(mockLibrary).toHaveBeenCalledOnce();
     now += 60_000;
     act(() => {
       fireEvent(window, new Event('focus'));
       fireEvent(document, new Event('visibilitychange'));
     });
-    await waitFor(() => expect(hook.result.current.refreshing).toBe(false));
+    expect(mockLibrary).toHaveBeenCalledOnce();
+    expect(mockCourse).toHaveBeenCalledOnce();
+  });
+  it('coalesces two concurrent forced refresh calls into a single library read', async () => {
+    const hook = await ready();
+    expect(mockLibrary).toHaveBeenCalledOnce();
+    const pending = deferred<StudentLibraryResult>();
+    mockLibrary.mockReturnValueOnce(pending.promise);
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = hook.result.current.refresh(true);
+      second = hook.result.current.refresh(true);
+    });
     expect(mockLibrary).toHaveBeenCalledTimes(2);
-    expect(mockCourse.mock.calls.map(([p]) => p.id)).toEqual(['a', 'a']);
+    expect(first).toBe(second);
+    await act(async () => pending.resolve(library()));
   });
   it('opening after expiration revalidates metadata before loading; manual refresh bypasses TTL', async () => {
     const hook = await ready();
