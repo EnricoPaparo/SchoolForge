@@ -252,10 +252,6 @@ function card(overrides: Partial<CourseCard> = {}): CourseCard {
     annoScolastico: '2025/2026',
     classIds: ['c-4a'],
     classNames: ['4A INF'],
-    udaCount: 2,
-    lessonsTotal: 3,
-    lessonsDone: 1,
-    questionsTotal: 12,
     hasImport: true,
     activeImportId: 'imp1',
     ...overrides,
@@ -356,6 +352,65 @@ function openMenuAction(context: 'Azioni corso' | 'Azioni UDA' | 'Azioni lezione
 }
 
 describe('CourseWorkspace — loading', () => {
+  it('keeps statistics unknown while loading, then derives summary and information from committed tree', async () => {
+    let resolveLessons!: (lessons: LessonItem[]) => void;
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockReturnValue(
+      new Promise<LessonItem[]>((resolve) => {
+        resolveLessons = resolve;
+      }),
+    );
+    mockGetImportMeta.mockResolvedValue(null);
+    renderWorkspace();
+    const summary = within(screen.getByRole('group', { name: 'Riepilogo corso' }));
+    expect(summary.getByText('Caricamento statistiche…')).toBeTruthy();
+    expect(summary.queryByRole('img')).toBeNull();
+    expect(summary.queryByText('0')).toBeNull();
+    clickMenuAction('Azioni corso', 'Modifica metadati corso');
+    const info = within(screen.getByRole('dialog', { name: 'Informazioni corso' }));
+    expect(info.getByText('Caricamento statistiche…')).toBeTruthy();
+    expect(info.queryByText('UDA totali')).toBeNull();
+    await act(async () =>
+      resolveLessons([
+        lesson('l1', 'uda-01-reti', { completed: true, questionCount: 4 }),
+        lesson('l2', 'uda-01-reti', { questionCount: 3 }),
+        lesson('staged', 'uncommitted', { completed: true, questionCount: 99 }),
+      ]),
+    );
+    expect(summary.getByText('1/2')).toBeTruthy();
+    expect(summary.getByText('7')).toBeTruthy();
+    expect(summary.getByRole('img', { name: 'Avanzamento lezioni 50%' })).toBeTruthy();
+    expect(info.getByText('1 / 2')).toBeTruthy();
+    expect(info.getByText('7')).toBeTruthy();
+    expect(mockListUdas).toHaveBeenCalledOnce();
+    expect(mockListLessons).toHaveBeenCalledOnce();
+  });
+
+  it('shows unavailable statistics on tree failure, never zero totals or a loading progress bar', async () => {
+    mockListUdas.mockRejectedValue(new Error('offline'));
+    mockListLessons.mockResolvedValue([]);
+    mockGetImportMeta.mockResolvedValue(null);
+    renderWorkspace();
+    const summary = within(screen.getByRole('group', { name: 'Riepilogo corso' }));
+    await waitFor(() => expect(summary.getByText('Statistiche non disponibili.')).toBeTruthy());
+    expect(summary.queryByRole('img')).toBeNull();
+    expect(summary.queryByText('0')).toBeNull();
+    expect(screen.queryByText('Caricamento struttura…')).toBeNull();
+    clickMenuAction('Azioni corso', 'Modifica metadati corso');
+    const info = within(screen.getByRole('dialog'));
+    expect(info.getByText('Statistiche non disponibili.')).toBeTruthy();
+    expect(info.queryByText('UDA totali')).toBeNull();
+  });
+
+  it('shows real zero statistics for a course without an import and does not read a tree', async () => {
+    renderWorkspace({ activeImportId: null, hasImport: false });
+    const summary = within(screen.getByRole('group', { name: 'Riepilogo corso' }));
+    await waitFor(() => expect(summary.getByText('0/0')).toBeTruthy());
+    expect(summary.getByRole('img', { name: 'Avanzamento lezioni 0%' })).toBeTruthy();
+    expect(mockListUdas).not.toHaveBeenCalled();
+    expect(mockListLessons).not.toHaveBeenCalled();
+  });
+
   it('loads UDA and lessons once for the selected course only', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { questionCount: 12 })]);
@@ -371,7 +426,7 @@ describe('CourseWorkspace — loading', () => {
     expect(screen.queryByTitle('Pool assente')).toBeNull();
     // The summary strip derives the domande total from the loaded tree.
     expect(screen.getByText('12')).toBeTruthy(); // domande
-    expect(screen.getByRole('img', { name: /avanzamento lezioni 33%/i })).toBeTruthy();
+    expect(screen.getByRole('img', { name: /avanzamento lezioni 0%/i })).toBeTruthy();
   });
 
   it('shows the course overview (UDA table) by default', async () => {
@@ -1951,6 +2006,10 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     await waitFor(() => expect(mockSetLessonCompleted).toHaveBeenCalledOnce());
     await waitFor(() => expect(onCardPatch).toHaveBeenCalledTimes(1));
     expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsDone: 1 }));
+    // A notification-only parent must not be needed to refresh displayed statistics.
+    const summary = within(screen.getByRole('group', { name: 'Riepilogo corso' }));
+    expect(summary.getByText('1/1')).toBeTruthy();
+    expect(summary.getByRole('img', { name: 'Avanzamento lezioni 100%' })).toBeTruthy();
   });
 
   it('does not expose the single-lesson PDF command and preserves the other lesson actions', async () => {
@@ -1975,6 +2034,9 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     // Back on the UDA overview; the lesson is gone.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni UDA' })).toBeTruthy());
     expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsTotal: 0 }));
+    expect(
+      within(screen.getByRole('group', { name: 'Riepilogo corso' })).getByText('0/0'),
+    ).toBeTruthy();
   });
 
   it('shows verification blockers and keeps a lesson when deletion is blocked', async () => {

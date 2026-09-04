@@ -7,6 +7,30 @@ import { CourseRecordCard } from './CourseRecordCard.js';
 afterEach(cleanup);
 
 describe('CourseRecordCard', () => {
+  it('opts into a compact metadata-only shell without an empty metrics or progress container', () => {
+    const onOpen = vi.fn();
+    const { container } = render(
+      <CourseRecordCard
+        compact
+        title="Reti"
+        openLabel="Apri il corso Reti"
+        onOpen={onOpen}
+        details={[{ label: 'Classi', value: 'Nessuna classe assegnata' }]}
+        metrics={[]}
+      />,
+    );
+    expect(container.querySelector('dl')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getByText('Nessuna classe assegnata')).toBeTruthy();
+    expect(screen.getByText('Apri corso →')).toBeTruthy();
+    const surface = screen.getByRole('button', { name: 'Apri il corso Reti' });
+    surface.focus();
+    expect(document.activeElement).toBe(surface);
+    expect(surface.tagName).toBe('BUTTON');
+    fireEvent.click(surface);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   it('uses one native full-card button and opens exactly once', () => {
     const onOpen = vi.fn();
     render(
@@ -117,6 +141,19 @@ describe('CourseRecordCard responsive and motion contract', () => {
   it('aligns course actions to the top-right corner', () => {
     expect(css).toMatch(
       /\.cardActionsCorner\s+\.actions\s*\{[^}]*align-self:\s*start[^}]*align-items:\s*flex-start/s,
+    );
+  });
+
+  it('gives the teacher compact variant only identity and action tracks with a visible touch cue', () => {
+    expect(css).toMatch(
+      /\.card\.cardCourseCompact\s*\{[^}]*grid-template-areas:\s*'identity actions'/s,
+    );
+    expect(css).toMatch(/\.cardCourseCompact\s+\.content\s*\{[^}]*display:\s*contents/s);
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.openCta\s*\{[^}]*position:\s*static[^}]*opacity:\s*1/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
     );
   });
 

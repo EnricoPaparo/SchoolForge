@@ -1199,6 +1199,42 @@
   }
 }
 
+/* Explicit teacher-course variant: no reserved metric tracks, also on mobile. */
+.card.cardCourseCompact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'identity actions';
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 0.9rem 0.75rem 1.1rem;
+}
+
+.cardCourseCompact .content {
+  display: contents;
+}
+
+.cardCourseCompact .identity {
+  grid-area: identity;
+  padding-bottom: 0;
+}
+
+.cardCourseCompact .openCta {
+  display: block;
+  position: static;
+  margin-top: 0.5rem;
+  opacity: 1;
+  transform: none;
+}
+
+.cardCourseCompact .actions {
+  grid-area: actions;
+  align-self: start;
+  padding: 0;
+}
+
+.cardCourseCompact .actions button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .accent,
