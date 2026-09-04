@@ -62,17 +62,25 @@ export type StudentLibraryResult =
 /**
  * Reads only what an approved student is allowed to see (Security Rules
  * enforce the same class-matching independently — this mirrors, not
- * replaces, that check): their own classId, the programs assigned to that
- * class (`classIds` array-contains). No lesson bodies/maps/visuals are read to
- * populate the library. Never reads a program's `imports/**` subcollection
- * (technical lessons, questionIndex, pool) — those stay owner-only.
+ * replaces, that check): their classId, either freshly read here or passed
+ * from RoleGate's immediately preceding authoritative read, and the programs
+ * assigned to that class (`classIds` array-contains). No lesson
+ * bodies/maps/visuals are read to populate the library. Never reads a
+ * program's `imports/**` subcollection (technical lessons, questionIndex,
+ * pool) — those stay owner-only.
  */
 export async function loadStudentLibrary(
   uid: string,
   db: Firestore,
+  verifiedClassId?: string | null,
 ): Promise<StudentLibraryResult> {
-  const studentDoc = await getOwnStudentDoc(uid, db);
-  const classId = studentDoc?.classId ?? null;
+  // RoleGate may provide the result of the authoritative students/{uid} read
+  // it has just completed. `undefined` deliberately means "re-read now" so
+  // contextual retries never keep relying on the initial snapshot.
+  const classId =
+    verifiedClassId === undefined
+      ? ((await getOwnStudentDoc(uid, db))?.classId ?? null)
+      : verifiedClassId;
   if (!classId) return { status: 'no-class' };
 
   const programsSnap = await getDocs(

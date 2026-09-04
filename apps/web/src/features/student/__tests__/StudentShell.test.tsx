@@ -11,7 +11,6 @@ const mockLoadStudentLessons = vi.fn();
 const mockLoadStudentVerifications = vi.fn();
 const mockLoadSubmission = vi.fn();
 const mockLoadReceipt = vi.fn();
-const mockGetOwnStudentDoc = vi.fn();
 const mockWatchStudentAccessSettings = vi.fn();
 let mockUser: { uid: string; email: string; displayName: string | null; photoURL?: string | null } =
   { uid: 'student-uid', email: 'student@test.com', displayName: null };
@@ -30,7 +29,7 @@ vi.mock('../../repository/programs/studentLessonsService.js', () => ({
   loadStudentLibrary: async (...args: unknown[]) => {
     const result = await mockLoadStudentLessons(...args);
     if (result.status !== 'ok') return result;
-    return { status: 'ok', classId: 'class-a', programs: result.programs };
+    return { status: 'ok', classId: result.classId ?? 'class-a', programs: result.programs };
   },
   loadStudentCourseLessons: async (program: { id: string }) => {
     const result = await mockLoadStudentLessons.getMockImplementation()?.();
@@ -45,9 +44,6 @@ vi.mock('../submissionsService.js', () => ({
   loadReceipt: (...args: unknown[]) => mockLoadReceipt(...args),
   startSubmission: vi.fn(),
 }));
-vi.mock('../../repository/students/studentsService.js', () => ({
-  getOwnStudentDoc: (...args: unknown[]) => mockGetOwnStudentDoc(...args),
-}));
 vi.mock('../../repository/students/studentAccessService.js', () => ({
   watchStudentAccessSettings: (...args: unknown[]) => mockWatchStudentAccessSettings(...args),
 }));
@@ -61,7 +57,6 @@ mockLoadStudentLessons.mockResolvedValue({ status: 'no-class' });
 mockLoadStudentVerifications.mockResolvedValue({ status: 'no-class' });
 mockLoadSubmission.mockResolvedValue(null);
 mockLoadReceipt.mockResolvedValue(null);
-mockGetOwnStudentDoc.mockResolvedValue(null);
 mockWatchStudentAccessSettings.mockImplementation(
   (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
     onChange({ examMode: { enabled: false, scope: 'all', classIds: [], enabledAt: null } });
@@ -111,6 +106,13 @@ describe('StudentShell', () => {
     });
     render(<StudentShell />);
     await waitFor(() => expect(screen.getByText('Informatica')).toBeTruthy());
+  });
+
+  it('passes the verified class to the first Didattica library load', async () => {
+    render(<StudentShell initialClassId="class-1" />);
+    await waitFor(() =>
+      expect(mockLoadStudentLessons).toHaveBeenCalledWith('student-uid', {}, 'class-1'),
+    );
   });
 
   it('integration: an approved student with a class sees real verification content wired through Verifiche', async () => {
@@ -278,7 +280,6 @@ describe('StudentShell — mandatory exam session (M3F-06)', () => {
 
 describe('StudentShell — Modalità verifica (M3F-07)', () => {
   it('hides the "Didattica" nav entry and shows Verifiche when exam mode applies to the student\'s class', async () => {
-    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     mockWatchStudentAccessSettings.mockImplementation(
       (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
         onChange({
@@ -287,7 +288,7 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
         return vi.fn();
       },
     );
-    render(<StudentShell />);
+    render(<StudentShell initialClassId="class-1" />);
 
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
     expect(within(nav).queryByRole('button', { name: 'Didattica' })).toBeNull();
@@ -296,7 +297,6 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
   });
 
   it('unmounts StudentDidatticaView immediately and switches to Verifiche when exam mode turns on while Didattica is open', async () => {
-    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     mockLoadStudentLessons.mockResolvedValueOnce({
       status: 'ok',
       programs: [{ id: 'prog-a', title: 'Informatica', classIds: ['class-1'] }],
@@ -310,7 +310,7 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
         return vi.fn();
       },
     );
-    render(<StudentShell />);
+    render(<StudentShell initialClassId="class-1" />);
     await waitFor(() => expect(screen.getByText('Informatica')).toBeTruthy());
 
     pushSettings?.({
@@ -322,7 +322,6 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
   });
 
   it('does not hide Didattica for a class not covered by a classes-scoped exam mode', async () => {
-    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-2' });
     mockWatchStudentAccessSettings.mockImplementation(
       (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
         onChange({
@@ -331,14 +330,13 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
         return vi.fn();
       },
     );
-    render(<StudentShell />);
+    render(<StudentShell initialClassId="class-2" />);
 
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
     expect(within(nav).getByRole('button', { name: 'Didattica' })).toBeTruthy();
   });
 
   it('restores Didattica without a new login once the teacher disables exam mode', async () => {
-    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     let pushSettings: ((settings: { examMode: unknown }) => void) | undefined;
     mockWatchStudentAccessSettings.mockImplementation(
       (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
@@ -347,7 +345,7 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
         return vi.fn();
       },
     );
-    render(<StudentShell />);
+    render(<StudentShell initialClassId="class-1" />);
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
     expect(within(nav).queryByRole('button', { name: 'Didattica' })).toBeNull();
 
@@ -358,8 +356,29 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
     );
   });
 
+  it('realigns exam mode when a Didattica retry discovers a new class', async () => {
+    mockLoadStudentLessons.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({
+      status: 'ok',
+      classId: 'class-2',
+      programs: [],
+      lessonsByProgram: {},
+    });
+    mockWatchStudentAccessSettings.mockImplementation(
+      (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
+        onChange({
+          examMode: { enabled: true, scope: 'classes', classIds: ['class-2'], enabledAt: null },
+        });
+        return vi.fn();
+      },
+    );
+    render(<StudentShell initialClassId="class-1" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Didattica' })).toBeNull());
+    expect(screen.getByRole('button', { name: 'Verifiche' })).toBeTruthy();
+  });
+
   it('an in-progress exam session stays prioritized and is never interrupted by exam mode turning on', async () => {
-    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     mockLoadStudentVerifications.mockResolvedValue({
       status: 'ok',
       verifications: [

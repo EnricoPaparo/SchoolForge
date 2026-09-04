@@ -63,6 +63,15 @@ afterEach(() => {
 });
 
 describe('student metadata and last-course cache', () => {
+  it('uses the verified class only for the first load and revalidates on refresh', async () => {
+    const hook = renderHook(() => useStudentDidattica('student', db, 'class-a'));
+    await waitFor(() => expect(hook.result.current.library.status).toBe('ok'));
+    expect(mockLibrary).toHaveBeenNthCalledWith(1, 'student', db, 'class-a');
+
+    await act(() => hook.result.current.refresh(true));
+    expect(mockLibrary).toHaveBeenNthCalledWith(2, 'student', db);
+  });
+
   it('initial load and library refresh never request lesson projections', async () => {
     const hook = await ready();
     expect(mockLibrary).toHaveBeenCalledOnce();
@@ -301,9 +310,11 @@ describe('invalidation and failed-read recovery', () => {
     const old = deferred<StudentLibraryResult>();
     const current = deferred<StudentLibraryResult>();
     mockLibrary.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
-    const hook = renderHook(() => useStudentDidattica('student', db), {
+    const hook = renderHook(() => useStudentDidattica('student', db, 'class-a'), {
       wrapper: ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>,
     });
+    expect(mockLibrary).toHaveBeenNthCalledWith(1, 'student', db, 'class-a');
+    expect(mockLibrary).toHaveBeenNthCalledWith(2, 'student', db, 'class-a');
     await act(async () => old.resolve(library([B])));
     expect(hook.result.current.library.status).toBe('loading');
     expect(hook.result.current.refreshing).toBe(true);

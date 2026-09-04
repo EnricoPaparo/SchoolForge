@@ -34,6 +34,13 @@ beforeEach(() => {
 });
 
 describe('loadStudentLibrary — no class assigned', () => {
+  it('uses a verified null class without re-reading the student document', async () => {
+    const result = await loadStudentLibrary(STUDENT_UID, fakeDb, null);
+    expect(result).toEqual({ status: 'no-class' });
+    expect(mockGetOwnStudentDoc).not.toHaveBeenCalled();
+    expect(mockGetDocs).not.toHaveBeenCalled();
+  });
+
   it('returns no-class when classId is null', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: null });
 
@@ -51,6 +58,18 @@ describe('loadStudentLibrary — no class assigned', () => {
 });
 
 describe('loadStudentLibrary — program filtering', () => {
+  it('uses a verified class without re-reading the student document', async () => {
+    mockGetDocs.mockResolvedValue(docsFor('programs', []));
+
+    expect(await loadStudentLibrary(STUDENT_UID, fakeDb, 'class-a')).toEqual({
+      status: 'ok',
+      classId: 'class-a',
+      programs: [],
+    });
+    expect(mockGetOwnStudentDoc).not.toHaveBeenCalled();
+    expect(mockGetDocs).toHaveBeenCalledOnce();
+  });
+
   it('reads own class and assigned metadata once, with zero publicLessons reads for many courses', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockResolvedValue(

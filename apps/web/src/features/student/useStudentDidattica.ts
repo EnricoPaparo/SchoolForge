@@ -27,7 +27,7 @@ function isAccessError(error: unknown): boolean {
  * Only the last selected course is retained. In-flight reads are coalesced, but
  * responses for a superseded selection or authorization context are not cached.
  */
-export function useStudentDidattica(uid: string, db: Firestore) {
+export function useStudentDidattica(uid: string, db: Firestore, initialClassId?: string | null) {
   const [, render] = useReducer((n: number) => n + 1, 0);
   const session = useMemo(() => {
     let active = false;
@@ -43,6 +43,10 @@ export function useStudentDidattica(uid: string, db: Firestore) {
     const pendingCourses = new Map<string, Promise<StudentLesson[]>>();
     let refreshing = false;
     let libraryError = false;
+    // StrictMode can replay mount effects before the first request settles.
+    // Every initial replay may reuse the verified seed without another student
+    // read; only the first request accepted by the current mount consumes it.
+    let initialAttemptSettled = false;
     const emit = () => {
       if (active) render();
     };
@@ -117,8 +121,13 @@ export function useStudentDidattica(uid: string, db: Firestore) {
       const epoch = generation;
       const request = (async () => {
         try {
-          const next = await loadStudentLibrary(uid, db);
+          const seed = initialAttemptSettled ? undefined : initialClassId;
+          const next =
+            seed === undefined
+              ? await loadStudentLibrary(uid, db)
+              : await loadStudentLibrary(uid, db, seed);
           if (!active || epoch !== generation) return;
+          initialAttemptSettled = true;
           const previousClass = library.status === 'ok' ? library.classId : null;
           const previous = selectedProgram();
           library = next;
@@ -139,6 +148,7 @@ export function useStudentDidattica(uid: string, db: Firestore) {
           await readCourse(force);
         } catch (error) {
           if (!active || epoch !== generation) return;
+          initialAttemptSettled = true;
           cache = null;
           courseGeneration++;
           pendingCourses.clear();
@@ -213,7 +223,7 @@ export function useStudentDidattica(uid: string, db: Firestore) {
         };
       },
     };
-  }, [uid, db]);
+  }, [uid, db, initialClassId]);
   useEffect(() => session.mount(), [session]);
   return session;
 }
