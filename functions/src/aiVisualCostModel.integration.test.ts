@@ -274,7 +274,7 @@ emulatorDescribe('VE-03 cost model — misurato sugli Emulator', () => {
     expect(bind.storageReads).toBe(0);
     expect(bind.storageWrites).toBe(0);
     expect(bind.firestoreWrites).toBe(1);
-  });
+  }, 10_000);
 
   it('promozione — una copia in Storage e un solo commit', async () => {
     await seedLesson('cost-promote');

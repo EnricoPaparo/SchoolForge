@@ -95,13 +95,13 @@ function makeCallables(
   run: () => Promise<AiRunResult>,
 ): {
   callables: AiCorrectionCallables;
-  previewSpy: Mock<[AiCorrectionRequest], Promise<AiPreviewResult>>;
-  runSpy: Mock<[AiCorrectionRequest], Promise<AiRunResult>>;
+  previewSpy: Mock<(request: AiCorrectionRequest) => Promise<AiPreviewResult>>;
+  runSpy: Mock<(request: AiCorrectionRequest) => Promise<AiRunResult>>;
 } {
-  const previewSpy: Mock<[AiCorrectionRequest], Promise<AiPreviewResult>> = vi.fn(
+  const previewSpy: Mock<(request: AiCorrectionRequest) => Promise<AiPreviewResult>> = vi.fn(
     (_req: AiCorrectionRequest) => preview(),
   );
-  const runSpy: Mock<[AiCorrectionRequest], Promise<AiRunResult>> = vi.fn(
+  const runSpy: Mock<(request: AiCorrectionRequest) => Promise<AiRunResult>> = vi.fn(
     (_req: AiCorrectionRequest) => run(),
   );
   return {

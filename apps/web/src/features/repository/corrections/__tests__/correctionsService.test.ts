@@ -946,7 +946,7 @@ describe('reopenCorrection', () => {
 
     expect(mockBatchUpdate).toHaveBeenCalledTimes(4); // correction + mirrors + correctionReturns
     const returnUpdateCall = mockBatchUpdate.mock.calls.find(
-      ([ref]: [{ __path: string }, unknown]) => ref.__path === `correctionReturns/${SUBMISSION_ID}`,
+      ([ref]) => (ref as { __path: string }).__path === `correctionReturns/${SUBMISSION_ID}`,
     );
     expect(returnUpdateCall).toBeDefined();
     expect(returnUpdateCall![1]).toMatchObject({ visibleToStudent: false });
