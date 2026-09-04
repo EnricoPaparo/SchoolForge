@@ -1,10 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { parseLessonMarkdown } from './lessonManualMarkdown.js';
-import {
-  placeLessonVisual,
-  placeLessonVisuals,
-  type LessonVisualPlacement,
-} from './lessonManualVisual.js';
+import { placeLessonVisuals } from './lessonManualVisual.js';
 import { LessonVisualFigure } from './LessonVisualFigure.js';
 
 /**
@@ -57,61 +53,21 @@ export function LessonManualBody({
    */
   onMissingAnchor?: ReactNode;
 }) {
-  const legacy = useMemo(
-    // Il percorso legacy resta l'unico attivo finché non c'è davvero una
-    // figura da mostrare: `dataUri` nullo significa «byte non ancora letti» o
-    // «byte rifiutati», e in entrambi i casi la lezione si legge com'era.
-    () => (visual ? null : parseLessonMarkdown(markdown)),
-    [markdown, visual],
-  );
-
-  const placement: LessonVisualPlacement | null = useMemo(
-    () => (visual ? placeLessonVisual({ markdown, anchorSlug: visual.anchorSlug }) : null),
-    [markdown, visual],
-  );
-
-  const figure =
-    visual && placement && placement.status !== 'absent' ? (
-      <LessonVisualFigure
-        src={visual.dataUri}
-        altText={visual.altText}
-        caption={visual.caption}
-        width={visual.width}
-        height={visual.height}
-        status={visual.status}
-      />
-    ) : null;
-
-  /**
-   * `absent` e `malformed` producono la stessa cosa — la lezione senza figura —
-   * ma per motivi diversi, ed è il chiamante a doverli distinguere se vuole
-   * registrarli. Qui entrambi confluiscono nel percorso a un solo frammento:
-   * fail-closed significa proprio che un manifest non conforme non produce
-   * un'immagine parziale, produce la lezione di prima.
-   */
-  const split =
-    placement !== null && (placement.status === 'anchored' || placement.status === 'missing_anchor')
-      ? placement
-      : null;
-
-  const singleHtml =
-    legacy?.html ??
-    (placement !== null && split === null ? (placement as { html: string }).html : null);
-
   const additionalVisuals = (visuals ?? []).filter(
     (item) => item.anchorSlug !== visual?.anchorSlug,
   );
   const allVisuals = visual ? [visual, ...additionalVisuals] : additionalVisuals;
-  const multiPlacement = useMemo(
-    () =>
-      allVisuals.length > 0
-        ? placeLessonVisuals({
-            markdown,
-            anchorSlugs: allVisuals.map((item) => item.anchorSlug),
-          })
-        : null,
-    [allVisuals, markdown],
-  );
+  // Only Markdown and ordered anchors affect sanitized fragments. Byte/status,
+  // caption and array identity updates must update figures without re-parsing.
+  // JSON preserves ordering, duplicates and delimiter-containing slugs exactly.
+  const anchorSignature = JSON.stringify(allVisuals.map((item) => item.anchorSlug));
+  const rendered = useMemo(() => {
+    const anchorSlugs = JSON.parse(anchorSignature) as string[];
+    return anchorSlugs.length > 0
+      ? { multi: placeLessonVisuals({ markdown, anchorSlugs }), html: null }
+      : { multi: null, html: parseLessonMarkdown(markdown).html };
+  }, [markdown, anchorSignature]);
+  const multiPlacement = rendered.multi;
   const renderFigure = (item: LessonVisualRender, key: string) => (
     <LessonVisualFigure
       key={key}
@@ -148,37 +104,16 @@ export function LessonManualBody({
     <div className="lesson-manual-scope">
       <div className="lesson-manual">
         <div className="lesson-manual__body">
-          {visualSequence ??
-            (split === null ? (
-              /*
-               * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito
-               * da DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
-               */
-              <div
-                className="prose prose--manual"
-                dangerouslySetInnerHTML={{ __html: singleHtml ?? '' }}
-              />
-            ) : (
-              <>
-                {/*
-                 * Due frammenti sanificati **separatamente**, con la figura in
-                 * mezzo come nodo React. Nessuna concatenazione di stringhe dopo
-                 * `sanitize`: le due metà non si toccano mai.
-                 */}
-                <div
-                  className="prose prose--manual"
-                  dangerouslySetInnerHTML={{ __html: split.before }}
-                />
-                {split.status === 'missing_anchor' && onMissingAnchor}
-                {figure}
-                {split.after !== '' && (
-                  <div
-                    className="prose prose--manual"
-                    dangerouslySetInnerHTML={{ __html: split.after }}
-                  />
-                )}
-              </>
-            ))}
+          {visualSequence ?? (
+            /*
+             * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito
+             * da DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
+             */
+            <div
+              className="prose prose--manual"
+              dangerouslySetInnerHTML={{ __html: rendered.html ?? '' }}
+            />
+          )}
         </div>
       </div>
     </div>

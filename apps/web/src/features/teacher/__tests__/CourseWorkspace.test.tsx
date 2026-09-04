@@ -27,6 +27,7 @@ const mockCreateLesson = vi.fn();
 const mockDeleteLesson = vi.fn();
 const mockUpdateLessonBody = vi.fn();
 const mockUpdateLessonMetadata = vi.fn();
+const mockClearLessonContentState = vi.fn();
 const mockUpdateProgramMetadata = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
@@ -133,6 +134,7 @@ vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
   deleteLesson: (...a: unknown[]) => mockDeleteLesson(...a),
   updateLessonMarkdownBody: (...a: unknown[]) => mockUpdateLessonBody(...a),
   updateLessonMetadata: (...a: unknown[]) => mockUpdateLessonMetadata(...a),
+  clearLessonContentState: (...a: unknown[]) => mockClearLessonContentState(...a),
   reorderUda: (...a: unknown[]) => mockReorderUda(...a),
   reorderLesson: (...a: unknown[]) => mockReorderLesson(...a),
   RepositoryDeleteBlockedError: mockDeleteBlockedError,
@@ -817,7 +819,10 @@ describe('CourseWorkspace — content load diagnostics + retry (MOB-01B)', () =>
 
   it('a superseded earlier read never overwrites a newer selection', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
-    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Rotta' })]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { titolo: 'Rotta' }),
+      lesson('l2', 'uda-01-reti', { titolo: 'Altra' }),
+    ]);
     let resolveRetry!: (v: string) => void;
     let resolveNewer!: (v: string) => void;
     // Primary reads go through the Firestore projection now; drive it.
@@ -832,10 +837,10 @@ describe('CourseWorkspace — content load diagnostics + retry (MOB-01B)', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy());
 
-    // Retry (read #2, still pending), then re-select the lesson from the
-    // sidebar (read #3) which supersedes it.
+    // Retry (read #2, still pending), then select another lesson (read #3).
+    // Reopening the SAME lesson intentionally coalesces its pending read.
     fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Altra' }));
 
     resolveNewer('# Tre\n\nmeta-nuovo.');
     await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('meta-nuovo'));
@@ -930,6 +935,188 @@ describe('CourseWorkspace — Firestore projection primary source (MOB-01C)', ()
     expect(mockFetchLessonContent).not.toHaveBeenCalled();
     expect(screen.getByTestId('md').textContent).toContain('Recuperato via proiezione.');
   });
+});
+
+describe('CourseWorkspace — bounded lesson cache', () => {
+  async function setup() {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('a', 'uda-01-reti', { titolo: 'Lezione A' }),
+      lesson('b', 'uda-01-reti', { titolo: 'Lezione B' }),
+    ]);
+    const view = renderWorkspace();
+    await expandUda();
+    return view;
+  }
+  async function open(name: string, body: string) {
+    fireEvent.click(screen.getByRole('button', { name }));
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toBe(body));
+  }
+
+  it('A/B/A reuses fresh content without a loading flash or extra projection/storage reads', async () => {
+    mockFetchPublicLessonContent.mockImplementation(({ lessonId }: { lessonId: string }) =>
+      Promise.resolve(`Corpo ${lessonId}`),
+    );
+    await setup();
+    await open('Lezione A', 'Corpo a');
+    await open('Lezione B', 'Corpo b');
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    expect(screen.getByTestId('md').textContent).toBe('Corpo a');
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+  });
+
+  it('coalesces multiple selections of a still loading lesson', async () => {
+    let resolve!: (body: string) => void;
+    mockFetchPublicLessonContent.mockImplementation(
+      () =>
+        new Promise<string>((yes) => {
+          resolve = yes;
+        }),
+    );
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledOnce();
+    await act(async () => resolve('Coalesced'));
+    expect(screen.getByTestId('md').textContent).toBe('Coalesced');
+  });
+
+  it('expires at 60 seconds and preserves real read errors without fallback', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    mockFetchPublicLessonContent
+      .mockResolvedValueOnce('Old')
+      .mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await setup();
+    await open('Lezione A', 'Old');
+    now.mockReturnValue(61_000);
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    expect(await screen.findByRole('button', { name: 'Riprova' })).toBeTruthy();
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('md')).toBeNull();
+  });
+
+  it.each(['owner', 'program', 'import'])(
+    'destroys cached content and pending UI on %s context change',
+    async (change) => {
+      mockFetchPublicLessonContent.mockResolvedValue('Old session');
+      const view = await setup();
+      await open('Lezione A', 'Old session');
+      mockFetchPublicLessonContent.mockResolvedValue('New session');
+      view.rerender(
+        <CourseWorkspace
+          card={card(
+            change === 'program'
+              ? { programId: 'p2' }
+              : change === 'import'
+                ? { activeImportId: 'imp2' }
+                : {},
+          )}
+          ownerUid={change === 'owner' ? 'new-owner' : 'owner'}
+          onBack={vi.fn()}
+        />,
+      );
+      expect(screen.queryByTestId('md')).toBeNull();
+      await expandUda();
+      await open('Lezione A', 'New session');
+      expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('a manual body save invalidates the cached body before reopening', async () => {
+    mockFetchPublicLessonContent.mockResolvedValue('Old');
+    mockUpdateLessonBody.mockImplementation(async () => {
+      mockFetchPublicLessonContent.mockResolvedValue('Saved');
+    });
+    await setup();
+    await open('Lezione A', 'Old');
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), { target: { value: 'Saved' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(screen.getByText('Contenuto salvato')).toBeTruthy());
+    await open('Lezione A', 'Saved');
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+  });
+
+  it('clearing a cached lesson never brings back its previous content', async () => {
+    mockFetchPublicLessonContent.mockResolvedValue('Old');
+    mockUpdateLessonBody.mockImplementation(async () => {
+      mockFetchPublicLessonContent.mockResolvedValue('');
+    });
+    mockClearLessonContentState.mockResolvedValue(undefined);
+    await setup();
+    await open('Lezione A', 'Old');
+    clickMenuAction('Azioni lezione', 'Pulisci lezione');
+    fireEvent.click(screen.getByRole('button', { name: 'Pulisci' }));
+    await waitFor(() => expect(mockClearLessonContentState).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByText(/nessun contenuto disponibile/i)).toBeTruthy());
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('md')).toBeNull();
+  });
+
+  it('an old pending response after an identity switch cannot render or warm the new cache', async () => {
+    let resolveOld!: (body: string) => void;
+    mockFetchPublicLessonContent
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((yes) => {
+            resolveOld = yes;
+          }),
+      )
+      .mockResolvedValue('New owner body');
+    const view = await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    view.rerender(<CourseWorkspace card={card()} ownerUid="other-owner" onBack={vi.fn()} />);
+    await expandUda();
+    await open('Lezione A', 'New owner body');
+    await act(async () => resolveOld('Private old body'));
+    await open('Lezione A', 'New owner body');
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Private old body')).toBeNull();
+  });
+
+  it.each([false, true])(
+    'a metadata write (failure=%s) racing with reopening restarts the cancelled read, never leaves a blank panel',
+    async (fails) => {
+      let finishSave!: () => void;
+      let resolveOld!: (body: string) => void;
+      mockFetchPublicLessonContent
+        .mockResolvedValueOnce('Original A')
+        .mockResolvedValueOnce('Body B')
+        .mockImplementationOnce(
+          () =>
+            new Promise<string>((yes) => {
+              resolveOld = yes;
+            }),
+        )
+        .mockResolvedValue('Fresh A');
+      mockUpdateLessonMetadata.mockImplementation(
+        () =>
+          new Promise<void>((yes, no) => {
+            finishSave = () => (fails ? no(new Error('offline')) : yes());
+          }),
+      );
+      await setup();
+      await open('Lezione A', 'Original A');
+      clickMenuAction('Azioni lezione', 'Modifica informazioni');
+      fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'Renamed A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
+      fireEvent.click(screen.getByRole('button', { name: /continua senza salvare/i }));
+      await waitFor(() => expect(screen.getByTestId('md').textContent).toBe('Body B'));
+      fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+      await act(async () => finishSave());
+      await waitFor(() => expect(screen.getByTestId('md').textContent).toBe('Fresh A'));
+      await act(async () => resolveOld('Obsolete A'));
+      expect(screen.getByTestId('md').textContent).toBe('Fresh A');
+      expect(screen.getByRole('heading', { name: fails ? 'Lezione A' : 'Renamed A' })).toBeTruthy();
+      expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(4);
+    },
+  );
 });
 
 describe('CourseWorkspace — sidebar and semantics', () => {
