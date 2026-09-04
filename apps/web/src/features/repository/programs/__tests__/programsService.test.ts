@@ -471,10 +471,10 @@ describe('listLessons — deterministic ordering', () => {
 });
 
 describe('deleteProgram', () => {
-  let cleanupNotes: ReturnType<typeof vi.fn<[string], Promise<unknown>>>;
+  let cleanupNotes: ReturnType<typeof vi.fn<(programId: string) => Promise<unknown>>>;
   beforeEach(() => {
     cleanupNotes = vi
-      .fn<[string], Promise<unknown>>()
+      .fn<(programId: string) => Promise<unknown>>()
       .mockResolvedValue({ status: 'completed', notesDeleted: 0, indexesDeleted: 0 });
   });
 

@@ -209,6 +209,7 @@ emulatorDescribe('MULTI-VISUAL-04 — Firestore Emulator revisione slot §8.4', 
 
   it('scrive piano+chiave idempotente+audit, senza toccare budget o consuntivo', async () => {
     const plan = await seed();
+    const auditCountBefore = (await db.collection('auditEvents').get()).size;
     const beforeLedger = (await db.doc('aiBudgetLedger/2026-08').get()).data();
     const edit = input(plan);
     const result = await editVisualPlanSlotForOwner({
@@ -225,11 +226,12 @@ emulatorDescribe('MULTI-VISUAL-04 — Firestore Emulator revisione slot §8.4', 
       (await db.doc(`visualPlanSlotEdits/${visualPlanSlotEditId(OWNER, edit.editRequestId)}`).get())
         .exists,
     ).toBe(true);
-    expect((await db.collection('auditEvents').get()).size).toBe(1);
+    expect((await db.collection('auditEvents').get()).size).toBe(auditCountBefore + 1);
   });
 
   it('replay identico produce zero scritture; editRequestId divergente fallisce chiuso', async () => {
     const plan = await seed();
+    const auditCountBefore = (await db.collection('auditEvents').get()).size;
     const editId = randomUUID();
     const edit = input(plan, editId);
     await editVisualPlanSlotForOwner({ db, ownerUid: OWNER, input: edit, nowMs: NOW + 100 });
@@ -246,7 +248,7 @@ emulatorDescribe('MULTI-VISUAL-04 — Firestore Emulator revisione slot §8.4', 
     expect(replay.replayed).toBe(true);
     expect((await planRef.get()).data()).toEqual(beforePlan);
     expect((await editRef.get()).data()).toEqual(beforeEdit);
-    expect((await db.collection('auditEvents').get()).size).toBe(1);
+    expect((await db.collection('auditEvents').get()).size).toBe(auditCountBefore + 1);
     await expect(
       editVisualPlanSlotForOwner({
         db,
@@ -259,6 +261,7 @@ emulatorDescribe('MULTI-VISUAL-04 — Firestore Emulator revisione slot §8.4', 
 
   it('race stesso editRequestId con payload diversi: un solo commit e nessuna sovrascrittura', async () => {
     const plan = await seed();
+    const auditCountBefore = (await db.collection('auditEvents').get()).size;
     const editId = randomUUID();
     const outcomes = await Promise.allSettled([
       editVisualPlanSlotForOwner({
@@ -277,7 +280,7 @@ emulatorDescribe('MULTI-VISUAL-04 — Firestore Emulator revisione slot §8.4', 
     expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
     expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
     expect((await db.collection('visualPlanSlotEdits').get()).size).toBe(1);
-    expect((await db.collection('auditEvents').get()).size).toBe(1);
+    expect((await db.collection('auditEvents').get()).size).toBe(auditCountBefore + 1);
   });
 
   it('abandon libera esattamente lo slot, conserva settlement e chiude lease sull’ultimo', async () => {

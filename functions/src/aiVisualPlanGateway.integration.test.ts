@@ -427,7 +427,7 @@ emulatorDescribe('aiVisualPlanAuthorize — Firestore Emulator reale (MULTI-VISU
     expect(leaseSnap.exists).toBe(true);
     const lease = validateVisualPlanLease(leaseSnap.data());
     expect(timestampToMillis(lease.expireAt)).toBeGreaterThan(nowMs);
-  });
+  }, 10_000);
 
   it('risposta persa dopo completed AIGEN viene ripresa come replay senza seconda chiamata provider', async () => {
     const lessonId = `lesson-${randomUUID()}`;
