@@ -254,6 +254,15 @@ describe('POOL-ROLLOUT-01 gateway fail-closed order', () => {
     expect(gatewaySource).not.toContain('validateAiContentRequestForOfflinePoolBenchmark');
   });
 
+  it('gives only the provider-backed generation enough time for a Quality response', () => {
+    const previewStart = gatewaySource.indexOf('export const aiContentPreview');
+    const generateStart = gatewaySource.indexOf('export const aiContentGenerate');
+    const previewBlock = gatewaySource.slice(previewStart, generateStart);
+    const generateBlock = gatewaySource.slice(generateStart);
+    expect(previewBlock).not.toContain('timeoutSeconds');
+    expect(generateBlock).toContain('timeoutSeconds: 120');
+  });
+
   it.each([
     ['preview', 'export const aiContentPreview', 'export const aiContentGenerate'],
     ['generate', 'export const aiContentGenerate', null],
