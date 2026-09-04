@@ -83,6 +83,7 @@ import {
 import type { LessonMetadata } from '../repository/validation/types.js';
 import type { LessonVisualPrivateManifest, LessonVisualsManifest } from '../../types/firestore.js';
 import { fetchLessonContent, fetchPublicLessonContent } from './lessonContent.js';
+import { LessonContentCache } from './lessonContentCache.js';
 import {
   describeStorageError,
   storageErrorDetailLines,
@@ -312,7 +313,27 @@ type Selection =
 
 type LessonTab = 'contenuto' | 'mappa' | 'domande' | 'informazioni';
 
-export function CourseWorkspace({
+export function CourseWorkspace(props: CourseWorkspaceProps) {
+  // A session/context switch destroys content, drafts and pending callbacks
+  // synchronously, even when the parent reuses the workspace component.
+  return (
+    <CourseWorkspaceSession
+      key={JSON.stringify([props.ownerUid, props.card.programId, props.card.activeImportId])}
+      {...props}
+    />
+  );
+}
+
+type CachedLessonContent = { body: string; metadata: LessonMetadata };
+
+class LessonReadFailure {
+  constructor(
+    readonly cause: unknown,
+    readonly source: 'firestore' | 'storage',
+  ) {}
+}
+
+function CourseWorkspaceSession({
   card,
   ownerUid,
   onBack,
@@ -320,7 +341,17 @@ export function CourseWorkspace({
   onCardPatch,
   onCourseDeleted,
 }: CourseWorkspaceProps) {
-  const [tree, setTree] = useState<Tree | null>(null);
+  const [lessonCache] = useState(() => new LessonContentCache<CachedLessonContent>());
+  const [tree, setTreeState] = useState<Tree | null>(null);
+  const setTree = useCallback<typeof setTreeState>(
+    (next) => {
+      // Conservative invalidation on every committed local tree update,
+      // including metadata, import, deletion, completion, maps and visual edits.
+      lessonCache.clear();
+      setTreeState(next);
+    },
+    [lessonCache],
+  );
   const [treeError, setTreeError] = useState<string | null>(null);
 
   // Contextual course/UDA actions (DUX-04A).
@@ -368,6 +399,9 @@ export function CourseWorkspace({
   // fetch resolving after a newer one (out-of-order) and against a course
   // change / unmount landing a stale result.
   const lessonRequestRef = useRef(0);
+  const pendingContentRef = useRef<number | null>(null);
+  const [contentReloadVersion, setContentReloadVersion] = useState(0);
+  const consumedReloadVersion = useRef(0);
 
   // Lesson tabs (DUX-03). The pool (Domande) is loaded lazily: only after the
   // Domande tab has been opened for the current lesson, and kept mounted while
@@ -409,12 +443,13 @@ export function CourseWorkspace({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      lessonCache.clear();
       // Invalidate in-flight revision/request ids so any resolving fetch or
       // save is treated as stale.
       lessonRequestRef.current++;
       currentLessonRef.current = null;
     };
-  }, []);
+  }, [lessonCache]);
 
   const anyDirty = poolDirty || contentDirty || infoDirty || conceptMapDirty;
 
@@ -463,7 +498,7 @@ export function CourseWorkspace({
       // previous course can never write this (or the next) course's panel.
       lessonRequestRef.current++;
     };
-  }, [card.programId, card.activeImportId]);
+  }, [card.programId, card.activeImportId, setTree]);
 
   const lessonsByUda = useMemo(() => {
     const map = new Map<string, LessonItem[]>();
@@ -586,72 +621,100 @@ export function CourseWorkspace({
   // The `requestId` is the monotonic guard: only the write for the most recent
   // request lands, so a stale/out-of-order fetch (or one resolving after the
   // teacher moved on) can never overwrite the panel.
-  async function loadLessonContent(lesson: LessonItem, requestId: number) {
-    setLessonContent(null);
-    setLessonMetadata(EMPTY_LESSON_METADATA);
-    setLessonError(null);
-    setLessonErrorDetails(null);
-    setLessonLoading(true);
-    // Wall-clock start, so the diagnostics can report how long a hang lasted
-    // before the failure (a long elapsed ≈ Firebase's own retry window).
-    const startedAt = Date.now();
-    // Tracks which source is in play, so an error's diagnostics name it and
-    // so a Firestore failure never silently falls through to Storage.
-    let source: 'firestore' | 'storage' = 'firestore';
-    try {
-      // Primary (MOB-01C): the already-synced Firestore projection. One
-      // deterministic getDoc, validated against the open course/import — no
-      // Storage round-trip (which times out on Brave mobile).
-      const projected = await fetchPublicLessonContent(
-        {
-          lessonId: lesson.id,
-          programId: card.programId,
-          importId: card.activeImportId ?? '',
-          ownerUid,
-        },
-        db,
-      );
-      if (lessonRequestRef.current !== requestId) return; // superseded
-      if (projected !== null) {
-        // Valid projection: render immediately, metadata from the loaded tree.
-        setLessonMetadata(lessonMetadataFromItem(lesson));
-        setLessonContent(projected);
+  const loadLessonContent = useCallback(
+    async (lesson: LessonItem, requestId: number) => {
+      const cacheKey = JSON.stringify([lesson.id, lesson.storageRef]);
+      const cached = lessonCache.peek(cacheKey);
+      if (cached) {
+        pendingContentRef.current = null;
+        setLessonContent(cached.body);
+        setLessonMetadata(cached.metadata);
+        setLessonError(null);
+        setLessonErrorDetails(null);
+        setLessonLoading(false);
         return;
       }
-      // Legacy fallback: projection absent / no valid content / mismatched —
-      // read the Markdown from Storage and parse its front matter. Reached
-      // only because the getDoc SUCCEEDED but had nothing usable, never
-      // because it threw (a thrown getDoc is handled below, no Storage read).
-      source = 'storage';
-      const raw = await fetchLessonContent(lesson.storageRef, storage);
-      const { metadata, body } = parseLessonMetadata(raw);
-      if (lessonRequestRef.current !== requestId) return; // superseded
-      setLessonMetadata(metadata);
-      setLessonContent(body);
-    } catch (err) {
-      if (lessonRequestRef.current !== requestId) return; // superseded
-      // Preserve the ORIGINAL error — classify it into whitelisted,
-      // non-sensitive fields for the UI, and log a single structured line per
-      // failed attempt (console only, never to Firebase).
-      const details = describeStorageError(err, {
-        bucket: storage.app?.options?.storageBucket ?? null,
-        elapsedMs: Date.now() - startedAt,
-        source,
-      });
-      console.error('[lesson-content] load failed', {
-        storageRef: lesson.storageRef,
-        ...details,
-      });
-      setLessonError('Impossibile caricare il contenuto della lezione.');
-      setLessonErrorDetails(details);
-    } finally {
-      if (lessonRequestRef.current === requestId) setLessonLoading(false);
+      setLessonContent(null);
+      setLessonMetadata(EMPTY_LESSON_METADATA);
+      setLessonError(null);
+      setLessonErrorDetails(null);
+      setLessonLoading(true);
+      pendingContentRef.current = requestId;
+      // Wall-clock start, so the diagnostics can report how long a hang lasted
+      // before the failure (a long elapsed ≈ Firebase's own retry window).
+      const startedAt = Date.now();
+      // Tracks which source is in play, so an error's diagnostics name it and
+      // so a Firestore failure never silently falls through to Storage.
+      try {
+        // Primary (MOB-01C): the already-synced Firestore projection. One
+        // deterministic getDoc, validated against the open course/import — no
+        // Storage round-trip (which times out on Brave mobile).
+        const { metadata, body } = await lessonCache.load(cacheKey, async () => {
+          let source: 'firestore' | 'storage' = 'firestore';
+          try {
+            const projected = await fetchPublicLessonContent(
+              {
+                lessonId: lesson.id,
+                programId: card.programId,
+                importId: card.activeImportId ?? '',
+                ownerUid,
+              },
+              db,
+            );
+            if (projected !== null) {
+              return { body: projected, metadata: lessonMetadataFromItem(lesson) };
+            }
+            // Only an absent/invalid SUCCESSFUL projection permits Storage.
+            // A failed Firestore read is propagated, never silently bypassed.
+            if (!mountedRef.current) throw new Error('Workspace closed');
+            source = 'storage';
+            return parseLessonMetadata(await fetchLessonContent(lesson.storageRef, storage));
+          } catch (err) {
+            throw new LessonReadFailure(err, source);
+          }
+        });
+        if (lessonRequestRef.current !== requestId) return; // superseded
+        setLessonMetadata(metadata);
+        setLessonContent(body);
+      } catch (err) {
+        if (lessonRequestRef.current !== requestId) return; // superseded
+        lessonCache.clear();
+        // Preserve the ORIGINAL error — classify it into whitelisted,
+        // non-sensitive fields for the UI, and log a single structured line per
+        // failed attempt (console only, never to Firebase).
+        const details = describeStorageError(err instanceof LessonReadFailure ? err.cause : err, {
+          bucket: storage.app?.options?.storageBucket ?? null,
+          elapsedMs: Date.now() - startedAt,
+          source: err instanceof LessonReadFailure ? err.source : 'firestore',
+        });
+        console.error('[lesson-content] load failed', {
+          storageRef: lesson.storageRef,
+          ...details,
+        });
+        setLessonError('Impossibile caricare il contenuto della lezione.');
+        setLessonErrorDetails(details);
+      } finally {
+        if (lessonRequestRef.current === requestId) {
+          pendingContentRef.current = null;
+          setLessonLoading(false);
+        }
+      }
+    },
+    [lessonCache, card.programId, card.activeImportId, ownerUid],
+  );
+
+  useEffect(() => {
+    if (contentReloadVersion === consumedReloadVersion.current) return;
+    consumedReloadVersion.current = contentReloadVersion;
+    if (selectedLesson && currentLessonRef.current === selectedLesson.id) {
+      void loadLessonContent(selectedLesson, ++lessonRequestRef.current);
     }
-  }
+  }, [contentReloadVersion, selectedLesson, loadLessonContent]);
 
   // "Riprova": exactly one new read for the current lesson, guarded by a fresh
   // request id so it also invalidates any earlier in-flight fetch.
   function retryLessonContent(lesson: LessonItem) {
+    lessonCache.clear();
     const requestId = ++lessonRequestRef.current;
     currentLessonRef.current = lesson.id;
     void loadLessonContent(lesson, requestId);
@@ -733,11 +796,13 @@ export function CourseWorkspace({
   }
 
   async function withBusy(fn: () => Promise<void>) {
+    const endMutation = lessonCache.beginMutation();
     setWsBusy(true);
     setWsError(null);
     try {
       await fn();
     } finally {
+      endMutation();
       if (mountedRef.current) setWsBusy(false);
     }
   }
@@ -1333,6 +1398,7 @@ export function CourseWorkspace({
     if (!card.activeImportId) return;
     const importId = card.activeImportId;
     const lessonId = lesson.id;
+    const endMutation = beginContentMutation(lessonId);
     setContentStatus({ busy: true, error: null, saved: false });
     void (async () => {
       try {
@@ -1359,6 +1425,8 @@ export function CourseWorkspace({
           error: err instanceof Error ? err.message : 'Impossibile salvare il contenuto.',
           saved: false,
         });
+      } finally {
+        endMutation();
       }
     })();
   }
@@ -1372,6 +1440,7 @@ export function CourseWorkspace({
     if (!card.activeImportId) throw new Error('Import attivo non disponibile.');
     const importId = card.activeImportId;
     const lessonId = lesson.id;
+    const endMutation = beginContentMutation(lessonId);
     setContentStatus({ busy: true, error: null, saved: false });
     try {
       await updateLessonMarkdownBody({
@@ -1396,13 +1465,40 @@ export function CourseWorkspace({
         });
       }
       throw err;
+    } finally {
+      endMutation();
     }
+  }
+
+  function beginContentMutation(lessonId: string): () => void {
+    const finish = lessonCache.beginMutation();
+    const invalidateRead = () => {
+      if (mountedRef.current && currentLessonRef.current === lessonId) {
+        lessonRequestRef.current++;
+      }
+    };
+    invalidateRead();
+    return () => {
+      finish();
+      invalidateRead();
+      // A reader may navigate away and reopen this lesson while its write is
+      // pending. Restart only that interrupted read, after the tree/metadata
+      // update commits; otherwise cancellation would leave a blank panel.
+      if (
+        mountedRef.current &&
+        currentLessonRef.current === lessonId &&
+        pendingContentRef.current !== null
+      ) {
+        setContentReloadVersion((value) => value + 1);
+      }
+    };
   }
 
   function handleSaveInfo(lesson: LessonItem, fields: LessonMetadata) {
     if (!card.activeImportId) return;
     const importId = card.activeImportId;
     const lessonId = lesson.id;
+    const endMutation = beginContentMutation(lessonId);
     setInfoStatus({ busy: true, error: null, saved: false });
     void (async () => {
       try {
@@ -1439,6 +1535,8 @@ export function CourseWorkspace({
           error: err instanceof Error ? err.message : 'Impossibile salvare le informazioni.',
           saved: false,
         });
+      } finally {
+        endMutation();
       }
     })();
   }
@@ -1462,11 +1560,14 @@ export function CourseWorkspace({
         : contentDirty
           ? 'Salva prima le modifiche al contenuto: la mappa si genera dal testo salvato.'
           : null;
-  const hasVisualAnchorHeading =
-    lessonContent !== null &&
-    parseLessonMarkdown(lessonContent).headings.some(
-      (heading) => heading.level === 2 || heading.level === 3,
-    );
+  const hasVisualAnchorHeading = useMemo(
+    () =>
+      lessonContent !== null &&
+      parseLessonMarkdown(lessonContent).headings.some(
+        (heading) => heading.level === 2 || heading.level === 3,
+      ),
+    [lessonContent],
+  );
   const visualBlockedReason: string | null = lessonLoading
     ? 'Attendi il caricamento del contenuto.'
     : lessonError
@@ -1621,65 +1722,71 @@ export function CourseWorkspace({
     const importId = card.activeImportId;
     const lesson = tree?.lessons.find((l) => l.id === lessonId);
     if (!lesson) throw new Error('Lezione non trovata.');
-    if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
-      await deletePool({
+    const endMutation = beginContentMutation(lessonId);
+    try {
+      if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
+        await deletePool({
+          programId: card.programId,
+          importId,
+          lessonId,
+          ownerUid,
+          db,
+          storage,
+        });
+      }
+      if (lesson.visual || lesson.visuals) {
+        await createVisualLifecycleClient(functions).cleanupForDelete({
+          programId: card.programId,
+          importId,
+          lessonIds: [lessonId],
+        });
+      }
+      await updateLessonMarkdownBody({
+        programId: card.programId,
+        importId,
+        lessonId,
+        body: '',
+        ownerUid,
+        db,
+        storage,
+      });
+      await clearLessonContentState({
         programId: card.programId,
         importId,
         lessonId,
         ownerUid,
         db,
-        storage,
       });
+      if (!mountedRef.current) return;
+      const next: Tree = {
+        udas: tree?.udas ?? [],
+        lessons: (tree?.lessons ?? []).map((l) =>
+          l.id === lessonId
+            ? {
+                ...l,
+                poolStatus: 'absent' as const,
+                questionCount: 0,
+                poolStorageRef: null,
+                completed: false,
+                conceptMapMarkdown: undefined,
+                visual: undefined,
+                visuals: undefined,
+              }
+            : l,
+        ),
+      };
+      setTree(next);
+      patchCardCounts(next);
+      if (currentLessonRef.current !== lessonId) return;
+      setLessonContent('');
+      setContentDirty(false);
+      setPoolDirty(false);
+      setConceptMapDirty(false);
+      setEditingContent(false);
+      setContentStatus({ busy: false, error: null, saved: true });
+    } finally {
+      endMutation();
     }
-    if (lesson.visual || lesson.visuals) {
-      await createVisualLifecycleClient(functions).cleanupForDelete({
-        programId: card.programId,
-        importId,
-        lessonIds: [lessonId],
-      });
-    }
-    await updateLessonMarkdownBody({
-      programId: card.programId,
-      importId,
-      lessonId,
-      body: '',
-      ownerUid,
-      db,
-      storage,
-    });
-    await clearLessonContentState({
-      programId: card.programId,
-      importId,
-      lessonId,
-      ownerUid,
-      db,
-    });
-    if (!mountedRef.current) return;
-    const next: Tree = {
-      udas: tree?.udas ?? [],
-      lessons: (tree?.lessons ?? []).map((l) =>
-        l.id === lessonId
-          ? {
-              ...l,
-              poolStatus: 'absent' as const,
-              questionCount: 0,
-              poolStorageRef: null,
-              completed: false,
-              conceptMapMarkdown: undefined,
-              visual: undefined,
-              visuals: undefined,
-            }
-          : l,
-      ),
-    };
-    setTree(next);
-    patchCardCounts(next);
-    setLessonContent('');
-    setContentDirty(false);
-    setPoolDirty(false);
-    setConceptMapDirty(false);
-    setEditingContent(false);
-    setContentStatus({ busy: false, error: null, saved: true });
   }
 
   function handleClearLesson(lessonId: string) {
@@ -2666,9 +2773,10 @@ export function CourseWorkspace({
           counts={counts}
           countsError={Boolean(treeError)}
           classNames={card.classNames}
-          onSaved={(metadata) =>
-            onCardPatch?.(card.programId, { annoScolastico: metadata.annoScolastico })
-          }
+          onSaved={(metadata) => {
+            lessonCache.clear();
+            onCardPatch?.(card.programId, { annoScolastico: metadata.annoScolastico });
+          }}
           onClose={closeDialog}
         />
       )}
