@@ -77,6 +77,8 @@ type GateState =
 export function RoleGate({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const [state, setState] = useState<GateState>('loading');
+  const [resolvedForUid, setResolvedForUid] = useState<string | null>(null);
+  const [studentClassId, setStudentClassId] = useState<string | null>(null);
   const requestAttempted = useRef(false);
   // TWU-01: guards a single portal-access telemetry write per real entry. It
   // holds the uid the current entry already recorded for (null = none yet), so
@@ -89,9 +91,23 @@ export function RoleGate({ children }: { children: ReactNode }) {
     if (!user) {
       // Session ended: the next real entry (even the same uid) must record anew.
       recordedForUid.current = null;
+      setResolvedForUid(null);
+      setStudentClassId(null);
+      setState('loading');
       return;
     }
+    // Never let a role/class context from the previous authenticated user
+    // remain mounted while the new identity is being resolved.
+    setResolvedForUid(null);
+    setStudentClassId(null);
+    setState('loading');
     let active = true;
+    const commitState = (nextState: GateState, classId: string | null = null) => {
+      if (!active) return;
+      setStudentClassId(classId);
+      setResolvedForUid(user.uid);
+      setState(nextState);
+    };
 
     void (async () => {
       let ownerUid: string | null;
@@ -103,17 +119,17 @@ export function RoleGate({ children }: { children: ReactNode }) {
         // OwnerSetup can resolve which case it actually is by attempting
         // the write (blocked server-side if an owner already exists and
         // this user isn't it).
-        if (active) setState('setup');
+        commitState('setup');
         return;
       }
 
       if (ownerUid === null) {
-        if (active) setState('setup');
+        commitState('setup');
         return;
       }
 
       if (ownerUid === user.uid) {
-        if (active) setState('teacher');
+        commitState('teacher');
         return;
       }
 
@@ -128,10 +144,14 @@ export function RoleGate({ children }: { children: ReactNode }) {
         if (!active) return;
 
         if (studentDoc) {
-          if (studentDoc.status === 'blocked') setState('blocked');
-          else if (studentDoc.status === 'pending') setState('pending');
+          if (studentDoc.status === 'blocked') commitState('blocked');
+          else if (studentDoc.status === 'pending') commitState('pending');
           else if (access.studentPortalEnabled) {
-            setState('student');
+            // FIRESTORE-READS-01: this value comes from the authoritative
+            // students/{uid} read above. Pass it through the student subtree
+            // so the shell and Didattica do not immediately read the same doc
+            // two more times. Firestore Rules remain the security boundary.
+            commitState('student', studentDoc.classId ?? null);
             // TWU-01: this is the first point at which an approved student
             // actually enters the portal. Stamp their access telemetry once
             // per entry. It is deliberately **non-blocking**: a failed write
@@ -147,12 +167,12 @@ export function RoleGate({ children }: { children: ReactNode }) {
                 console.warn('[RoleGate] portal access telemetry write failed');
               });
             }
-          } else setState('portalDisabled');
+          } else commitState('portalDisabled');
           return;
         }
 
         if (!access.newStudentRequestsEnabled) {
-          setState('requestsClosed');
+          commitState('requestsClosed');
           return;
         }
 
@@ -163,9 +183,9 @@ export function RoleGate({ children }: { children: ReactNode }) {
           { uid: user.uid, ownerUid, email: user.email ?? '', displayName: user.displayName },
           db,
         );
-        if (active) setState('pending');
+        commitState('pending');
       } catch {
-        if (active) setState('error');
+        commitState('error');
       }
     })();
 
@@ -174,7 +194,9 @@ export function RoleGate({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  if (state === 'loading') {
+  // Comparing during render makes an identity switch fail closed before the
+  // effect for the new user has a chance to run and clear the previous state.
+  if (!user || resolvedForUid !== user.uid || state === 'loading') {
     return (
       <div className={styles.loadingScreen}>
         <main>
@@ -193,7 +215,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
   if (state === 'student') {
     return (
       <Suspense fallback={<PortalLoadingFallback />}>
-        <StudentShell />
+        <StudentShell initialClassId={studentClassId} />
       </Suspense>
     );
   }

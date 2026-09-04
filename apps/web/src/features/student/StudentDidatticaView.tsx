@@ -49,14 +49,44 @@ function lessonsByUda(lessons: StudentLesson[]): Map<string, StudentLesson[]> {
  * component, mutation service, repository import path, pool or Storage API
  * is imported here; Security Rules independently enforce the same boundary.
  */
-export function StudentDidatticaView() {
+export function StudentDidatticaView({
+  initialClassId,
+  onClassIdChange,
+}: {
+  initialClassId?: string | null;
+  onClassIdChange?: (classId: string | null) => void;
+} = {}) {
   const { user } = useAuth();
   // Auth changes synchronously tear down all course/note state, including timers.
-  return user ? <StudentDidatticaSession key={user.uid} uid={user.uid} /> : null;
+  return user ? (
+    <StudentDidatticaSession
+      key={user.uid}
+      uid={user.uid}
+      initialClassId={initialClassId}
+      onClassIdChange={onClassIdChange}
+    />
+  ) : null;
 }
 
-function StudentDidatticaSession({ uid }: { uid: string }) {
-  const data = useStudentDidattica(uid, db);
+function StudentDidatticaSession({
+  uid,
+  initialClassId,
+  onClassIdChange,
+}: {
+  uid: string;
+  initialClassId?: string | null;
+  onClassIdChange?: (classId: string | null) => void;
+}) {
+  const data = useStudentDidattica(uid, db, initialClassId);
+  const resolvedClassId =
+    data.library.status === 'ok'
+      ? data.library.classId
+      : data.library.status === 'no-class'
+        ? null
+        : undefined;
+  useEffect(() => {
+    if (resolvedClassId !== undefined) onClassIdChange?.(resolvedClassId);
+  }, [onClassIdChange, resolvedClassId]);
   const context = JSON.stringify([
     uid,
     data.library.status === 'ok' ? data.library.classId : null,

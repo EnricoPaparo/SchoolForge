@@ -7,7 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // StudentShell's internal behavior has its own dedicated suite; mocking only
 // that lazy module keeps this unit test independent from module-transform speed.
 vi.mock('../../student/StudentShell.js', () => ({
-  StudentShell: () => <nav aria-label="Sezioni studente">Portale studente</nav>,
+  StudentShell: ({ initialClassId }: { initialClassId: string | null }) => (
+    <nav aria-label="Sezioni studente" data-class-id={initialClassId ?? 'none'}>
+      Portale studente
+    </nav>
+  ),
 }));
 
 afterEach(cleanup);
@@ -136,7 +140,7 @@ describe('RoleGate — approved student', () => {
   it('renders StudentShell when approved and the portal is enabled', async () => {
     seedOwnerPublic();
     seedStudentAccess(true);
-    seedStudentDoc('approved');
+    seedStudentDoc('approved', { classId: 'class-1' });
     asStudent();
 
     render(
@@ -144,7 +148,8 @@ describe('RoleGate — approved student', () => {
         <div>Area docente</div>
       </RoleGate>,
     );
-    expect(await screen.findByRole('navigation', { name: /Sezioni studente/i })).toBeTruthy();
+    const shell = await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(shell.getAttribute('data-class-id')).toBe('class-1');
     expect(screen.queryByText('Area docente')).toBeNull();
   });
 
@@ -162,6 +167,42 @@ describe('RoleGate — approved student', () => {
     await screen.findByRole('navigation', { name: /Sezioni studente/i });
     expect(screen.queryByRole('button', { name: /Diventa proprietario/i })).toBeNull();
     expect(screen.queryByText('Area docente')).toBeNull();
+  });
+
+  it('fails closed synchronously while a different authenticated uid is resolved', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved', { classId: 'class-1' });
+    asStudent();
+
+    const view = render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    const firstShell = await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(firstShell.getAttribute('data-class-id')).toBe('class-1');
+
+    const nextUid = 'student-uid-2';
+    firestoreDocs[`students/${nextUid}`] = {
+      uid: nextUid,
+      ownerUid: OWNER_UID,
+      email: 'student2@test.com',
+      displayName: null,
+      status: 'approved',
+      classId: 'class-2',
+    };
+    currentUser = { uid: nextUid, email: 'student2@test.com', displayName: null };
+    view.rerender(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+
+    expect(screen.queryByRole('navigation', { name: /Sezioni studente/i })).toBeNull();
+    expect(screen.getByText('Caricamento…')).toBeTruthy();
+    const nextShell = await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(nextShell.getAttribute('data-class-id')).toBe('class-2');
   });
 });
 

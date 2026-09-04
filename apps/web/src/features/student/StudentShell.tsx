@@ -6,7 +6,6 @@ import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import { StudentDidatticaView } from './StudentDidatticaView.js';
 import { StudentVerificationsView } from './StudentVerificationsView.js';
 import { resolveActiveSession } from './examSessionService.js';
-import { getOwnStudentDoc } from '../repository/students/studentsService.js';
 import { watchStudentAccessSettings } from '../repository/students/studentAccessService.js';
 import { isExamModeActiveForClass } from '../repository/students/examMode.js';
 import navStyles from '../../components/HeaderSectionNav.module.css';
@@ -38,12 +37,12 @@ function SectionIcon({ section }: { section: Section }) {
  * link or UI state that can show Lezioni or leave the exam other than a
  * successful delivery.
  */
-export function StudentShell() {
+export function StudentShell({ initialClassId = null }: { initialClassId?: string | null }) {
   const { user, signOut } = useAuth();
   const [activeSection, setActiveSection] = useState<Section>('lezioni');
   const [sessionChecked, setSessionChecked] = useState(false);
   const [examInProgress, setExamInProgress] = useState(false);
-  const [myClassId, setMyClassId] = useState<string | null>(null);
+  const [currentClassId, setCurrentClassId] = useState(initialClassId);
   const [examModeSettings, setExamModeSettings] = useState<unknown>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -51,6 +50,8 @@ export function StudentShell() {
   const mobileNavRef = useRef<HTMLDivElement>(null);
 
   const uid = user?.uid;
+  useEffect(() => setCurrentClassId(initialClassId), [initialClassId]);
+
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -71,22 +72,6 @@ export function StudentShell() {
     };
   }, [uid]);
 
-  useEffect(() => {
-    if (!uid) return;
-    let cancelled = false;
-    getOwnStudentDoc(uid, db)
-      .then((studentDoc) => {
-        if (!cancelled) setMyClassId(studentDoc?.classId ?? null);
-      })
-      .catch(() => {
-        // Non-fatal — myClassId stays null, which fails Modalità verifica's
-        // per-class check safe (never "active" for an unknown class).
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [uid]);
-
   // Modalità verifica (M3F-07): a single onSnapshot on settings/studentAccess
   // — never a listener per lesson or class — so a teacher toggling it takes
   // effect immediately for an already-open session, without a new login.
@@ -97,7 +82,7 @@ export function StudentShell() {
     return unsubscribe;
   }, []);
 
-  const examModeActive = isExamModeActiveForClass(examModeSettings, myClassId);
+  const examModeActive = isExamModeActiveForClass(examModeSettings, currentClassId);
 
   // A blocked class must never keep showing Didattica once the teacher
   // activates Modalità verifica — force the section switch immediately,
@@ -267,7 +252,10 @@ export function StudentShell() {
       ) : (
         <main className={styles.main}>
           {activeSection === 'lezioni' && !examModeActive ? (
-            <StudentDidatticaView />
+            <StudentDidatticaView
+              initialClassId={initialClassId}
+              onClassIdChange={setCurrentClassId}
+            />
           ) : (
             <StudentVerificationsView
               onSessionActiveChange={setExamInProgress}
