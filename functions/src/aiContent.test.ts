@@ -263,6 +263,35 @@ describe('POOL-ROLLOUT-01 gateway fail-closed order', () => {
     expect(generateBlock).toContain('timeoutSeconds: 120');
   });
 
+  it('emits one closed, privacy-minimal terminal telemetry schema for preview and generate', () => {
+    const telemetryStart = gatewaySource.indexOf('async function runContentGateway');
+    const previewStart = gatewaySource.indexOf('export const aiContentPreview');
+    const telemetryBlock = gatewaySource.slice(telemetryStart, previewStart);
+    const events = [
+      ...telemetryBlock.matchAll(
+        /logger\.(?:info|error)\('aiContentGateway', \{([\s\S]*?)\n\s*\}\);/g,
+      ),
+    ];
+
+    expect(telemetryStart).toBeGreaterThanOrEqual(0);
+    expect(events).toHaveLength(3);
+    for (const event of events) {
+      const fields = event[1] ?? '';
+      expect(fields).toContain('phase,');
+      expect(fields).toContain('mode,');
+      expect(fields).toContain('outcome:');
+      expect(fields).toContain('durationMs:');
+      expect(fields).not.toMatch(
+        /(?:uid|requestId|prompt|guidance|title|content|output|token|cost|error|name)\s*:/i,
+      );
+    }
+
+    expect(gatewaySource).toContain("runContentGateway('preview'");
+    expect(gatewaySource).toContain("runContentGateway('generate'");
+    expect(gatewaySource).not.toContain('aiContentPreview internal error');
+    expect(gatewaySource).not.toContain('aiContentGenerate internal error');
+  });
+
   it.each([
     ['preview', 'export const aiContentPreview', 'export const aiContentGenerate'],
     ['generate', 'export const aiContentGenerate', null],

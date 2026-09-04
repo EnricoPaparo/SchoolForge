@@ -412,14 +412,54 @@ function readOpenAiSecret(): string | undefined {
   }
 }
 
+type AiContentGatewayPhase = 'preview' | 'generate';
+
+/**
+ * One terminal, aggregation-friendly event per callable. The schema is
+ * deliberately closed and privacy-minimal: never add request identifiers,
+ * prompt/content fields, provider output, token/cost data or raw errors here.
+ */
+async function runContentGateway<T>(
+  phase: AiContentGatewayPhase,
+  handler: (database: Firestore, mode: AiContentMode) => Promise<T>,
+): Promise<T> {
+  const started = Date.now();
+  const mode = contentMode();
+  try {
+    const result = await handler(db(), mode);
+    logger.info('aiContentGateway', {
+      phase,
+      mode,
+      outcome: 'ok',
+      durationMs: Math.max(0, Date.now() - started),
+    });
+    return result;
+  } catch (err) {
+    if (err instanceof AiContentError) {
+      logger.info('aiContentGateway', {
+        phase,
+        mode,
+        outcome: err.code,
+        durationMs: Math.max(0, Date.now() - started),
+      });
+      throw toHttpsError(err);
+    }
+    logger.error('aiContentGateway', {
+      phase,
+      mode,
+      outcome: 'internal',
+      durationMs: Math.max(0, Date.now() - started),
+    });
+    throw new HttpsError('internal', 'Errore interno della generazione IA.');
+  }
+}
+
 /**
  * `aiContentPreview` — stima senza secret/provider/prenotazione/scrittura.
  * **Nessun** binding del secret: la preview non ha accesso alla API key.
  */
-export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, async (request) => {
-  const database = db();
-  const mode = contentMode();
-  try {
+export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, (request) =>
+  runContentGateway('preview', async (database, mode) => {
     // Ordine contratto: auth → owner → mode/kill switch → payload. Un anonimo
     // riceve `unauthenticated` prima di `feature_disabled`.
     const ownerUid = await requireOwner(request, database);
@@ -442,12 +482,8 @@ export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, 
       },
       ports,
     );
-  } catch (err) {
-    if (err instanceof AiContentError) throw toHttpsError(err);
-    logger.error('aiContentPreview internal error', { name: (err as Error)?.name });
-    throw new HttpsError('internal', 'Errore interno della generazione IA.');
-  }
-});
+  }),
+);
 
 /** `aiContentGenerate` — ordine fail-closed completo. Una sola generazione logica. */
 export const aiContentGenerate = onCall(
@@ -459,10 +495,8 @@ export const aiContentGenerate = onCall(
     // visual generation slot; provider/runtime budgets stay unchanged.
     timeoutSeconds: 120,
   },
-  async (request) => {
-    const database = db();
-    const mode = contentMode();
-    try {
+  (request) =>
+    runContentGateway('generate', async (database, mode) => {
       // Ordine contratto: auth → owner → mode/kill switch → payload.
       const ownerUid = await requireOwner(request, database);
       if (mode === 'disabled') {
@@ -485,10 +519,5 @@ export const aiContentGenerate = onCall(
         },
         ports,
       );
-    } catch (err) {
-      if (err instanceof AiContentError) throw toHttpsError(err);
-      logger.error('aiContentGenerate internal error', { name: (err as Error)?.name });
-      throw new HttpsError('internal', 'Errore interno della generazione IA.');
-    }
-  },
+    }),
 );
