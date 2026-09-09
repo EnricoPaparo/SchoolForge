@@ -153,6 +153,15 @@ describe('CourseRecordCard responsive and motion contract', () => {
       /\.cardCourseCompact\s+\.openCta\s*\{[^}]*position:\s*static[^}]*opacity:\s*1/s,
     );
     expect(css).toMatch(
+      /\.cardCourseCompact\s+\.details\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(5\.75rem,\s*0\.65fr\)\s+minmax\(0,\s*1\.35fr\)/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.details\s*>\s*span\s*\{[^}]*border:[^}]*--color-brand-blue[^}]*background:[^}]*--color-brand-blue[^}]*overflow-wrap:\s*anywhere/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.details\s+strong\s*\{[^}]*display:\s*block[^}]*text-transform:\s*uppercase/s,
+    );
+    expect(css).toMatch(
       /\.cardCourseCompact\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
     );
   });
