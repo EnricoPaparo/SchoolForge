@@ -190,7 +190,7 @@ udas:
     ).toBe('value_too_long');
   });
 
-  it('accetta esattamente 300 caratteri', () => {
+  it('accetta un titolo di esattamente 300 caratteri', () => {
     const text = VALID.replace(
       'Introduzione alle reti',
       'x'.repeat(STRUCTURE_IMPORT_LIMITS.MAX_TEXT_LENGTH),
@@ -210,6 +210,24 @@ udas:
     expect(codeOf(VALID.replace('Fondamenti della comunicazione tra dispositivi.', '"  "'))).toBe(
       'empty_value',
     );
+  });
+
+  it('accetta una descrizione di 1000 caratteri e ne rifiuta una di 1001', () => {
+    const description = 'x'.repeat(STRUCTURE_IMPORT_LIMITS.MAX_UDA_DESCRIPTION_LENGTH);
+    expect(
+      validateUdaMetadataFile(
+        utf8(VALID.replace('Fondamenti della comunicazione tra dispositivi.', description)),
+      ).ok,
+    ).toBe(true);
+
+    const result = validateUdaMetadataFile(
+      utf8(VALID.replace('Fondamenti della comunicazione tra dispositivi.', `${description}x`)),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('value_too_long');
+    expect(result.error.field).toBe('descrizione');
+    expect(result.error.message).toContain('1000 caratteri');
   });
 
   it('rifiuta competenze e obiettivi mancanti, vuoti o troppo lunghi', () => {

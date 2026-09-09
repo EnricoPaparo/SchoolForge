@@ -135,7 +135,7 @@ export function normalizeUdaEntries(
     const descrizione = readStringField(
       entry['descrizione'],
       { fileKind: 'uda', index, field: 'descrizione' },
-      { optional: true },
+      { optional: true, maxLength: STRUCTURE_IMPORT_LIMITS.MAX_UDA_DESCRIPTION_LENGTH },
     );
     if (!descrizione.ok) return descrizione;
 

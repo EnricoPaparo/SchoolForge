@@ -374,6 +374,20 @@ describe('rigore: ciò che resta un errore', () => {
     expect(err(parseSimpleUdaStructure(lungo)).code).toBe('value_too_long');
   });
 
+  it('usa il limite dedicato di 1000 caratteri per la descrizione UDA', () => {
+    const description = 'x'.repeat(STRUCTURE_IMPORT_LIMITS.MAX_UDA_DESCRIPTION_LENGTH);
+    expect(
+      ok(parseSimpleUdaStructure(UDA_BASE.replace('Una descrizione', description)))[0]!.descrizione,
+    ).toBe(description);
+
+    const error = err(
+      parseSimpleUdaStructure(UDA_BASE.replace('Una descrizione', `${description}x`)),
+    );
+    expect(error.code).toBe('value_too_long');
+    expect(error.field).toBe('descrizione');
+    expect(error.message).toContain('1000 caratteri');
+  });
+
   it('non ignora righe e non inventa valori', () => {
     // Una riga non collocabile ferma l'import invece di sparire in silenzio.
     const testo = `UDA: Prima unità\nDescrizione: Una descrizione\nnota a margine\nCompetenze:\n- Una\nObiettivi:\n- Uno\n`;
