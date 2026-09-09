@@ -22,8 +22,10 @@ export const STRUCTURE_IMPORT_LIMITS = {
   /** Items of any list field (`competenze`, `obiettivi`, `concettiChiave`). */
   MIN_LIST_ITEMS: 1,
   MAX_LIST_ITEMS: 40,
-  /** Characters of any free-text field, and of any list item. */
+  /** Characters of titles, subtitles and any list item. */
   MAX_TEXT_LENGTH: 300,
+  /** Characters of an optional UDA description. */
+  MAX_UDA_DESCRIPTION_LENGTH: 1_000,
   /** Characters of `difficolta`, aligned with the existing AI payload bound. */
   MAX_DIFFICULTY_LENGTH: 120,
 } as const;
