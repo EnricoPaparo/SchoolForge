@@ -1216,6 +1216,38 @@
   padding-bottom: 0;
 }
 
+.cardCourseCompact .details {
+  display: grid;
+  grid-template-columns: minmax(5.75rem, 0.65fr) minmax(0, 1.35fr);
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  color: var(--color-text);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.cardCourseCompact .details > span {
+  display: block;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--color-brand-blue) 32%, var(--color-border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-brand-blue) 9%, var(--color-surface));
+  color: var(--color-text);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cardCourseCompact .details strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--color-brand-blue);
+  font-size: 0.64rem;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
 .cardCourseCompact .openCta {
   display: block;
   position: static;
