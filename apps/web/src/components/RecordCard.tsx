@@ -236,7 +236,7 @@ export function RecordCard({
                   title={detail.title}
                   data-detail-label={detail.label}
                 >
-                  <strong>{detail.label}</strong>
+                  <strong>{detail.label}</strong>{' '}
                   <span className={styles.detailValue}>{detail.value}</span>
                 </span>
               ))}

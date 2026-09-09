@@ -102,6 +102,9 @@ describe('CourseRecordCard', () => {
     expect(onRename).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
     expect(screen.getByText(/Quinta C Informatica/)).toBeTruthy();
+    expect(screen.getByText(/Quinta C Informatica/).parentElement?.textContent).toContain(
+      'Classi Quinta A Informatica',
+    );
     expect(screen.getByText('1.000')).toBeTruthy();
   });
 });
