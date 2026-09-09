@@ -15,13 +15,20 @@ describe('CourseRecordCard', () => {
         title="Reti"
         openLabel="Apri il corso Reti"
         onOpen={onOpen}
-        details={[{ label: 'Classi', value: 'Nessuna classe assegnata' }]}
+        details={[
+          { label: 'Anno', value: '2026/2027' },
+          { label: 'Classi', value: 'Nessuna classe assegnata' },
+        ]}
         metrics={[]}
       />,
     );
     expect(container.querySelector('dl')).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.getByText('Nessuna classe assegnata')).toBeTruthy();
+    expect(screen.getByText('2026/2027').parentElement?.dataset.detailLabel).toBe('Anno');
+    expect(screen.getByText('Nessuna classe assegnata').parentElement?.dataset.detailLabel).toBe(
+      'Classi',
+    );
     expect(screen.getByText('Apri corso →')).toBeTruthy();
     const surface = screen.getByRole('button', { name: 'Apri il corso Reti' });
     surface.focus();
@@ -153,13 +160,34 @@ describe('CourseRecordCard responsive and motion contract', () => {
       /\.cardCourseCompact\s+\.openCta\s*\{[^}]*position:\s*static[^}]*opacity:\s*1/s,
     );
     expect(css).toMatch(
-      /\.cardCourseCompact\s+\.details\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(5\.75rem,\s*0\.65fr\)\s+minmax\(0,\s*1\.35fr\)/s,
+      /\.cardCourseCompact\s+\.identity\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto[^}]*'title details'[^}]*'cue details'/s,
     );
     expect(css).toMatch(
-      /\.cardCourseCompact\s+\.details\s*>\s*span\s*\{[^}]*border:[^}]*--color-brand-blue[^}]*background:[^}]*--color-brand-blue[^}]*overflow-wrap:\s*anywhere/s,
+      /\.cardCourseCompact\s+\.details\s*\{[^}]*display:\s*flex[^}]*justify-self:\s*end[^}]*margin-top:\s*0/s,
     );
     expect(css).toMatch(
-      /\.cardCourseCompact\s+\.details\s+strong\s*\{[^}]*display:\s*block[^}]*text-transform:\s*uppercase/s,
+      /\.cardCourseCompact\s+\.details\s*>\s*span\s*\{[^}]*height:\s*2\.45rem[^}]*padding:\s*0\.28rem\s+0\.45rem[^}]*--color-brand-blue[^}]*transition:/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.details\s*>\s*span\[data-detail-label='Anno'\]\s*\{[^}]*width:\s*5\.25rem/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.details\s*>\s*span\[data-detail-label='Classi'\]\s*\{[^}]*width:\s*clamp\(7rem,\s*16vw,\s*10\.5rem\)/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact\s+\.detailValue\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact:hover\s+\.details\s*>\s*span\s*\{[^}]*--color-brand-interactive[^}]*--color-brand-interactive/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact:hover\s+\.details\s+strong\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
+    );
+    expect(css).toMatch(
+      /\.cardCourseCompact:has\(>\s*\.openSurface:focus-visible\)\s+\.details\s*>\s*span\s*\{[^}]*--color-brand-interactive/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.card\.cardCourseCompact\s+\.identity\s*\{[^}]*'title'[^}]*'details'[^}]*'cue'/s,
     );
     expect(css).toMatch(
       /\.cardCourseCompact\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,

@@ -1213,42 +1213,78 @@
 
 .cardCourseCompact .identity {
   grid-area: identity;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title details'
+    'cue details';
+  align-items: center;
+  gap: 0.15rem 0.8rem;
   padding-bottom: 0;
 }
 
+.cardCourseCompact .title {
+  grid-area: title;
+}
+
 .cardCourseCompact .details {
-  display: grid;
-  grid-template-columns: minmax(5.75rem, 0.65fr) minmax(0, 1.35fr);
-  gap: 0.5rem;
-  margin-top: 0.7rem;
+  grid-area: details;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 0.4rem;
+  max-width: 100%;
+  margin-top: 0;
   color: var(--color-text);
-  font-size: 0.86rem;
-  line-height: 1.35;
+  font-size: 0.74rem;
+  line-height: 1.15;
 }
 
 .cardCourseCompact .details > span {
-  display: block;
+  display: grid;
+  align-content: center;
   min-width: 0;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--color-brand-blue) 32%, var(--color-border));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--color-brand-blue) 9%, var(--color-surface));
+  height: 2.45rem;
+  padding: 0.28rem 0.45rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-brand-blue) 24%, var(--color-border));
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--color-brand-blue) 5%, var(--color-surface));
   color: var(--color-text);
-  font-weight: 650;
-  overflow-wrap: anywhere;
+  font-weight: 600;
+  transition:
+    border-color var(--transition-brand-interactive),
+    background-color var(--transition-brand-interactive);
+}
+
+.cardCourseCompact .details > span[data-detail-label='Anno'] {
+  width: 5.25rem;
+}
+
+.cardCourseCompact .details > span[data-detail-label='Classi'] {
+  width: clamp(7rem, 16vw, 10.5rem);
 }
 
 .cardCourseCompact .details strong {
   display: block;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.06rem;
   color: var(--color-brand-blue);
-  font-size: 0.64rem;
+  font-size: 0.55rem;
   font-weight: 750;
-  letter-spacing: 0.055em;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
+  transition: color var(--transition-brand-interactive);
+}
+
+.cardCourseCompact .detailValue {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cardCourseCompact .openCta {
+  grid-area: cue;
   display: block;
   position: static;
   margin-top: 0.5rem;
@@ -1267,12 +1303,60 @@
   min-height: 2.75rem;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .cardCourseCompact:hover .details > span {
+    border-color: color-mix(in srgb, var(--color-brand-interactive) 72%, var(--color-border));
+    background: color-mix(in srgb, var(--color-brand-interactive) 15%, var(--color-surface));
+  }
+
+  .cardCourseCompact:hover .details strong {
+    color: var(--color-brand-interactive);
+  }
+}
+
+.cardCourseCompact:has(> .openSurface:focus-visible) .details > span {
+  border-color: color-mix(in srgb, var(--color-brand-interactive) 72%, var(--color-border));
+  background: color-mix(in srgb, var(--color-brand-interactive) 15%, var(--color-surface));
+}
+
+.cardCourseCompact:has(> .openSurface:focus-visible) .details strong {
+  color: var(--color-brand-interactive);
+}
+
+@media (max-width: 44rem) {
+  .card.cardCourseCompact .identity {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'details'
+      'cue';
+    gap: 0.35rem;
+  }
+
+  .cardCourseCompact .details {
+    justify-self: end;
+  }
+
+  .cardCourseCompact .details > span[data-detail-label='Classi'] {
+    width: min(10rem, 42vw);
+  }
+
+  .cardCourseCompact .openCta {
+    margin-top: 0.15rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .accent,
   .openCta,
   .title,
   .metricIcon {
+    transition: none;
+  }
+
+  .cardCourseCompact .details > span,
+  .cardCourseCompact .details strong {
     transition: none;
   }
 

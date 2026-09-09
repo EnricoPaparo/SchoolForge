@@ -231,8 +231,13 @@ export function RecordCard({
           {details.length > 0 && (
             <div className={styles.details}>
               {details.map((detail) => (
-                <span key={`${detail.label}:${detail.value}`} title={detail.title}>
-                  <strong>{detail.label}</strong> {detail.value}
+                <span
+                  key={`${detail.label}:${detail.value}`}
+                  title={detail.title}
+                  data-detail-label={detail.label}
+                >
+                  <strong>{detail.label}</strong>
+                  <span className={styles.detailValue}>{detail.value}</span>
                 </span>
               ))}
             </div>
