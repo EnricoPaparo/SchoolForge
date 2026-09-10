@@ -453,16 +453,14 @@ export async function deleteProgram(
   }
 
   // Una sola richiesta gateway per import: niente listAll/deleteObject ricorsivi
-  // dal browser e nessun retry Storage SDK di ~120 s su Brave.
+  // dal browser e nessun retry Storage SDK di ~120 s su Brave. Il gateway
+  // accetta intenzionalmente soltanto la root canonica dell'import; gli asset
+  // visuali nel layout storico sono già gestiti dalla cleanupVisuals dedicata.
   for (let i = 0; i < imports.length; i += PREFIX_DELETE_CONCURRENCY) {
     await Promise.all(
-      imports.slice(i, i + PREFIX_DELETE_CONCURRENCY).flatMap(({ importId }) => [
-        deleteImportPrefix(`repository/${ownerUid}/imports/${importId}`),
-        // I canonici VE-03A precedono la cartella `imports`: questa seconda
-        // cancellazione rende il cleanup del corso completo anche se un
-        // recovery puntuale è rimasto interrotto.
-        deleteImportPrefix(`repository/${ownerUid}/${importId}`),
-      ]),
+      imports
+        .slice(i, i + PREFIX_DELETE_CONCURRENCY)
+        .map(({ importId }) => deleteImportPrefix(`repository/${ownerUid}/imports/${importId}`)),
     );
   }
 
