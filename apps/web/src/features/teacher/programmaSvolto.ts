@@ -6,11 +6,18 @@ import { resolveUdaTitle } from '../repository/programs/udaTitle.js';
 import { loadPdfModule } from '../../lib/pdfModuleLoader.js';
 
 export type JsPdfModuleFactory = () => Promise<typeof JsPdfModule>;
+export type ProgramMarkdownVariant = 'completed' | 'complete';
+
+export type ProgramMarkdownOptions = {
+  variant?: ProgramMarkdownVariant;
+};
 
 const importJsPdf: JsPdfModuleFactory = () => import('jspdf');
 
 /**
- * Generates a Markdown document of completed lessons, grouped by UDA.
+ * Generates a Markdown program document grouped by UDA. The default keeps
+ * the historical completed-only export; the complete variant includes every
+ * lesson already present in the loaded course tree.
  *
  * Metadata sections (program descrizione, UDA competenze/obiettivi) are only
  * printed when actually present — never a "Non indicato" placeholder — so
@@ -22,11 +29,14 @@ export function generateMarkdown(
   udas: UdaItem[],
   lessons: LessonItem[],
   programmaMeta?: ProgrammaMeta | null,
+  options?: ProgramMarkdownOptions,
 ): string {
-  const completed = lessons.filter((l) => l.completed === true);
+  const variant = options?.variant ?? 'completed';
+  const includedLessons =
+    variant === 'complete' ? lessons : lessons.filter((lesson) => lesson.completed === true);
 
   const lines: string[] = [];
-  lines.push(`# Programma svolto — ${program.title}`);
+  lines.push(`# Programma ${variant === 'complete' ? 'completo' : 'svolto'} — ${program.title}`);
   lines.push('');
 
   if (programmaMeta?.descrizione) {
@@ -34,14 +44,18 @@ export function generateMarkdown(
     lines.push('');
   }
 
-  if (completed.length === 0) {
-    lines.push('_Nessun argomento segnato come svolto._');
+  if (includedLessons.length === 0) {
+    lines.push(
+      variant === 'complete'
+        ? '_Nessun argomento presente nel programma._'
+        : '_Nessun argomento segnato come svolto._',
+    );
     return lines.join('\n');
   }
 
   // Group by udaDir
   const byUda = new Map<string, LessonItem[]>();
-  for (const lesson of completed) {
+  for (const lesson of includedLessons) {
     const group = byUda.get(lesson.udaDir) ?? [];
     group.push(lesson);
     byUda.set(lesson.udaDir, group);
