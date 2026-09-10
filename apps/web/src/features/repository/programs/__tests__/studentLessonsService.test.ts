@@ -128,14 +128,16 @@ describe('loadStudentLibrary — program filtering', () => {
     expect(result.programs).toEqual([]);
   });
 
-  it('sorts programs by title', async () => {
+  it('sorts programs by Italian title, case-insensitively and with natural numbers', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockImplementation((q: { __collRef: { __collection: string } }) => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
           docsFor('programs', [
-            { id: 'p2', data: { title: 'Zeta', classIds: ['class-a'] } },
-            { id: 'p1', data: { title: 'Alfa', classIds: ['class-a'] } },
+            { id: 'p10', data: { title: 'Corso 10', classIds: ['class-a'] } },
+            { id: 'pz', data: { title: 'zoologia', classIds: ['class-a'] } },
+            { id: 'p2', data: { title: 'Corso 2', classIds: ['class-a'] } },
+            { id: 'pa', data: { title: 'Àlgebra', classIds: ['class-a'] } },
           ]),
         );
       }
@@ -144,7 +146,12 @@ describe('loadStudentLibrary — program filtering', () => {
 
     const result = await loadStudentLibrary(STUDENT_UID, fakeDb);
     if (result.status !== 'ok') throw new Error('expected ok');
-    expect(result.programs.map((p) => p.title)).toEqual(['Alfa', 'Zeta']);
+    expect(result.programs.map((p) => p.title)).toEqual([
+      'Àlgebra',
+      'Corso 2',
+      'Corso 10',
+      'zoologia',
+    ]);
   });
 });
 

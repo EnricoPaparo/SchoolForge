@@ -9,6 +9,7 @@ import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeLessonContent } from './lessonContentSize.js';
 import { readPublicConceptMap } from './conceptMapContract.js';
 import { readStudentVisualManifest, readStudentVisualManifests } from './lessonVisualContract.js';
+import { compareCourseTitles } from './courseTitleOrder.js';
 
 export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
   id: string;
@@ -96,7 +97,7 @@ export async function loadStudentLibrary(
         activeImportId: data.activeImportId ?? null,
       };
     })
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => compareCourseTitles(a.title, b.title));
 
   return { status: 'ok', classId, programs };
 }

@@ -3,6 +3,7 @@ import { db, functions, storage } from '../../lib/firebase.js';
 import { createProgramNotesCleanupCallable } from '../repository/programs/programNotesCleanupClient.js';
 import { createVisualLifecycleClient } from '../repository/programs/visualLifecycleClient.js';
 import { loadCourseLibrary, type CourseCard } from '../repository/programs/courseLibrary.js';
+import { compareCourseTitles } from '../repository/programs/courseTitleOrder.js';
 import {
   createInitializedProgram,
   createProgram,
@@ -148,14 +149,16 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   const filtered = useMemo(() => {
     if (!cards) return [];
     const q = search.trim().toLowerCase();
-    return cards.filter((c) => {
-      if (yearFilter === YEAR_NONE && c.annoScolastico) return false;
-      if (yearFilter !== YEAR_ALL && yearFilter !== YEAR_NONE && c.annoScolastico !== yearFilter)
-        return false;
-      if (classFilter !== YEAR_ALL && !c.classNames.includes(classFilter)) return false;
-      if (q && !c.title.toLowerCase().includes(q)) return false;
-      return true;
-    });
+    return cards
+      .filter((c) => {
+        if (yearFilter === YEAR_NONE && c.annoScolastico) return false;
+        if (yearFilter !== YEAR_ALL && yearFilter !== YEAR_NONE && c.annoScolastico !== yearFilter)
+          return false;
+        if (classFilter !== YEAR_ALL && !c.classNames.includes(classFilter)) return false;
+        if (q && !c.title.toLowerCase().includes(q)) return false;
+        return true;
+      })
+      .sort((a, b) => compareCourseTitles(a.title, b.title));
   }, [cards, yearFilter, classFilter, search]);
 
   function resetFilters() {
