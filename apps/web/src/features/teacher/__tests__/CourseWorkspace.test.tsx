@@ -35,6 +35,7 @@ const mockUpdateProgramMetadata = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
 const mockDownloadProgramPdf = vi.fn();
+const mockDownloadProgramMarkdown = vi.fn();
 const mockReloadCurrentPage = vi.fn();
 const mockVisualPreviewProposal = vi.fn();
 const mockVisualGenerateProposal = vi.fn();
@@ -103,6 +104,7 @@ vi.mock('../programmaSvolto.js', async (importOriginal) => {
   const actual = await importOriginal<typeof ProgrammaSvoltoModule>();
   return {
     ...actual,
+    downloadMarkdown: (...args: unknown[]) => mockDownloadProgramMarkdown(...args),
     downloadPdf: (...args: unknown[]) => mockDownloadProgramPdf(...args),
   };
 });
@@ -1891,6 +1893,45 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
 
     await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledTimes(1));
     resolveDelete();
+  });
+});
+
+describe('CourseWorkspace — Programma completo export', () => {
+  it('exports the same date-free complete program to Markdown and PDF', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti', { titolo: 'Reti' })]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', {
+        completed: true,
+        completedAt: { seconds: 1_750_000_000, nanoseconds: 0 } as never,
+        titolo: 'Lezione svolta',
+      }),
+      lesson('l2', 'uda-01-reti', {
+        completed: false,
+        titolo: 'Lezione pianificata',
+      }),
+    ]);
+    mockGetImportMeta.mockResolvedValue(null);
+    renderWorkspace();
+    await screen.findByRole('button', { name: 'Azioni corso' });
+
+    clickMenuAction('Azioni corso', 'Programma completo (MD)');
+    await waitFor(() => expect(mockDownloadProgramMarkdown).toHaveBeenCalledTimes(1));
+    const markdown = mockDownloadProgramMarkdown.mock.calls[0][0] as string;
+    expect(markdown).toContain('# Programma completo — Sistemi e Reti');
+    expect(markdown).toContain('- Lezione svolta');
+    expect(markdown).toContain('- Lezione pianificata');
+    expect(markdown).not.toContain('2025');
+    expect(mockDownloadProgramMarkdown).toHaveBeenCalledWith(
+      markdown,
+      'programma-completo-Sistemi_e_Reti.md',
+    );
+
+    clickMenuAction('Azioni corso', 'Programma completo (PDF)');
+    await waitFor(() => expect(mockDownloadProgramPdf).toHaveBeenCalledTimes(1));
+    expect(mockDownloadProgramPdf).toHaveBeenCalledWith(
+      markdown,
+      'programma-completo-Sistemi_e_Reti',
+    );
   });
 });
 

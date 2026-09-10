@@ -116,7 +116,12 @@ import {
 } from './lessonEditors.js';
 import { buildLessonUdaContext } from '../repository/pools/lessonUdaContext.js';
 import { exportZip } from './exportZip.js';
-import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
+import {
+  downloadMarkdown,
+  downloadPdf,
+  generateMarkdown,
+  type ProgramMarkdownVariant,
+} from './programmaSvolto.js';
 import { describeImportValidationError } from './importValidationMessage.js';
 import {
   ClassesDialog,
@@ -249,7 +254,7 @@ function ReorderControls({
 }
 
 /**
- * Builds the minimal `ProgramItem` shape the export/programma-svolto helpers
+ * Builds the minimal `ProgramItem` shape the program export helpers
  * expect, from the library card the workspace already holds.
  */
 function cardToProgram(card: CourseCard): ProgramItem {
@@ -1176,7 +1181,7 @@ function CourseWorkspaceSession({
     }
   }
 
-  async function handleProgrammaSvolto(format: 'md' | 'pdf') {
+  async function handleProgramExport(variant: ProgramMarkdownVariant, format: 'md' | 'pdf') {
     setMenuOpen(false);
     if (!tree) return;
     if (format === 'pdf' && programPdfBusyRef.current) return;
@@ -1189,8 +1194,10 @@ function CourseWorkspaceSession({
       const meta = card.activeImportId
         ? await getImportMeta(card.programId, card.activeImportId, db).catch(() => null)
         : null;
-      const content = generateMarkdown(cardToProgram(card), tree.udas, tree.lessons, meta);
-      const base = `programma-svolto-${card.title.replace(/\s+/g, '_')}`;
+      const content = generateMarkdown(cardToProgram(card), tree.udas, tree.lessons, meta, {
+        variant,
+      });
+      const base = `programma-${variant === 'complete' ? 'completo' : 'svolto'}-${card.title.replace(/\s+/g, '_')}`;
       if (format === 'md') downloadMarkdown(content, `${base}.md`);
       else await downloadPdf(content, base);
     } catch (error) {
@@ -2259,7 +2266,25 @@ function CourseWorkspaceSession({
                     type="button"
                     role="menuitem"
                     disabled={!card.hasImport}
-                    onClick={() => void handleProgrammaSvolto('md')}
+                    onClick={() => void handleProgramExport('complete', 'md')}
+                  >
+                    <IconFileText size={15} />
+                    Programma completo (MD)
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!card.hasImport || programPdfBusy}
+                    onClick={() => void handleProgramExport('complete', 'pdf')}
+                  >
+                    <IconFileCheck size={15} />
+                    Programma completo (PDF)
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!card.hasImport}
+                    onClick={() => void handleProgramExport('completed', 'md')}
                   >
                     <IconFileText size={15} />
                     Programma svolto (MD)
@@ -2268,7 +2293,7 @@ function CourseWorkspaceSession({
                     type="button"
                     role="menuitem"
                     disabled={!card.hasImport || programPdfBusy}
-                    onClick={() => void handleProgrammaSvolto('pdf')}
+                    onClick={() => void handleProgramExport('completed', 'pdf')}
                   >
                     <IconFileCheck size={15} />
                     Programma svolto (PDF)

@@ -59,6 +59,35 @@ describe('generateMarkdown', () => {
     expect(md).not.toContain('Lezione 002');
   });
 
+  it('includes every lesson in the complete-program variant', () => {
+    const lessonWithDate: LessonItem = {
+      ...LESSON_COMPLETED,
+      titolo: 'Lezione svolta',
+      completedAt: { seconds: 1_750_000_000, nanoseconds: 0 } as never,
+    };
+    const lessonNotCompleted: LessonItem = {
+      ...LESSON_NOT_COMPLETED,
+      titolo: 'Lezione pianificata',
+    };
+
+    const md = generateMarkdown(PROGRAM, [UDA], [lessonWithDate, lessonNotCompleted], null, {
+      variant: 'complete',
+    });
+
+    expect(md).toContain('# Programma completo — Informatica');
+    expect(md).toContain('- Lezione svolta');
+    expect(md).toContain('- Lezione pianificata');
+    expect(md).not.toContain('2025');
+    expect(md).not.toMatch(/\(\d{1,2}\/\d{1,2}\/\d{4}\)/);
+  });
+
+  it('uses a complete-program empty state when the course has no lessons', () => {
+    const md = generateMarkdown(PROGRAM, [UDA], [], null, { variant: 'complete' });
+
+    expect(md).toContain('_Nessun argomento presente nel programma._');
+    expect(md).not.toContain('segnato come svolto');
+  });
+
   it('includes program title', () => {
     const md = generateMarkdown(PROGRAM, [UDA], [LESSON_COMPLETED]);
     expect(md).toContain('Informatica');
