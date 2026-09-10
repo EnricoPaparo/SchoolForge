@@ -996,7 +996,11 @@ export async function deleteLesson(params: {
     ),
   );
 
-  if (lessonHasVisualArtifacts(lesson)) {
+  // Un adapter esplicito richiede sempre un probe: dopo un errore Storage il
+  // manifest è già stato rimosso, ma il recovery server-side deve poter
+  // completare al retry. Senza adapter, il fallback lazy serve solo quando il
+  // documento espone davvero un artefatto.
+  if (params.cleanupVisuals !== undefined || lessonHasVisualArtifacts(lesson)) {
     const cleanup =
       params.cleanupVisuals ??
       (async (input: { programId: string; importId: string; lessonIds: string[] }) => {
@@ -1080,7 +1084,9 @@ export async function deleteUda(params: {
   ]);
   const lessons = lessonsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
 
-  const lessonsForVisualCleanup = lessons.filter(lessonHasVisualArtifacts);
+  const lessonsForVisualCleanup = params.cleanupVisuals
+    ? lessons
+    : lessons.filter(lessonHasVisualArtifacts);
   if (lessonsForVisualCleanup.length > 0) {
     const cleanup =
       params.cleanupVisuals ??

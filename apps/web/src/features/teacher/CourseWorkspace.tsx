@@ -137,13 +137,6 @@ import { ActionsMenu } from './ActionsMenu.js';
 const NO_STATUS: EditStatus = { busy: false, error: null, saved: false };
 const MOBILE_QUERY = '(max-width: 640px)';
 
-function lessonHasVisualArtifacts(lesson: Pick<LessonItem, 'visual' | 'visuals'>): boolean {
-  return (
-    lesson.visual !== undefined ||
-    (Array.isArray(lesson.visuals?.items) && lesson.visuals.items.length > 0)
-  );
-}
-
 /**
  * Local matchMedia hook (no new dependency). Mobile = single-level
  * progressive navigation; desktop = shared sidebar. Falls back to desktop
@@ -1734,13 +1727,14 @@ function CourseWorkspaceSession({
       // Il cleanup visuale e il suo controllo anti-race vengono prima di ogni
       // altra mutazione. Se falliscono, pool, corpo e mappa restano intatti;
       // il retry riparte quindi da una fotografia coerente della lezione.
-      if (lessonHasVisualArtifacts(lesson)) {
-        await createVisualLifecycleClient(functions).cleanupForDelete({
-          programId: card.programId,
-          importId,
-          lessonIds: [lessonId],
-        });
-      }
+      // Sempre eseguito: se un tentativo precedente ha già tolto il manifest
+      // ma non il blob, il server usa il recovery persistito. Senza artefatti
+      // né recovery il server termina senza scritture.
+      await createVisualLifecycleClient(functions).cleanupForDelete({
+        programId: card.programId,
+        importId,
+        lessonIds: [lessonId],
+      });
       if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
         await deletePool({
           programId: card.programId,

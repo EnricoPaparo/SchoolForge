@@ -286,28 +286,21 @@ function wrapDiagramLine(line: string): string {
   const budget = CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS;
   if ([...continuationIndent].length >= budget) return line;
 
-  const words = line
-    .slice(indent.length)
-    .split(' ')
-    .filter((word) => word.length > 0);
-  if (words.length === 0) return line;
-  if (words.some((word) => [...word].length > budget - [...continuationIndent].length)) {
-    return line;
-  }
-
   const wrapped: string[] = [];
-  let current = indent;
-  for (const word of words) {
-    const atLineStart = current === indent || current === continuationIndent;
-    const candidate = atLineStart ? `${current}${word}` : `${current} ${word}`;
-    if ([...candidate].length > budget) {
-      wrapped.push(current);
-      current = `${continuationIndent}${word}`;
-    } else {
-      current = candidate;
-    }
+  let remaining = [...line];
+  const continuation = [...continuationIndent];
+  while (remaining.length > budget) {
+    let splitAt = Math.min(budget - 1, remaining.length - 1);
+    const minimum = wrapped.length === 0 ? [...indent].length : continuation.length;
+    while (splitAt >= minimum && !/\s/u.test(remaining[splitAt]!)) splitAt--;
+    if (splitAt < minimum) return line;
+
+    // Sostituisce soltanto il singolo whitespace scelto con newline +
+    // indentazione. Gli altri spazi (anche multipli) restano byte per byte.
+    wrapped.push(remaining.slice(0, splitAt).join(''));
+    remaining = [...continuation, ...remaining.slice(splitAt + 1)];
   }
-  wrapped.push(current);
+  wrapped.push(remaining.join(''));
   return wrapped.join('\n');
 }
 

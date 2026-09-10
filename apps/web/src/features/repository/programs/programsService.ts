@@ -434,7 +434,9 @@ export async function deleteProgram(
     const lessonIds = item.lessonsSnap.docs
       .filter(
         (lesson) =>
-          typeof lesson.data === 'function' && lessonHasVisualArtifacts(lesson.data() as LessonDoc),
+          cleanupVisuals !== undefined ||
+          (typeof lesson.data === 'function' &&
+            lessonHasVisualArtifacts(lesson.data() as LessonDoc)),
       )
       .map((lesson) => lesson.id);
     if (lessonIds.length === 0) continue;

@@ -598,7 +598,7 @@ describe('deleteProgram', () => {
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
   });
 
-  it('ripulisce in gruppo solo i visual reali, prima dei prefissi e dei documenti del corso', async () => {
+  it('ripulisce in gruppo visual e recovery potenziali prima del corso', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     setupGetDocs({
       verifications: [],
@@ -621,18 +621,17 @@ describe('deleteProgram', () => {
       ],
     });
     await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes, cleanupVisuals);
-    // l2 non ha `visual`, l4 ha un manifest `visuals` vuoto: nessuno dei due entra nel batch.
     expect(cleanupVisuals).toHaveBeenCalledWith({
       programId: 'prog-1',
       importId: 'imp-1',
-      lessonIds: ['l1', 'l3'],
+      lessonIds: ['l1', 'l2', 'l3', 'l4'],
     });
     expect(cleanupVisuals.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteImportPrefix.mock.invocationCallOrder[0]!,
     );
   });
 
-  it('non chiama il cleanup visuale quando nessuna lezione dell’import ha artefatti', async () => {
+  it('esegue il probe visuale quando il recovery può esistere senza manifest', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     setupGetDocs({
       verifications: [],
@@ -640,7 +639,11 @@ describe('deleteProgram', () => {
       lessons: [{ id: 'l1', ref: { id: 'l1' }, data: () => ({}) }],
     });
     await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes, cleanupVisuals);
-    expect(cleanupVisuals).not.toHaveBeenCalled();
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['l1'],
+    });
   });
 
   it('deletes publicLessons projections associated with the program (M3-lite cleanup)', async () => {

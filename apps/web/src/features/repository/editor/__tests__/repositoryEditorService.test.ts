@@ -1647,7 +1647,7 @@ describe('deleteLesson', () => {
     );
   });
 
-  it('non invoca il cleanup visuale per una lezione senza artefatti', async () => {
+  it('invoca il probe di recovery anche per una lezione senza manifest', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
     mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
@@ -1663,7 +1663,11 @@ describe('deleteLesson', () => {
       cleanupVisuals,
     });
 
-    expect(cleanupVisuals).not.toHaveBeenCalled();
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1'],
+    });
   });
 
   it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {
@@ -1802,7 +1806,7 @@ describe('deleteUda', () => {
     );
   });
 
-  it('raggruppa in una sola callable solo le lezioni con un artefatto visuale legacy', async () => {
+  it('raggruppa tutte le lezioni per includere eventuali recovery senza manifest', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
     mockGetDocs
@@ -1827,15 +1831,14 @@ describe('deleteUda', () => {
       storage: fakeStorage,
       cleanupVisuals,
     });
-    // lesson-2 non ha né `visual` né `visuals`: non deve entrare nel batch.
     expect(cleanupVisuals).toHaveBeenCalledWith({
       programId: 'prog-1',
       importId: 'imp-1',
-      lessonIds: ['lesson-1'],
+      lessonIds: ['lesson-1', 'lesson-2'],
     });
   });
 
-  it('include nel batch anche le lezioni con solo il manifest multi-visual non vuoto', async () => {
+  it('include nello stesso batch manifest multi, manifest vuoti e recovery potenziali', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
     mockGetDocs
@@ -1870,15 +1873,14 @@ describe('deleteUda', () => {
       storage: fakeStorage,
       cleanupVisuals,
     });
-    // lesson-2 ha un manifest `visuals` ma vuoto: non deve entrare nel batch.
     expect(cleanupVisuals).toHaveBeenCalledWith({
       programId: 'prog-1',
       importId: 'imp-1',
-      lessonIds: ['lesson-1'],
+      lessonIds: ['lesson-1', 'lesson-2'],
     });
   });
 
-  it('non chiama il cleanup quando nessuna lezione ha artefatti visuali', async () => {
+  it('esegue il probe di recovery quando nessuna lezione espone più il manifest', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
     mockGetDocs
@@ -1899,7 +1901,11 @@ describe('deleteUda', () => {
       storage: fakeStorage,
       cleanupVisuals,
     });
-    expect(cleanupVisuals).not.toHaveBeenCalled();
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1', 'lesson-2'],
+    });
   });
 
   it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {

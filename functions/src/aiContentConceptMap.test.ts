@@ -540,6 +540,16 @@ describe('contratto dei due campi — normalizzazione controllata del provider',
       }
     });
 
+    it('preserva gli spazi interni usati per l’allineamento', () => {
+      const wide = `A${' '.repeat(79)}B`;
+      const parts = validateConceptMapProposal(proposal({ diagram: wide }));
+
+      expect(parts.diagram).toContain('\n  B');
+      // Il solo spazio scelto come punto di interruzione viene sostituito da
+      // newline + indentazione; ricomponendolo, l'input torna byte per byte.
+      expect(parts.diagram.replace('\n  ', ' ')).toBe(wide);
+    });
+
     it('non ripiega una riga senza spazi su cui spezzare: resta rifiutata', () => {
       const wide = 'A'.repeat(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS + 1);
       expect(() => validateConceptMapProposal(proposal({ diagram: wide }))).toThrow(

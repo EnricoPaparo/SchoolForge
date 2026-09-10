@@ -1079,7 +1079,7 @@ describe('CourseWorkspace — bounded lesson cache', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByText(/nessun contenuto disponibile/i)).toBeTruthy());
     expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
-    expect(mockCleanupVisuals).not.toHaveBeenCalled();
+    expect(mockCleanupVisuals).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('md')).toBeNull();
   });
 
