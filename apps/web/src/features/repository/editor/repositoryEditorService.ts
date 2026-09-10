@@ -930,6 +930,20 @@ async function deleteDocRefsInBatches(db: Firestore, refs: DocumentReference[]):
   }
 }
 
+/**
+ * Vero solo se la lezione ha davvero un artefatto visuale da ripulire: il
+ * manifest legacy singolare, o il manifest ad array con almeno un item. Una
+ * lezione senza nessuno dei due non deve entrare nel batch di cleanup — il
+ * cleanup server-side accetterebbe comunque la chiamata, ma sarebbe lavoro
+ * (transazione, lettura Storage) per nulla.
+ */
+function lessonHasVisualArtifacts(lesson: Pick<LessonDoc, 'visual' | 'visuals'>): boolean {
+  return (
+    lesson.visual !== undefined ||
+    (Array.isArray(lesson.visuals?.items) && lesson.visuals.items.length > 0)
+  );
+}
+
 function questionIndexCollection(db: Firestore, programId: string, importId: string) {
   return collection(db, 'programs', programId, 'imports', importId, 'questionIndex');
 }
@@ -982,7 +996,11 @@ export async function deleteLesson(params: {
     ),
   );
 
-  if (params.cleanupVisuals || lesson.visual !== undefined) {
+  // Un adapter esplicito richiede sempre un probe: dopo un errore Storage il
+  // manifest è già stato rimosso, ma il recovery server-side deve poter
+  // completare al retry. Senza adapter, il fallback lazy serve solo quando il
+  // documento espone davvero un artefatto.
+  if (params.cleanupVisuals !== undefined || lessonHasVisualArtifacts(lesson)) {
     const cleanup =
       params.cleanupVisuals ??
       (async (input: { programId: string; importId: string; lessonIds: string[] }) => {
@@ -1068,7 +1086,7 @@ export async function deleteUda(params: {
 
   const lessonsForVisualCleanup = params.cleanupVisuals
     ? lessons
-    : lessons.filter((lesson) => lesson.visual !== undefined);
+    : lessons.filter(lessonHasVisualArtifacts);
   if (lessonsForVisualCleanup.length > 0) {
     const cleanup =
       params.cleanupVisuals ??

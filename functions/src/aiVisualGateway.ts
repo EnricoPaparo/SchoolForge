@@ -97,6 +97,7 @@ import {
 import {
   checkLessonForVisual,
   checkProjectionForVisual,
+  checkProjectionForVisualDeletion,
   describeVisualBindingFailure,
 } from './aiVisualLessonBinding.js';
 import {
@@ -1017,6 +1018,7 @@ async function readLifecyclePair(
   db: Firestore,
   ownerUid: string,
   input: LessonLifecycleInput,
+  projectionContent: 'required' | 'ignored' = 'required',
 ): Promise<{
   lesson: Record<string, unknown>;
   publicLesson: Record<string, unknown>;
@@ -1039,13 +1041,22 @@ async function readLifecyclePair(
   }
   const publicSnap = await db.doc(`publicLessons/${lessonGate.publicLessonId}`).get();
   const publicLesson = publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null;
-  const publicGate = checkProjectionForVisual({
-    lesson: lesson as Record<string, unknown>,
-    publicLesson,
-    programId: input.programId,
-    importId: input.importId,
-    ownerUid,
-  });
+  const publicGate =
+    projectionContent === 'ignored'
+      ? checkProjectionForVisualDeletion({
+          lesson: lesson as Record<string, unknown>,
+          publicLesson,
+          programId: input.programId,
+          importId: input.importId,
+          ownerUid,
+        })
+      : checkProjectionForVisual({
+          lesson: lesson as Record<string, unknown>,
+          publicLesson,
+          programId: input.programId,
+          importId: input.importId,
+          ownerUid,
+        });
   if (!publicGate.ok) {
     throw new AiVisualError('invalid_input', describeVisualBindingFailure(publicGate.failure));
   }
@@ -1635,6 +1646,7 @@ export async function cleanupVisualArtifactsForDelete(params: {
     recovery: RemovalRecoveryDraft | null;
     existingRecovery: RemovalRecoveryDoc | null;
     recoveryRef: DocumentReference;
+    needsFirestoreCleanup: boolean;
   }> = [];
 
   for (const lessonId of params.input.lessonIds) {
@@ -1646,7 +1658,7 @@ export async function cleanupVisualArtifactsForDelete(params: {
     const recoveryRef = params.db.doc(
       `${VISUAL_REMOVALS}/${visualRemovalId(params.ownerUid, input)}`,
     );
-    const pair = await readLifecyclePair(params.db, params.ownerUid, input);
+    const pair = await readLifecyclePair(params.db, params.ownerUid, input, 'ignored');
     const existingSnap = await recoveryRef.get();
     const existing = parseRemovalRecovery({
       exists: existingSnap.exists,
@@ -1713,6 +1725,10 @@ export async function cleanupVisualArtifactsForDelete(params: {
       recovery,
       existingRecovery: existing.kind === 'valid' ? existing.recovery : null,
       recoveryRef,
+      // Un recovery senza manifest ha già completato il commit Firestore: al
+      // retry resta soltanto lo Storage. Un record senza né manifest né
+      // recovery è invece un probe idempotente e non deve produrre scritture.
+      needsFirestoreCleanup: pair.lesson.visual !== undefined || pair.lesson.visuals !== undefined,
     });
   }
 
@@ -1728,58 +1744,64 @@ export async function cleanupVisualArtifactsForDelete(params: {
     });
   }
 
-  await params.db.runTransaction(async (tx) => {
-    const fresh: Array<{
-      item: (typeof prepared)[number];
-      lessonRef: DocumentReference;
-      publicRef: DocumentReference;
-    }> = [];
-    for (const item of prepared) {
-      const lessonRef = params.db.doc(
-        lessonPath(item.input.programId, item.input.importId, item.input.lessonId),
-      );
-      const lessonSnap = await tx.get(lessonRef);
-      const lesson = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
-      const gate = checkLessonForVisual({
-        lesson,
-        lessonId: item.input.lessonId,
-        ownerUid: params.ownerUid,
-        importId: item.input.importId,
-      });
-      if (
-        !gate.ok ||
-        gate.publicLessonId !== item.pair.publicLessonId ||
-        lifecycleFingerprint({ visual: lesson?.visual, visuals: lesson?.visuals }) !==
-          item.fingerprint
-      ) {
-        throw new AiVisualError('run_conflict', 'Una lezione è cambiata durante il cleanup.');
-      }
-      const publicRef = params.db.doc(`publicLessons/${item.pair.publicLessonId}`);
-      const publicSnap = await tx.get(publicRef);
-      const publicGate = checkProjectionForVisual({
-        lesson: lesson as Record<string, unknown>,
-        publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
-        programId: item.input.programId,
-        importId: item.input.importId,
-        ownerUid: params.ownerUid,
-      });
-      if (!publicGate.ok) {
-        throw new AiVisualError('run_conflict', 'Una proiezione è cambiata durante il cleanup.');
-      }
-      fresh.push({ item, lessonRef, publicRef });
-    }
-    for (const { item, lessonRef, publicRef } of fresh) {
-      tx.delete(params.db.doc(`${PUBLIC_LESSON_VISUALS}/${item.pair.publicLessonId}`));
-      tx.update(publicRef, { visual: FieldValue.delete(), visuals: FieldValue.delete() });
-      tx.update(lessonRef, { visual: FieldValue.delete(), visuals: FieldValue.delete() });
-      if (item.recovery) {
-        tx.set(item.recoveryRef, {
-          ...item.recovery,
-          createdAt: FieldValue.serverTimestamp(),
+  const pendingFirestore = prepared.filter((item) => item.needsFirestoreCleanup);
+  if (pendingFirestore.length > 0)
+    await params.db.runTransaction(async (tx) => {
+      const fresh: Array<{
+        item: (typeof prepared)[number];
+        lessonRef: DocumentReference;
+        publicRef: DocumentReference;
+      }> = [];
+      for (const item of pendingFirestore) {
+        const lessonRef = params.db.doc(
+          lessonPath(item.input.programId, item.input.importId, item.input.lessonId),
+        );
+        const lessonSnap = await tx.get(lessonRef);
+        const lesson = lessonSnap.exists ? (lessonSnap.data() as Record<string, unknown>) : null;
+        const gate = checkLessonForVisual({
+          lesson,
+          lessonId: item.input.lessonId,
+          ownerUid: params.ownerUid,
+          importId: item.input.importId,
         });
+        if (
+          !gate.ok ||
+          gate.publicLessonId !== item.pair.publicLessonId ||
+          lifecycleFingerprint({ visual: lesson?.visual, visuals: lesson?.visuals }) !==
+            item.fingerprint
+        ) {
+          throw new AiVisualError('run_conflict', 'Una lezione è cambiata durante il cleanup.');
+        }
+        const publicRef = params.db.doc(`publicLessons/${item.pair.publicLessonId}`);
+        const publicSnap = await tx.get(publicRef);
+        // Deletion-specific: il cleanup non legge mai il corpo, quindi non deve
+        // rifiutare una proiezione legacy senza `content` — vedi
+        // `checkProjectionForVisualDeletion`. Owner/import/programma/identità/
+        // `completed` restano verificati come per ogni altro flusso visuale.
+        const publicGate = checkProjectionForVisualDeletion({
+          lesson: lesson as Record<string, unknown>,
+          publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
+          programId: item.input.programId,
+          importId: item.input.importId,
+          ownerUid: params.ownerUid,
+        });
+        if (!publicGate.ok) {
+          throw new AiVisualError('run_conflict', 'Una proiezione è cambiata durante il cleanup.');
+        }
+        fresh.push({ item, lessonRef, publicRef });
       }
-    }
-  });
+      for (const { item, lessonRef, publicRef } of fresh) {
+        tx.delete(params.db.doc(`${PUBLIC_LESSON_VISUALS}/${item.pair.publicLessonId}`));
+        tx.update(publicRef, { visual: FieldValue.delete(), visuals: FieldValue.delete() });
+        tx.update(lessonRef, { visual: FieldValue.delete(), visuals: FieldValue.delete() });
+        if (item.recovery) {
+          tx.set(item.recoveryRef, {
+            ...item.recovery,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    });
 
   let blobs = 0;
   for (const item of prepared) {

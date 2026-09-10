@@ -455,6 +455,145 @@ describe('contratto dei due campi — normalizzazione controllata del provider',
     expect(parts.summaryMarkdown).toBe(summary);
     expect(composeConceptMapMarkdown(parts)).toContain(summary);
   });
+
+  /**
+   * Evidenza PROD: il diagramma è l'unico campo con un vincolo di forma
+   * formattativo — la larghezza di riga — invece che semantico. Le due
+   * riparazioni qui sotto ripristinano solo quello, mai il contenuto.
+   */
+  describe('riparazione del diagramma', () => {
+    it('non ripara summaryMarkdown: la normalizzazione è ristretta al solo diagramma', () => {
+      expect(() =>
+        validateConceptMapProposal(proposal({ summaryMarkdown: '```text\nTesto normale.\n```' })),
+      ).toThrow(/blocchi di codice/);
+    });
+
+    it('rimuove un fence ``` accidentale attorno all’intero diagramma', () => {
+      const parts = validateConceptMapProposal(
+        proposal({ diagram: '```text\nRADICE\n└─ FIGLIO\n```' }),
+      );
+      expect(parts.diagram).toBe('RADICE\n└─ FIGLIO');
+      expect(parts.diagram).not.toContain('```');
+    });
+
+    it('rimuove il fence anche senza etichetta di linguaggio', () => {
+      const parts = validateConceptMapProposal(proposal({ diagram: '```\nA ──▶ B\n```' }));
+      expect(parts.diagram).toBe('A ──▶ B');
+    });
+
+    it('non tocca un fence spaiato: resta rifiutato come prima', () => {
+      // Non è la stessa deviazione: una sola tripletta di backtick chiuderebbe
+      // a metà il blocco ```text composto dal server, e non è un wrapping
+      // accidentale dell'intero campo.
+      expect(() =>
+        validateConceptMapProposal(proposal({ diagram: '- testo\n```\naltro' })),
+      ).toThrow(/blocchi di codice/);
+    });
+
+    it('non tocca un fence interno oltre a quello esterno: resta rifiutato', () => {
+      // Una seconda coppia di backtick dentro il campo non è un semplice
+      // wrapping accidentale: è un output diverso, e resta rifiutato invariato.
+      expect(() =>
+        validateConceptMapProposal(proposal({ diagram: '```text\nA\n```\nB\n```\nC\n```' })),
+      ).toThrow(/blocchi di codice/);
+    });
+
+    it('non ripara un fence che avvolge HTML: il contenuto interno resta rifiutato', () => {
+      expect(() =>
+        validateConceptMapProposal(proposal({ diagram: '```text\n<b>RADICE</b>\n```' })),
+      ).toThrow(/HTML non è ammesso/);
+    });
+
+    it('ripiega una riga oltre il limite su uno spazio, senza perdere parole', () => {
+      const words = Array.from({ length: 20 }, (_, i) => `nodo${i}`);
+      const wide = words.join(' ');
+      expect([...wide].length).toBeGreaterThan(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS);
+
+      const parts = validateConceptMapProposal(proposal({ diagram: wide }));
+      const outLines = parts.diagram.split('\n');
+      expect(outLines.length).toBeGreaterThan(1);
+      for (const line of outLines) {
+        expect([...line].length).toBeLessThanOrEqual(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS);
+      }
+      // Nessuna parola persa, alterata o riordinata dal ripiegamento.
+      expect(outLines.join(' ').split(/\s+/).filter(Boolean)).toEqual(words);
+    });
+
+    it('preserva l’indentazione (la gerarchia) sulle righe di continuazione', () => {
+      // La riga larga è la seconda, non la prima: `requiredField` normalizza
+      // solo gli spazi **esterni** dell'intero campo, quindi l'indentazione
+      // interna di una riga in mezzo al diagramma non viene mai toccata da
+      // quel trim — è esattamente ciò che questo test verifica.
+      const indent = '    '; // quarto livello dell'albero
+      const words = Array.from({ length: 15 }, (_, i) => `ramo${i}`);
+      const wide = `RADICE\n${indent}${words.join(' ')}`;
+      const secondLine = indent + words.join(' ');
+      expect([...secondLine].length).toBeGreaterThan(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS);
+
+      const parts = validateConceptMapProposal(proposal({ diagram: wide }));
+      const outLines = parts.diagram.split('\n');
+      expect(outLines[0]).toBe('RADICE');
+      expect(outLines.length).toBeGreaterThan(2);
+      expect(outLines[1]!.startsWith(indent)).toBe(true);
+      for (const line of outLines.slice(2)) {
+        expect(line.startsWith(`${indent}  `)).toBe(true);
+      }
+    });
+
+    it('preserva gli spazi interni usati per l’allineamento', () => {
+      const wide = `A${' '.repeat(79)}B`;
+      const parts = validateConceptMapProposal(proposal({ diagram: wide }));
+
+      expect(parts.diagram).toContain('\n  B');
+      // Il solo spazio scelto come punto di interruzione viene sostituito da
+      // newline + indentazione; ricomponendolo, l'input torna byte per byte.
+      expect(parts.diagram.replace('\n  ', ' ')).toBe(wide);
+    });
+
+    it('non ripiega una riga senza spazi su cui spezzare: resta rifiutata', () => {
+      const wide = 'A'.repeat(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS + 1);
+      expect(() => validateConceptMapProposal(proposal({ diagram: wide }))).toThrow(
+        /supera 80 caratteri/,
+      );
+    });
+
+    it('non ripiega una riga con una singola parola troppo lunga per lo spazio residuo', () => {
+      const longWord = 'X'.repeat(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS);
+      const wide = `A ${longWord}`;
+      expect([...wide].length).toBeGreaterThan(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS);
+      expect(() => validateConceptMapProposal(proposal({ diagram: wide }))).toThrow(
+        /supera 80 caratteri/,
+      );
+    });
+
+    it('combina fence accidentale e riga oltre il limite nello stesso diagramma', () => {
+      const words = Array.from({ length: 20 }, (_, i) => `nodo${i}`);
+      const wide = words.join(' ');
+      const parts = validateConceptMapProposal(
+        proposal({ diagram: `\`\`\`text\n${wide}\n\`\`\`` }),
+      );
+      expect(parts.diagram).not.toContain('```');
+      for (const line of parts.diagram.split('\n')) {
+        expect([...line].length).toBeLessThanOrEqual(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS);
+      }
+    });
+
+    it('è idempotente su un diagramma già conforme', () => {
+      const clean = 'RADICE\n└─ FIGLIO ──▶ NIPOTE';
+      const parts = validateConceptMapProposal(proposal({ diagram: clean }));
+      expect(parts.diagram).toBe(clean);
+    });
+
+    it('un diagramma normalizzato produce comunque un documento canonico replayabile', () => {
+      const words = Array.from({ length: 20 }, (_, i) => `nodo${i}`);
+      const composed = validateAndComposeConceptMap(
+        proposal({ diagram: `\`\`\`text\n${words.join(' ')}\n\`\`\`` }),
+      );
+      expect(parseCanonicalConceptMapMarkdown(composed.conceptMapMarkdown)).toBe(
+        composed.conceptMapMarkdown,
+      );
+    });
+  });
 });
 
 describe('contratto dei due campi — markup vietato', () => {

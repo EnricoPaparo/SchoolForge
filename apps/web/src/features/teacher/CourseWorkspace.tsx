@@ -1724,6 +1724,17 @@ function CourseWorkspaceSession({
     if (!lesson) throw new Error('Lezione non trovata.');
     const endMutation = beginContentMutation(lessonId);
     try {
+      // Il cleanup visuale e il suo controllo anti-race vengono prima di ogni
+      // altra mutazione. Se falliscono, pool, corpo e mappa restano intatti;
+      // il retry riparte quindi da una fotografia coerente della lezione.
+      // Sempre eseguito: se un tentativo precedente ha già tolto il manifest
+      // ma non il blob, il server usa il recovery persistito. Senza artefatti
+      // né recovery il server termina senza scritture.
+      await createVisualLifecycleClient(functions).cleanupForDelete({
+        programId: card.programId,
+        importId,
+        lessonIds: [lessonId],
+      });
       if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
         await deletePool({
           programId: card.programId,
@@ -1732,13 +1743,6 @@ function CourseWorkspaceSession({
           ownerUid,
           db,
           storage,
-        });
-      }
-      if (lesson.visual || lesson.visuals) {
-        await createVisualLifecycleClient(functions).cleanupForDelete({
-          programId: card.programId,
-          importId,
-          lessonIds: [lessonId],
         });
       }
       await updateLessonMarkdownBody({

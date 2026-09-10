@@ -27,6 +27,19 @@ export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
 export type LessonItem = { id: string } & LessonDoc;
 
+/**
+ * Vero solo se la lezione ha davvero un artefatto visuale da ripulire: il
+ * manifest legacy singolare, o il manifest ad array con almeno un item.
+ * Duplicato deliberatamente da `repositoryEditorService.ts` (stessa forma,
+ * nessuna dipendenza condivisa fra i due service).
+ */
+function lessonHasVisualArtifacts(lesson: Pick<LessonDoc, 'visual' | 'visuals'>): boolean {
+  return (
+    lesson.visual !== undefined ||
+    (Array.isArray(lesson.visuals?.items) && lesson.visuals.items.length > 0)
+  );
+}
+
 function udaOrderOrLegacy(uda: Pick<UdaDoc, 'dir' | 'order'>): number {
   if (uda.order !== undefined) return uda.order;
   const match = /^uda-(\d+)(?:-|$)/.exec(uda.dir);
@@ -422,7 +435,8 @@ export async function deleteProgram(
       .filter(
         (lesson) =>
           cleanupVisuals !== undefined ||
-          (typeof lesson.data === 'function' && (lesson.data() as LessonDoc).visual !== undefined),
+          (typeof lesson.data === 'function' &&
+            lessonHasVisualArtifacts(lesson.data() as LessonDoc)),
       )
       .map((lesson) => lesson.id);
     if (lessonIds.length === 0) continue;

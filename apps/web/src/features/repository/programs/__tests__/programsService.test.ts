@@ -598,7 +598,7 @@ describe('deleteProgram', () => {
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
   });
 
-  it('ripulisce in gruppo i visual prima dei prefissi e dei documenti del corso', async () => {
+  it('ripulisce in gruppo visual e recovery potenziali prima del corso', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     setupGetDocs({
       verifications: [],
@@ -606,17 +606,44 @@ describe('deleteProgram', () => {
       lessons: [
         { id: 'l1', ref: { id: 'l1' }, data: () => ({ visual: { assetId: 'a' } }) },
         { id: 'l2', ref: { id: 'l2' }, data: () => ({}) },
+        {
+          id: 'l3',
+          ref: { id: 'l3' },
+          data: () => ({
+            visuals: { contractVersion: 'lesson-visuals/v1', items: [{ assetId: 'b' }] },
+          }),
+        },
+        {
+          id: 'l4',
+          ref: { id: 'l4' },
+          data: () => ({ visuals: { contractVersion: 'lesson-visuals/v1', items: [] } }),
+        },
       ],
     });
     await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes, cleanupVisuals);
     expect(cleanupVisuals).toHaveBeenCalledWith({
       programId: 'prog-1',
       importId: 'imp-1',
-      lessonIds: ['l1', 'l2'],
+      lessonIds: ['l1', 'l2', 'l3', 'l4'],
     });
     expect(cleanupVisuals.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteImportPrefix.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it('esegue il probe visuale quando il recovery può esistere senza manifest', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    setupGetDocs({
+      verifications: [],
+      imports: [{ id: 'imp-1' }],
+      lessons: [{ id: 'l1', ref: { id: 'l1' }, data: () => ({}) }],
+    });
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes, cleanupVisuals);
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['l1'],
+    });
   });
 
   it('deletes publicLessons projections associated with the program (M3-lite cleanup)', async () => {

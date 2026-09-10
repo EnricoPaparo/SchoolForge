@@ -8,6 +8,7 @@ import type { LessonItem, UdaItem } from '../../repository/programs/programsServ
 import type { LessonVisualItem, LessonVisualPrivateManifest } from '../../../types/firestore.js';
 import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
 import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
+import type * as PoolEditorServiceModule from '../../repository/pools/poolEditorService.js';
 
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
@@ -28,6 +29,8 @@ const mockDeleteLesson = vi.fn();
 const mockUpdateLessonBody = vi.fn();
 const mockUpdateLessonMetadata = vi.fn();
 const mockClearLessonContentState = vi.fn();
+const mockDeletePool = vi.fn();
+const mockCleanupVisuals = vi.fn();
 const mockUpdateProgramMetadata = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
@@ -106,6 +109,18 @@ vi.mock('../programmaSvolto.js', async (importOriginal) => {
 vi.mock('../../repository/programs/programNotesCleanupClient.js', () => ({
   createProgramNotesCleanupCallable: () => vi.fn(),
 }));
+vi.mock('../../repository/programs/visualLifecycleClient.js', () => ({
+  createVisualLifecycleClient: () => ({
+    cleanupForDelete: (...args: unknown[]) => mockCleanupVisuals(...args),
+  }),
+}));
+vi.mock('../../repository/pools/poolEditorService.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof PoolEditorServiceModule>();
+  return {
+    ...actual,
+    deletePool: (...args: unknown[]) => mockDeletePool(...args),
+  };
+});
 vi.mock('../../repository/programs/programsService.js', () => ({
   listUdas: (...a: unknown[]) => mockListUdas(...a),
   listLessons: (...a: unknown[]) => mockListLessons(...a),
@@ -219,6 +234,8 @@ beforeEach(() => {
     requestedTotal: null,
   });
   mockVisualRemove.mockResolvedValue(undefined);
+  mockDeletePool.mockResolvedValue(undefined);
+  mockCleanupVisuals.mockResolvedValue(undefined);
   mockReadAuthoritativePrivateVisual.mockResolvedValue(null);
   mockReadAuthoritativePrivateVisuals.mockResolvedValue(null);
   mockMultiReorder.mockResolvedValue({ status: 'ok' });
@@ -938,12 +955,14 @@ describe('CourseWorkspace — Firestore projection primary source (MOB-01C)', ()
 });
 
 describe('CourseWorkspace — bounded lesson cache', () => {
-  async function setup() {
-    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
-    mockListLessons.mockResolvedValue([
+  async function setup(
+    lessons: LessonItem[] = [
       lesson('a', 'uda-01-reti', { titolo: 'Lezione A' }),
       lesson('b', 'uda-01-reti', { titolo: 'Lezione B' }),
-    ]);
+    ],
+  ) {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue(lessons);
     const view = renderWorkspace();
     await expandUda();
     return view;
@@ -1046,7 +1065,12 @@ describe('CourseWorkspace — bounded lesson cache', () => {
       mockFetchPublicLessonContent.mockResolvedValue('');
     });
     mockClearLessonContentState.mockResolvedValue(undefined);
-    await setup();
+    await setup([
+      lesson('a', 'uda-01-reti', {
+        titolo: 'Lezione A',
+        visuals: { contractVersion: 'lesson-visuals/v1', items: [] },
+      }),
+    ]);
     await open('Lezione A', 'Old');
     clickMenuAction('Azioni lezione', 'Pulisci lezione');
     fireEvent.click(screen.getByRole('button', { name: 'Pulisci' }));
@@ -1055,7 +1079,75 @@ describe('CourseWorkspace — bounded lesson cache', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByText(/nessun contenuto disponibile/i)).toBeTruthy());
     expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    expect(mockCleanupVisuals).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('md')).toBeNull();
+  });
+
+  it('cleans visuals before pool, body and projection state', async () => {
+    const order: string[] = [];
+    const lessons = [
+      lesson('Lezione A', 'uda-01-reti', {
+        titolo: 'Lezione A',
+        visual: visualManifest(),
+        poolStatus: 'valid',
+        questionCount: 2,
+        poolStorageRef: 'pool/lesson-a.pool.md',
+      }),
+    ];
+    mockFetchPublicLessonContent.mockResolvedValue('Old');
+    mockCleanupVisuals.mockImplementation(async () => {
+      order.push('visuals');
+    });
+    mockDeletePool.mockImplementation(async () => {
+      order.push('pool');
+    });
+    mockUpdateLessonBody.mockImplementation(async () => {
+      order.push('body');
+    });
+    mockClearLessonContentState.mockImplementation(async () => {
+      order.push('projection');
+    });
+
+    await setup(lessons);
+    await open('Lezione A', 'Old');
+    clickMenuAction('Azioni lezione', 'Pulisci lezione');
+    fireEvent.click(screen.getByRole('button', { name: 'Pulisci' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(order).toEqual(['visuals', 'pool', 'body', 'projection']);
+  });
+
+  it('keeps pool and content untouched when visual cleanup fails, then retries safely', async () => {
+    const lessons = [
+      lesson('Lezione A', 'uda-01-reti', {
+        titolo: 'Lezione A',
+        visual: visualManifest(),
+        poolStatus: 'valid',
+        questionCount: 2,
+        poolStorageRef: 'pool/lesson-a.pool.md',
+      }),
+    ];
+    mockFetchPublicLessonContent.mockResolvedValue('Old');
+    mockCleanupVisuals.mockRejectedValueOnce(new Error('cleanup temporaneamente non disponibile'));
+    mockUpdateLessonBody.mockResolvedValue(undefined);
+    mockClearLessonContentState.mockResolvedValue(undefined);
+
+    await setup(lessons);
+    await open('Lezione A', 'Old');
+    clickMenuAction('Azioni lezione', 'Pulisci lezione');
+    fireEvent.click(screen.getByRole('button', { name: 'Pulisci' }));
+
+    expect(await screen.findByText('cleanup temporaneamente non disponibile')).toBeTruthy();
+    expect(mockDeletePool).not.toHaveBeenCalled();
+    expect(mockUpdateLessonBody).not.toHaveBeenCalled();
+    expect(mockClearLessonContentState).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pulisci' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockCleanupVisuals).toHaveBeenCalledTimes(2);
+    expect(mockDeletePool).toHaveBeenCalledOnce();
+    expect(mockUpdateLessonBody).toHaveBeenCalledOnce();
+    expect(mockClearLessonContentState).toHaveBeenCalledOnce();
   });
 
   it('an old pending response after an identity switch cannot render or warm the new cache', async () => {

@@ -1647,6 +1647,29 @@ describe('deleteLesson', () => {
     );
   });
 
+  it('invoca il probe di recovery anche per una lezione senza manifest', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
+
+    await deleteLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      lessonId: 'lesson-1',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+      cleanupVisuals,
+    });
+
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1'],
+    });
+  });
+
   it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
@@ -1783,7 +1806,7 @@ describe('deleteUda', () => {
     );
   });
 
-  it('raggruppa in una sola callable tutte le lezioni della UDA', async () => {
+  it('raggruppa tutte le lezioni per includere eventuali recovery senza manifest', async () => {
     const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
     mockGetDocs
@@ -1795,6 +1818,76 @@ describe('deleteUda', () => {
             ref: { __path: 'lessons/lesson-1' },
             data: () => ({ ...LESSON_1, visual: {} }),
           },
+          { id: 'lesson-2', ref: { __path: 'lessons/lesson-2' }, data: () => LESSON_2 },
+        ],
+      })
+      .mockResolvedValueOnce({ docs: [] });
+    await deleteUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+      cleanupVisuals,
+    });
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1', 'lesson-2'],
+    });
+  });
+
+  it('include nello stesso batch manifest multi, manifest vuoti e recovery potenziali', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'lesson-1',
+            ref: { __path: 'lessons/lesson-1' },
+            data: () => ({
+              ...LESSON_1,
+              visuals: { contractVersion: 'lesson-visuals/v1', items: [{ assetId: 'a' }] },
+            }),
+          },
+          {
+            id: 'lesson-2',
+            ref: { __path: 'lessons/lesson-2' },
+            data: () => ({
+              ...LESSON_2,
+              visuals: { contractVersion: 'lesson-visuals/v1', items: [] },
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ docs: [] });
+    await deleteUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+      cleanupVisuals,
+    });
+    expect(cleanupVisuals).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonIds: ['lesson-1', 'lesson-2'],
+    });
+  });
+
+  it('esegue il probe di recovery quando nessuna lezione espone più il manifest', async () => {
+    const cleanupVisuals = vi.fn().mockResolvedValue(undefined);
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({
+        docs: [
+          { id: 'lesson-1', ref: { __path: 'lessons/lesson-1' }, data: () => LESSON_1 },
           { id: 'lesson-2', ref: { __path: 'lessons/lesson-2' }, data: () => LESSON_2 },
         ],
       })
