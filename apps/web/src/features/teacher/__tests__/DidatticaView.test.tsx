@@ -98,6 +98,24 @@ describe('DidatticaView — loading and rendering', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
+  it('sorts course cards by Italian title, case-insensitively and with natural numbers', async () => {
+    mockLoadCourseLibrary.mockResolvedValue([
+      card({ programId: 'p10', title: 'Corso 10' }),
+      card({ programId: 'pz', title: 'zoologia' }),
+      card({ programId: 'p2', title: 'Corso 2' }),
+      card({ programId: 'pa', title: 'Àlgebra' }),
+    ]);
+    renderView();
+
+    await waitFor(() => expect(screen.getByText('Àlgebra')).toBeTruthy());
+    expect(screen.getAllByRole('listitem').map((item) => item.getAttribute('aria-label'))).toEqual([
+      'Corso Àlgebra',
+      'Corso Corso 2',
+      'Corso Corso 10',
+      'Corso zoologia',
+    ]);
+  });
+
   it('shows a readable error when loading fails', async () => {
     mockLoadCourseLibrary.mockRejectedValue(new Error('boom'));
     renderView();
