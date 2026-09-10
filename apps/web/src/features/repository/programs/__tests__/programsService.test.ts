@@ -567,10 +567,10 @@ describe('deleteProgram', () => {
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'programs/prog-1/imports/imp-1' });
     expect(mockBatchCommit).toHaveBeenCalled();
 
-    // Prefisso testuale storico + prefisso canonico VE-03A dei WebP.
-    expect(mockDeleteImportPrefix).toHaveBeenCalledTimes(2);
+    // Il gateway accetta soltanto la root canonica dell'import; la cleanup
+    // visuale dedicata gestisce separatamente eventuali asset legacy.
+    expect(mockDeleteImportPrefix).toHaveBeenCalledTimes(1);
     expect(mockDeleteImportPrefix).toHaveBeenCalledWith('repository/owner-uid/imports/imp-1');
-    expect(mockDeleteImportPrefix).toHaveBeenCalledWith('repository/owner-uid/imp-1');
 
     // The program doc itself is deleted.
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
