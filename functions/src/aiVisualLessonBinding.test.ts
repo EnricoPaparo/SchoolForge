@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkLessonForVisual,
   checkProjectionForVisual,
+  checkProjectionForVisualDeletion,
   describeVisualBindingFailure,
   resolveVisualPublicLessonId,
   type VisualLessonBindingFailure,
@@ -212,6 +213,92 @@ describe('checkProjectionForVisual', () => {
       expect(
         checkProjectionForVisual({ ...base, publicLesson: projection({ content: bad }) }),
       ).toEqual({ ok: false, failure: 'projection_content_missing' });
+    }
+  });
+});
+
+describe('checkProjectionForVisualDeletion', () => {
+  const base = {
+    lesson: LESSON,
+    programId: 'prog-1',
+    importId: 'imp-1',
+    ownerUid: 'owner-uid',
+  };
+
+  /**
+   * Il difetto PROD: `aiVisualCleanupForDelete` non legge mai il corpo, ma
+   * usava lo stesso cancello del bind e rifiutava `projection_content_missing`
+   * anche quando l'unica cosa mancante era il corpo — inutile per un cleanup.
+   */
+  it('accetta una proiezione senza corpo, a differenza del cancello di bind', () => {
+    for (const bad of [undefined, null, '', 42, {}]) {
+      expect(
+        checkProjectionForVisualDeletion({ ...base, publicLesson: projection({ content: bad }) }),
+      ).toEqual({ ok: true, completed: false });
+    }
+  });
+
+  it('restituisce lo stato di svolgimento da una proiezione coerente', () => {
+    expect(checkProjectionForVisualDeletion({ ...base, publicLesson: PUBLIC })).toEqual({
+      ok: true,
+      completed: false,
+    });
+    expect(
+      checkProjectionForVisualDeletion({
+        ...base,
+        lesson: lesson({ completed: true }),
+        publicLesson: projection({ completed: true }),
+      }),
+    ).toEqual({ ok: true, completed: true });
+  });
+
+  it('rifiuta se lo stato di svolgimento diverge fra i due documenti', () => {
+    expect(
+      checkProjectionForVisualDeletion({
+        ...base,
+        lesson: lesson({ completed: true }),
+        publicLesson: projection({ completed: false }),
+      }),
+    ).toEqual({ ok: false, failure: 'projection_identity_mismatch' });
+    expect(
+      checkProjectionForVisualDeletion({
+        ...base,
+        lesson: lesson({ completed: false }),
+        publicLesson: projection({ completed: true }),
+      }),
+    ).toEqual({ ok: false, failure: 'projection_identity_mismatch' });
+  });
+
+  it('rifiuta una proiezione assente', () => {
+    expect(checkProjectionForVisualDeletion({ ...base, publicLesson: null })).toEqual({
+      ok: false,
+      failure: 'projection_missing',
+    });
+  });
+
+  it('rifiuta appartenenze diverse', () => {
+    const cases: Array<[Partial<VisualPublicLessonSnapshot>, VisualLessonBindingFailure]> = [
+      [{ ownerUid: 'altro' }, 'projection_owner_mismatch'],
+      [{ importId: 'imp-2' }, 'projection_import_mismatch'],
+      [{ programId: 'prog-2' }, 'projection_program_mismatch'],
+    ];
+    for (const [over, failure] of cases) {
+      expect(checkProjectionForVisualDeletion({ ...base, publicLesson: projection(over) })).toEqual(
+        { ok: false, failure },
+      );
+    }
+  });
+
+  /** L'indirizzo giusto non basta se all'indirizzo c'è un'altra lezione. */
+  it('rifiuta una proiezione che non è di questa lezione', () => {
+    for (const over of [
+      { udaDir: 'uda-02' },
+      { path: 'uda-01/lezione-02.md' },
+      { filename: 'lezione-02.md' },
+    ]) {
+      expect(checkProjectionForVisualDeletion({ ...base, publicLesson: projection(over) })).toEqual(
+        { ok: false, failure: 'projection_identity_mismatch' },
+      );
     }
   });
 });

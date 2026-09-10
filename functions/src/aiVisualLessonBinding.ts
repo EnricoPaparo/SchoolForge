@@ -76,6 +76,10 @@ export type VisualProjectionGate =
   | { ok: true; body: string; completed: boolean }
   | { ok: false; failure: VisualLessonBindingFailure };
 
+export type VisualProjectionDeletionGate =
+  | { ok: true; completed: boolean }
+  | { ok: false; failure: VisualLessonBindingFailure };
+
 /**
  * Id della proiezione, **derivato** dal documento tecnico.
  *
@@ -133,13 +137,23 @@ export function checkLessonForVisual(params: {
  * studente, e leggerlo da una sola parte significherebbe fidarsi di una
  * sincronizzazione invece di verificarla.
  */
-export function checkProjectionForVisual(params: {
+type ProjectionIdentityResult =
+  | { ok: true; publicLesson: VisualPublicLessonSnapshot; completed: boolean }
+  | { ok: false; failure: VisualLessonBindingFailure };
+
+/**
+ * Cancello condiviso fra `checkProjectionForVisual` e la sua variante di
+ * cancellazione: appartenenza, identità e coerenza di `completed`. Non
+ * decide nulla sul corpo — quello resta a carico del chiamante, perché il
+ * cleanup da cancellazione non lo usa e non deve rifiutarlo.
+ */
+function checkProjectionIdentity(params: {
   lesson: VisualLessonSnapshot;
   publicLesson: VisualPublicLessonSnapshot | null;
   programId: string;
   importId: string;
   ownerUid: string;
-}): VisualProjectionGate {
+}): ProjectionIdentityResult {
   const { lesson, publicLesson, programId, importId, ownerUid } = params;
   if (!publicLesson) return { ok: false, failure: 'projection_missing' };
   if (publicLesson.ownerUid !== ownerUid)
@@ -155,17 +169,49 @@ export function checkProjectionForVisual(params: {
       return { ok: false, failure: 'projection_identity_mismatch' };
     }
   }
-  const body = publicLesson.content;
-  if (typeof body !== 'string' || body.length === 0) {
-    return { ok: false, failure: 'projection_content_missing' };
-  }
   // `completed` assente vale `false` su entrambi: è così che i documenti legacy
   // sono nati, e trattarlo come «sconosciuto» bloccherebbe lezioni valide.
   const completed = lesson.completed === true;
   if (completed !== (publicLesson.completed === true)) {
     return { ok: false, failure: 'projection_identity_mismatch' };
   }
-  return { ok: true, body, completed };
+  return { ok: true, publicLesson, completed };
+}
+
+export function checkProjectionForVisual(params: {
+  lesson: VisualLessonSnapshot;
+  publicLesson: VisualPublicLessonSnapshot | null;
+  programId: string;
+  importId: string;
+  ownerUid: string;
+}): VisualProjectionGate {
+  const identity = checkProjectionIdentity(params);
+  if (!identity.ok) return identity;
+  const body = identity.publicLesson.content;
+  if (typeof body !== 'string' || body.length === 0) {
+    return { ok: false, failure: 'projection_content_missing' };
+  }
+  return { ok: true, body, completed: identity.completed };
+}
+
+/**
+ * Variante per il cleanup da cancellazione (`aiVisualCleanupForDelete`): quel
+ * percorso rimuove riferimenti Firestore e blob Storage, non legge mai il
+ * corpo della lezione, quindi non deve rifiutare una proiezione legacy senza
+ * `content`. Ogni altro controllo — owner, import, programma, identità,
+ * `completed` — resta identico a `checkProjectionForVisual`: solo il vincolo
+ * sul corpo cambia, perché è l'unico che dipende da un uso che qui non c'è.
+ */
+export function checkProjectionForVisualDeletion(params: {
+  lesson: VisualLessonSnapshot;
+  publicLesson: VisualPublicLessonSnapshot | null;
+  programId: string;
+  importId: string;
+  ownerUid: string;
+}): VisualProjectionDeletionGate {
+  const identity = checkProjectionIdentity(params);
+  if (!identity.ok) return identity;
+  return { ok: true, completed: identity.completed };
 }
 
 /** Messaggi leggibili, in un unico posto, così bind e promozione non divergono. */

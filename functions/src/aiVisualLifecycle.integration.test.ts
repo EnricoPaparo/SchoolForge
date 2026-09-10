@@ -908,6 +908,24 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     expect((await lessonRef().get()).data()).not.toHaveProperty('visual');
   });
 
+  it('cleanup di cancellazione accetta una proiezione legacy senza corpo', async () => {
+    await seed();
+    await publicRef().update({ content: FieldValue.delete() });
+
+    await expect(
+      cleanupVisualArtifactsForDelete({
+        db,
+        bucket,
+        ownerUid: OWNER,
+        input: { programId: PROGRAM, importId: IMPORT, lessonIds: [LESSON] },
+      }),
+    ).resolves.toMatchObject({ status: 'completed', lessons: 1, blobs: 1 });
+
+    expect((await lessonRef().get()).data()).not.toHaveProperty('visual');
+    expect((await publicRef().get()).data()).not.toHaveProperty('visual');
+    await expect(bucket.file(PATH).download()).rejects.toBeTruthy();
+  });
+
   it('un errore Storage lascia un record di recovery e il retry completa senza manifest', async () => {
     await seed();
     const failingBucket: BucketLike = {

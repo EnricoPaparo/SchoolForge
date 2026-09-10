@@ -17,10 +17,15 @@
  * diagramma e avvertenza: presenza e sequenza delle quattro parti diventano
  * proprietà del codice, non esiti probabili di una generazione.
  *
- * **Nessun aggiustamento silenzioso.** Non si tronca, non si normalizza, non si
- * corregge: un output non conforme è rifiutato per intero. Una mappa aggiustata
- * dal server non sarebbe più né ciò che il modello ha prodotto né ciò che il
- * docente rileggerà.
+ * **Quasi nessun aggiustamento silenzioso.** Non si tronca, non si corregge il
+ * contenuto: un output non conforme resta rifiutato per intero. L'unica
+ * eccezione, deliberatamente stretta, è `normalizeDiagramField`: ripara due
+ * deviazioni **puramente formali** del campo `diagram` (un fence accidentale
+ * attorno all'intero diagramma, una riga oltre il limite ripiegabile su uno
+ * spazio) prima della validazione piena, senza mai riscrivere il contenuto
+ * semantico né rilassare un vincolo. Ogni altra deviazione — HTML, front
+ * matter, campi extra, una riga senza spazi su cui spezzare — resta rifiutata
+ * esattamente come prima.
  *
  * Puro: nessuna rete, nessun I/O, nessuna dipendenza Firestore.
  */
@@ -242,8 +247,107 @@ function assertDiagramShape(value: string): void {
 }
 
 /**
- * Valida i tre campi restituiti dal provider. Fail-closed; l'unico adattamento
- * ammesso è il trim esterno documentato da `requiredField`.
+ * Ripara un fence ``` accidentale che avvolge l'**intero** diagramma: invitato
+ * a produrre testo puro, il provider a volte lo restituisce già dentro un
+ * blocco di codice — la stessa forma in cui il server lo inserirà comunque in
+ * `composeConceptMapMarkdown`. Riconosciuta **solo** quando la prima e
+ * l'ultima riga sono l'apertura e la chiusura del fence e non resta nessuna
+ * altra tripletta di backtick nel contenuto interno: un fence spaiato, o una
+ * seconda coppia altrove, non è questa deviazione e viene lasciata invariata
+ * — resterà rifiutata da `assertCommonFieldRules` come prima.
+ */
+function stripAccidentalOuterFence(value: string): string {
+  const trimmed = value.trim();
+  const lines = trimmed.split('\n');
+  if (lines.length < 3) return value;
+  const first = lines[0]!.trim();
+  const last = lines[lines.length - 1]!.trim();
+  if (!/^```[\w-]*$/.test(first) || last !== '```') return value;
+  const inner = lines.slice(1, -1).join('\n');
+  if (inner.includes('```')) return value;
+  return inner;
+}
+
+/**
+ * Ripiega una riga del diagramma oltre `CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS`
+ * code point, spezzando **solo** su uno spazio — mai a metà parola — e
+ * ripetendo l'indentazione iniziale della riga (più due spazi) sulle righe di
+ * continuazione, così la gerarchia visiva dell'albero resta leggibile invece
+ * di sembrare un nuovo elemento di pari livello. Se anche una sola parola
+ * supera lo spazio disponibile, o non c'è alcuno spazio su cui spezzare, la
+ * riga è restituita **invariata**: non è una deviazione formale recuperabile
+ * e resterà rifiutata da `assertDiagramShape`.
+ */
+function wrapDiagramLine(line: string): string {
+  if ([...line].length <= CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS) return line;
+
+  const indent = /^[ \t]*/.exec(line)![0];
+  const continuationIndent = `${indent}  `;
+  const budget = CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS;
+  if ([...continuationIndent].length >= budget) return line;
+
+  const words = line
+    .slice(indent.length)
+    .split(' ')
+    .filter((word) => word.length > 0);
+  if (words.length === 0) return line;
+  if (words.some((word) => [...word].length > budget - [...continuationIndent].length)) {
+    return line;
+  }
+
+  const wrapped: string[] = [];
+  let current = indent;
+  for (const word of words) {
+    const atLineStart = current === indent || current === continuationIndent;
+    const candidate = atLineStart ? `${current}${word}` : `${current} ${word}`;
+    if ([...candidate].length > budget) {
+      wrapped.push(current);
+      current = `${continuationIndent}${word}`;
+    } else {
+      current = candidate;
+    }
+  }
+  wrapped.push(current);
+  return wrapped.join('\n');
+}
+
+/**
+ * Rimuove le righe vuote iniziali e finali — residuo tipico di un fence
+ * appena tolto (`` ```text\n\nRADICE\n\n``` ``) — senza toccare l'indentazione
+ * della prima riga di contenuto vero: quella indentazione può essere la
+ * gerarchia del diagramma, non spazio da scartare. Un `.trim()` ordinario la
+ * cancellerebbe insieme al resto.
+ */
+function trimBlankEdgeLines(value: string): string {
+  const lines = value.split('\n');
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start]!.trim().length === 0) start++;
+  while (end > start && lines[end - 1]!.trim().length === 0) end--;
+  return lines.slice(start, end).join('\n');
+}
+
+/**
+ * Normalizzazione deterministica del solo campo `diagram`, applicata PRIMA
+ * della validazione piena — vedi `validateConceptMapProposal`. Compone le due
+ * riparazioni sopra, in quest'ordine: prima il fence accidentale (una
+ * deviazione sull'intero campo), poi il ripiegamento riga per riga (una
+ * deviazione locale). Non è una seconda generazione — nessuna chiamata
+ * provider, nessun costo — ed è idempotente: un campo già conforme attraversa
+ * entrambe le funzioni invariato.
+ */
+function normalizeDiagramField(value: string): string {
+  const unfenced = trimBlankEdgeLines(stripAccidentalOuterFence(value));
+  return unfenced
+    .split('\n')
+    .map((line) => wrapDiagramLine(line))
+    .join('\n');
+}
+
+/**
+ * Valida i tre campi restituiti dal provider. Fail-closed; gli unici
+ * adattamenti ammessi sono il trim esterno documentato da `requiredField` e la
+ * normalizzazione strettamente delimitata di `normalizeDiagramField`.
  */
 export function validateConceptMapProposal(output: unknown): ValidatedConceptMapProposal {
   const root = asObject(output, 'Struttura della mappa non valida.');
@@ -254,7 +358,7 @@ export function validateConceptMapProposal(output: unknown): ValidatedConceptMap
   }
 
   const summaryMarkdown = requiredField(root, 'summaryMarkdown');
-  const diagram = requiredField(root, 'diagram');
+  const diagram = normalizeDiagramField(requiredField(root, 'diagram'));
 
   assertCommonFieldRules(summaryMarkdown, 'Sintesi');
   assertCommonFieldRules(diagram, 'Diagramma');

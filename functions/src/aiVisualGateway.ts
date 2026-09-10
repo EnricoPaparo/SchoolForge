@@ -97,6 +97,7 @@ import {
 import {
   checkLessonForVisual,
   checkProjectionForVisual,
+  checkProjectionForVisualDeletion,
   describeVisualBindingFailure,
 } from './aiVisualLessonBinding.js';
 import {
@@ -1017,6 +1018,7 @@ async function readLifecyclePair(
   db: Firestore,
   ownerUid: string,
   input: LessonLifecycleInput,
+  projectionContent: 'required' | 'ignored' = 'required',
 ): Promise<{
   lesson: Record<string, unknown>;
   publicLesson: Record<string, unknown>;
@@ -1039,13 +1041,22 @@ async function readLifecyclePair(
   }
   const publicSnap = await db.doc(`publicLessons/${lessonGate.publicLessonId}`).get();
   const publicLesson = publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null;
-  const publicGate = checkProjectionForVisual({
-    lesson: lesson as Record<string, unknown>,
-    publicLesson,
-    programId: input.programId,
-    importId: input.importId,
-    ownerUid,
-  });
+  const publicGate =
+    projectionContent === 'ignored'
+      ? checkProjectionForVisualDeletion({
+          lesson: lesson as Record<string, unknown>,
+          publicLesson,
+          programId: input.programId,
+          importId: input.importId,
+          ownerUid,
+        })
+      : checkProjectionForVisual({
+          lesson: lesson as Record<string, unknown>,
+          publicLesson,
+          programId: input.programId,
+          importId: input.importId,
+          ownerUid,
+        });
   if (!publicGate.ok) {
     throw new AiVisualError('invalid_input', describeVisualBindingFailure(publicGate.failure));
   }
@@ -1646,7 +1657,7 @@ export async function cleanupVisualArtifactsForDelete(params: {
     const recoveryRef = params.db.doc(
       `${VISUAL_REMOVALS}/${visualRemovalId(params.ownerUid, input)}`,
     );
-    const pair = await readLifecyclePair(params.db, params.ownerUid, input);
+    const pair = await readLifecyclePair(params.db, params.ownerUid, input, 'ignored');
     const existingSnap = await recoveryRef.get();
     const existing = parseRemovalRecovery({
       exists: existingSnap.exists,
@@ -1756,7 +1767,11 @@ export async function cleanupVisualArtifactsForDelete(params: {
       }
       const publicRef = params.db.doc(`publicLessons/${item.pair.publicLessonId}`);
       const publicSnap = await tx.get(publicRef);
-      const publicGate = checkProjectionForVisual({
+      // Deletion-specific: il cleanup non legge mai il corpo, quindi non deve
+      // rifiutare una proiezione legacy senza `content` — vedi
+      // `checkProjectionForVisualDeletion`. Owner/import/programma/identità/
+      // `completed` restano verificati come per ogni altro flusso visuale.
+      const publicGate = checkProjectionForVisualDeletion({
         lesson: lesson as Record<string, unknown>,
         publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,
         programId: item.input.programId,
