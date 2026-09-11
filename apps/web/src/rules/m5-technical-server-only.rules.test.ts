@@ -30,6 +30,7 @@ const TECHNICAL_DOCUMENTS = [
   'visualPlanSlotRuns/opaque-slot-run-1',
   'visualPlanPromotions/opaque-slot-promotion-1',
   'visualPlanPromotionRecoveries/opaque-slot-recovery-1',
+  'visualPlanCleanupRecoveries/opaque-cleanup-recovery-1',
   'aiVisualCandidates/opaque-visual-run-1',
   'aiVisualPromotions/opaque-visual-run-1',
   'aiVisualAbandonments/opaque-visual-run-1',

@@ -27,6 +27,7 @@ import {
 } from './aiVisualPlanExecution.js';
 import { validatePublicLessonVisualBytesDoc } from './aiVisualMultiPublicBytes.js';
 import { validateVisualPlanRun, type VisualPlanRun } from './aiVisualMultiPlan.js';
+import { closeVisualPlanReservation } from './aiVisualPlanLedger.js';
 
 const OWNER = 'owner-uid';
 const REQUEST = '11111111-2222-4333-8444-555555555555';
@@ -180,6 +181,32 @@ describe('record slot e promozione', () => {
 });
 
 describe('budget e stati per slot', () => {
+  it('chiude una master pending scaduta al solo cap proposta, non al totale piano', () => {
+    const value = plan();
+    const reservationKey = value.budgetCeiling.reservationKey;
+    const closed = closeVisualPlanReservation(
+      {
+        monthKey: '2023-11',
+        budgetMicroUsd: 15_000_000,
+        dailyBudgetMicroUsd: 15_000_000,
+        spentMicroUsd: 0,
+        dailySpentMicroUsd: {},
+        reservations: {
+          [reservationKey]: {
+            microUsd: value.budgetCeiling.totalReserved,
+            expiresAtMs: 100,
+            dayKey: '2023-11-01',
+            status: 'pending',
+          },
+        },
+      },
+      value,
+      200,
+    );
+    expect(closed.reservations).toEqual({});
+    expect(closed.spentMicroUsd).toBe(value.budgetCeiling.proposalCap);
+  });
+
   it('rilascia il secondo tentativo di uno slot ready senza toccare gli altri', () => {
     let value = plan();
     expect(remainingGenerationReservation(value)).toBe(600);
@@ -510,7 +537,7 @@ describe('guardie strutturali 03B', () => {
   it('isola la normalizzazione immagini con memoria sufficiente e concorrenza singola', () => {
     expect(gateway).toContain("memory: '512MiB' as const");
     expect(gateway).toContain('concurrency: 1');
-    expect(gateway).toContain('timeoutSeconds: 120');
+    expect(gateway).toContain('timeoutSeconds: 300');
   });
   it('separa il cap di fase dal master e ricampiona il clock dopo il provider', () => {
     expect(gateway).toContain('markPending(withPhase, phaseKey, nowMs)');

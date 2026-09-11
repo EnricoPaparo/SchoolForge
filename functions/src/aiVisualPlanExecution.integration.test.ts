@@ -22,7 +22,9 @@ import {
   generateVisualPlanSlotForOwner,
   promoteVisualPlanSlotForOwner,
 } from './aiVisualPlanExecutionGateway.js';
+import { cleanupVisualArtifactsForDelete } from './aiVisualGateway.js';
 import { validateVisualPlanRun, type VisualPlanRun } from './aiVisualMultiPlan.js';
+import { visualPlanCleanupRecoveryPath } from './aiVisualPlanCleanup.js';
 import {
   computeVisualPlanLeaseId,
   VISUAL_PLAN_LEASE_CONTRACT_VERSION,
@@ -43,6 +45,7 @@ class MemoryFile implements FileLike {
     private readonly data: Map<string, Uint8Array>,
     private readonly failDownloads: Set<string>,
     private readonly writeThenFail: Set<string>,
+    private readonly failDeletes: Set<string>,
   ) {}
   async download(): Promise<[Uint8Array]> {
     if (this.failDownloads.has(this.path)) throw Object.assign(new Error('timeout'), { code: 504 });
@@ -60,6 +63,7 @@ class MemoryFile implements FileLike {
     if (this.writeThenFail.has(this.path)) throw Object.assign(new Error('timeout'), { code: 504 });
   }
   async delete(): Promise<void> {
+    if (this.failDeletes.has(this.path)) throw Object.assign(new Error('timeout'), { code: 504 });
     this.data.delete(this.path);
   }
 }
@@ -68,12 +72,48 @@ class MemoryBucket implements BucketLike {
   readonly data = new Map<string, Uint8Array>();
   readonly failDownloads = new Set<string>();
   readonly writeThenFail = new Set<string>();
+  readonly failDeletes = new Set<string>();
   file(path: string): FileLike {
-    return new MemoryFile(path, this.data, this.failDownloads, this.writeThenFail);
+    return new MemoryFile(
+      path,
+      this.data,
+      this.failDownloads,
+      this.writeThenFail,
+      this.failDeletes,
+    );
   }
   async deleteFiles(): Promise<void> {
     throw new Error('prefix delete vietato');
   }
+}
+
+function delayedSaveBucket(base: MemoryBucket, blockedPath: string, rejectAfterSave = false) {
+  let release!: () => void;
+  let markStarted!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const bucket: BucketLike = {
+    file(path: string): FileLike {
+      const file = base.file(path);
+      if (path !== blockedPath) return file;
+      return {
+        download: () => file.download(),
+        delete: () => file.delete(),
+        async save(value, options) {
+          markStarted();
+          await gate;
+          await file.save(value, options);
+          if (rejectAfterSave) throw Object.assign(new Error('timeout'), { code: 504 });
+        },
+      };
+    },
+    deleteFiles: () => base.deleteFiles(),
+  };
+  return { bucket, started, release };
 }
 
 function slot(index: number) {
@@ -647,7 +687,7 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
 
   const generate = (
     fixture: Awaited<ReturnType<typeof seedIndependentPlan>>,
-    bucket: MemoryBucket,
+    bucket: BucketLike,
     slotIndex: number,
     nowMs: number,
     callProvider: () => Promise<
@@ -752,6 +792,79 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
           .get()
       ).exists,
     ).toBe(false);
+  });
+
+  it('una save tardiva dopo il cleanup non ricrea staging orfani', async () => {
+    const now = Date.now();
+    const fixture = await seedIndependentPlan({ db, now, slotCount: 1 });
+    const memory = new MemoryBucket();
+    const stagingRef = `staging/${fixture.ownerUid}/${fixture.opaquePlanId}/0.webp`;
+    const delayed = delayedSaveBucket(memory, stagingRef, true);
+
+    const generation = generate(fixture, delayed.bucket, 0, now + 100, async () => ({
+      status: 'success',
+      bytes: raw,
+      usage: null,
+      priorBillingRisk: false,
+      metered: false,
+    }));
+    await delayed.started;
+
+    await cleanupVisualArtifactsForDelete({
+      db,
+      bucket: memory,
+      ownerUid: fixture.ownerUid,
+      input: {
+        programId: fixture.programId,
+        importId: fixture.importId,
+        lessonIds: [fixture.lessonId],
+      },
+    });
+    delayed.release();
+
+    await expect(generation).rejects.toMatchObject({ code: 'uncertain_state' });
+    expect(memory.data.has(stagingRef)).toBe(false);
+    const plan = validateVisualPlanRun(
+      (await db.doc(`visualPlanRuns/${fixture.opaquePlanId}`).get()).data(),
+    );
+    expect(plan.status).toBe('abandoned');
+    expect(
+      (
+        await db
+          .doc(`visualPlanLeases/${computeVisualPlanLeaseId(fixture.ownerUid, fixture.lessonId)}`)
+          .get()
+      ).exists,
+    ).toBe(false);
+  });
+
+  it('un delete Storage fallito conserva il recovery e il retry elimina lo staging', async () => {
+    const now = Date.now();
+    const fixture = await seedIndependentPlan({ db, now, slotCount: 1 });
+    const bucket = new MemoryBucket();
+    const stagingRef = `staging/${fixture.ownerUid}/${fixture.opaquePlanId}/0.webp`;
+    const recoveryPath = visualPlanCleanupRecoveryPath(fixture.ownerUid, fixture.lessonId);
+    bucket.data.set(stagingRef, Buffer.from('staging da rimuovere'));
+    bucket.failDeletes.add(stagingRef);
+
+    const cleanup = () =>
+      cleanupVisualArtifactsForDelete({
+        db,
+        bucket,
+        ownerUid: fixture.ownerUid,
+        input: {
+          programId: fixture.programId,
+          importId: fixture.importId,
+          lessonIds: [fixture.lessonId],
+        },
+      });
+    await expect(cleanup()).rejects.toMatchObject({ code: 504 });
+    expect((await db.doc(recoveryPath).get()).exists).toBe(true);
+    expect(bucket.data.has(stagingRef)).toBe(true);
+
+    bucket.failDeletes.delete(stagingRef);
+    await expect(cleanup()).resolves.toMatchObject({ status: 'completed' });
+    expect(bucket.data.has(stagingRef)).toBe(false);
+    expect((await db.doc(recoveryPath).get()).exists).toBe(false);
   });
 
   it('invocation_unknown su piano singolo chiude il piano, rilascia la lease e non ritenta', async () => {

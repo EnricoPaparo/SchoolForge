@@ -4,6 +4,7 @@
  */
 
 import { timestampToMillis } from './aiContentCore.js';
+import { sha256Hex } from './aiVisualCore.js';
 import { isValidDocumentIdInput } from './firestoreDocumentId.js';
 import {
   AiVisualMultiError,
@@ -126,6 +127,15 @@ export function visualPlanSlotStagingRef(
   slotIndex: number,
 ): string {
   return `staging/${ownerUid}/${opaquePlanId}/${slotIndex}.webp`;
+}
+
+/** Chiave deterministica della prenotazione economica di un tentativo slot. */
+export function visualPlanPhaseReservationKey(
+  reservationKey: string,
+  slotIndex: number,
+  attempt: number,
+): string {
+  return sha256Hex(`${reservationKey}\0generation\0${slotIndex}\0${attempt}`);
 }
 
 export interface StoredVisualPlanSlotRun {

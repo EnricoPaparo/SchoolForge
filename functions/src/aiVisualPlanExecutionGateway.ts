@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
-import type { Firestore } from 'firebase-admin/firestore';
+import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import * as logger from 'firebase-functions/logger';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
@@ -67,6 +67,7 @@ import {
   validateStoredVisualPlanSlotRun,
   validateVisualPlanPromoteInput,
   validateVisualPlanSlotInput,
+  visualPlanPhaseReservationKey,
   visualPlanSlotStagingRef,
   type StoredVisualPlanPromotion,
   type StoredVisualPlanPromotionRecovery,
@@ -92,12 +93,12 @@ import {
   createOpenAiImageTransport,
   type ImageProviderOutcome,
 } from './aiVisualProvider.js';
-import { readVisualPlanLedgerState, writeVisualPlanLedgerState } from './aiVisualPlanGateway.js';
+import { readVisualPlanLedgerState, writeVisualPlanLedgerState } from './aiVisualPlanLedger.js';
 import { resolveVisualAnchorForWrite } from './aiVisualMultiAnchor.js';
 import { loadRuntimeConfig, retryPolicyFromConfig } from './aiContentGateway.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { lessonPath, requireOwner } from './aiVisualIdentity.js';
-import type { BucketLike } from './repositoryGatewayCore.js';
+import { isStorageNotFound, type BucketLike } from './repositoryGatewayCore.js';
 
 const PUBLIC_BYTES = 'publicLessonVisuals';
 const SLOT_RUNS = 'visualPlanSlotRuns';
@@ -114,7 +115,10 @@ const GENERATE_OPTIONS = {
   secrets: [AI_VISUAL_OPENAI_API_KEY],
   memory: '512MiB' as const,
   concurrency: 1,
-  timeoutSeconds: 120,
+  // Due tentativi da 60 s, backoff, normalizzazione e commit devono poter
+  // terminare prima che Cloud Run interrompa la callable lasciando run/lease
+  // in stato `generating`. Il lease applicativo resta il tetto più ampio.
+  timeoutSeconds: 300,
 };
 
 function database(): Firestore {
@@ -148,8 +152,19 @@ function assertLease(plan: VisualPlanRun, raw: unknown, nowMs: number): void {
     throw new AiVisualMultiError('corrupted_state', 'Lease del piano non coerente.');
 }
 
-function phaseReservationKey(plan: VisualPlanRun, slotIndex: number, attempt: number): string {
-  return sha256Hex(`${plan.budgetCeiling.reservationKey}\0generation\0${slotIndex}\0${attempt}`);
+async function stillOwnsVisualPlanLease(params: {
+  leaseRef: DocumentReference;
+  plan: VisualPlanRun;
+  nowMs: number;
+}): Promise<boolean> {
+  try {
+    const leaseSnap = await params.leaseRef.get();
+    if (!leaseSnap.exists) return false;
+    assertLease(params.plan, leaseSnap.data(), params.nowMs);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function reserveExact(
@@ -359,7 +374,11 @@ export async function generateVisualPlanSlotForOwner(params: {
       expireAtMs,
       nowMs,
     );
-    const phaseKey = phaseReservationKey(current, input.slotIndex, attempts);
+    const phaseKey = visualPlanPhaseReservationKey(
+      current.budgetCeiling.reservationKey,
+      input.slotIndex,
+      attempts,
+    );
     const withPhase = reserveExact(
       withMaster,
       phaseKey,
@@ -465,6 +484,23 @@ export async function generateVisualPlanSlotForOwner(params: {
             stagingFailure = 'uncertain_outcome';
           }
         }
+        const stillOwnsLease = await stillOwnsVisualPlanLease({
+          leaseRef,
+          plan,
+          nowMs: params.deps?.now?.() ?? Date.now(),
+        });
+        if (!stillOwnsLease || stagingFailure === 'uncertain_outcome') {
+          // Una pulizia può chiudere il piano mentre il provider o Storage sono
+          // ancora in volo. Il fence post-upload impedisce che una save tardiva
+          // ricrei uno staging orfano dopo la cancellazione. Anche una save
+          // ambigua viene rimossa: non potrà mai essere promossa in sicurezza.
+          try {
+            await bucket.file(storageRef).delete();
+          } catch (error) {
+            if (!isStorageNotFound(error)) stagingFailure = 'uncertain_outcome';
+          }
+          if (!stillOwnsLease) stagingFailure = 'uncertain_outcome';
+        }
         if (stagingFailure) {
           errorCode = stagingFailure;
           uncertainOutcome = stagingFailure === 'uncertain_outcome';
@@ -533,7 +569,11 @@ export async function generateVisualPlanSlotForOwner(params: {
         config.monthlyBudgetMicroUsd,
         config.dailyBudgetMicroUsd,
       );
-      const phaseKey = phaseReservationKey(current, input.slotIndex, run.attempts);
+      const phaseKey = visualPlanPhaseReservationKey(
+        current.budgetCeiling.reservationKey,
+        input.slotIndex,
+        run.attempts,
+      );
       const phaseReservation = ledger.reservations[phaseKey];
       if (
         !phaseReservation ||
