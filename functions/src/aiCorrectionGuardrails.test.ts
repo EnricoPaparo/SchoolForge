@@ -76,7 +76,7 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
       { priceListVersion: 'x y' },
       { maxOperationCostMicroUsd: 0 },
       { dailyBudgetMicroUsd: -1 },
-      { monthlyBudgetMicroUsd: 5_000_001 },
+      { monthlyBudgetMicroUsd: 15_000_001 },
       { limits: { ...DEV_LIMITS, maxProviderConcurrency: 0 } },
       { limits: { ...DEV_LIMITS, attemptTimeoutMs: -1 } },
       { enabled: 'yes' },
@@ -171,8 +171,8 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
 
   it.each([
     ['maxOperationCostMicroUsd', 5_000_000],
-    ['dailyBudgetMicroUsd', 5_000_000],
-    ['monthlyBudgetMicroUsd', 5_000_000],
+    ['dailyBudgetMicroUsd', 15_000_000],
+    ['monthlyBudgetMicroUsd', 15_000_000],
   ] as const)('%s: ceiling and lower positive values pass; zero/over fail', (key, ceiling) => {
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling })).not.toBeNull();
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling - 1 })).not.toBeNull();

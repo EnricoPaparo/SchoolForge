@@ -128,6 +128,7 @@ import {
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import { isStorageNotFound, type BucketLike } from './repositoryGatewayCore.js';
+import { invalidateVisualPlanForLessonCleanup } from './aiVisualPlanCleanup.js';
 
 /** Secret Firebase esistente. Il binding è presente solo su `aiVisualGenerate`. */
 export const AI_VISUAL_OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
@@ -1649,6 +1650,22 @@ export async function cleanupVisualArtifactsForDelete(params: {
     needsFirestoreCleanup: boolean;
   }> = [];
 
+  const obsoleteStagingRefs = new Set<string>();
+  const visualPlanCleanupRecoveryRefs = new Set<string>();
+  for (const lessonId of params.input.lessonIds) {
+    const result = await invalidateVisualPlanForLessonCleanup({
+      db: params.db,
+      ownerUid: params.ownerUid,
+      input: {
+        programId: params.input.programId,
+        importId: params.input.importId,
+        lessonId,
+      },
+    });
+    for (const storageRef of result.stagingRefs) obsoleteStagingRefs.add(storageRef);
+    if (result.recoveryRefPath) visualPlanCleanupRecoveryRefs.add(result.recoveryRefPath);
+  }
+
   for (const lessonId of params.input.lessonIds) {
     const input: LessonLifecycleInput = {
       programId: params.input.programId,
@@ -1823,6 +1840,17 @@ export async function cleanupVisualArtifactsForDelete(params: {
       recovery: committedRecovery.recovery,
     });
     blobs += item.recovery.assets?.length ?? 1;
+  }
+  for (const storageRef of obsoleteStagingRefs) {
+    try {
+      await params.bucket.file(storageRef).delete();
+      blobs += 1;
+    } catch (error) {
+      if (!isStorageNotFound(error)) throw error;
+    }
+  }
+  for (const recoveryRefPath of visualPlanCleanupRecoveryRefs) {
+    await params.db.doc(recoveryRefPath).delete();
   }
   return { status: 'completed', lessons: prepared.length, blobs };
 }

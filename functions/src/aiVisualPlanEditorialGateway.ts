@@ -30,7 +30,7 @@ import {
 import { remainingGenerationReservation } from './aiVisualPlanExecution.js';
 import { validateVisualPlanRun, type VisualPlanRun } from './aiVisualMultiPlan.js';
 import { computeVisualPlanLeaseId, validateVisualPlanLease } from './aiVisualPlanLease.js';
-import { readVisualPlanLedgerState, writeVisualPlanLedgerState } from './aiVisualPlanGateway.js';
+import { readVisualPlanLedgerState, writeVisualPlanLedgerState } from './aiVisualPlanLedger.js';
 import { lessonPath, requireOwner } from './aiVisualIdentity.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
 

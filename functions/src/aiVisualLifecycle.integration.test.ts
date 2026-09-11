@@ -25,6 +25,12 @@ import { serializeVisualCandidate } from './aiVisualCandidate.js';
 import { canonicalVisualStorageRef } from './aiVisualManifest.js';
 import { serializeVisualRun, type StoredAiVisualRun } from './aiVisualRunDoc.js';
 import { visualRemovalId } from './aiVisualLifecycle.js';
+import { computeOpaqueVisualPlanId } from './aiVisualMultiCore.js';
+import { validateVisualPlanAuthorizeInput, validateVisualPlanRun } from './aiVisualMultiPlan.js';
+import { computeVisualPlanLeaseId } from './aiVisualPlanLease.js';
+import { createVisualPlanForOwner } from './aiVisualPlanGateway.js';
+import { DEV_LIMITS } from './aiCorrectionLimits.js';
+import { DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
 import type { BucketLike } from './repositoryGatewayCore.js';
 
 const OWNER = 'lifecycle-owner';
@@ -143,6 +149,10 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
       'aiVisualCandidates',
       'aiVisualAbandonments',
       'visualRuns',
+      'visualPlanRuns',
+      'visualPlanLeases',
+      'visualPlanSlotRuns',
+      'aiBudgetLedger',
     ]) {
       const snap = await db.collection(name).get();
       await Promise.all(snap.docs.map((doc) => doc.ref.delete()));
@@ -167,32 +177,36 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     ['sola mappa', true, false],
     ['solo visual', false, true],
     ['mappa e visual', true, true],
-  ])('false → true con %s', async (_label, withMap, withVisual) => {
-    await seed(withVisual);
-    if (!withMap) await lessonRef().update({ conceptMapMarkdown: FieldValue.delete() });
-    let storageReads = 0;
-    const countedBucket: BucketLike = {
-      ...bucket,
-      file(path) {
-        storageReads += 1;
-        return bucket.file(path);
-      },
-    };
-    await setLessonCompletedForOwner({
-      db,
-      bucket: countedBucket,
-      ownerUid: OWNER,
-      input: { ...input, completed: true },
-    });
-    const lesson = (await lessonRef().get()).data();
-    const projection = (await publicRef().get()).data();
-    expect(lesson?.completed).toBe(true);
-    expect(projection?.completed).toBe(true);
-    expect(projection?.conceptMapMarkdown).toBe(withMap ? '## Sintesi\n\n- rete' : undefined);
-    expect(projection?.visual?.assetId).toBe(withVisual ? ASSET : undefined);
-    expect((await publicBytesRef().get()).exists).toBe(withVisual);
-    expect(storageReads).toBe(withVisual ? 1 : 0);
-  });
+  ])(
+    'false → true con %s',
+    async (_label, withMap, withVisual) => {
+      await seed(withVisual);
+      if (!withMap) await lessonRef().update({ conceptMapMarkdown: FieldValue.delete() });
+      let storageReads = 0;
+      const countedBucket: BucketLike = {
+        ...bucket,
+        file(path) {
+          storageReads += 1;
+          return bucket.file(path);
+        },
+      };
+      await setLessonCompletedForOwner({
+        db,
+        bucket: countedBucket,
+        ownerUid: OWNER,
+        input: { ...input, completed: true },
+      });
+      const lesson = (await lessonRef().get()).data();
+      const projection = (await publicRef().get()).data();
+      expect(lesson?.completed).toBe(true);
+      expect(projection?.completed).toBe(true);
+      expect(projection?.conceptMapMarkdown).toBe(withMap ? '## Sintesi\n\n- rete' : undefined);
+      expect(projection?.visual?.assetId).toBe(withVisual ? ASSET : undefined);
+      expect((await publicBytesRef().get()).exists).toBe(withVisual);
+      expect(storageReads).toBe(withVisual ? 1 : 0);
+    },
+    10_000,
+  );
 
   it('blob canonico mancante fallisce senza proiezioni o audit', async () => {
     await seed();
@@ -924,6 +938,86 @@ emulatorDescribe('VE-03B lifecycle — Firestore + Storage Emulator', () => {
     expect((await lessonRef().get()).data()).not.toHaveProperty('visual');
     expect((await publicRef().get()).data()).not.toHaveProperty('visual');
     await expect(bucket.file(PATH).download()).rejects.toBeTruthy();
+  });
+
+  it('cleanup invalida il piano attivo, libera lease e budget e consente un piano nuovo', async () => {
+    await seed(false);
+    const nowMs = Date.UTC(2026, 8, 11, 10);
+    const config = {
+      enabled: true,
+      provider: 'openai' as const,
+      model: OPENAI_PRODUCTION_MODEL,
+      environment: 'dev' as const,
+      limits: { ...DEV_LIMITS },
+      maxOperationCostMicroUsd: 5_000_000,
+      dailyBudgetMicroUsd: 15_000_000,
+      monthlyBudgetMicroUsd: 15_000_000,
+      configVersion: 'cleanup-test',
+      priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+    };
+    const request = (requestId: string) =>
+      validateVisualPlanAuthorizeInput({
+        requestId,
+        programId: PROGRAM,
+        importId: IMPORT,
+        lessonId: LESSON,
+        quantity: { mode: 'auto', ceiling: 3 },
+        replacementAssetId: null,
+        titolo: 'Le reti',
+        sottotitolo: null,
+        difficolta: 'base',
+        concettiChiave: ['rete'],
+        obiettivi: ['Comprendere una rete'],
+        udaTitle: 'UDA reti',
+        udaContext: {
+          title: 'UDA reti',
+          descrizione: null,
+          competenze: [],
+          obiettivi: [],
+          currentLessonPosition: 1,
+          lessons: [{ position: 1, titolo: 'Le reti', sottotitolo: null }],
+        },
+      });
+    const firstRequestId = '11111111-2222-4333-8444-555555555555';
+    const firstPlanId = computeOpaqueVisualPlanId(OWNER, firstRequestId);
+    await createVisualPlanForOwner({
+      db,
+      ownerUid: OWNER,
+      input: request(firstRequestId),
+      opaquePlanId: firstPlanId,
+      config,
+      visualMode: 'mock',
+      nowMs,
+    });
+    const leaseRef = db.doc(`visualPlanLeases/${computeVisualPlanLeaseId(OWNER, LESSON)}`);
+    expect((await leaseRef.get()).exists).toBe(true);
+
+    await cleanupVisualArtifactsForDelete({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: { programId: PROGRAM, importId: IMPORT, lessonIds: [LESSON] },
+    });
+
+    expect((await leaseRef.get()).exists).toBe(false);
+    expect(
+      validateVisualPlanRun((await db.doc(`visualPlanRuns/${firstPlanId}`).get()).data()).status,
+    ).toBe('abandoned');
+    const ledger = (await db.doc('aiBudgetLedger/2026-09').get()).data();
+    expect(ledger?.reservations).toEqual({});
+
+    const nextRequestId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    await expect(
+      createVisualPlanForOwner({
+        db,
+        ownerUid: OWNER,
+        input: request(nextRequestId),
+        opaquePlanId: computeOpaqueVisualPlanId(OWNER, nextRequestId),
+        config,
+        visualMode: 'mock',
+        nowMs: nowMs + 1_000,
+      }),
+    ).resolves.toMatchObject({ requestId: nextRequestId, status: 'authorized' });
   });
 
   it('un errore Storage lascia un record di recovery e il retry completa senza manifest', async () => {

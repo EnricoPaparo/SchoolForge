@@ -83,13 +83,11 @@ import {
 import { MAX_VISUAL_SUBJECT_CHARS, VISUAL_STAGING_TTL_MS } from './aiContentVisualProposal.js';
 import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
-  emptyLedger,
   monthKeyFromMs,
   markPending as markPendingLedger,
   reconcile as reconcileLedger,
   reserve as reserveLedger,
   type BudgetLedgerState,
-  type BudgetReservation,
 } from './aiCorrectionBudget.js';
 import {
   AiVisualError,
@@ -129,6 +127,11 @@ import {
   type VisualPlanLease,
 } from './aiVisualPlanLease.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
+import {
+  closeVisualPlanReservation,
+  readVisualPlanLedgerState,
+  writeVisualPlanLedgerState,
+} from './aiVisualPlanLedger.js';
 
 const VISUAL_PLAN_CALLABLE_OPTIONS = {
   region: SCHOOLFORGE_FUNCTION_REGION,
@@ -217,102 +220,6 @@ function buildVisualPlanProposalRequest(params: {
 }
 
 // ─── Ledger — adapter locale (stesso schema di aiContentGateway.ts) ───────────
-
-export function readVisualPlanLedgerState(
-  snap: FirebaseFirestore.DocumentSnapshot,
-  monthKey: string,
-  budgetMicroUsd: number,
-  dailyBudgetMicroUsd: number,
-): BudgetLedgerState {
-  if (!snap.exists) return emptyLedger(monthKey, budgetMicroUsd, dailyBudgetMicroUsd);
-  const data = snap.data() as Record<string, unknown>;
-  const spentMicroUsd = typeof data.spentMicroUsd === 'number' ? data.spentMicroUsd : 0;
-  const dailySpentMicroUsd: Record<string, number> = {};
-  if (data.dailySpentMicroUsd && typeof data.dailySpentMicroUsd === 'object') {
-    for (const [dayKey, value] of Object.entries(
-      data.dailySpentMicroUsd as Record<string, unknown>,
-    )) {
-      if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
-        dailySpentMicroUsd[dayKey] = value;
-      }
-    }
-  }
-  const reservations: Record<string, BudgetReservation> = {};
-  const raw = data.reservations;
-  if (raw && typeof raw === 'object') {
-    for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-      const r = value as {
-        microUsd?: unknown;
-        expiresAtMs?: unknown;
-        dayKey?: unknown;
-        status?: unknown;
-      };
-      if (typeof r?.microUsd === 'number' && typeof r?.expiresAtMs === 'number') {
-        reservations[id] = {
-          microUsd: r.microUsd,
-          expiresAtMs: r.expiresAtMs,
-          ...(typeof r.dayKey === 'string' ? { dayKey: r.dayKey } : {}),
-          status: r.status === 'pending' ? 'pending' : 'reserved',
-        };
-      }
-    }
-  }
-  return {
-    monthKey,
-    budgetMicroUsd,
-    dailyBudgetMicroUsd,
-    spentMicroUsd,
-    dailySpentMicroUsd,
-    reservations,
-  };
-}
-
-export function writeVisualPlanLedgerState(
-  tx: Transaction,
-  ref: FirebaseFirestore.DocumentReference,
-  state: BudgetLedgerState,
-): void {
-  tx.set(ref, {
-    monthKey: state.monthKey,
-    budgetMicroUsd: state.budgetMicroUsd,
-    dailyBudgetMicroUsd: state.dailyBudgetMicroUsd,
-    spentMicroUsd: state.spentMicroUsd,
-    dailySpentMicroUsd: state.dailySpentMicroUsd,
-    reservations: state.reservations,
-    updatedAt: Timestamp.now(),
-  });
-}
-
-/**
- * Chiude la prenotazione master di un piano che non può più proseguire.
- *
- * Se la reservation è ancora `pending`, il provider della **sola proposta**
- * può essere stato invocato: si liquida quindi al relativo cap, mai al
- * `totalReserved` che comprende generazioni per-slot mai partite. Per evitare
- * che il settlement generico trasformi prima una pending appena scaduta
- * nell'intero tetto, la riconciliazione avviene all'ultimo istante in cui la
- * reservation risultava attiva. Una reservation `reserved` viene invece
- * rilasciata a costo zero.
- */
-function closeVisualPlanReservation(
-  state: BudgetLedgerState,
-  plan: VisualPlanRun,
-  nowMs: number,
-): BudgetLedgerState {
-  const reservationKey = plan.budgetCeiling.reservationKey;
-  const reservation = state.reservations[reservationKey];
-  if (!reservation) return state;
-  const pending = reservation.status === 'pending';
-  const reconciliationNowMs = pending
-    ? Math.min(nowMs, Math.max(0, reservation.expiresAtMs - 1))
-    : nowMs;
-  return reconcileLedger(
-    state,
-    reservationKey,
-    pending ? plan.budgetCeiling.proposalCap : 0,
-    reconciliationNowMs,
-  );
-}
 
 async function releaseVisualPlanReservationAfterLostOwnership(params: {
   db: Firestore;
