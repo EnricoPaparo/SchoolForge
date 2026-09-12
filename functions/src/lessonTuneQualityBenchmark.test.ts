@@ -86,13 +86,14 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     const qualityHoldout = buildLessonTuneExecutionPlan(dataset, 'holdout', 'quality');
     expect(quality.modelProfile).toBe('quality');
     expect(quality.model).toBe('gpt-5.6-luna');
-    expect(quality.priceListVersion).toBe('v5-2026-07-20-luna-dev');
+    // LUNA-PRICES-20260912: quality risolve il listino runtime standard v6.
+    expect(quality.priceListVersion).toBe('v6-2026-09-12-luna-standard');
     expect(quality.plannedCalls).toBe(8);
     expect(quality.maximumProviderAttempts).toBe(economy.maximumProviderAttempts);
     expect(quality.costUpperBoundMicroUsd).toBeGreaterThan(economy.costUpperBoundMicroUsd);
     expect(qualityHoldout.modelProfile).toBe('quality');
     expect(qualityHoldout.model).toBe('gpt-5.6-luna');
-    expect(qualityHoldout.priceListVersion).toBe('v5-2026-07-20-luna-dev');
+    expect(qualityHoldout.priceListVersion).toBe('v6-2026-09-12-luna-standard');
     expect(qualityHoldout.plannedCalls).toBe(4);
     expect(qualityHoldout.maximumProviderAttempts).toBe(8);
     expect(qualityHoldout.estimatedCostMicroUsd).toBe(412_037);

@@ -15,6 +15,7 @@ import {
   OPENAI_PRODUCTION_MODEL,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
 import {
   emptyLedger,
@@ -2757,8 +2758,9 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
 
     const result = await runExecution(req(submissionIds), deps);
 
-    // 25 × 2 tentativi × (10k input × $1/M + 8k output × $6/M) = $2,90.
-    expect(result.costReservationMicroUsd).toBe(2_900_000);
+    // LUNA-PRICES-20260912: quality risolve v6. 25 × 2 tentativi ×
+    // (10k input × $0,20/M + 8k output × $1,20/M) = $0,58.
+    expect(result.costReservationMicroUsd).toBe(580_000);
     expect(result.costReservationMicroUsd).toBeLessThanOrEqual(FIVE_USD);
     expect(grade).toHaveBeenCalledTimes(25);
   });
@@ -3110,13 +3112,14 @@ describe('M5-QUALITY-07 — Luna runtime execution', () => {
       lunaDeps(store, lunaGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 })),
     );
     expect(res.mode).toBe('openai');
-    // 1000 input * $1.00/M + 200 output * $6.00/M = 1000 + 1200 = 2200 µUSD (Luna).
-    expect(res.costActualMicroUsd).toBe(2200);
+    // LUNA-PRICES-20260912: quality risolve v6 (stesso modello Luna).
+    // 1000 input * $0.20/M + 200 output * $1.20/M = 200 + 240 = 440 µUSD.
+    expect(res.costActualMicroUsd).toBe(440);
     expect(res.costActualMicroUsd).toBeLessThanOrEqual(res.costSettledMicroUsd);
     expect(res.costSettledMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
     const persisted = store.runs.get(REQ)!;
     expect(persisted.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
-    expect(persisted.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION);
+    expect(persisted.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION);
     expect(persisted.configVersion).toBe('cfg-luna');
   });
 
@@ -3224,7 +3227,9 @@ describe('TWU-02 — model profile server-side resolution', () => {
       req([sid('s1')], { modelProfile: 'quality' }),
       openaiDeps(store, usageGrader(USAGE), NOW),
     );
-    expect(store.runs.get(REQ)!.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION);
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(
+      OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+    );
     // The Luna price list is distinct from nano → a distinct actual cost.
     expect(res.costActualMicroUsd).toBeGreaterThan(0);
     expect(res.costActualMicroUsd).not.toBe(450);
