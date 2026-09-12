@@ -7,6 +7,7 @@ import {
   OPENAI_PRODUCTION_MODEL,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
   PRICE_LISTS,
   lookupModelPrice,
   tokenCostMicroUsd,
@@ -144,6 +145,36 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
         ...VALID_CONFIG_RAW,
         model: 'gpt-5.6-luna-preview',
         priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      }),
+    ).toBeNull();
+  });
+
+  it('LUNA-PRICES-20260912: accepts Luna with EITHER the historical v5 or the new standard v6 price list (rollback/PROD compat)', () => {
+    // v5 — historical pair, PROD stays on it: still accepted.
+    const lunaV5 = parseAiRuntimeConfig({
+      ...VALID_CONFIG_RAW,
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    });
+    expect(lunaV5).not.toBeNull();
+    expect(lunaV5!.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION);
+
+    // v6 — new standard pair: accepted too, same model, no fallback needed.
+    const lunaV6 = parseAiRuntimeConfig({
+      ...VALID_CONFIG_RAW,
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+    });
+    expect(lunaV6).not.toBeNull();
+    expect(lunaV6!.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
+    expect(lunaV6!.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION);
+
+    // v6 is still rejected when paired with any other model (no cross-model reuse).
+    expect(
+      parseAiRuntimeConfig({
+        ...VALID_CONFIG_RAW,
+        model: OPENAI_PRODUCTION_MODEL,
+        priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
       }),
     ).toBeNull();
   });
@@ -384,6 +415,67 @@ describe('Luna runtime cost (M5-QUALITY-07)', () => {
       OPENAI_RUNTIME_LUNA_MODEL,
     )!;
     expect(actual).toBeLessThanOrEqual(reservation);
+  });
+});
+
+// ── Costo Luna runtime standard v6 (LUNA-PRICES-20260912) ───────────────────
+
+describe('Luna runtime standard cost v6 (LUNA-PRICES-20260912)', () => {
+  it('prices Luna at $0.20/M input and $1.20/M output in the new standard version, v1..v5 unchanged', () => {
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION, OPENAI_RUNTIME_LUNA_MODEL),
+    ).toEqual({
+      inputMicroUsdPerMillion: 200_000,
+      outputMicroUsdPerMillion: 1_200_000,
+    });
+    // The historical v5 pair is untouched by the new version.
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION, OPENAI_RUNTIME_LUNA_MODEL),
+    ).toEqual({
+      inputMicroUsdPerMillion: 1_000_000,
+      outputMicroUsdPerMillion: 6_000_000,
+    });
+    // v1..v4 (nano + benchmarks) are frozen and untouched.
+    expect(Object.keys(PRICE_LISTS)).toContain('v1-2026-07-16');
+    expect(Object.keys(PRICE_LISTS)).toContain('v6-2026-09-12-luna-standard');
+    // nano's model is not in Luna's new list and vice-versa.
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL),
+    ).toBeNull();
+    expect(lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_RUNTIME_LUNA_MODEL)).toBeNull();
+  });
+
+  it('exact cost for 1000 input + 1000 output tokens: 1400 µUSD new (v6) vs 7000 µUSD old (v5)', () => {
+    const newCost = actualCostMicroUsd(
+      1000,
+      1000,
+      OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    );
+    const oldCost = actualCostMicroUsd(
+      1000,
+      1000,
+      OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    );
+    expect(newCost).toBe(1400);
+    expect(oldCost).toBe(7000);
+  });
+
+  it('estimate is conservative (ceil) and actual (nearest) never exceeds it for Luna v6', () => {
+    const est = estimateCostBreakdown(
+      4001,
+      100,
+      OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    )!;
+    const actual = actualCostMicroUsd(
+      4001,
+      100,
+      OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    )!;
+    expect(actual).toBeLessThanOrEqual(est.costMicroUsd);
   });
 });
 
