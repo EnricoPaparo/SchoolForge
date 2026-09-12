@@ -52,12 +52,13 @@ export interface AiRuntimeLimits {
  * Il tetto precedente di 0,25 USD per operazione era incompatibile con un
  * normale batch Quality: la prenotazione crash-safe copre fino a due tentativi
  * per consegna e tre sole consegne potevano già superarlo. Il tetto per
- * operazione resta a 5 USD; giorno e mese sono stati portati a 15 USD per il
- * carico reale di creazione lezioni autorizzato dal docente.
+ * operazione resta a 5 USD e quello giornaliero resta a 15 USD; il tetto
+ * mensile è stato portato a 50 USD per assorbire più giorni di picco nello
+ * stesso mese senza toccare i limiti giornaliero e per operazione.
  */
 export const MAX_OPERATION_COST_MICRO_USD = 5_000_000;
 export const MAX_DAILY_BUDGET_MICRO_USD = 15_000_000;
-export const MAX_MONTHLY_BUDGET_MICRO_USD = 15_000_000;
+export const MAX_MONTHLY_BUDGET_MICRO_USD = 50_000_000;
 
 /**
  * Documento `settings/aiConfig` validato. `provider` e `environment` sono
