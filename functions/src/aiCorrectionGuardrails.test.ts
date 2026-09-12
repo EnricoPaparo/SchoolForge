@@ -76,7 +76,7 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
       { priceListVersion: 'x y' },
       { maxOperationCostMicroUsd: 0 },
       { dailyBudgetMicroUsd: -1 },
-      { monthlyBudgetMicroUsd: 15_000_001 },
+      { monthlyBudgetMicroUsd: 50_000_001 },
       { limits: { ...DEV_LIMITS, maxProviderConcurrency: 0 } },
       { limits: { ...DEV_LIMITS, attemptTimeoutMs: -1 } },
       { enabled: 'yes' },
@@ -172,12 +172,25 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
   it.each([
     ['maxOperationCostMicroUsd', 5_000_000],
     ['dailyBudgetMicroUsd', 15_000_000],
-    ['monthlyBudgetMicroUsd', 15_000_000],
+    ['monthlyBudgetMicroUsd', 50_000_000],
   ] as const)('%s: ceiling and lower positive values pass; zero/over fail', (key, ceiling) => {
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling })).not.toBeNull();
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling - 1 })).not.toBeNull();
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: 0 })).toBeNull();
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling + 1 })).toBeNull();
+  });
+
+  it('accepts a 50 USD monthly budget with the daily (15 USD) and per-operation (5 USD) ceilings unchanged', () => {
+    const cfg = parseAiRuntimeConfig({
+      ...VALID_CONFIG_RAW,
+      maxOperationCostMicroUsd: 5_000_000,
+      dailyBudgetMicroUsd: 15_000_000,
+      monthlyBudgetMicroUsd: 50_000_000,
+    });
+    expect(cfg).not.toBeNull();
+    expect(cfg!.maxOperationCostMicroUsd).toBe(5_000_000);
+    expect(cfg!.dailyBudgetMicroUsd).toBe(15_000_000);
+    expect(cfg!.monthlyBudgetMicroUsd).toBe(50_000_000);
   });
 
   it.each(['maxOperationCostMicroUsd', 'dailyBudgetMicroUsd', 'monthlyBudgetMicroUsd'] as const)(
