@@ -71,6 +71,17 @@ export const OPENAI_BENCHMARK_LUNA_PRICE_SOURCE =
 export const OPENAI_BENCHMARK_LUNA_PRICE_VERIFIED_ON = '2026-07-20';
 
 /**
+ * LUNA-PRICES-20260912 — fonte ufficiale del listino runtime **standard** di
+ * Luna, che sostituisce `v5-2026-07-20-luna-dev` come versione a cui
+ * risolvono le nuove operazioni Quality (contenuti+correzioni). Prezzi
+ * standard $0.20/M input, $1.20/M output. Il listino `cached input` non è
+ * incluso: non è misurato, quindi non viene inventato.
+ */
+export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_SOURCE =
+  'https://developers.openai.com/api/docs/models/gpt-5.6-luna';
+export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_VERIFIED_ON = '2026-09-12';
+
+/**
  * Listini production **immutabili** e versionati. Contengono solo coppie
  * OpenAI modello-snapshot/prezzo verificate dalla fonte ufficiale indicata
  * sopra. Un nuovo modello o prezzo richiede una nuova versione: una versione
@@ -117,6 +128,16 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
       outputMicroUsdPerMillion: 6_000_000,
     },
   },
+  // LUNA-PRICES-20260912 — nuovo listino runtime **standard** di Luna, distinto
+  // da `v5`: una versione pubblicata non viene mai modificata in loco. Stesso
+  // modello `gpt-5.6-luna`; $0.20/M input → 200 000 µUSD, $1.20/M output →
+  // 1 200 000 µUSD. `v5` resta invariato e valido (compatibilità PROD/rollback).
+  'v6-2026-09-12-luna-standard': {
+    [OPENAI_BENCHMARK_LUNA_MODEL]: {
+      inputMicroUsdPerMillion: 200_000,
+      outputMicroUsdPerMillion: 1_200_000,
+    },
+  },
 };
 
 /** Versione di listino di default per DEV (deve esistere in `PRICE_LISTS`). */
@@ -136,6 +157,15 @@ export const OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION = 'v4-2026-07-20-luna-benc
  */
 export const OPENAI_RUNTIME_LUNA_MODEL = OPENAI_BENCHMARK_LUNA_MODEL;
 export const OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION = 'v5-2026-07-20-luna-dev';
+
+/**
+ * LUNA-PRICES-20260912 — versione di listino runtime **standard** di Luna:
+ * stesso `OPENAI_RUNTIME_LUNA_MODEL`, listino distinto e più recente. Le nuove
+ * operazioni Quality (contenuti+correzioni) risolvono questa versione; `v5`
+ * resta la coppia storica per compatibilità PROD e rollback (vedi allowlist
+ * runtime `RUNTIME_MODEL_PRICE_LISTS`).
+ */
+export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION = 'v6-2026-09-12-luna-standard';
 
 /** Prezzo del modello per una versione di listino, o `null` se assente. */
 export function lookupModelPrice(priceListVersion: string, model: string): ModelPrice | null {

@@ -18,21 +18,27 @@ import {
   OPENAI_PRODUCTION_MODEL,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
 
 /**
- * M5-QUALITY-07 — allowlist **chiusa** dei modelli runtime ammessi in DEV con il
- * loro listino **obbligatorio e univoco**: nano resta la scelta esplicita
- * sicura, Luna è promosso con il proprio listino runtime dedicato. La coppia
- * modello→listino è autoritativa: qualsiasi combinazione incoerente (Luna con
- * listino nano, nano con listino Luna, modello o listino sconosciuti) è
- * respinta fail-closed prima del provider e prima di ogni prenotazione
- * economica. Nessun fallback silenzioso Luna→nano o nano→Luna.
+ * M5-QUALITY-07 — allowlist **chiusa** dei modelli runtime ammessi in DEV con i
+ * loro listini **obbligatori e accoppiati**: nano resta la scelta esplicita
+ * sicura con un solo listino, Luna ne ammette **due** (LUNA-PRICES-20260912):
+ * `v5` (storico, compatibilità PROD/rollback) e `v6` (standard, nuove
+ * operazioni Quality). L'insieme modello→listini ammessi è autoritativo:
+ * qualsiasi combinazione incoerente (Luna con listino nano, nano con un
+ * listino Luna, modello o listino sconosciuti/non accoppiati) è respinta
+ * fail-closed prima del provider e prima di ogni prenotazione economica.
+ * Nessun fallback silenzioso Luna→nano o nano→Luna.
  */
-export const RUNTIME_MODEL_PRICE_LISTS: Readonly<Record<string, string>> = {
-  [OPENAI_PRODUCTION_MODEL]: DEFAULT_PRICE_LIST_VERSION,
-  [OPENAI_RUNTIME_LUNA_MODEL]: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+export const RUNTIME_MODEL_PRICE_LISTS: Readonly<Record<string, readonly string[]>> = {
+  [OPENAI_PRODUCTION_MODEL]: [DEFAULT_PRICE_LIST_VERSION],
+  [OPENAI_RUNTIME_LUNA_MODEL]: [
+    OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+  ],
 };
 
 /** Limiti prudenziali DEV applicati server-side nel preflight (M5-05D1 §2). */
@@ -149,15 +155,17 @@ export function parseAiRuntimeConfig(raw: unknown): AiRuntimeConfig | null {
   if (typeof r.model !== 'string' || !MODEL_ID_RE.test(r.model)) return null;
   if (typeof r.configVersion !== 'string' || !VERSION_RE.test(r.configVersion)) return null;
   if (typeof r.priceListVersion !== 'string' || !VERSION_RE.test(r.priceListVersion)) return null;
-  // Modello e listino sono una coppia unica e autoritativa (M5-QUALITY-07:
-  // allowlist nano/Luna, ciascuno col proprio listino). Un alias mobile, un
-  // modello non ammesso, un listino non accoppiato o una versione sconosciuta
-  // disabilitano il provider prima di leggere il secret o costruire il
-  // transport. Nessun fallback silenzioso tra modelli.
-  const expectedPriceListVersion = RUNTIME_MODEL_PRICE_LISTS[r.model];
+  // Modello e listino formano una coppia autoritativa (M5-QUALITY-07:
+  // allowlist nano/Luna). Un alias mobile, un modello non ammesso, un listino
+  // non accoppiato al modello o una versione sconosciuta disabilitano il
+  // provider prima di leggere il secret o costruire il transport. Nessun
+  // fallback silenzioso tra modelli. LUNA-PRICES-20260912: Luna ammette *due*
+  // listini accoppiati (v5 storico + v6 standard) per rollback e compatibilità
+  // PROD, che resta su v5 — una coppia mismatched resta comunque fail-closed.
+  const allowedPriceListVersions = RUNTIME_MODEL_PRICE_LISTS[r.model];
   if (
-    expectedPriceListVersion === undefined ||
-    r.priceListVersion !== expectedPriceListVersion ||
+    allowedPriceListVersions === undefined ||
+    !allowedPriceListVersions.includes(r.priceListVersion) ||
     lookupModelPrice(r.priceListVersion, r.model) === null
   ) {
     return null;

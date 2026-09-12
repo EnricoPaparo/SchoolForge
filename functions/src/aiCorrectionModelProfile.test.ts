@@ -13,7 +13,7 @@ import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
   OPENAI_RUNTIME_LUNA_MODEL,
-  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
 
@@ -29,10 +29,10 @@ describe('TWU-02 — closed model profiles', () => {
     });
   });
 
-  it('quality resolves to Luna model + Luna price list', () => {
+  it('quality resolves to Luna model + Luna standard price list (LUNA-PRICES-20260912)', () => {
     expect(resolveModelProfile('quality')).toEqual({
       model: OPENAI_RUNTIME_LUNA_MODEL,
-      priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
     });
   });
 

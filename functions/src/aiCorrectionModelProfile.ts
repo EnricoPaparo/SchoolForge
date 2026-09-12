@@ -18,7 +18,7 @@ import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
   OPENAI_RUNTIME_LUNA_MODEL,
-  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
 
 /** Profili chiusi: gli unici valori che il client può inviare in `modelProfile`. */
@@ -42,7 +42,7 @@ export const MODEL_PROFILE_RESOLUTIONS: Readonly<Record<ModelProfile, ModelProfi
   economy: { model: OPENAI_PRODUCTION_MODEL, priceListVersion: DEFAULT_PRICE_LIST_VERSION },
   quality: {
     model: OPENAI_RUNTIME_LUNA_MODEL,
-    priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
   },
 };
 
