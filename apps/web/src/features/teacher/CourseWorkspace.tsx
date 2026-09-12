@@ -415,6 +415,10 @@ function CourseWorkspaceSession({
   const [domandeVisited, setDomandeVisited] = useState(false);
   const [mappaVisited, setMappaVisited] = useState(false);
   const [poolDirty, setPoolDirty] = useState(false);
+  // Bumped after an authoritative pool mutation that happens outside
+  // QuestionPoolEditor (currently: clearLessonData's server-side delete), so
+  // the mounted editor reloads even though `lesson.id` stays the same.
+  const [poolReloadToken, setPoolReloadToken] = useState(0);
   // Navigation held back until the teacher confirms losing unsaved edits (any
   // of pool / content / metadata).
   const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
@@ -1742,16 +1746,21 @@ function CourseWorkspaceSession({
         importId,
         lessonIds: [lessonId],
       });
-      if (lesson.poolStatus !== 'absent' && lesson.poolStorageRef) {
-        await deletePool({
-          programId: card.programId,
-          importId,
-          lessonId,
-          ownerUid,
-          db,
-          storage,
-        });
-      }
+      // Cancellazione sempre authoritative: `deletePool` rilegge Firestore da
+      // sé e non fa nulla se il pool è già assente lì. Un gate sullo stato
+      // locale (`lesson.poolStatus`/`poolStorageRef`) può restare indietro —
+      // per esempio subito dopo una generazione IA nella stessa sessione, che
+      // aggiorna soltanto `questionCount`/`poolStatus` in `tree` e mai il ref
+      // — e in quel caso salterebbe una cancellazione che il backend ha
+      // davvero da fare.
+      await deletePool({
+        programId: card.programId,
+        importId,
+        lessonId,
+        ownerUid,
+        db,
+        storage,
+      });
       await updateLessonMarkdownBody({
         programId: card.programId,
         importId,
@@ -1788,6 +1797,12 @@ function CourseWorkspaceSession({
       };
       setTree(next);
       patchCardCounts(next);
+      // Invalida il pool eventualmente montato in QuestionPoolEditor: senza
+      // questo, restare sulla stessa lezione (stesso `lesson.id`) non fa
+      // ripartire il suo effetto di caricamento, e le domande della sessione
+      // precedente resterebbero visibili nonostante Firestore/Storage siano
+      // già stati ripuliti sopra.
+      setPoolReloadToken((n) => n + 1);
       if (currentLessonRef.current !== lessonId) return;
       setLessonContent('');
       setContentDirty(false);
@@ -2625,6 +2640,7 @@ function CourseWorkspaceSession({
               importId={card.activeImportId}
               ownerUid={ownerUid}
               onDirtyChange={setPoolDirty}
+              poolReloadToken={poolReloadToken}
               onPoolCountChange={(count, status) =>
                 handlePoolCountChange(selectedLesson.id, count, status)
               }
@@ -3205,6 +3221,7 @@ function LessonDetail({
   importId,
   ownerUid,
   onDirtyChange,
+  poolReloadToken,
   onPoolCountChange,
   editingContent,
   editingInfo,
@@ -3243,6 +3260,7 @@ function LessonDetail({
   importId: string | null;
   ownerUid: string;
   onDirtyChange: (dirty: boolean) => void;
+  poolReloadToken: number;
   onPoolCountChange: (questionCount: number, poolStatus: PoolCountStatus) => void;
   editingContent: boolean;
   editingInfo: boolean;
@@ -3733,6 +3751,7 @@ function LessonDetail({
             ownerUid={ownerUid}
             lessonSource={content}
             onDirtyChange={onDirtyChange}
+            reloadToken={poolReloadToken}
             onPoolCountChange={onPoolCountChange}
           />
         )}

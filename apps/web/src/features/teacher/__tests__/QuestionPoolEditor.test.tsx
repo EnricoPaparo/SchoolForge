@@ -128,4 +128,31 @@ describe('QuestionPoolEditor', () => {
     });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
+
+  it('reloads the pool when the parent bumps reloadToken, even with the same lesson id (issue #487)', async () => {
+    // Reproduces the parent-side fix for clearing a pool generated earlier in
+    // the same session: an authoritative delete elsewhere (CourseWorkspace's
+    // clearLessonData) leaves `programId`/`importId`/`lesson.id` unchanged, so
+    // only a bumped `reloadToken` can make this mounted editor refetch instead
+    // of keeping the previous session's questions visible.
+    mockLoadPool.mockResolvedValueOnce({ status: 'valid', pool: VALID_POOL });
+    const { rerender } = renderEditor({ reloadToken: 0 });
+    await waitFor(() => expect(screen.getByText('Domanda uno.')).toBeTruthy());
+    expect(mockLoadPool).toHaveBeenCalledTimes(1);
+
+    mockLoadPool.mockResolvedValueOnce({ status: 'absent' });
+    rerender(
+      <QuestionPoolEditor
+        programId="p1"
+        importId="imp1"
+        lesson={lesson()}
+        ownerUid="owner"
+        reloadToken={1}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/nessun pool di domande/i)).toBeTruthy());
+    expect(mockLoadPool).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Domanda uno.')).toBeNull();
+  });
 });

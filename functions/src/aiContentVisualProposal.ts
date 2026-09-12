@@ -141,12 +141,20 @@ export function codePointLength(value: string): number {
 
 export type VisualAuthorizedLabelsInspection =
   | { readonly ok: true; readonly labels: readonly string[] }
-  | { readonly ok: false; readonly reason: 'invalid_form' | 'too_many' };
+  | { readonly ok: false; readonly reason: 'invalid_form' }
+  | { readonly ok: false; readonly reason: 'too_many'; readonly labels: readonly string[] };
 
 /**
  * Contratto puro condiviso dalle due fasi: una proposta accettata deve essere
  * consumabile dal generatore di immagini senza incontrare un secondo insieme
  * di regole. Le ripetizioni esatte sono un set e non ampliano l'allowlist.
+ *
+ * Sul ramo `too_many`, `labels` riporta comunque l'elenco ordinato e completo
+ * delle etichette distinte (più di `MAX_VISUAL_AUTHORIZED_LABELS`): non è una
+ * concessione al chiamante, perché il ramo resta `ok: false` e il persistito
+ * continua a rifiutare l'input. Serve alla normalizzazione al solo confine
+ * provider (`aiContentVisualPlanProposal.ts`), che deve sapere quali etichette
+ * eccedenti disattivare senza duplicare qui la scansione delle caporali.
  */
 export function inspectVisualAuthorizedLabels(subject: string): VisualAuthorizedLabelsInspection {
   const labels: string[] = [];
@@ -166,7 +174,7 @@ export function inspectVisualAuthorizedLabels(subject: string): VisualAuthorized
     return { ok: false, reason: 'invalid_form' };
   }
   if (labels.length > MAX_VISUAL_AUTHORIZED_LABELS) {
-    return { ok: false, reason: 'too_many' };
+    return { ok: false, reason: 'too_many', labels };
   }
   return { ok: true, labels };
 }

@@ -23,12 +23,14 @@
 import { AiContentError } from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABELS,
   MAX_VISUAL_CAPTION_CHARS,
   MAX_VISUAL_RATIONALE_CHARS,
   MAX_VISUAL_REASON_CHARS,
   MAX_VISUAL_SUBJECT_CHARS,
   assertProposalField,
   assertValidVisualSubject,
+  inspectVisualAuthorizedLabels,
 } from './aiContentVisualProposal.js';
 import {
   resolveVisualAnchorForWrite,
@@ -109,11 +111,51 @@ function repairProviderSubject(value: unknown): unknown {
   return repaired;
 }
 
+/**
+ * Ripara soltanto l'eccesso di etichette autorizzate distinte del `subject`
+ * grezzo del provider, quando il resto della marcatura fra caporali è già
+ * ben formata.
+ *
+ * Il tetto (`MAX_VISUAL_AUTHORIZED_LABELS`) è un vincolo del generatore di
+ * immagini — quante espressioni esatte può copiare — non un giudizio sulla
+ * qualità della proposta: un soggetto con più di otto idee distinte può
+ * comunque essere una descrizione valida. Le etichette eccedenti, nell'ordine
+ * di prima comparsa oltre le prime otto, perdono i soli caporali: le parole
+ * restano nel soggetto come testo descrittivo, semplicemente non più
+ * autorizzato, così nessuna delle due riparazioni tocca il significato del
+ * soggetto — solo la sua idoneità al confine.
+ *
+ * **Non ripara** un'etichetta singolarmente troppo lunga né caporali
+ * sbilanciate o residue: `inspectVisualAuthorizedLabels` le segnala come
+ * `invalid_form`, non `too_many`, e qui restano intatte — mascherarle
+ * trasformerebbe un output fuori controllo in una proposta apparentemente
+ * valida, la stessa disciplina di `repairProviderSubject`. Non aumenta mai il
+ * tetto: le prime otto restano autorizzate, MAX_VISUAL_AUTHORIZED_LABELS non
+ * cambia.
+ *
+ * Riusa `inspectVisualAuthorizedLabels` (VE-01) invece di riscannerizzare le
+ * caporali: la stessa funzione decide già forma e cardinalità, qui si applica
+ * solo la conseguenza sul testo grezzo.
+ */
+function repairProviderSubjectLabelCount(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const inspection = inspectVisualAuthorizedLabels(value);
+  if (inspection.ok || inspection.reason !== 'too_many') return value;
+
+  const authorized = new Set(inspection.labels.slice(0, MAX_VISUAL_AUTHORIZED_LABELS));
+  return value.replace(/«([^«»]+)»/gu, (match, label: string) =>
+    authorized.has(label) ? match : label,
+  );
+}
+
 function repairProviderDecision(value: unknown): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
   const root = value as Record<string, unknown>;
   if (root.decision !== 'image') return value;
-  return { ...root, subject: repairProviderSubject(root.subject) };
+  return {
+    ...root,
+    subject: repairProviderSubject(repairProviderSubjectLabelCount(root.subject)),
+  };
 }
 
 function invalidOutput(message: string): never {

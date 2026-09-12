@@ -301,7 +301,7 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v6');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v7');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
   });
@@ -639,7 +639,11 @@ describe('validazione del subject', () => {
       { length: MAX_VISUAL_AUTHORIZED_LABELS + 1 },
       (_, index) => `«e${index}»`,
     ).join(' ');
-    expect(inspectVisualAuthorizedLabels(labels)).toEqual({ ok: false, reason: 'too_many' });
+    expect(inspectVisualAuthorizedLabels(labels)).toEqual({
+      ok: false,
+      reason: 'too_many',
+      labels: Array.from({ length: MAX_VISUAL_AUTHORIZED_LABELS + 1 }, (_, index) => `e${index}`),
+    });
     expect(isValidVisualSubject(labels)).toBe(false);
     expect(() => validateVisualProposalOutput(imageOutput({ subject: labels }))).toThrow(
       /massimo 8 etichette distinte/,
