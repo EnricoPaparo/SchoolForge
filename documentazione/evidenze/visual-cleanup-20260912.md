@@ -5,6 +5,34 @@
 **Baseline:** `99a170c60af4c8c1eb39565691eaafe6b1cf639a` (merge PR #486).
 **Implementer:** Claude (unico writer sul branch). **Reviewer:** codex.
 **Diagnosi:** confermata dal controller, non ripetuta qui.
+**PR:** #488, draft, `closes #487`.
+
+## Review ciclo 1 — `fix_required`, entrambi i blocker chiusi
+
+SHA revisionato: `600bc0b9077d61dd6ac6efd4318bd80b3ef9f4df`.
+
+1. **Blocker (functions):** `repairProviderDecision` componeva il conteggio
+   etichette e il taglio di lunghezza in sequenza; il taglio poteva scartare
+   proprio la coda del subject grezzo dove viveva un difetto di forma
+   (etichetta troppo lunga o caporali sbilanciate), mascherandolo. Fix: nuova
+   `hasInvalidRawLabelForm`, valutata sul subject **grezzo** prima di
+   qualunque riparazione — se la forma è invalida, nessuna delle due
+   riparazioni viene applicata e il parser strict rifiuta. Aggiunti due test
+   combinati (etichetta di coda troppo lunga e caporale di coda sbilanciata,
+   entrambi sovralunghi entro 1.5×, riproducendo esattamente i casi di review)
+   che restano invalidi; i test di riparazione benigna (sforamento di
+   lunghezza puro, >8 etichette ben formate) restano verdi invariati.
+   Dettaglio in §2 sotto (aggiornato) e nel diff di
+   `functions/src/aiContentVisualPlanProposal.ts`.
+2. **Blocker (evidenza):** §6 di questo documento ometteva che
+   `aiVisualPlanAuthorize` esegue direttamente `selectContentProvider`/
+   `generateContent` (non passa da `aiContentGateway.ts`) e va quindi incluso
+   nel set di deploy. Corretto in §6 con elenco/comando espliciti
+   (`--project schoolforge-dev --config firebase.json`, Hosting incluso per il
+   fix UI). Nessun deploy eseguito.
+
+Nessun blocker lato UI. Gate completo locale e CI su `600bc0b` verdi (dato dal
+controller, non ripetuto qui).
 
 ---
 
@@ -147,37 +175,49 @@ Emulator — nessuna regola toccata), lint/test dell'intero monorepo.
   esistenti (`jsonTransport`, `createContentProvider({mode:'mock'})`).
 - Nessuna lettura di path protetti, secret o dati PROD.
 - Nessun merge, nessun deploy (DEV o PROD).
-- Nessuna modifica a `poolEditorService.ts`, ad `aiVisualPlanGateway.ts` o ad
-  altri scope non elencati nel manifest.
+- Nessuna modifica al codice sorgente di `poolEditorService.ts` o di
+  `aiVisualPlanGateway.ts` — restano nel bundle di deploy in quanto
+  importatori dei moduli toccati (§6), non perché siano stati editati.
 
-## 6. Componenti Functions effettivamente da distribuire (quando autorizzato)
+## 6. Componenti da distribuire quando autorizzato (corretto in review ciclo 1)
 
-Le modifiche sono in moduli puri importati da un'unica callable pair:
+**Correzione rispetto alla prima stesura:** l'evidenza iniziale elencava solo
+`aiContentPreview`/`aiContentGenerate` come consumatori dei moduli toccati,
+omettendo che `aiVisualPlanAuthorize` importa ed esegue **direttamente**
+`selectContentProvider` (`functions/src/aiVisualPlanGateway.ts:336`) e
+`generateContent` (stesso file, riga 1283) per la fase testuale della
+proposta coordinata — non passa attraverso `aiContentGateway.ts`. Il suo
+bundle include quindi la stessa `aiContentPrompt.ts` /
+`aiContentVisualProposal.ts` / `aiContentVisualPlanProposal.ts` modificate in
+questo task, e va incluso nel set da distribuire.
 
-- `aiContentPreview` e `aiContentGenerate` (`functions/src/aiContentGateway.ts`)
-  — consumano `aiContentPrompt.ts`, `aiContentVisualProposal.ts` e
-  `aiContentVisualPlanProposal.ts` per i kind `visual_proposal` e
-  `visual_plan_proposal`. Sono le uniche due funzioni il cui comportamento
-  osservabile cambia.
+Nessuna modifica al codice sorgente di `aiVisualPlanAuthorize` stesso: cambia
+solo il comportamento dei moduli puri che importa.
 
-Nessuna modifica diretta a `aiVisualPlanAuthorize`
-(`functions/src/aiVisualPlanGateway.ts`): beneficia indirettamente, perché una
-proposta persistita che prima falliva la validazione per eccesso di etichette
-ora può superarla già alla generazione — ma il suo codice sorgente non è stato
-toccato e non richiede un deploy dedicato per questo fix.
+Funzioni il cui comportamento osservabile cambia:
 
-Un deploy mirato eventuale (solo DEV, solo se autorizzato dal task corrente)
-sarebbe quindi:
+- `aiContentPreview`, `aiContentGenerate` (`functions/src/aiContentGateway.ts`)
+  — kind `visual_proposal`/`visual_plan_proposal` in preview/generazione.
+- `aiVisualPlanAuthorize` (`functions/src/aiVisualPlanGateway.ts`) — stessa
+  fase testuale, eseguita inline dentro l'autorizzazione del piano.
+
+Il fix lato UI (§3) tocca `apps/web`, quindi il componente Hosting va incluso
+insieme alle tre funzioni in un unico deploy mirato DEV.
+
+Un deploy mirato eventuale (solo DEV, solo se autorizzato dal task corrente,
+non eseguito da questo agente) sarebbe quindi:
 
 ```
-firebase deploy --only functions:aiContentPreview,functions:aiContentGenerate
+firebase deploy --project schoolforge-dev --config firebase.json \
+  --only hosting,functions:aiContentPreview,functions:aiContentGenerate,functions:aiVisualPlanAuthorize
 ```
 
 seguito da uno smoke umano: generare una lezione con più di 8 etichette
 richieste nel soggetto e verificare che la proposta visuale/coordinata superi
-la validazione senza ricorrere a tre tentativi falliti, poi generare un pool
+la validazione senza ricorrere a tre tentativi falliti (sia dal flusso
+`aiContentGenerate` sia da `aiVisualPlanAuthorize`), poi generare un pool
 nella stessa sessione da lezione "absent" e verificare che "Pulisci lezione"
-elimini davvero pool e indice domande.
+elimini davvero pool e indice domande e che l'editor mostri lo stato vuoto.
 
 ## 7. SHA e stato finale
 

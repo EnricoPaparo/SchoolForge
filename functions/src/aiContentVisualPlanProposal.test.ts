@@ -609,6 +609,41 @@ describe('normalizzazione confinata delle etichette in eccesso del provider', ()
     ).toThrow(/caporali/);
   });
 
+  // Review ciclo 1, blocker 1: il taglio di lunghezza (`repairProviderSubject`)
+  // conserva un prefisso e scarta la coda. Se il solo difetto di forma vive
+  // nella coda scartata — un'etichetta troppo lunga o caporali sbilanciate,
+  // spesso lì proprio perché il modello li produce mentre sfora il limite —
+  // il taglio da solo lo fa sparire e un subject fuori controllo supererebbe
+  // la validazione come se fosse pulito. La riparazione deve quindi astenersi
+  // del tutto (nessun taglio, nessun conteggio) quando il subject **grezzo**
+  // ha già caporali malformate, non importa quanto sia anche sovralungo.
+  describe('la riparazione di lunghezza non maschera caporali malformate nella coda tagliata', () => {
+    const eightLabels = Array.from(
+      { length: MAX_VISUAL_AUTHORIZED_LABELS },
+      (_, i) => `«e${i}»`,
+    ).join(' ');
+    const filler = 'acqua '.repeat(62);
+
+    it('etichetta di coda troppo lunga (467 code point, entro 1.5×): resta invalida', () => {
+      const tooLongLabel = 'x'.repeat(MAX_VISUAL_AUTHORIZED_LABEL_CHARS + 1);
+      const subject = `Schema ${eightLabels} ${filler}«e8» «${tooLongLabel}»`;
+      expect([...subject].length).toBeGreaterThan(MAX_VISUAL_SUBJECT_CHARS);
+      expect([...subject].length).toBeLessThanOrEqual(MAX_VISUAL_SUBJECT_CHARS * 1.5);
+      expect(() =>
+        validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+      ).toThrow(AiContentError);
+    });
+
+    it('caporale di coda sbilanciata (431 code point, entro 1.5×): resta invalida', () => {
+      const subject = `Schema ${eightLabels} ${filler}«e8» «aperta`;
+      expect([...subject].length).toBeGreaterThan(MAX_VISUAL_SUBJECT_CHARS);
+      expect([...subject].length).toBeLessThanOrEqual(MAX_VISUAL_SUBJECT_CHARS * 1.5);
+      expect(() =>
+        validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+      ).toThrow(AiContentError);
+    });
+  });
+
   it('confine provider vs parser dei run persistiti: solo l’envelope grezzo normalizza', () => {
     const subject = subjectWithLabels(MAX_VISUAL_AUTHORIZED_LABELS + 1); // 9 distinte
     // Al confine provider (envelope grezzo), l'eccedenza viene normalizzata e la proposta passa.

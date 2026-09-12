@@ -148,10 +148,37 @@ function repairProviderSubjectLabelCount(value: unknown): unknown {
   );
 }
 
+/**
+ * `true` quando il `subject` **grezzo, non ancora toccato da alcuna
+ * riparazione**, ha caporali malformate: un'etichetta singolarmente troppo
+ * lunga o guillemets sbilanciate/residue (`inspectVisualAuthorizedLabels`,
+ * ramo `invalid_form`).
+ *
+ * Deve essere valutato sul valore **originale**, prima del taglio di
+ * lunghezza di `repairProviderSubject`: quel taglio conserva un prefisso e
+ * scarta la coda, quindi un difetto di forma piazzato oltre il punto di
+ * taglio (dove capita spesso, perché il modello lo produce proprio mentre
+ * sfora il limite) sparirebbe insieme alla coda, e un output fuori controllo
+ * supererebbe la validazione come se fosse una proposta pulita. Trovare
+ * questo difetto **dopo** il taglio non basta: bisognerebbe rifare
+ * l'ispezione sul risultato già tagliato, che è esattamente il momento in cui
+ * il difetto è già stato mascherato.
+ */
+function hasInvalidRawLabelForm(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const inspection = inspectVisualAuthorizedLabels(value);
+  return !inspection.ok && inspection.reason === 'invalid_form';
+}
+
 function repairProviderDecision(value: unknown): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
   const root = value as Record<string, unknown>;
   if (root.decision !== 'image') return value;
+  // Caporali malformate nel subject grezzo bloccano ENTRAMBE le riparazioni:
+  // né il conteggio delle etichette (che già si astiene da sé) né il taglio
+  // di lunghezza possono agire quando la forma di partenza è invalida, o il
+  // secondo maschererebbe il difetto rilevato dal primo.
+  if (hasInvalidRawLabelForm(root.subject)) return root;
   return {
     ...root,
     subject: repairProviderSubject(repairProviderSubjectLabelCount(root.subject)),
