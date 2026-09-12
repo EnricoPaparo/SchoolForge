@@ -74,6 +74,13 @@ export type QuestionPoolEditorProps = {
   onPoolCountChange?: (questionCount: number, poolStatus: PoolCountStatus) => void;
   /** Reports whether there are unsaved edits, so the parent can guard navigation. */
   onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Bumped by the parent after an authoritative pool mutation that happens
+   * outside this component (e.g. clearing all lesson data), so the pool is
+   * reloaded even when `programId`/`importId`/`lesson.id` all stay the same.
+   * Optional and inert until the parent has such a mutation to report.
+   */
+  reloadToken?: number;
 };
 
 // ── Local draft type for the question editor form ─────────────────────────────
@@ -636,6 +643,7 @@ export function QuestionPoolEditor({
   lessonSource,
   onPoolCountChange,
   onDirtyChange,
+  reloadToken,
 }: QuestionPoolEditorProps) {
   const [poolState, setPoolState] = useState<PoolState>({ status: 'idle' });
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -717,7 +725,7 @@ export function QuestionPoolEditor({
     return () => {
       cancelled = true;
     };
-  }, [programId, importId, lesson.id, reloadNonce]);
+  }, [programId, importId, lesson.id, reloadNonce, reloadToken]);
 
   // ── Dirty reporting ──────────────────────────────────────────────────────
   const dirty = editingQuestionId !== null || (editorOpen && yamlDraft !== yamlBaseline);

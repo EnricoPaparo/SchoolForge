@@ -72,7 +72,7 @@ export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v6' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v7' as const;
 
 export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
@@ -84,7 +84,7 @@ export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
  * version lo fa, §2 della ricerca AIGEN-01): è bookkeeping dei benchmark, non
  * un campo del contratto persistito.
  */
-export const AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION = 'visual-plan-proposal-02-v1' as const;
+export const AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION = 'visual-plan-proposal-02-v2' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -695,9 +695,10 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '  stili di autori, studi o marchi, persone riconoscibili o identificabili,',
     '  loghi, firme, watermark o testo esteso dentro l’immagine.',
     '  Se servono etichette dentro l’immagine, racchiudi nel subject ciascuna frase',
-    `  consentita fra caporali «…»: MASSIMO ASSOLUTO ${MAX_VISUAL_AUTHORIZED_LABELS} etichette DISTINTE, massimo`,
+    '  consentita fra caporali «…»: punta a poche etichette (2–4), quelle davvero',
+    `  indispensabili. MASSIMO ASSOLUTO ${MAX_VISUAL_AUTHORIZED_LABELS} etichette DISTINTE, massimo`,
     `  ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna. Prima di rispondere conta le stringhe distinte fra`,
-    '  caporali: se sono più di 8, semplifica il soggetto oppure scegli "none".',
+    `  caporali: se sono più di ${MAX_VISUAL_AUTHORIZED_LABELS}, semplifica il soggetto oppure scegli "none".`,
     '  Il generatore potrà copiare soltanto quelle espressioni esatte;',
     '  qualunque parola non racchiusa fra caporali non sarà scritta nell’immagine.',
     '  Non usare le caporali per altro. Se le etichette non sono indispensabili,',
@@ -896,10 +897,13 @@ export function buildVisualPlanProposalPrompt(request: VisualPlanProposalRequest
     '  stili di autori, studi o marchi, persone riconoscibili o identificabili,',
     '  loghi, firme, watermark o testo esteso dentro l’immagine.',
     '  Se servono etichette dentro l’immagine, racchiudi nel subject ciascuna frase',
-    `  consentita fra caporali «…»: MASSIMO ASSOLUTO ${MAX_VISUAL_AUTHORIZED_LABELS} etichette DISTINTE, massimo`,
-    `  ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna. Il generatore potrà copiare soltanto quelle`,
-    '  espressioni esatte; qualunque parola non racchiusa fra caporali non sarà scritta',
-    '  nell’immagine. Non usare le caporali per altro.',
+    '  consentita fra caporali «…»: punta a poche etichette (2–4), quelle davvero',
+    `  indispensabili. MASSIMO ASSOLUTO ${MAX_VISUAL_AUTHORIZED_LABELS} etichette DISTINTE, massimo`,
+    `  ${MAX_VISUAL_AUTHORIZED_LABEL_CHARS} caratteri ciascuna. Prima di rispondere conta le stringhe distinte fra`,
+    `  caporali IN QUESTO slot: se sono più di ${MAX_VISUAL_AUTHORIZED_LABELS}, semplifica il`,
+    '  soggetto oppure scegli "none" per questo slot. Il generatore potrà copiare soltanto',
+    '  quelle espressioni esatte; qualunque parola non racchiusa fra caporali non sarà',
+    '  scritta nell’immagine. Non usare le caporali per altro.',
     '- `rationale` — l’utilità didattica: che cosa lo studente capisce meglio',
     `  guardandola, che il solo testo non gli dà. Massimo ${MAX_VISUAL_RATIONALE_CHARS}`,
     '  caratteri. Deve essere diversa, non solo riformulata, da quella di ogni altro',

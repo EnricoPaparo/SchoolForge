@@ -196,13 +196,15 @@ vi.mock('../QuestionPoolEditor.js', () => ({
     lesson,
     onDirtyChange,
     onPoolCountChange,
+    reloadToken,
   }: {
     lesson: { id: string };
     onDirtyChange?: (d: boolean) => void;
     onPoolCountChange?: (n: number, s: string) => void;
+    reloadToken?: number;
   }) => (
     <div data-testid="pool-editor">
-      POOL: {lesson.id}
+      POOL: {lesson.id} RELOAD:{reloadToken ?? 0}
       <button type="button" onClick={() => onDirtyChange?.(true)}>
         make-dirty
       </button>
@@ -1150,6 +1152,38 @@ describe('CourseWorkspace — bounded lesson cache', () => {
     expect(mockDeletePool).toHaveBeenCalledOnce();
     expect(mockUpdateLessonBody).toHaveBeenCalledOnce();
     expect(mockClearLessonContentState).toHaveBeenCalledOnce();
+  });
+
+  it('clears a pool generated earlier in the same session even though the local ref never got a storageRef (issue #487)', async () => {
+    // Reproduces the reported bug: a pool generated in this session updates
+    // only questionCount/poolStatus in the tree (via onPoolCountChange), the
+    // way QuestionPoolEditor and the AI generation dialog both do — neither
+    // writes poolStorageRef back into the local tree, since that field is
+    // Firestore-authoritative and owned by the pool editor's own service
+    // calls. A guard on that still-null local ref must never skip the
+    // server-side delete.
+    const lessons = [lesson('a', 'uda-01-reti', { titolo: 'Lezione A' })]; // poolStatus 'absent', poolStorageRef null
+    mockFetchPublicLessonContent.mockResolvedValue('Corpo.');
+    mockUpdateLessonBody.mockResolvedValue(undefined);
+    mockClearLessonContentState.mockResolvedValue(undefined);
+    await setup(lessons);
+    await open('Lezione A', 'Corpo.');
+    fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'set-count-7' }));
+    expect(screen.getByTestId('pool-editor').textContent).toContain('RELOAD:0');
+    expect(mockDeletePool).not.toHaveBeenCalled();
+
+    clickMenuAction('Azioni lezione', 'Pulisci lezione');
+    fireEvent.click(screen.getByRole('button', { name: 'Pulisci' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // The bug: gating on the (still-null) local poolStorageRef would have
+    // skipped this call entirely, leaving the pool alive server-side.
+    expect(mockDeletePool).toHaveBeenCalledOnce();
+    // The mounted editor must reload even though lesson.id is unchanged, so
+    // stale questions can't remain visible after an authoritative delete.
+    expect(screen.getByTestId('pool-editor').textContent).toContain('RELOAD:1');
   });
 
   it('an old pending response after an identity switch cannot render or warm the new cache', async () => {

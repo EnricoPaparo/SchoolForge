@@ -12,6 +12,8 @@ import {
 } from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABEL_CHARS,
+  MAX_VISUAL_AUTHORIZED_LABELS,
   MAX_VISUAL_CAPTION_CHARS,
   MAX_VISUAL_RATIONALE_CHARS,
   MAX_VISUAL_REASON_CHARS,
@@ -47,6 +49,7 @@ import {
   VISUAL_PLAN_PROPOSAL_ENVELOPE_KEY,
   assertVisualPlanProposalMatchesRequest,
   isValidStoredVisualPlanProposalOutput,
+  validateStoredVisualPlanProposalOutput,
   validateVisualPlanProposalDecision,
   validateVisualPlanProposalEnvelope,
   type VisualPlanProposalDecision,
@@ -536,6 +539,128 @@ describe('riparazione confinata del subject grezzo del provider', () => {
   });
 });
 
+describe('normalizzazione confinata delle etichette in eccesso del provider', () => {
+  function subjectWithLabels(count: number): string {
+    const labels = Array.from({ length: count }, (_, i) => `«e${i}»`).join(' ');
+    return `Schema con ${labels} collegate da frecce dichiarate nella lezione.`;
+  }
+
+  it('conserva le prime 8 etichette distinte e declassa le eccedenti a testo descrittivo', () => {
+    const subject = subjectWithLabels(MAX_VISUAL_AUTHORIZED_LABELS + 2); // e0..e9
+    const [decision] = validateVisualPlanProposalEnvelope(
+      envelope([imageDecision({ subject })]),
+      3,
+    );
+    expect(decision?.decision).toBe('image');
+    if (decision?.decision !== 'image') return;
+    // Le prime 8 restano fra caporali...
+    for (let i = 0; i < MAX_VISUAL_AUTHORIZED_LABELS; i += 1) {
+      expect(decision.subject).toContain(`«e${i}»`);
+    }
+    // ...le due eccedenti perdono i caporali ma restano come parole.
+    expect(decision.subject).toContain('e8');
+    expect(decision.subject).not.toContain('«e8»');
+    expect(decision.subject).toContain('e9');
+    expect(decision.subject).not.toContain('«e9»');
+    // Nessuna parola persa: stesso numero di occorrenze «eN» attese, solo 8.
+    expect(decision.subject.match(/«[^«»]+»/gu)).toHaveLength(MAX_VISUAL_AUTHORIZED_LABELS);
+  });
+
+  it('le ripetizioni esatte di un’etichetta non contano come nuove distinte', () => {
+    // 8 etichette distinte + una ripetuta 3 volte: resta entro il tetto senza normalizzazione.
+    const repeated = Array.from({ length: MAX_VISUAL_AUTHORIZED_LABELS }, (_, i) => `«e${i}»`).join(
+      ' ',
+    );
+    const subject = `Schema con ${repeated} e ancora «e0» «e0» collegate nella lezione.`;
+    const [decision] = validateVisualPlanProposalEnvelope(
+      envelope([imageDecision({ subject })]),
+      3,
+    );
+    expect(decision?.decision).toBe('image');
+    if (decision?.decision !== 'image') return;
+    expect(decision.subject).toBe(subject); // byte-identico: nessuna eccedenza distinta da normalizzare
+  });
+
+  it('duplicati oltre le prime 8 distinte vengono declassati coerentemente a ogni occorrenza', () => {
+    // e0..e8 distinte (9), con e8 ripetuta due volte: entrambe le occorrenze di e8 vanno declassate.
+    const subject = `Schema con ${subjectWithLabels(MAX_VISUAL_AUTHORIZED_LABELS + 1)} e ancora «e8» qui.`;
+    const [decision] = validateVisualPlanProposalEnvelope(
+      envelope([imageDecision({ subject })]),
+      3,
+    );
+    expect(decision?.decision).toBe('image');
+    if (decision?.decision !== 'image') return;
+    expect(decision.subject).not.toContain('«e8»');
+    expect(decision.subject.match(/e8/gu)).toHaveLength(2);
+  });
+
+  it('non ripara un’etichetta singolarmente troppo lunga: resta invalida', () => {
+    const tooLong = 'x'.repeat(MAX_VISUAL_AUTHORIZED_LABEL_CHARS + 1);
+    const subject = `Schema con ${subjectWithLabels(MAX_VISUAL_AUTHORIZED_LABELS)} e «${tooLong}» qui.`;
+    expect(() =>
+      validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+    ).toThrow(/etichette/);
+  });
+
+  it('non ripara caporali sbilanciate: restano invalide anche con etichette in eccesso', () => {
+    const subject = `Schema con ${subjectWithLabels(MAX_VISUAL_AUTHORIZED_LABELS + 1)} e «aperta senza chiusura`;
+    expect(() =>
+      validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+    ).toThrow(/caporali/);
+  });
+
+  // Review ciclo 1, blocker 1: il taglio di lunghezza (`repairProviderSubject`)
+  // conserva un prefisso e scarta la coda. Se il solo difetto di forma vive
+  // nella coda scartata — un'etichetta troppo lunga o caporali sbilanciate,
+  // spesso lì proprio perché il modello li produce mentre sfora il limite —
+  // il taglio da solo lo fa sparire e un subject fuori controllo supererebbe
+  // la validazione come se fosse pulito. La riparazione deve quindi astenersi
+  // del tutto (nessun taglio, nessun conteggio) quando il subject **grezzo**
+  // ha già caporali malformate, non importa quanto sia anche sovralungo.
+  describe('la riparazione di lunghezza non maschera caporali malformate nella coda tagliata', () => {
+    const eightLabels = Array.from(
+      { length: MAX_VISUAL_AUTHORIZED_LABELS },
+      (_, i) => `«e${i}»`,
+    ).join(' ');
+    const filler = 'acqua '.repeat(62);
+
+    it('etichetta di coda troppo lunga (467 code point, entro 1.5×): resta invalida', () => {
+      const tooLongLabel = 'x'.repeat(MAX_VISUAL_AUTHORIZED_LABEL_CHARS + 1);
+      const subject = `Schema ${eightLabels} ${filler}«e8» «${tooLongLabel}»`;
+      expect([...subject].length).toBeGreaterThan(MAX_VISUAL_SUBJECT_CHARS);
+      expect([...subject].length).toBeLessThanOrEqual(MAX_VISUAL_SUBJECT_CHARS * 1.5);
+      expect(() =>
+        validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+      ).toThrow(AiContentError);
+    });
+
+    it('caporale di coda sbilanciata (431 code point, entro 1.5×): resta invalida', () => {
+      const subject = `Schema ${eightLabels} ${filler}«e8» «aperta`;
+      expect([...subject].length).toBeGreaterThan(MAX_VISUAL_SUBJECT_CHARS);
+      expect([...subject].length).toBeLessThanOrEqual(MAX_VISUAL_SUBJECT_CHARS * 1.5);
+      expect(() =>
+        validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+      ).toThrow(AiContentError);
+    });
+  });
+
+  it('confine provider vs parser dei run persistiti: solo l’envelope grezzo normalizza', () => {
+    const subject = subjectWithLabels(MAX_VISUAL_AUTHORIZED_LABELS + 1); // 9 distinte
+    // Al confine provider (envelope grezzo), l'eccedenza viene normalizzata e la proposta passa.
+    expect(() =>
+      validateVisualPlanProposalEnvelope(envelope([imageDecision({ subject })]), 3),
+    ).not.toThrow();
+    // Lo stesso subject, letto come run già persistito (mai attraversato l'envelope
+    // grezzo), resta fail-closed: il parser persistito non normalizza mai dati salvati.
+    expect(() =>
+      validateStoredVisualPlanProposalOutput({ decisions: [imageDecision({ subject })] }, 3),
+    ).toThrow(/etichette/);
+    expect(
+      isValidStoredVisualPlanProposalOutput({ decisions: [imageDecision({ subject })] }, 3),
+    ).toBe(false);
+  });
+});
+
 // ─── Provider mock ─────────────────────────────────────────────────────────────
 
 describe('provider mock', () => {
@@ -815,7 +940,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     pool: 'c9e5c6d6178b5ecb24eee81f0bf571d9f1412f1652defcbd3755cbdf9ab994f8',
     lesson: 'e7e1bd0157eb72c13381f887a085e95906288ff33dcb6222b7f5e09dfc3a62b0',
     concept_map: '08dfe67c9c308a8e37fdbcb3bdf7e41041f33e2ebd960f7aa23ffc9bcbf8a6be',
-    visual_proposal: 'f87bdcf4b57ce832e1087d72fed862e5cec5c6538a457f0b994f8af3f4d6e0c4',
+    visual_proposal: '0b7c7f03a0e25d43780094ce2fe1580561f596e384d93a3694c66c8eae7053d6',
   } as const;
 
   function poolRequest(): AiContentRequest {
@@ -937,7 +1062,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
     expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v6');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v7');
   });
 
   it('i tetti di output dei quattro kind sono invariati', () => {
