@@ -808,11 +808,6 @@
 .submenuMobile {
   min-width: min(19rem, calc(100vw - 26px));
 }
-@media (max-width: 640px), (pointer: coarse) {
-  .menu button {
-    min-height: 44px;
-  }
-}
 .submenuHeading {
   display: flex;
   align-items: center;
