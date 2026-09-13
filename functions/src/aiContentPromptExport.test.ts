@@ -1,8 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { exportCurrentContentPrompt } from './aiContentPromptExport.js';
-import { buildContentStructuredRequest } from './aiContentPayload.js';
-import { validateAiContentRequest, resolveContentModel } from './aiContentCore.js';
+import {
+  exportCurrentContentPrompt,
+  RESPONSE_FORMAT_HEADING,
+  POOL_FORMAT_EXAMPLE,
+} from './aiContentPromptExport.js';
+import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import { parsePool } from '@schoolforge/lesson-contract';
+import { validateAiContentRequest } from './aiContentCore.js';
 import { AI_VISUAL_SERVER_CONFIG, AI_VISUAL_LEGACY_SERVER_CONFIG } from './aiVisualCore.js';
 import { isExactAiVisualServerConfig } from './aiVisualRunDoc.js';
 import { resumeCoordinatedProposal } from './aiVisualPlanGateway.js';
@@ -16,6 +21,7 @@ describe('current prompt export and immutable visual presets', () => {
         kind,
         requestId: '11111111-1111-4111-8111-111111111111',
         modelProfile: 'economy',
+        teacherGuidance: 'Spiega i passaggi con esempi originali àè.',
       };
       const body = '## Reti\n\nIl contenuto corrente.';
       const input =
@@ -47,13 +53,21 @@ describe('current prompt export and immutable visual presets', () => {
               hasCurrentContent: true,
             };
       const request = validateAiContentRequest(input);
-      const exported = JSON.parse(exportCurrentContentPrompt(input).prompt);
-      expect(exported).toEqual(
-        buildContentStructuredRequest(request, resolveContentModel(request.modelProfile).model),
+      const built =
+        request.kind === 'lesson'
+          ? buildLessonPrompt(request)
+          : buildPoolPrompt(request as Parameters<typeof buildPoolPrompt>[0]);
+      const exported = exportCurrentContentPrompt(input).prompt;
+      const [task, format] = exported.split(RESPONSE_FORMAT_HEADING);
+      expect(task).toContain(built.user.slice(built.user.indexOf('<<<')));
+      expect(task).toContain('Spiega i passaggi con esempi originali àè.');
+      expect(task).toContain('Il contenuto corrente.');
+      expect(task).toContain('Sei un assistente didattico esperto');
+      expect(format).toBeTruthy();
+      expect(task).not.toMatch(
+        /Restituisci soltanto|ZERO-BASED|Struttura editoriale e compatibilità/,
       );
-      expect(exported.input).toHaveLength(2);
-      expect(exported.text.format.strict).toBe(true);
-      expect(JSON.stringify(exported)).toContain('Il contenuto corrente.');
+      expect(exported).not.toMatch(/max_output_tokens|"store"|"model"|"input"/);
     },
   );
   it('stops a legacy active proposal before any I/O or provider invocation', async () => {
@@ -69,7 +83,7 @@ describe('current prompt export and immutable visual presets', () => {
     ).not.toThrow();
   });
   it.each(['economy', 'quality'])(
-    'exports exactly the provider payload for %s, preserving current text',
+    'exports an executable map prompt for %s, preserving current text',
     (modelProfile) => {
       const request = validateAiContentRequest({
         kind: 'concept_map',
@@ -77,12 +91,19 @@ describe('current prompt export and immutable visual presets', () => {
         modelProfile,
         lessonBody: '## Corrente\n\nContesto aggiornato àè\n',
       });
-      expect(JSON.parse(exportCurrentContentPrompt(request).prompt)).toEqual(
-        buildContentStructuredRequest(request, resolveContentModel(request.modelProfile).model),
-      );
+      const [task, format] =
+        exportCurrentContentPrompt(request).prompt.split(RESPONSE_FORMAT_HEADING);
+      expect(task).toContain('Contesto aggiornato àè');
+      expect(task).not.toMatch(/due campi|summaryMarkdown|Vincoli tecnici|nessun backtick/);
+      expect(format).toContain('## Sintesi');
+      expect(format).toContain('## Diagramma');
+      expect(format).toContain('non sostituisce lo studio della lezione');
       expect(exportCurrentContentPrompt(request).prompt).toContain('Contesto aggiornato');
     },
   );
+  it('provides an importer-compatible pool example', () => {
+    expect(parsePool(POOL_FORMAT_EXAMPLE).ok).toBe(true);
+  });
   it('rejects unsupported/invalid payloads without a provider', () => {
     expect(() => exportCurrentContentPrompt({ kind: 'other' })).toThrow();
   });
