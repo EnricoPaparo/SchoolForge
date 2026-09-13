@@ -19,7 +19,9 @@ export function LessonPdfProgressDialog({
         role={progress.phase === 'error' ? 'alert' : 'status'}
         aria-live="polite"
         aria-busy={busy}
-        className={busy ? 'state-loading' : progress.phase === 'error' ? 'text-error' : undefined}
+        className={
+          busy ? 'state-loading loading-row' : progress.phase === 'error' ? 'text-error' : undefined
+        }
       >
         {busy && <span className="spinner" aria-hidden="true" />}
         <span>{progress.message}</span>
