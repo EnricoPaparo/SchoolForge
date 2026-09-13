@@ -1,7 +1,7 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  resolveContentModel,
   validateAiContentRequest,
   type LessonRequest,
   type LessonDepth,
@@ -229,7 +229,7 @@ function scenarioPlan(
   maxAttempts: number,
 ): LessonManualScenarioPlan {
   const request = buildLessonManualRequest(scenario, index);
-  const { model, priceListVersion } = resolveContentModel(LESSON_MANUAL_QUALITY_PROFILE);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(LESSON_MANUAL_QUALITY_PROFILE);
   const estimate: ContentCostEstimate = estimateContentCost(
     request,
     model,
@@ -253,7 +253,7 @@ export function buildLessonManualQualityExecutionPlan(
   dataset: LessonManualQualityDataset,
 ): LessonManualQualityExecutionPlan {
   const maxAttempts = maxAttemptsForPolicy(DEFAULT_OPENAI_RETRY_POLICY);
-  const { model, priceListVersion } = resolveContentModel(LESSON_MANUAL_QUALITY_PROFILE);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(LESSON_MANUAL_QUALITY_PROFILE);
   const scenarios = dataset.scenarios.map((scenario, index) =>
     scenarioPlan(scenario, index, maxAttempts),
   );

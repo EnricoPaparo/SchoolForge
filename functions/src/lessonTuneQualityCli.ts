@@ -1,3 +1,4 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -5,7 +6,7 @@ import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { actualCostMicroUsd } from './aiCorrectionCost.js';
 import type { ModelProfile } from './aiCorrectionModelProfile.js';
-import { resolveContentModel, type LessonRequest } from './aiContentCore.js';
+import { type LessonRequest } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { AI_CONTENT_PROMPT_VERSION } from './aiContentPrompt.js';
 import { validateLessonProposal } from './aiContentValidation.js';
@@ -196,7 +197,7 @@ export async function runLessonTuneCli(deps: LessonTuneCliDeps): Promise<'dry-ru
   if (!apiKey) throw new Error('OPENAI_API_KEY non disponibile: benchmark annullato.');
   const provider = deps.createProvider(apiKey);
   const generatedAt = deps.now().toISOString();
-  const { model, priceListVersion } = resolveContentModel(modelProfile);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(modelProfile);
   const samples: Array<LessonTuneGeneratedSample & { body: string }> = [];
   for (const scenario of selectLessonTuneScenarios(dataset, split)) {
     samples.push(

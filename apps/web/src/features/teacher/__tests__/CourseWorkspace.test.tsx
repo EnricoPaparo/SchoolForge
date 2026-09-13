@@ -580,7 +580,10 @@ describe('CourseWorkspace — selection', () => {
       await screen.findByRole('heading', { name: 'Genera lezione completa con IA' }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sostituisci e genera tutto' })).toBeTruthy();
-    expect(screen.queryByText('Profilo modello')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Profilo modello' })).toHaveProperty(
+      'value',
+      'economy',
+    );
     expect(mockVisualPreviewProposal).not.toHaveBeenCalled();
     expect(mockVisualGenerateProposal).not.toHaveBeenCalled();
   });
