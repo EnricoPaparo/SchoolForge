@@ -1,3 +1,4 @@
+import './lessonPdfExport.css';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { LessonManualBody, type LessonVisualRender } from '../../components/LessonManualBody.js';
