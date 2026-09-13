@@ -331,6 +331,9 @@
   box-shadow: var(--shadow-md);
   padding: 0.25rem;
 }
+.menu > * {
+  flex-shrink: 0;
+}
 .menu button {
   display: flex;
   align-items: center;
@@ -805,8 +808,10 @@
 .submenuMobile {
   min-width: min(19rem, calc(100vw - 26px));
 }
-.submenuMobile button {
-  min-height: 44px;
+@media (max-width: 640px), (pointer: coarse) {
+  .menu button {
+    min-height: 44px;
+  }
 }
 .submenuHeading {
   display: flex;
