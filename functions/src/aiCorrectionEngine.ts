@@ -37,7 +37,6 @@ import {
 import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
   DEFAULT_MODEL_PROFILE,
-  profileForModel,
   resolveModelProfile,
   type ModelProfile,
 } from './aiCorrectionModelProfile.js';
@@ -934,27 +933,12 @@ export function computeSelectionHash(
 
 // ── Risoluzione profilo modello (TWU-02) ─────────────────────────────────────
 
-/**
- * Risolve il **profilo effettivo** della richiesta. Se il client ha inviato un
- * profilo, vince quello. Se assente (compatibilità legacy) il default si deriva
- * dal **modello della config runtime** (`settings/aiConfig.model`): su DEV punta
- * a Luna ⇒ `quality`. Senza config runtime (mock/config assente) si usa il
- * default applicativo. Un modello runtime non mappato ad alcun profilo chiuso è
- * fail-closed (`provider_config_invalid`) — nessun fallback silenzioso.
- */
+/** Explicit profile wins; omitted profiles use Economy for all new operations. */
 export function resolveEffectiveModelProfile(
   requestProfile: ModelProfile | undefined,
-  runtimeConfig: AiRuntimeConfig | null,
+  _runtimeConfig: AiRuntimeConfig | null,
 ): ModelProfile {
   if (requestProfile) return requestProfile;
-  if (runtimeConfig) {
-    const legacy = profileForModel(runtimeConfig.model);
-    if (legacy) return legacy;
-    throw new AiGatewayError(
-      'provider_config_invalid',
-      'Modello runtime non associato ad alcun profilo modello.',
-    );
-  }
   return DEFAULT_MODEL_PROFILE;
 }
 

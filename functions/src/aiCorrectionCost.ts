@@ -87,6 +87,9 @@ export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_VERIFIED_ON = '2026-09-12';
  * sopra. Un nuovo modello o prezzo richiede una nuova versione: una versione
  * pubblicata non viene mai modificata in loco.
  */
+export const OPENAI_RUNTIME_SOL_MODEL = 'gpt-5.6-sol';
+export const OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION = 'v7-2026-09-13-sol-standard';
+/** https://developers.openai.com/api/docs/models/gpt-5.6-sol, verified 2026-09-13. */
 export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelPrice>>>> = {
   'v1-2026-07-16': {
     [OPENAI_LEGACY_MODEL]: {
@@ -132,6 +135,12 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
   // da `v5`: una versione pubblicata non viene mai modificata in loco. Stesso
   // modello `gpt-5.6-luna`; $0.20/M input → 200 000 µUSD, $1.20/M output →
   // 1 200 000 µUSD. `v5` resta invariato e valido (compatibilità PROD/rollback).
+  [OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION]: {
+    [OPENAI_RUNTIME_SOL_MODEL]: {
+      inputMicroUsdPerMillion: 4_000_000,
+      outputMicroUsdPerMillion: 20_000_000,
+    },
+  },
   'v6-2026-09-12-luna-standard': {
     [OPENAI_BENCHMARK_LUNA_MODEL]: {
       inputMicroUsdPerMillion: 200_000,

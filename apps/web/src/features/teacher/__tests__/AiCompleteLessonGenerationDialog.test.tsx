@@ -115,7 +115,7 @@ async function goToReview(
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
-  it('usa Quality invisibile e propone 5/3/2 domande equilibrate', async () => {
+  it('usa Economy selezionabile e propone 5/3/2 domande equilibrate', async () => {
     const { callables, previewRequests, generateRequests } = makeCallables();
     renderDialog(callables, async () => ({
       imagesApplied: 0,
@@ -123,7 +123,10 @@ describe('AiCompleteLessonGenerationDialog', () => {
       imagesFailed: 0,
     }));
 
-    expect(screen.queryByText('Profilo modello')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Profilo modello' })).toHaveProperty(
+      'value',
+      'economy',
+    );
     expect(screen.getByRole('textbox', { name: 'Aperte' })).toHaveProperty('value', '5');
     expect(screen.getByRole('textbox', { name: 'Risposta singola' })).toHaveProperty('value', '3');
     expect(screen.getByRole('textbox', { name: 'Risposta multipla' })).toHaveProperty('value', '2');
@@ -139,6 +142,9 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(screen.queryByLabelText('Quantità')).toBeNull();
     expect(screen.queryByText(/Auto \(1/)).toBeNull();
 
+    fireEvent.change(screen.getByRole('combobox', { name: 'Profilo modello' }), {
+      target: { value: 'quality' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(previewRequests).toHaveLength(1);
@@ -188,6 +194,7 @@ describe('AiCompleteLessonGenerationDialog', () => {
       expect.any(Function),
       {
         level: 'balanced',
+        modelProfile: 'economy',
         counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
       },
     );

@@ -3,6 +3,7 @@ import type { Functions } from 'firebase/functions';
 export type MultiVisualIdentity = { programId: string; importId: string; lessonId: string };
 export type MultiVisualQuantity = { mode: 'auto' | 'exact'; ceiling: 1 | 2 | 3 };
 export interface MultiVisualPlanRequest extends MultiVisualIdentity {
+  modelProfile?: 'economy' | 'quality';
   requestId: string;
   quantity: MultiVisualQuantity;
   replacementAssetId: string | null;

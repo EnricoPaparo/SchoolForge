@@ -60,7 +60,7 @@ export const AI_VISUAL_NAMESPACE = 'visual-enrichment/v1' as const;
 export const AI_VISUAL_BUDGET_NAMESPACE = 'visual-enrichment-budget/v1' as const;
 
 /** Preset V1 verificato nella documentazione ufficiale OpenAI il 2026-08-22. */
-export const AI_VISUAL_MODEL = 'gpt-image-2-2026-04-21' as const;
+export const AI_VISUAL_MODEL = 'gpt-image-2.5-sunburst-2026-09-08' as const;
 export const AI_VISUAL_SIZE = '1024x1024' as const;
 export const AI_VISUAL_QUALITY = 'low' as const;
 export const AI_VISUAL_OUTPUT_FORMAT = 'webp' as const;
@@ -72,10 +72,13 @@ export const AI_VISUAL_N = 1 as const;
  * Il calcolatore ufficiale assegna 196 output token a 1024×1024 low, cioè
  * 5.880 micro-USD di solo output immagine; il testo input si somma a parte.
  */
-export const AI_VISUAL_PRICE_LIST_VERSION = 'openai-gpt-image-2-standard-2026-08-22' as const;
-export const AI_VISUAL_PRICE_VERIFIED_AT = '2026-08-22' as const;
+export const AI_VISUAL_PRICE_LIST_VERSION = 'openai-sunburst-standard-2026-09-13' as const;
+export const AI_VISUAL_PRICE_VERIFIED_AT = '2026-09-13' as const;
 export const AI_VISUAL_TEXT_INPUT_MICRO_USD_PER_TOKEN = 5;
 export const AI_VISUAL_IMAGE_OUTPUT_MICRO_USD_PER_TOKEN = 30;
+/** Verified independently with the GPT Image 2.5 calculator: low, 1024x1024.
+ * https://developers.openai.com/api/docs/guides/image-generation#gpt-image-25-and-gpt-image-2-output-tokens
+ * No streaming/partial images. Actual response usage remains authoritative. */
 export const AI_VISUAL_EXPECTED_OUTPUT_TOKENS = 196;
 /** Un tentativo iniziale + al massimo un retry applicativo; SDK retry = 0. */
 export const AI_VISUAL_MAX_PROVIDER_ATTEMPTS = 2;
@@ -276,6 +279,31 @@ export const AI_VISUAL_SERVER_CONFIG = Object.freeze({
   maxBytes: MAX_VISUAL_BYTES,
   maxLongEdge: AI_VISUAL_MAX_LONG_EDGE,
 });
+
+/** Immutable historical preset. Never reinterpret saved accounting as a new model. */
+export const AI_VISUAL_LEGACY_SERVER_CONFIG = Object.freeze({
+  contractVersion: 1 as const,
+  styleVersion: 'schoolforge-sketch/v1' as const,
+  promptVersion: 'schoolforge-sketch-prompt/v5' as const,
+  n: 1 as const,
+  size: '1024x1024' as const,
+  quality: 'low' as const,
+  outputFormat: 'webp' as const,
+  background: 'opaque' as const,
+  maxProviderAttempts: 2,
+  normalizerVersion: 'visual-normalizer/v1' as const,
+  qualityAttempts: Object.freeze([82, 74, 66, 58, 50, 42] as const),
+  targetBytes: 153600,
+  maxBytes: 204800,
+  maxLongEdge: 1200,
+  model: 'gpt-image-2-2026-04-21' as const,
+  priceListVersion: 'openai-gpt-image-2-standard-2026-08-22' as const,
+  priceVerifiedAt: '2026-08-22' as const,
+  expectedOutputTokens: 196,
+});
+export type AiVisualServerConfig =
+  | typeof AI_VISUAL_SERVER_CONFIG
+  | typeof AI_VISUAL_LEGACY_SERVER_CONFIG;
 
 export function estimateVisualCost(subject: string, mode: AiVisualMode): VisualCostEstimate {
   const promptBytes = Buffer.byteLength(buildSchoolForgeSketchPrompt(subject), 'utf8');

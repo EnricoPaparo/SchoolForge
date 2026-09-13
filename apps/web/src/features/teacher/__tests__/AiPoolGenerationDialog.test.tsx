@@ -104,12 +104,12 @@ describe('AiPoolGenerationDialog', () => {
     expect(generateReqs).toHaveLength(1);
     expect(generateReqs[0]).toEqual(previewReqs[0]); // same requestId + same normalized payload
     expect(previewReqs[0].kind).toBe('pool');
-    expect(previewReqs[0].modelProfile).toBe('quality');
+    expect(previewReqs[0].modelProfile).toBe('economy');
     expect(previewReqs[0].counts).toEqual({ aperta: 3, chiusa_singola: 3, chiusa_multipla: 0 });
     expect('ownerUid' in previewReqs[0]).toBe(false);
   });
 
-  it('shows Quality as informational and exposes no profile selector or Economy option', () => {
+  it('defaults to Economy and allows Quality selection', () => {
     const { callables } = makeCallables();
     render(
       <AiPoolGenerationDialog
@@ -120,10 +120,17 @@ describe('AiPoolGenerationDialog', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByLabelText('Profilo modello: Quality')).toBeTruthy();
-    expect(screen.getByText('Qualità validata per la generazione dei pool.')).toBeTruthy();
-    expect(screen.queryByText('Economy')).toBeNull();
-    expect(screen.queryByRole('radio', { name: /Economy/ })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Profilo modello' })).toHaveProperty(
+      'value',
+      'economy',
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Profilo modello' }), {
+      target: { value: 'quality' },
+    });
+    expect(screen.getByRole('combobox', { name: 'Profilo modello' })).toHaveProperty(
+      'value',
+      'quality',
+    );
   });
 
   it('shows estimate and the conservative reservation cap, no cost yet', async () => {

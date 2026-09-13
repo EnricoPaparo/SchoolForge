@@ -104,7 +104,7 @@ export function TotalLessonGenerationDialog({
       onProgress({ stage: 'map' });
       const request = buildConceptMapRequest({
         requestId: mapRequestIdRef.current,
-        modelProfile: 'quality',
+        modelProfile: options.modelProfile,
         lessonBody: body,
       });
       await mapCallables.preview(request);
@@ -121,6 +121,7 @@ export function TotalLessonGenerationDialog({
         options.counts.aperta + options.counts.chiusa_singola + options.counts.chiusa_multipla;
       onProgress({ stage: 'pool', label: `Generazione di ${total} domande…` });
       const request = buildPoolContentRequest({
+        modelProfile: options.modelProfile,
         requestId: poolRequestIdRef.current,
         level: options.level,
         counts: options.counts,
@@ -160,7 +161,8 @@ export function TotalLessonGenerationDialog({
       visualStateRef.current,
       {
         persistBody: async () => undefined,
-        authorizeVisualPlan: (input) => visualClient.authorize(input),
+        authorizeVisualPlan: (input) =>
+          visualClient.authorize({ ...input, modelProfile: options.modelProfile }),
         generateVisualSlot: (input) => visualClient.generateSlot(input),
         promoteVisualSlot: (input) => visualClient.promoteSlot(input),
       },

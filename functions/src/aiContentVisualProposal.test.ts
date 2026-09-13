@@ -205,20 +205,8 @@ describe('request della proposta visuale', () => {
     expect(() => validateAiContentRequest(payload)).toThrow(AiContentError);
   });
 
-  it('rifiuta economy prima di provider, prenotazione e scritture', () => {
-    /*
-     * Il rifiuto avviene nella validazione del payload, che nell'ordine
-     * fail-closed della callable precede secret, stima, prenotazione, lease,
-     * run e qualunque scrittura. Non è una degradazione silenziosa a quality:
-     * sarebbe una spesa non richiesta.
-     */
-    expect(() => visualRequest({ modelProfile: 'economy' })).toThrow(AiContentError);
-    expect(() => visualRequest({ modelProfile: 'economy' })).toThrow(/solo con il profilo quality/);
-    try {
-      visualRequest({ modelProfile: 'economy' });
-    } catch (err) {
-      expect((err as AiContentError).code).toBe('invalid_input');
-    }
+  it('accetta economy senza cambiare profilo', () => {
+    expect(visualRequest({ modelProfile: 'economy' }).modelProfile).toBe('economy');
   });
 
   it('rifiuta un profilo sconosciuto senza fallback', () => {

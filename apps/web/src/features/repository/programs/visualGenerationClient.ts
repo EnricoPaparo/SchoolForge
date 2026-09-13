@@ -13,7 +13,7 @@ import { parsePrivateVisualManifest, parsePrivateVisualsManifest } from './lesso
 export interface VisualProposalRequest {
   kind: 'visual_proposal';
   requestId: string;
-  modelProfile: 'quality';
+  modelProfile: 'economy' | 'quality';
   titolo: string;
   sottotitolo: string | null;
   difficolta: string;

@@ -26,7 +26,7 @@ describe('buildPoolContentRequest', () => {
     expect(req).toEqual({
       kind: 'pool',
       requestId: REQ,
-      modelProfile: 'quality',
+      modelProfile: 'economy',
       level: 'balanced',
       counts: { aperta: 2, chiusa_singola: 1, chiusa_multipla: 0 },
       lessonSource: 'Le reti.',
@@ -50,8 +50,8 @@ describe('buildPoolContentRequest', () => {
     expect('teacherGuidance' in req).toBe(false);
   });
 
-  it('makes Economy unrepresentable and always injects the qualified profile', () => {
-    expect(AI_POOL_GENERATION_PROFILE).toBe('quality');
+  it('defaults to Economy while accepting an explicit Quality choice', () => {
+    expect(AI_POOL_GENERATION_PROFILE).toBe('economy');
     const req = buildPoolContentRequest({
       requestId: REQ,
       level: 'advanced',
@@ -59,8 +59,10 @@ describe('buildPoolContentRequest', () => {
       lessonSource: 'x',
       existingPoolQuestionCount: 0,
     });
-    expect(req.modelProfile).toBe('quality');
-    expect(buildPoolContentRequest.toString()).not.toContain('params.modelProfile');
+    expect(req.modelProfile).toBe('economy');
+    expect(buildPoolContentRequest({ ...req, modelProfile: 'quality' }).modelProfile).toBe(
+      'quality',
+    );
   });
 });
 

@@ -1,3 +1,8 @@
+import { AiModelProfileField } from './AiModelProfileField.js';
+import {
+  DEFAULT_POOL_MODEL_PROFILE,
+  type PoolModelProfile,
+} from '../repository/pools/aiContentClient.js';
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
@@ -53,6 +58,7 @@ export interface CompleteLessonCompletionSummary {
 }
 
 export interface CompleteLessonOptions {
+  modelProfile: PoolModelProfile;
   level: PoolLevel;
   counts: PoolCounts;
 }
@@ -112,6 +118,7 @@ export function AiCompleteLessonGenerationDialog({
   onBeforeGenerate?: () => Promise<void>;
   onClose: () => void;
 }) {
+  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
   const [phase, setPhase] = useState<Phase>('configure');
   const [depth, setDepth] = useState<LessonDepth>(DEFAULT_LESSON_DEPTH);
   const [level, setLevel] = useState<PoolLevel>(DEFAULT_POOL_LEVEL);
@@ -175,7 +182,7 @@ export function AiCompleteLessonGenerationDialog({
   function currentRequest(): AiLessonContentRequest {
     return buildLessonContentRequest({
       requestId: requestIdRef.current,
-      modelProfile: 'quality',
+      modelProfile,
       depth,
       context,
       teacherGuidance: guidance,
@@ -257,6 +264,7 @@ export function AiCompleteLessonGenerationDialog({
       const completed = await onCompleteDraft(validated.body, updateProgress, {
         level,
         counts: validatedCounts,
+        modelProfile,
       });
       if (!mountedRef.current) return;
       setSummary(completed);
@@ -285,6 +293,7 @@ export function AiCompleteLessonGenerationDialog({
       const next = await onCompleteDraft(draftBody, updateProgress, {
         level,
         counts: validatedCounts,
+        modelProfile,
       });
       if (!mountedRef.current) return;
       setSummary(next);
@@ -340,6 +349,13 @@ export function AiCompleteLessonGenerationDialog({
     >
       {phase === 'configure' && (
         <div className={styles.config}>
+          <AiModelProfileField
+            value={modelProfile}
+            onChange={(value) => {
+              setModelProfile(value);
+              invalidateEstimate();
+            }}
+          />
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-complete-depth-label">
               Profondità

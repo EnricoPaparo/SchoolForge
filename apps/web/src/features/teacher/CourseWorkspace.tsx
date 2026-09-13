@@ -137,6 +137,10 @@ import {
   type UdaMetadataValues,
 } from './workspaceDialogs.js';
 import styles from './CourseWorkspace.module.css';
+import {
+  fetchCurrentPrompt,
+  type CopyPromptKind,
+} from '../repository/pools/aiContentPromptClient.js';
 import { ActionsMenu } from './ActionsMenu.js';
 
 const NO_STATUS: EditStatus = { busy: false, error: null, saved: false };
@@ -392,6 +396,8 @@ function CourseWorkspaceSession({
   const [collapsedUdas, setCollapsedUdas] = useState<Set<string>>(new Set());
 
   // Lesson content is loaded on demand, only when a lesson is selected.
+  const [promptCopyStatus, setPromptCopyStatus] = useState('');
+  const promptCopyBusy = useRef(false);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
   const [lessonLoading, setLessonLoading] = useState(false);
@@ -1970,11 +1976,48 @@ function CourseWorkspaceSession({
       guardedNav(onBack);
     }
   }
+  async function copyCurrentPrompt(kind: CopyPromptKind) {
+    if (
+      promptCopyBusy.current ||
+      !selectedLessonAiContext ||
+      !selectedLesson ||
+      lessonContent === null
+    )
+      return;
+    promptCopyBusy.current = true;
+    setMenuOpen(false);
+    setPromptCopyStatus('Preparazione del prompt…');
+    try {
+      const prompt = fetchCurrentPrompt(
+        functions,
+        kind,
+        { ...selectedLessonAiContext, currentBody: lessonContent },
+        selectedLesson.questionCount ?? 0,
+      );
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': prompt.then((text) => new Blob([text], { type: 'text/plain' })),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(await prompt);
+      }
+      setPromptCopyStatus('Prompt copiato negli appunti.');
+    } catch (error) {
+      setPromptCopyStatus(
+        error instanceof Error ? error.message : 'Impossibile copiare il prompt.',
+      );
+    } finally {
+      promptCopyBusy.current = false;
+    }
+  }
   const backLabel = isMobile && selection.kind !== 'course' ? '← Indietro' : '← Libreria';
   const backRun = isMobile ? goUpOneLevel : () => guardedNav(onBack);
 
   return (
     <section aria-label={`Corso — ${card.title}`} className={styles.workspace}>
+      {promptCopyStatus && <p role="status">{promptCopyStatus}</p>}
       <header className={styles.header}>
         <button type="button" className={styles.backBtn} onClick={backRun}>
           {backLabel}
@@ -2486,6 +2529,29 @@ function CourseWorkspaceSession({
                   ariaLabel="Azioni lezione"
                   ref={menuRef}
                 >
+                  {(
+                    [
+                      ['lesson', 'Copia prompt lezione'],
+                      ['concept_map', 'Copia prompt mappa'],
+                      ['pool', 'Copia prompt pool'],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="menuitem"
+                      disabled={
+                        lessonLoading ||
+                        lessonContent === null ||
+                        anyDirty ||
+                        editingContent ||
+                        editingInfo
+                      }
+                      onClick={() => void copyCurrentPrompt(kind)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                   <button
                     type="button"
                     role="menuitem"
@@ -3447,7 +3513,7 @@ function LessonDetail({
         ? {
             kind: 'visual_proposal' as const,
             requestId: crypto.randomUUID(),
-            modelProfile: 'quality' as const,
+            modelProfile: 'economy' as const,
             titolo: lessonAi.titolo ?? '',
             sottotitolo: lessonAi.sottotitolo ?? null,
             difficolta: lessonAi.difficolta ?? '',

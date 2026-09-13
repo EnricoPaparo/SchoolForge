@@ -18,14 +18,10 @@ import type { Functions } from 'firebase/functions';
 /** Profilo astratto condiviso dalle UI di lezione e mappa concettuale. */
 export type PoolModelProfile = 'economy' | 'quality';
 
-export const DEFAULT_POOL_MODEL_PROFILE: PoolModelProfile = 'quality';
+export const DEFAULT_POOL_MODEL_PROFILE: PoolModelProfile = 'economy';
 
-/**
- * POOL-ROLLOUT-01 — unico profilo qualificato per la generazione dei pool.
- * La costante è distinta dall'enum condiviso: lezioni e mappe concettuali
- * continuano a poter rappresentare entrambi i profili.
- */
-export const AI_POOL_GENERATION_PROFILE = 'quality' as const;
+/** Default for new pool generation; both closed profiles are selectable. */
+export const AI_POOL_GENERATION_PROFILE: PoolModelProfile = 'economy';
 
 /**
  * Opzioni del profilo. `modelId` è il nome tecnico del modello server-side,
@@ -41,13 +37,13 @@ export const POOL_MODEL_PROFILE_OPTIONS: readonly {
   {
     value: 'economy',
     label: 'Economy',
-    modelId: 'gpt-5.4-nano-2026-03-17',
+    modelId: 'gpt-5.6-luna',
     description: 'Più economico e rapido.',
   },
   {
     value: 'quality',
     label: 'Quality',
-    modelId: 'gpt-5.6-luna',
+    modelId: 'gpt-5.6-sol',
     description: 'Qualità superiore, costo maggiore.',
   },
 ];
@@ -56,6 +52,7 @@ export const POOL_MODEL_PROFILE_OPTIONS: readonly {
 export type PoolLevel = 'base' | 'balanced' | 'advanced';
 
 export const DEFAULT_POOL_LEVEL: PoolLevel = 'balanced';
+export const DEFAULT_POOL_COUNTS = { aperta: 3, chiusa_singola: 3, chiusa_multipla: 0 } as const;
 
 export const POOL_LEVEL_OPTIONS: readonly {
   value: PoolLevel;
@@ -97,7 +94,7 @@ export const MAX_TEACHER_GUIDANCE_CHARS = 500;
 export interface AiPoolContentRequest {
   kind: 'pool';
   requestId: string;
-  modelProfile: typeof AI_POOL_GENERATION_PROFILE;
+  modelProfile: PoolModelProfile;
   teacherGuidance?: string;
   level: PoolLevel;
   counts: PoolCounts;
@@ -160,6 +157,7 @@ export function newRequestId(): string {
  * i vincoli sono verificati dalla UI e, in modo autorevole, dal server).
  */
 export function buildPoolContentRequest(params: {
+  modelProfile?: PoolModelProfile;
   requestId: string;
   level: PoolLevel;
   counts: PoolCounts;
@@ -171,7 +169,7 @@ export function buildPoolContentRequest(params: {
   return {
     kind: 'pool',
     requestId: params.requestId,
-    modelProfile: AI_POOL_GENERATION_PROFILE,
+    modelProfile: params.modelProfile ?? AI_POOL_GENERATION_PROFILE,
     level: params.level,
     counts: {
       aperta: params.counts.aperta,

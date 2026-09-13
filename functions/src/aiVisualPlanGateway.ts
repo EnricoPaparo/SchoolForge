@@ -114,6 +114,7 @@ import {
 import {
   computeVisualPlanTotalReserved,
   validateVisualPlanAuthorizeInput,
+  assertCurrentVisualProposalProfile,
   validateVisualPlanRun,
   type VisualPlanAuthorizeInput,
   type VisualPlanBudgetCeiling,
@@ -187,6 +188,7 @@ function readOpenAiSecret(): string | undefined {
  * requestId)` con `budgetCeiling.reservationKey`.
  */
 function buildVisualPlanProposalRequest(params: {
+  modelProfile?: 'economy' | 'quality';
   requestId: string;
   quantity: { mode: 'auto' | 'exact'; ceiling: 1 | 2 | 3 };
   lessonBody: string;
@@ -201,7 +203,7 @@ function buildVisualPlanProposalRequest(params: {
   const request = validateAiContentRequest({
     kind: 'visual_plan_proposal',
     requestId: params.requestId,
-    modelProfile: 'quality',
+    modelProfile: params.modelProfile ?? 'economy',
     titolo: params.titolo,
     sottotitolo: params.sottotitolo,
     difficolta: params.difficolta,
@@ -646,6 +648,7 @@ function identityMatchesInput(
     plan.importId === input.importId &&
     plan.lessonId === input.lessonId &&
     plan.requestId === input.requestId &&
+    (plan.modelProfile ?? 'economy') === (input.modelProfile ?? 'economy') &&
     plan.replacementAssetId === input.replacementAssetId
   );
 }
@@ -923,6 +926,7 @@ export async function createVisualPlanForOwner(params: {
 
     const proposalRequest = buildVisualPlanProposalRequest({
       requestId: input.requestId,
+      modelProfile: input.modelProfile ?? 'economy',
       quantity: input.quantity,
       lessonBody: lesson.body,
       titolo: input.titolo,
@@ -933,7 +937,7 @@ export async function createVisualPlanForOwner(params: {
       udaTitle: input.udaTitle,
       udaContext: input.udaContext,
     });
-    const { model, priceListVersion } = resolveContentModel('quality');
+    const { model, priceListVersion } = resolveContentModel(proposalRequest.modelProfile);
     const proposalCap = estimateContentCost(
       proposalRequest,
       model,
@@ -1012,6 +1016,7 @@ export async function createVisualPlanForOwner(params: {
     tx.set(leaseRef, newLease);
 
     const newPlan: VisualPlanRun = {
+      modelProfile: input.modelProfile ?? 'economy',
       contractVersion: VISUAL_PLAN_CONTRACT_VERSION,
       ownerUid,
       programId: input.programId,
@@ -1105,6 +1110,7 @@ export async function resumeCoordinatedProposal(params: {
 }): Promise<VisualPlanRun> {
   const { db, input, config, mode, secret, clock } = params;
   const plan = params.plan;
+  assertCurrentVisualProposalProfile(plan);
   const opaquePlanId = computeOpaqueVisualPlanId(plan.ownerUid, plan.requestId);
   const leaseId = computeVisualPlanLeaseId(plan.ownerUid, plan.lessonId);
   const planRef = db.doc(`visualPlanRuns/${opaquePlanId}`);
@@ -1257,6 +1263,7 @@ export async function resumeCoordinatedProposal(params: {
   }
   const proposalRequest = buildVisualPlanProposalRequest({
     requestId: plan.requestId,
+    modelProfile: plan.modelProfile ?? 'economy',
     quantity: plan.quantity,
     lessonBody: projectionGate.body,
     titolo: input.titolo,
