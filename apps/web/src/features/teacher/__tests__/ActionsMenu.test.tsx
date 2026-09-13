@@ -66,6 +66,33 @@ Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
 });
 
 describe('ActionsMenu — portal + positioning', () => {
+  it('focuses only after the portal becomes visible and does not steal focus on resize', () => {
+    setViewport(1000, 800);
+    mockAnchorRect({ left: 50, top: 80, bottom: 100, right: 130 });
+    const nativeFocus = HTMLButtonElement.prototype.focus;
+    const focusVisibility: string[] = [];
+    vi.spyOn(HTMLButtonElement.prototype, 'focus').mockImplementation(function (
+      this: HTMLButtonElement,
+      options,
+    ) {
+      const menu = this.closest<HTMLElement>('[role="menu"]');
+      if (menu) {
+        focusVisibility.push(menu.style.visibility);
+        // jsdom allows focus on hidden nodes; reproduce the browser restriction.
+        if (menu.style.visibility === 'hidden') return;
+      }
+      nativeFocus.call(this, options);
+    });
+    render(<Harness />);
+    expect(focusVisibility).toEqual(['visible']);
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Azione' }));
+    const trigger = screen.getByRole('button', { name: 'Azioni' });
+    trigger.focus();
+    fireEvent.resize(window);
+    expect(document.activeElement).toBe(trigger);
+    expect(focusVisibility).toEqual(['visible']);
+  });
+
   it('renders into document.body, not next to the trigger', () => {
     setViewport(1000, 800);
     mockAnchorRect({ left: 50, top: 80, bottom: 100, right: 130, width: 80, height: 20 });

@@ -99,12 +99,15 @@ export const ActionsMenu = forwardRef<HTMLDivElement, ActionsMenuProps>(function
     };
   }, [open, anchorRef, children]);
 
+  const positioned = pos !== null;
   useLayoutEffect(() => {
-    if (open)
+    // Browser focus is ignored while the portal is still visibility:hidden.
+    // Depend on readiness, not coordinates, so resize never steals focus.
+    if (open && positioned)
       innerRef.current
         ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
         ?.focus();
-  }, [open]);
+  }, [open, positioned]);
 
   if (!open) return null;
 
