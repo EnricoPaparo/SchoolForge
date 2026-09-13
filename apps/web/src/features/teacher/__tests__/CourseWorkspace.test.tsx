@@ -2369,12 +2369,12 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     expect(summary.getByRole('img', { name: 'Avanzamento lezioni 100%' })).toBeTruthy();
   });
 
-  it('does not expose the single-lesson PDF command and preserves the other lesson actions', async () => {
+  it('exposes the direct single-lesson PDF command and preserves the other lesson actions', async () => {
     await openLesson();
     fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
     const menu = screen.getByRole('menu');
 
-    expect(within(menu).queryByRole('menuitem', { name: 'Scarica PDF' })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: 'Scarica PDF' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Modifica contenuto' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Modifica informazioni' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Elimina lezione' })).toBeTruthy();
@@ -2777,7 +2777,7 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     const menu = screen.getByRole('menu');
     expect(within(menu).getByRole('menuitem', { name: 'Modifica contenuto' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Modifica informazioni' })).toBeTruthy();
-    expect(within(menu).queryByRole('menuitem', { name: 'Scarica PDF' })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: 'Scarica PDF' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Elimina lezione' })).toBeTruthy();
     expect(within(menu).queryByRole('menuitem', { name: /segna svolta/i })).toBeNull();
     expect(within(menu).queryByRole('menuitem', { name: /struttura/i })).toBeNull();
