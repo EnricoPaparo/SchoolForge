@@ -1,3 +1,8 @@
+import { AiModelProfileField } from './AiModelProfileField.js';
+import {
+  DEFAULT_POOL_MODEL_PROFILE,
+  type PoolModelProfile,
+} from '../repository/pools/aiContentClient.js';
 import { useEffect, useRef, useState } from 'react';
 import {
   MAX_MAX_CHARACTERS,
@@ -15,6 +20,7 @@ import {
   formatMicroUsd,
   newRequestId,
   DEFAULT_POOL_LEVEL,
+  DEFAULT_POOL_COUNTS,
   MAX_POOL_TOTAL_QUESTIONS,
   MAX_TEACHER_GUIDANCE_CHARS,
   POOL_LEVEL_OPTIONS,
@@ -94,12 +100,13 @@ export function AiPoolGenerationDialog({
   const isNewPool = existingPool === null;
   const existingCount = existingPool?.questions.length ?? 0;
 
+  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
   const [phase, setPhase] = useState<Phase>('configure');
   const [level, setLevel] = useState<PoolLevel>(DEFAULT_POOL_LEVEL);
   const [counts, setCounts] = useState<CountsDraft>({
-    aperta: '3',
-    chiusa_singola: '3',
-    chiusa_multipla: '0',
+    aperta: String(DEFAULT_POOL_COUNTS.aperta),
+    chiusa_singola: String(DEFAULT_POOL_COUNTS.chiusa_singola),
+    chiusa_multipla: String(DEFAULT_POOL_COUNTS.chiusa_multipla),
   });
   const [guidance, setGuidance] = useState('');
   const [preview, setPreview] = useState<AiPoolPreviewResult | null>(null);
@@ -177,6 +184,7 @@ export function AiPoolGenerationDialog({
 
   function currentRequest(): AiPoolContentRequest {
     return buildPoolContentRequest({
+      modelProfile,
       requestId: requestIdRef.current,
       level,
       counts: {
@@ -330,17 +338,13 @@ export function AiPoolGenerationDialog({
       {/* 1) CONFIGURAZIONE */}
       {phase === 'configure' && (
         <div className={styles.config}>
-          {/* POOL-ROLLOUT-01 — profilo qualificato, informativo e non interattivo. */}
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>Profilo modello</span>
-            <div className={styles.fixedProfile} aria-label="Profilo modello: Quality">
-              <span className={styles.fixedProfileName}>Quality</span>
-              <span className={styles.choiceMeta}>
-                Qualità validata per la generazione dei pool.
-              </span>
-            </div>
-          </div>
-
+          <AiModelProfileField
+            value={modelProfile}
+            onChange={(value) => {
+              setModelProfile(value);
+              invalidateEstimate();
+            }}
+          />
           {/* Stile del pool */}
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-pool-level-label">

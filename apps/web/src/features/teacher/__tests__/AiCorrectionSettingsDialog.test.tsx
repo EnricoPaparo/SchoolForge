@@ -58,7 +58,7 @@ describe('AiCorrectionSettingsDialog (TWU-02)', () => {
         .value,
     ).toBe('Premia il metodo.');
     // The technical model id is shown as small metadata (informational, not a price).
-    expect(screen.getByText('gpt-5.4-nano-2026-03-17')).toBeTruthy();
+    expect(screen.getByText('gpt-5.6-luna')).toBeTruthy();
     const gradingMode = screen.getByLabelText('Stile di valutazione');
     expect(gradingMode.getAttribute('aria-describedby')).toBeNull();
     fireEvent.change(gradingMode, { target: { value: 'compassionate' } });

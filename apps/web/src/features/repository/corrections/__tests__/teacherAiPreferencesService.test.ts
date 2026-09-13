@@ -43,11 +43,11 @@ beforeEach(() => {
 });
 
 describe('loadTeacherAiPreferences (TWU-02 fail-closed)', () => {
-  it('absent document → application defaults (quality/balanced/empty)', async () => {
+  it('absent document → application defaults (economy/balanced/empty)', async () => {
     absent();
     expect(await loadTeacherAiPreferences(OWNER, db)).toEqual(DEFAULT_TEACHER_AI_PREFERENCES);
     expect(DEFAULT_TEACHER_AI_PREFERENCES).toEqual({
-      modelProfile: 'quality',
+      modelProfile: 'economy',
       gradingMode: 'balanced',
       teacherGuidance: '',
     });

@@ -76,11 +76,11 @@ export function gradingModeDescription(mode: GradingMode): string {
 /**
  * TWU-02 — profilo modello **chiuso**. Il client sceglie solo `economy`/`quality`
  * e **mai** un model ID o un listino: la risoluzione profilo → modello/listino è
- * esclusivamente server-side. `quality` è il default (su DEV il runtime è Luna).
+ * esclusivamente server-side. `economy` (Luna) è il default; Quality seleziona Sol.
  */
 export type ModelProfile = 'economy' | 'quality';
 
-export const DEFAULT_MODEL_PROFILE: ModelProfile = 'quality';
+export const DEFAULT_MODEL_PROFILE: ModelProfile = 'economy';
 
 /**
  * Opzioni mostrate nel dialog. `modelId` è il **nome tecnico** del modello
@@ -96,13 +96,13 @@ export const MODEL_PROFILE_OPTIONS: readonly {
   {
     value: 'economy',
     label: 'Economico',
-    modelId: 'gpt-5.4-nano-2026-03-17',
+    modelId: 'gpt-5.6-luna',
     description: 'Costo inferiore.',
   },
   {
     value: 'quality',
     label: 'Qualità',
-    modelId: 'gpt-5.6-luna',
+    modelId: 'gpt-5.6-sol',
     description: 'Feedback più approfonditi, costo maggiore.',
   },
 ];

@@ -1,7 +1,7 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  resolveContentModel,
   validateAiContentRequest,
   type LessonDepth,
   type LessonRequest,
@@ -280,7 +280,7 @@ export function buildLessonTuneExecutionPlan(
 ): LessonTuneExecutionPlan {
   if (!LESSON_TUNE_PLAN_SPLITS.includes(split)) throw new Error('Split benchmark non supportato.');
   const maxAttempts = maxAttemptsForPolicy(DEFAULT_OPENAI_RETRY_POLICY);
-  const { model, priceListVersion } = resolveContentModel(modelProfile);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(modelProfile);
   const scenarios = selectLessonTuneScenarios(dataset, split).map((scenario) => {
     const estimate = estimateContentCost(
       buildLessonTuneRequest(scenario, modelProfile),

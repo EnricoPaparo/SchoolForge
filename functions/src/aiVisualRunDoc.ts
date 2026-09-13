@@ -4,6 +4,8 @@ import { AI_CONTENT_RUN_TTL_MS, timestampToMillis } from './aiContentCore.js';
 import {
   AI_VISUAL_CONTRACT_VERSION,
   AI_VISUAL_SERVER_CONFIG,
+  AI_VISUAL_LEGACY_SERVER_CONFIG,
+  type AiVisualServerConfig,
   AiVisualError,
   decodeVisualDataUri,
   inspectWebp,
@@ -45,7 +47,7 @@ export interface StoredAiVisualRun {
   contractVersion: typeof AI_VISUAL_CONTRACT_VERSION;
   status: AiVisualRunStatus;
   inputHash: string;
-  config: typeof AI_VISUAL_SERVER_CONFIG;
+  config: AiVisualServerConfig;
   leaseExecutionId: string;
   leaseExpiresAtMs: number;
   budget: StoredAiVisualBudget;
@@ -123,10 +125,11 @@ export function hasExactRecursiveValue(actual: unknown, expected: unknown): bool
   return typeof actual === typeof expected && Object.is(actual, expected);
 }
 
-export function isExactAiVisualServerConfig(
-  value: unknown,
-): value is typeof AI_VISUAL_SERVER_CONFIG {
-  return hasExactRecursiveValue(value, AI_VISUAL_SERVER_CONFIG);
+export function isExactAiVisualServerConfig(value: unknown): value is AiVisualServerConfig {
+  return (
+    hasExactRecursiveValue(value, AI_VISUAL_SERVER_CONFIG) ||
+    hasExactRecursiveValue(value, AI_VISUAL_LEGACY_SERVER_CONFIG)
+  );
 }
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -267,7 +270,7 @@ export function parseVisualRunDocument(
     contractVersion: AI_VISUAL_CONTRACT_VERSION,
     status,
     inputHash: data.inputHash,
-    config: AI_VISUAL_SERVER_CONFIG,
+    config: data.config,
     leaseExecutionId: data.leaseExecutionId,
     leaseExpiresAtMs,
     budget,

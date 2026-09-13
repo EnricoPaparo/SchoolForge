@@ -1,12 +1,9 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  resolveContentModel,
-  validateAiContentRequest,
-  type VisualProposalRequest,
-} from './aiContentCore.js';
+import { validateAiContentRequest, type VisualProposalRequest } from './aiContentCore.js';
 import { estimateContentCost } from './aiContentCost.js';
 import { estimateVisualCost } from './aiVisualCore.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
@@ -288,7 +285,7 @@ export function buildVisualQualityExecutionPlan(
 ): VisualQualityExecutionPlan {
   const scenarios = selectVisualQualityScenarios(dataset, split);
   const attempts = maxAttemptsForPolicy(DEFAULT_OPENAI_RETRY_POLICY);
-  const { model, priceListVersion } = resolveContentModel('quality');
+  const { model, priceListVersion } = resolveBenchmarkContentModel('quality');
   let proposalEstimate = 0;
   let proposalCap = 0;
   for (const scenario of scenarios) {

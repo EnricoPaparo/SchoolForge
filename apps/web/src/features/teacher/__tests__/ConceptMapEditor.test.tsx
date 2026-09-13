@@ -161,7 +161,7 @@ describe('generazione', () => {
 
     expect(screen.getByRole('dialog', { name: 'Genera mappa concettuale con IA' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /Economy/ })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe(
+    expect(screen.getByRole('radio', { name: /Economy/ }).getAttribute('aria-checked')).toBe(
       'true',
     );
   });
@@ -222,13 +222,13 @@ describe('sessioni indipendenti', () => {
     expect({ ...viewArg, requestId: null }).toEqual({ ...editArg, requestId: null });
   });
 
-  it('ogni nuova apertura riparte da Quality anche dopo una scelta Economy annullata', () => {
+  it('ogni nuova apertura riparte da Economy anche dopo una scelta Quality annullata', () => {
     setup({ initialConceptMap: MAP });
     fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    fireEvent.click(screen.getByRole('radio', { name: /Economy/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Quality/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
     fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    expect(screen.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe(
+    expect(screen.getByRole('radio', { name: /Economy/ }).getAttribute('aria-checked')).toBe(
       'true',
     );
   });

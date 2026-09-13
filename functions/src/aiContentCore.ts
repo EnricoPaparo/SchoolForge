@@ -277,14 +277,12 @@ export interface ConceptMapRequest {
  * riferimenti Storage, e **nessun hash dichiarato dal client** — `sourceBodyHash`
  * sarà calcolato server-side dall'esatto `lessonBody` quando servirà (VE-03).
  *
- * Il profilo è **fisso a `quality`**: questa fase produce un giudizio che il
- * docente approva e che poi autorizza una spesa in immagini. Un giudizio
- * economico che sbaglia costa più di quanto risparmi.
+ * Il profilo chiuso Economy/Quality è scelto dal docente e propagato a questa fase.
  */
 export interface VisualProposalRequest {
   kind: 'visual_proposal';
   requestId: string;
-  modelProfile: 'quality';
+  modelProfile: ModelProfile;
   titolo: string;
   sottotitolo: string | null;
   difficolta: string;
@@ -318,7 +316,7 @@ export interface VisualPlanProposalQuantity {
  * MULTI-VISUAL-02 — proposta coordinata multi-immagine (roadmap §8.3).
  *
  * Stesso payload didattico di `VisualProposalRequest` (identità della
- * lezione e corpo salvato autorevoli, profilo fisso a `quality`), esteso con
+ * lezione e corpo salvato autorevoli, profilo selezionato dal docente), esteso con
  * `quantity`: il tetto `ceiling` che delimita l'array Structured Output
  * 0..ceiling. Nessun dato studente, nessun path Storage, nessun testo
  * client-autorevole — gli heading enumerati (indice+testo) sono derivati
@@ -327,7 +325,7 @@ export interface VisualPlanProposalQuantity {
 export interface VisualPlanProposalRequest {
   kind: 'visual_plan_proposal';
   requestId: string;
-  modelProfile: 'quality';
+  modelProfile: ModelProfile;
   titolo: string;
   sottotitolo: string | null;
   difficolta: string;
@@ -814,7 +812,7 @@ function parseProfile(value: unknown): ModelProfile {
  */
 function validateAiContentRequestWithPolicy(
   input: unknown,
-  policy: 'runtime' | 'offline_pool_benchmark',
+  _policy: 'runtime' | 'offline_pool_benchmark',
 ): AiContentRequest {
   if (!isPlainObject(input)) {
     throw new AiContentError('invalid_input', 'Payload mancante o non valido.');
@@ -835,7 +833,7 @@ function validateAiContentRequestWithPolicy(
 
   // MULTI-VISUAL-02 — proposta coordinata: stesso payload didattico della
   // proposta visuale singola, esteso da `quantity`. Validata prima di tutto
-  // il resto, come le altre fasi testuali fisse a `quality`.
+  // il resto, come le altre fasi testuali.
   if (input.kind === 'visual_plan_proposal') {
     assertNoExtraKeys(input, [
       'kind',
@@ -851,12 +849,6 @@ function validateAiContentRequestWithPolicy(
       'lessonBody',
       'quantity',
     ]);
-    if (input.modelProfile !== 'quality') {
-      throw new AiContentError(
-        'invalid_input',
-        'La proposta coordinata è disponibile solo con il profilo quality.',
-      );
-    }
     if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
       throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
     }
@@ -866,7 +858,7 @@ function validateAiContentRequestWithPolicy(
     return enforceTotalRequestSize({
       kind: 'visual_plan_proposal',
       requestId,
-      modelProfile: 'quality',
+      modelProfile: parseProfile(input.modelProfile),
       titolo: parseRequiredText(input.titolo, 'Titolo', MAX_TITLE_CHARS),
       sottotitolo: parseTitle(input.sottotitolo, 'Sottotitolo'),
       difficolta: parseRequiredText(input.difficolta, 'Difficoltà', MAX_DIFFICOLTA_CHARS),
@@ -881,8 +873,7 @@ function validateAiContentRequestWithPolicy(
     });
   }
 
-  // VISUAL-ENRICHMENT-01 — proposta visuale: payload chiuso, profilo fisso a
-  // `quality`, nessun hash dichiarato dal client. Validato **prima** di
+  // VISUAL-ENRICHMENT-01 — proposta visuale: payload e profilo chiusi, nessun hash dichiarato dal client. Validato **prima** di
   // qualunque altra cosa nella callable, quindi prima di provider, stima,
   // prenotazione, run e scritture.
   if (input.kind === 'visual_proposal') {
@@ -899,15 +890,6 @@ function validateAiContentRequestWithPolicy(
       'udaContext',
       'lessonBody',
     ]);
-    // Il profilo è verificato come letterale, non tramite il parser condiviso:
-    // `economy` è un valore *valido* per gli altri kind, quindi il parser lo
-    // accetterebbe e il rifiuto arriverebbe più tardi, o non arriverebbe.
-    if (input.modelProfile !== 'quality') {
-      throw new AiContentError(
-        'invalid_input',
-        'La proposta visuale è disponibile solo con il profilo quality.',
-      );
-    }
     if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
       throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
     }
@@ -917,7 +899,7 @@ function validateAiContentRequestWithPolicy(
     return enforceTotalRequestSize({
       kind: 'visual_proposal',
       requestId,
-      modelProfile: 'quality',
+      modelProfile: parseProfile(input.modelProfile),
       titolo: parseRequiredText(input.titolo, 'Titolo', MAX_TITLE_CHARS),
       sottotitolo: parseTitle(input.sottotitolo, 'Sottotitolo'),
       difficolta: parseRequiredText(input.difficolta, 'Difficoltà', MAX_DIFFICOLTA_CHARS),
@@ -956,15 +938,6 @@ function validateAiContentRequestWithPolicy(
   const modelProfile = parseProfile(input.modelProfile);
 
   if (input.kind === 'pool') {
-    // POOL-ROLLOUT-01 — il Gate qualitativo qualifica esclusivamente Quality.
-    // Nessun fallback: Economy viene rifiutato prima di guidance, stima,
-    // configurazione runtime, budget, run, provider o scritture.
-    if (policy === 'runtime' && modelProfile !== 'quality') {
-      throw new AiContentError(
-        'invalid_input',
-        'La generazione dei pool richiede il profilo Quality.',
-      );
-    }
     const teacherGuidance = parseGuidance(input.teacherGuidance);
     assertNoExtraKeys(input, [
       'kind',
@@ -1081,7 +1054,7 @@ function validateAiContentRequestWithPolicy(
 
 /**
  * Porta autorevole usata dalle callable: applica tutti i vincoli runtime,
- * incluso Quality obbligatorio per i pool.
+ * con entrambi i profili disponibili per tutti i tipi di contenuto.
  */
 export function validateAiContentRequest(input: unknown): AiContentRequest {
   return validateAiContentRequestWithPolicy(input, 'runtime');

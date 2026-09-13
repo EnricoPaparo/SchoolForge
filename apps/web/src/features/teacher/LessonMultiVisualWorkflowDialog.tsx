@@ -1,3 +1,8 @@
+import { AiModelProfileField } from './AiModelProfileField.js';
+import {
+  DEFAULT_POOL_MODEL_PROFILE,
+  type PoolModelProfile,
+} from '../repository/pools/aiContentClient.js';
 import { useMemo, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
 import {
@@ -85,7 +90,8 @@ export function LessonMultiVisualWorkflowDialog({
   onClose: () => void;
 }) {
   const client = useMemo(() => createMultiVisualClient(functions), [functions]);
-  const requestId = useMemo(() => crypto.randomUUID(), []);
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
   const freeSlots = Math.max(0, Math.min(3 - existingCount, 3));
   const ceiling = Math.max(1, freeSlots) as 1 | 2 | 3;
   const [quantityMode, setQuantityMode] = useState<'auto' | 'exact'>('auto');
@@ -186,6 +192,7 @@ export function LessonMultiVisualWorkflowDialog({
       const input: MultiVisualPlanRequest = {
         ...identity,
         requestId,
+        modelProfile,
         quantity: { mode: quantityMode, ceiling: selectedCeiling },
         replacementAssetId: replaceAssetId,
         titolo: lessonAi.titolo,
@@ -370,6 +377,14 @@ export function LessonMultiVisualWorkflowDialog({
     >
       {!plan ? (
         <>
+          <AiModelProfileField
+            value={modelProfile}
+            onChange={(value) => {
+              if (busy) return;
+              setModelProfile(value);
+              setRequestId(crypto.randomUUID());
+            }}
+          />
           <p>
             {freeSlots > 0
               ? `Puoi aggiungere fino a ${freeSlots} immagini. «Stima immagini» prepara subito le proposte; dopo la revisione un unico comando genera e applica quelle confermate.`

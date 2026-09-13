@@ -1,10 +1,10 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { actualCostMicroUsd } from './aiCorrectionCost.js';
-import { resolveContentModel } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { AI_VISUAL_PROPOSAL_PROMPT_VERSION } from './aiContentPrompt.js';
 import {
@@ -509,7 +509,7 @@ async function runProposal(params: {
   monotonicMs: () => number;
 }): Promise<VisualBenchmarkPhaseRecord> {
   const request = buildVisualProposalRequest(params.scenario);
-  const { model, priceListVersion } = resolveContentModel('quality');
+  const { model, priceListVersion } = resolveBenchmarkContentModel('quality');
   const start = params.monotonicMs();
   const outcome = await params.provider.generate(request, model);
   const durationMs = Math.max(0, params.monotonicMs() - start);

@@ -150,7 +150,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(payload.verificationId).toBe(VERIFICATION_ID);
     expect(payload.submissionIds).toEqual(SUBMISSION_IDS);
     expect(payload.gradingMode).toBe('balanced'); // default
-    expect(payload.modelProfile).toBe('quality'); // TWU-02 default profile
+    expect(payload.modelProfile).toBe('economy'); // application default
     // The client never sends a raw model id or price list.
     expect('model' in payload).toBe(false);
     expect('priceListVersion' in payload).toBe(false);
@@ -695,15 +695,15 @@ describe('AiBatchCorrectionDialog — TWU-02 model profile + preferences prefill
     );
     await calculatePreview();
     const firstRequestId = previewSpy.mock.calls[0][0].requestId;
-    expect(previewSpy.mock.calls[0][0].modelProfile).toBe('quality'); // default
+    expect(previewSpy.mock.calls[0][0].modelProfile).toBe('economy'); // default
     // After the estimate the criteria are frozen; editing requires "Modifica
     // impostazioni", which returns to configure and mints a new requestId.
     fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
-    fireEvent.change(screen.getByLabelText('Profilo modello'), { target: { value: 'economy' } });
+    fireEvent.change(screen.getByLabelText('Profilo modello'), { target: { value: 'quality' } });
 
     await calculatePreview();
     const secondPayload = previewSpy.mock.calls[1][0];
-    expect(secondPayload.modelProfile).toBe('economy');
+    expect(secondPayload.modelProfile).toBe('quality');
     // A new requestId: same requestId with a different profile could never be reused.
     expect(secondPayload.requestId).not.toBe(firstRequestId);
   });

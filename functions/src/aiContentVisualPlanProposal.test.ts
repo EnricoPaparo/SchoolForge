@@ -178,9 +178,9 @@ describe('payload della proposta coordinata', () => {
     ).toThrow(AiContentError);
   });
 
-  it('rifiuta un profilo diverso da quality', () => {
-    expect(() => validateAiContentRequest(planPayload({ modelProfile: 'economy' }))).toThrow(
-      AiContentError,
+  it('accetta economy senza cambiare profilo', () => {
+    expect(validateAiContentRequest(planPayload({ modelProfile: 'economy' })).modelProfile).toBe(
+      'economy',
     );
   });
 
@@ -855,7 +855,7 @@ describe('documento run', () => {
         attemptTimeoutMs: 60_000,
         maxApplicationRetries: 1,
       },
-      maxOperationCostMicroUsd: 250_000,
+      maxOperationCostMicroUsd: 5_000_000,
       dailyBudgetMicroUsd: 1_000_000,
       monthlyBudgetMicroUsd: 5_000_000,
       configVersion: 'test',

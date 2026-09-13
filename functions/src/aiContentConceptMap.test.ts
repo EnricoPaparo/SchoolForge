@@ -251,13 +251,10 @@ describe('non-regressione di pool e lezione', () => {
     expect(poolRequest().modelProfile).toBe('quality');
   });
 
-  it('il pool rifiuta Economy senza fallback', () => {
-    expect(() =>
-      validateAiContentRequest({
-        ...poolRequest(),
-        modelProfile: 'economy',
-      }),
-    ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
+  it('il pool accetta Economy senza fallback', () => {
+    expect(
+      validateAiContentRequest({ ...poolRequest(), modelProfile: 'economy' }).modelProfile,
+    ).toBe('economy');
   });
 
   it('la lezione accetta ancora economy', () => {

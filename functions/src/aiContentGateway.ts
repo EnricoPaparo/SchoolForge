@@ -12,6 +12,7 @@
  * key, chiamata reale o deploy in questa PR.
  */
 
+import { exportCurrentContentPrompt } from './aiContentPromptExport.js';
 import { randomUUID } from 'node:crypto';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
@@ -412,7 +413,7 @@ function readOpenAiSecret(): string | undefined {
   }
 }
 
-type AiContentGatewayPhase = 'preview' | 'generate';
+type AiContentGatewayPhase = 'preview' | 'generate' | 'prompt_export';
 
 /**
  * One terminal, aggregation-friendly event per callable. The schema is
@@ -520,4 +521,12 @@ export const aiContentGenerate = onCall(
         ports,
       );
     }),
+);
+
+/** Owner-only, no secret binding, model invocation, budget reservation or write. */
+export const aiContentPromptExport = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, (request) =>
+  runContentGateway('prompt_export', async (database) => {
+    await requireOwner(request, database);
+    return exportCurrentContentPrompt(request.data);
+  }),
 );

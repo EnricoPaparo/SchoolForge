@@ -1,10 +1,11 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { actualCostMicroUsd } from './aiCorrectionCost.js';
-import { resolveContentModel, type LessonRequest } from './aiContentCore.js';
+import { type LessonRequest } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { validateLessonProposal } from './aiContentValidation.js';
 import {
@@ -136,7 +137,7 @@ export async function runLessonManualQualityCli(
 
   const provider = deps.createProvider(apiKey);
   const generatedAt = deps.now().toISOString();
-  const { model, priceListVersion } = resolveContentModel(LESSON_MANUAL_QUALITY_PROFILE);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(LESSON_MANUAL_QUALITY_PROFILE);
   const samples: Array<LessonManualGeneratedSample & { body: string }> = [];
   for (const [index, scenario] of dataset.scenarios.entries()) {
     const request = buildLessonManualRequest(scenario, index);

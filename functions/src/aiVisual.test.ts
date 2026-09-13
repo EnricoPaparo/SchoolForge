@@ -7,6 +7,7 @@ import {
   AI_VISUAL_MODEL,
   AI_VISUAL_PROMPT_VERSION,
   AI_VISUAL_SERVER_CONFIG,
+  AI_VISUAL_LEGACY_SERVER_CONFIG,
   AI_VISUAL_WEBP_QUALITY_ATTEMPTS,
   AiVisualError,
   SCHOOLFORGE_SKETCH_PREAMBLE,
@@ -101,7 +102,7 @@ describe('aiVisualCore — contratto chiuso e identità', () => {
     expect(buildSchoolForgeSketchPrompt(REQUEST.subject)).toBe(expected);
     expect(buildSchoolForgeSketchPrompt(REQUEST.subject)).not.toContain(OWNER);
     expect(buildImageApiRequest(REQUEST.subject)).toEqual({
-      model: 'gpt-image-2-2026-04-21',
+      model: 'gpt-image-2.5-sunburst-2026-09-08',
       prompt: expected,
       n: 1,
       size: '1024x1024',
@@ -443,6 +444,15 @@ async function completedRun(): Promise<StoredAiVisualRun & { image: StoredAiVisu
 }
 
 describe('visualRuns — parser chiuso e replay byte-identico', () => {
+  it('preserves historical model, prices and accounting on parse/serialization', async () => {
+    const run = { ...(await completedRun()), config: AI_VISUAL_LEGACY_SERVER_CONFIG };
+    const parsed = parseVisualRunDocument(
+      serializeVisualRun(run),
+      computeVisualRunId(OWNER, REQUEST_ID),
+    );
+    expect(parsed).toEqual(run);
+    expect(parsed?.config.model).toBe('gpt-image-2-2026-04-21');
+  });
   it('round-trips a valid completed document and rejects extra fields or tampered bytes', async () => {
     const run = await completedRun();
     const raw = serializeVisualRun(run);
@@ -838,7 +848,7 @@ describe('gateway structure — secret boundary and privacy', () => {
   it('contains no env file or local key read, and keeps lesson identity out of the run', () => {
     expect(source).not.toContain('process.env.OPENAI_API_KEY');
     expect(source).not.toContain('deleteFiles');
-    expect(AI_VISUAL_MODEL).toBe('gpt-image-2-2026-04-21');
+    expect(AI_VISUAL_MODEL).toBe('gpt-image-2.5-sunburst-2026-09-08');
 
     // Il payload passato al provider è composto dal solo subject validato.
     const engine = readFileSync(new URL('./aiVisualEngine.ts', import.meta.url), 'utf8');

@@ -15,8 +15,8 @@
  */
 
 import {
-  DEFAULT_PRICE_LIST_VERSION,
-  OPENAI_PRODUCTION_MODEL,
+  OPENAI_RUNTIME_SOL_MODEL,
+  OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
@@ -39,24 +39,23 @@ export interface ModelProfileResolution {
  * listino accoppiato. Coerente con l'allowlist runtime (`RUNTIME_MODEL_PRICE_LISTS`).
  */
 export const MODEL_PROFILE_RESOLUTIONS: Readonly<Record<ModelProfile, ModelProfileResolution>> = {
-  economy: { model: OPENAI_PRODUCTION_MODEL, priceListVersion: DEFAULT_PRICE_LIST_VERSION },
   quality: {
+    model: OPENAI_RUNTIME_SOL_MODEL,
+    priceListVersion: OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION,
+  },
+  economy: {
     model: OPENAI_RUNTIME_LUNA_MODEL,
     priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
   },
 };
 
-/**
- * Default applicativo quando non è deducibile dalla config runtime (es. modalità
- * mock, dove non esiste un modello reale). Su DEV la config runtime punta a Luna
- * ⇒ profilo effettivo `quality`; questo default lo rispecchia.
- */
-export const DEFAULT_MODEL_PROFILE: ModelProfile = 'quality';
+/** Application default for new operations, independent of runtime configuration. */
+export const DEFAULT_MODEL_PROFILE: ModelProfile = 'economy';
 
 /**
  * Esito **puro** della validazione del campo `modelProfile` inviato dal client.
  * `ok: true` con `profile: undefined` significa **campo assente** (il chiamante
- * applicherà il default legacy dal modello runtime). `ok: false` è fail-closed
+ * applicherà il default applicativo Economy). `ok: false` è fail-closed
  * (nessun fallback silenzioso): sta al chiamante tradurlo in `invalid_input`.
  */
 export type ModelProfileFieldResult =

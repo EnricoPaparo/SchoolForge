@@ -10,29 +10,29 @@ import {
   resolveModelProfile,
 } from './aiCorrectionModelProfile.js';
 import {
-  DEFAULT_PRICE_LIST_VERSION,
-  OPENAI_PRODUCTION_MODEL,
-  OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_LUNA_MODEL,
+  OPENAI_RUNTIME_SOL_MODEL,
+  OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
 
 describe('TWU-02 — closed model profiles', () => {
-  it('economy resolves to nano model + nano price list', () => {
+  it('economy resolves to Luna model + standard price list', () => {
     expect(MODEL_PROFILE_RESOLUTIONS.economy).toEqual({
-      model: OPENAI_PRODUCTION_MODEL,
-      priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
     });
     expect(resolveModelProfile('economy')).toEqual({
-      model: OPENAI_PRODUCTION_MODEL,
-      priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
     });
   });
 
-  it('quality resolves to Luna model + Luna standard price list (LUNA-PRICES-20260912)', () => {
+  it('quality resolves to Sol model + standard price list', () => {
     expect(resolveModelProfile('quality')).toEqual({
-      model: OPENAI_RUNTIME_LUNA_MODEL,
-      priceListVersion: OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
+      model: OPENAI_RUNTIME_SOL_MODEL,
+      priceListVersion: OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION,
     });
   });
 
@@ -43,8 +43,8 @@ describe('TWU-02 — closed model profiles', () => {
     }
   });
 
-  it('the default profile is quality (DEV runtime = Luna)', () => {
-    expect(DEFAULT_MODEL_PROFILE).toBe('quality');
+  it('the default profile is economy', () => {
+    expect(DEFAULT_MODEL_PROFILE).toBe('economy');
   });
 
   describe('parseModelProfileField (pure, result-based)', () => {
@@ -74,8 +74,8 @@ describe('TWU-02 — closed model profiles', () => {
 
   describe('profileForModel (legacy default derivation)', () => {
     it('maps a known model back to its profile', () => {
-      expect(profileForModel(OPENAI_PRODUCTION_MODEL)).toBe('economy');
-      expect(profileForModel(OPENAI_RUNTIME_LUNA_MODEL)).toBe('quality');
+      expect(profileForModel(OPENAI_RUNTIME_LUNA_MODEL)).toBe('economy');
+      expect(profileForModel(OPENAI_RUNTIME_SOL_MODEL)).toBe('quality');
     });
     it('returns null for an unmapped model (no silent fallback)', () => {
       expect(profileForModel('some-other-model')).toBeNull();

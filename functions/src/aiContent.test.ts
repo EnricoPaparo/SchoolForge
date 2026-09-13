@@ -150,12 +150,12 @@ describe('validateAiContentRequest', () => {
       /Profilo/,
     );
   });
-  it('rejects Economy for pools without a silent Quality fallback', () => {
-    expect(() => validateAiContentRequest(poolPayload({ modelProfile: 'economy' }))).toThrowError(
-      expect.objectContaining({ code: 'invalid_input' }),
+  it('accepts Economy for runtime pools without changing the selection', () => {
+    expect(validateAiContentRequest(poolPayload({ modelProfile: 'economy' })).modelProfile).toBe(
+      'economy',
     );
   });
-  it('rejects Economy before parsing the rest of the pool payload', () => {
+  it('validates the rest of an Economy pool payload', () => {
     expect(() =>
       validateAiContentRequest(
         poolPayload({
@@ -164,9 +164,9 @@ describe('validateAiContentRequest', () => {
           counts: { aperta: 0, chiusa_singola: 0, chiusa_multipla: 0 },
         }),
       ),
-    ).toThrow(/richiede il profilo Quality/);
+    ).toThrow();
   });
-  it('allows Economy only through the explicitly offline benchmark validator', () => {
+  it('also allows Economy through the offline benchmark validator', () => {
     const request = validateAiContentRequestForOfflinePoolBenchmark(
       poolPayload({ modelProfile: 'economy' }),
     );

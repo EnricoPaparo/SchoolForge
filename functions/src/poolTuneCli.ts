@@ -1,3 +1,4 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -5,7 +6,7 @@ import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { actualCostMicroUsd } from './aiCorrectionCost.js';
 import type { ModelProfile } from './aiCorrectionModelProfile.js';
-import { AiContentError, resolveContentModel, type PoolRequest } from './aiContentCore.js';
+import { AiContentError, type PoolRequest } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { AI_POOL_PROMPT_VERSION } from './aiContentPrompt.js';
 import { validatePoolProposal, type ValidatedPoolProposal } from './aiContentValidation.js';
@@ -180,7 +181,7 @@ async function generateOne(
 ): Promise<
   (PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }) | PoolTuneRejectedSample
 > {
-  const { model, priceListVersion } = resolveContentModel(modelProfile);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(modelProfile);
   const outcome = await provider.generate(request, model);
   if (outcome.status !== 'ok') {
     throw new Error(`${scenarioId}/${modelProfile}: provider non disponibile (${outcome.phase}).`);
@@ -448,7 +449,7 @@ function expectedActualCost(
   if (sample.priorBillingRisk || sample.inputTokens === null || sample.outputTokens === null) {
     return null;
   }
-  const { model, priceListVersion } = resolveContentModel(sample.modelProfile);
+  const { model, priceListVersion } = resolveBenchmarkContentModel(sample.modelProfile);
   return actualCostMicroUsd(sample.inputTokens, sample.outputTokens, priceListVersion, model);
 }
 

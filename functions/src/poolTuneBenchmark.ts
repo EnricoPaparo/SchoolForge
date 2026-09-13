@@ -1,9 +1,9 @@
+import { resolveBenchmarkContentModel } from './aiBenchmarkModelProfile.js';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  resolveContentModel,
   validateAiContentRequestForOfflinePoolBenchmark,
   type PoolCounts,
   type PoolLevel,
@@ -312,7 +312,7 @@ export function buildPoolTuneExecutionPlan(
   const maxAttempts = maxAttemptsForPolicy(DEFAULT_OPENAI_RETRY_POLICY);
   const scenarios = selectPoolTuneRuns(dataset, phase, modelProfile).map(
     ({ scenario, modelProfile: scenarioProfile }) => {
-      const { model, priceListVersion } = resolveContentModel(scenarioProfile);
+      const { model, priceListVersion } = resolveBenchmarkContentModel(scenarioProfile);
       const request = buildPoolTuneRequest(scenario, scenarioProfile);
       const estimate = estimateContentCost(request, model, priceListVersion, maxAttempts);
       return {

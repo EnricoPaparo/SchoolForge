@@ -84,6 +84,7 @@ export function validateVisualPlanQuantitySelection(value: unknown): VisualPlanQ
  * dei limiti di lunghezza/forma già dichiarati in `aiContentCore.ts`.
  */
 export interface VisualPlanAuthorizeInput {
+  modelProfile?: 'economy' | 'quality';
   requestId: string;
   programId: string;
   importId: string;
@@ -135,7 +136,19 @@ function parseAuthorizeQuantity(value: unknown): VisualPlanQuantitySelection {
 
 export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuthorizeInput {
   const root = asRecord(value, 'Richiesta di autorizzazione del piano non valida.');
-  assertExactKeys(root, AUTHORIZE_INPUT_KEYS, 'Richiesta di autorizzazione del piano');
+  assertExactKeys(
+    root,
+    root.modelProfile === undefined
+      ? AUTHORIZE_INPUT_KEYS
+      : [...AUTHORIZE_INPUT_KEYS, 'modelProfile'],
+    'Richiesta di autorizzazione del piano',
+  );
+  if (
+    root.modelProfile !== undefined &&
+    root.modelProfile !== 'economy' &&
+    root.modelProfile !== 'quality'
+  )
+    invalidAuthorizeInput('Profilo modello non valido.');
 
   const requestId = root.requestId;
   if (!isUuidV4(requestId)) invalidAuthorizeInput('requestId non valido.');
@@ -160,6 +173,7 @@ export function validateVisualPlanAuthorizeInput(value: unknown): VisualPlanAuth
     lessonId,
     quantity,
     replacementAssetId,
+    modelProfile: root.modelProfile ?? 'economy',
     titolo: root.titolo,
     sottotitolo: root.sottotitolo,
     difficolta: root.difficolta,
@@ -854,6 +868,7 @@ const PLAN_STATUSES: readonly VisualPlanStatus[] = [
 ];
 
 export interface VisualPlanRun {
+  modelProfile?: 'economy' | 'quality';
   contractVersion: typeof VISUAL_PLAN_CONTRACT_VERSION;
   ownerUid: string;
   programId: string;
@@ -1118,7 +1133,18 @@ export function deriveVisualPlanTerminalStatus(
  */
 export function validateVisualPlanRun(value: unknown): VisualPlanRun {
   const root = asRecord(value, 'Piano visivo non valido.', 'corrupted_state');
-  assertExactKeys(root, PLAN_KEYS, 'Piano visivo', 'corrupted_state');
+  assertExactKeys(
+    root,
+    root.modelProfile === undefined ? PLAN_KEYS : [...PLAN_KEYS, 'modelProfile'],
+    'Piano visivo',
+    'corrupted_state',
+  );
+  if (
+    root.modelProfile !== undefined &&
+    root.modelProfile !== 'economy' &&
+    root.modelProfile !== 'quality'
+  )
+    invalidSlot('Profilo modello non valido.');
 
   if (root.contractVersion !== VISUAL_PLAN_CONTRACT_VERSION) {
     throw new AiVisualMultiError('corrupted_state', 'contractVersion del piano non valida.');
@@ -1265,6 +1291,9 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
   });
 
   return {
+    ...(root.modelProfile === undefined
+      ? {}
+      : { modelProfile: root.modelProfile as 'economy' | 'quality' }),
     contractVersion: VISUAL_PLAN_CONTRACT_VERSION,
     ownerUid,
     programId,
@@ -1286,4 +1315,17 @@ function parsePersistedVisualPlanRun(root: Record<string, unknown>): VisualPlanR
     updatedAt,
     expireAt,
   };
+}
+
+/** Legacy active proposals must not spend an old reservation with today's profile mapping. */
+export function assertCurrentVisualProposalProfile(plan: VisualPlanRun): void {
+  if (
+    plan.modelProfile === undefined &&
+    (plan.status === 'authorized' || plan.status === 'proposing')
+  ) {
+    throw new AiVisualMultiError(
+      'visual_plan_expired',
+      'Questo piano usa una configurazione precedente. Avvia un nuovo piano per continuare.',
+    );
+  }
 }
