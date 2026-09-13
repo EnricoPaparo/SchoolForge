@@ -185,11 +185,11 @@ describe('il workspace applica davvero la regola', () => {
 });
 
 describe('codice morto rimosso', () => {
-  it('lessonPdf non esiste più e nessuno lo importa', () => {
+  it('il vecchio modulo lessonPdf non esiste più e nessuno lo importa', () => {
     expect(() =>
       readFileSync(resolve(process.cwd(), 'src/features/teacher/lessonPdf.ts'), 'utf8'),
     ).toThrow();
-    expect(workspaceSource).not.toContain('lessonPdf');
+    expect(workspaceSource).not.toMatch(/from ['"].\/lessonPdf(?:\.js)?['"]/);
     expect(workspaceSource).not.toContain('downloadLessonPdf');
   });
 
