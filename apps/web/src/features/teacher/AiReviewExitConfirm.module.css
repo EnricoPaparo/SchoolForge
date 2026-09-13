@@ -1,0 +1,17 @@
+.desktopLabel {
+  display: none;
+}
+@media (min-width: 48rem) {
+  .desktopLabel {
+    display: inline;
+  }
+  .mobileLabel {
+    display: none;
+  }
+  .actions {
+    flex-wrap: nowrap;
+  }
+  .actions button {
+    white-space: nowrap;
+  }
+}

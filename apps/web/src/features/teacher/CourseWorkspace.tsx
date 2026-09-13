@@ -1,3 +1,4 @@
+import { LessonPdfProgressDialog, type LessonPdfProgress } from './LessonPdfProgressDialog.js';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -387,7 +388,7 @@ function CourseWorkspaceSession({
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [lessonPdfBusy, setLessonPdfBusy] = useState(false);
-  const [lessonPdfError, setLessonPdfError] = useState<string | null>(null);
+  const [lessonPdfProgress, setLessonPdfProgress] = useState<LessonPdfProgress | null>(null);
   const lessonPdfBusyRef = useRef(false);
   const [visualDialogOpen, setVisualDialogOpen] = useState(false);
   const [multiVisualDialogOpen, setMultiVisualDialogOpen] = useState(false);
@@ -1204,13 +1205,13 @@ function CourseWorkspaceSession({
           ? [selectedLesson]
           : [];
     if (!lessons.length) {
-      setLessonPdfError('Questa UDA non contiene lezioni salvate.');
+      setLessonPdfProgress({ phase: 'error', message: 'Questa UDA non contiene lezioni salvate.' });
       return;
     }
     const udaName = selectedUda ? resolveUdaTitle(selectedUda.dir, selectedUda.titolo) : '';
     lessonPdfBusyRef.current = true;
     setLessonPdfBusy(true);
-    setLessonPdfError(null);
+    setLessonPdfProgress({ phase: 'running', message: 'Preparazione del PDF…' });
     try {
       const {
         loadSavedLessonPdf,
@@ -1219,8 +1220,17 @@ function CourseWorkspaceSession({
         pdfFileName,
         downloadLessonBlob,
       } = await import('./lessonPdfExport.js');
-      const load = (lesson: LessonItem) =>
-        loadSavedLessonPdf({
+      let completedLessons = 0;
+      const load = (lesson: LessonItem) => {
+        completedLessons += 1;
+        if (mountedRef.current)
+          setLessonPdfProgress({
+            phase: 'running',
+            message: asZip
+              ? `Preparazione lezione ${completedLessons} di ${lessons.length}: ${resolveLessonTitle(lesson.filename, lesson.titolo).title}`
+              : 'Preparazione del PDF…',
+          });
+        return loadSavedLessonPdf({
           lesson,
           programId: card.programId,
           importId: card.activeImportId!,
@@ -1229,6 +1239,7 @@ function CourseWorkspaceSession({
           storage,
           functions,
         });
+      };
       if (asZip) {
         const blob = await buildLessonPdfZip(lessons, load);
         downloadLessonBlob(blob, `${pdfFileName(udaName)}.zip`);
@@ -1236,11 +1247,17 @@ function CourseWorkspaceSession({
         const content = await load(lessons[0]!);
         downloadLessonBlob(await renderLessonPdf(content), `${pdfFileName(content.title)}.pdf`);
       }
+      if (mountedRef.current)
+        setLessonPdfProgress({
+          phase: 'complete',
+          message: asZip ? 'Archivio pronto: download avviato.' : 'PDF pronto: download avviato.',
+        });
     } catch (error) {
       if (mountedRef.current)
-        setLessonPdfError(
-          `Esportazione PDF annullata. ${error instanceof Error ? error.message : 'Impossibile completare il download.'}`,
-        );
+        setLessonPdfProgress({
+          phase: 'error',
+          message: `Esportazione PDF annullata. ${error instanceof Error ? error.message : 'Impossibile completare il download.'}`,
+        });
     } finally {
       lessonPdfBusyRef.current = false;
       if (mountedRef.current) setLessonPdfBusy(false);
@@ -2087,15 +2104,13 @@ function CourseWorkspaceSession({
         </p>
       )}
 
-      {lessonPdfBusy && (
-        <p role="status" aria-busy="true">
-          Preparazione PDF in corso…
-        </p>
-      )}
-      {lessonPdfError && (
-        <p role="alert" className="text-error">
-          {lessonPdfError}
-        </p>
+      {lessonPdfProgress && (
+        <LessonPdfProgressDialog
+          progress={lessonPdfProgress}
+          onClose={() => {
+            if (!lessonPdfBusyRef.current) setLessonPdfProgress(null);
+          }}
+        />
       )}
       {programPdfBusy && (
         <p aria-busy="true" className="state-loading">

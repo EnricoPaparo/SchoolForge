@@ -59,9 +59,12 @@ export function AiBatchCorrectionDialog({
   defaults?: AiCorrectionSettingsValue;
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
-  // TWU-02 — i tre criteri vivono in un unico oggetto controllato, precompilato
-  // dalle preferenze del docente. La modifica locale NON tocca le preferenze.
-  const [settings, setSettings] = useState<AiCorrectionSettingsValue>(defaults);
+  // Each new correction starts Economy even if an older preference saved Quality.
+  // Other teacher criteria are preserved; local choices do not change preferences.
+  const [settings, setSettings] = useState<AiCorrectionSettingsValue>(() => ({
+    ...defaults,
+    modelProfile: DEFAULT_MODEL_PROFILE,
+  }));
   const [preview, setPreview] = useState<AiPreviewResult | null>(null);
   const [result, setResult] = useState<AiRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);

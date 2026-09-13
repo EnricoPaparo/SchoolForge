@@ -447,7 +447,7 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
     fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
     await screen.findByRole('button', { name: 'Usa questa bozza' });
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+    fireEvent.click(screen.getByRole('button', { name: /Continua/ }));
 
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Usa questa bozza' })).toBeTruthy();
@@ -489,7 +489,7 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
 
     const alert = screen.getByRole('alertdialog');
     expect(alert.textContent).toContain('Abbandonare la proposta?');
-    const keep = screen.getByRole('button', { name: 'Continua la revisione' });
+    const keep = screen.getByRole('button', { name: /Continua/ });
     expect(document.activeElement).toBe(keep);
   });
 });
@@ -522,7 +522,7 @@ describe('AiLessonGenerationDialog — back to configure from review', () => {
   it('offers all three explicit actions in the confirmation', async () => {
     await reviewWithCustomConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
-    for (const name of ['Continua la revisione', 'Modifica configurazione', 'Abbandona e chiudi']) {
+    for (const name of [/Continua/, 'Modifica configurazione', 'Abbandona e chiudi']) {
       expect(screen.getByRole('button', { name })).toBeTruthy();
     }
   });

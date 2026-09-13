@@ -644,7 +644,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
 });
 
 describe('AiBatchCorrectionDialog — TWU-02 model profile + preferences prefill', () => {
-  it('prefills the three criteria from the teacher defaults and sends modelProfile in the payload', async () => {
+  it('starts Economy even with saved Quality, preserving other teacher defaults', async () => {
     const { callables, previewSpy } = makeCallables(
       () => Promise.resolve(makePreview()),
       () => Promise.resolve(makeRun()),
@@ -657,7 +657,7 @@ describe('AiBatchCorrectionDialog — TWU-02 model profile + preferences prefill
         onClose={() => {}}
         onApplied={() => {}}
         defaults={{
-          modelProfile: 'economy',
+          modelProfile: 'quality',
           gradingMode: 'rigorous',
           teacherGuidance: 'Sii severo.',
         }}

@@ -52,6 +52,8 @@ export interface AiRuntimeLimits {
   maxEstimatedTokensPerOperation: number;
   maxProviderConcurrency: number;
   attemptTimeoutMs: number;
+  /** Lesson generation only; absent uses the bounded 180s lesson policy. */
+  lessonAttemptTimeoutMs?: number;
   maxApplicationRetries: number;
 }
 
@@ -112,6 +114,8 @@ function parseLimits(raw: unknown): AiRuntimeLimits | null {
   const maxEstimatedTokensPerOperation = posInt(r.maxEstimatedTokensPerOperation, 300_000);
   const maxProviderConcurrency = posInt(r.maxProviderConcurrency, 3);
   const attemptTimeoutMs = posInt(r.attemptTimeoutMs, 60_000);
+  const lessonAttemptTimeoutMs =
+    r.lessonAttemptTimeoutMs === undefined ? undefined : posInt(r.lessonAttemptTimeoutMs, 180_000);
   // 0 retry è ammesso; 1 è l'hard ceiling DEV.
   const maxApplicationRetries =
     typeof r.maxApplicationRetries === 'number' &&
@@ -127,6 +131,7 @@ function parseLimits(raw: unknown): AiRuntimeLimits | null {
     maxEstimatedTokensPerOperation === null ||
     maxProviderConcurrency === null ||
     attemptTimeoutMs === null ||
+    lessonAttemptTimeoutMs === null ||
     maxApplicationRetries === null
   ) {
     return null;
@@ -138,6 +143,7 @@ function parseLimits(raw: unknown): AiRuntimeLimits | null {
     maxEstimatedTokensPerOperation,
     maxProviderConcurrency,
     attemptTimeoutMs,
+    ...(lessonAttemptTimeoutMs === undefined ? {} : { lessonAttemptTimeoutMs }),
     maxApplicationRetries,
   };
 }

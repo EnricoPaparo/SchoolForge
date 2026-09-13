@@ -46,6 +46,16 @@ const VALID_CONFIG_RAW = {
 };
 
 describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
+  it('accepts the optional lesson timeout only within the 180 second ceiling', () => {
+    const withTimeout = (value: unknown) => ({
+      ...VALID_CONFIG_RAW,
+      limits: { ...VALID_CONFIG_RAW.limits, lessonAttemptTimeoutMs: value },
+    });
+    expect(parseAiRuntimeConfig(withTimeout(180_000))?.limits.lessonAttemptTimeoutMs).toBe(180_000);
+    for (const value of [0, -1, 180_001, '180000', null])
+      expect(parseAiRuntimeConfig(withTimeout(value))).toBeNull();
+    expect(parseAiRuntimeConfig(VALID_CONFIG_RAW)?.limits.lessonAttemptTimeoutMs).toBeUndefined();
+  });
   it('parses a fully valid, enabled config', () => {
     const cfg = parseAiRuntimeConfig(VALID_CONFIG_RAW);
     expect(cfg).not.toBeNull();
