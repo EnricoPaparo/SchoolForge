@@ -17,6 +17,7 @@ export function exportCurrentContentPrompt(input: unknown): { prompt: string } {
         ? buildPoolPrompt(request)
         : buildConceptMapPrompt(request);
   const boundary = built.user.indexOf('<<<');
+  if (boundary < 0) throw new Error('Prompt export material boundary changed');
   let instructions = built.user.slice(0, boundary);
   const materials = built.user.slice(boundary);
   const format: string[] = [];

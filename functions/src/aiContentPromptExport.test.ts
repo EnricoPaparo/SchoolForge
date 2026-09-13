@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   exportCurrentContentPrompt,
   RESPONSE_FORMAT_HEADING,
   POOL_FORMAT_EXAMPLE,
 } from './aiContentPromptExport.js';
+import * as promptBuilders from './aiContentPrompt.js';
 import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
 import { parsePool } from '@schoolforge/lesson-contract';
 import { validateAiContentRequest } from './aiContentCore.js';
@@ -103,6 +104,24 @@ describe('current prompt export and immutable visual presets', () => {
   );
   it('provides an importer-compatible pool example', () => {
     expect(parsePool(POOL_FORMAT_EXAMPLE).ok).toBe(true);
+  });
+  it('fails closed when the trusted material boundary is missing', () => {
+    const builder = vi.spyOn(promptBuilders, 'buildConceptMapPrompt').mockReturnValueOnce({
+      system: 'Istruzioni',
+      user: 'Un nuovo builder senza delimitatori riconosciuti.',
+    });
+    try {
+      expect(() =>
+        exportCurrentContentPrompt({
+          kind: 'concept_map',
+          requestId: '11111111-1111-4111-8111-111111111111',
+          modelProfile: 'economy',
+          lessonBody: 'Una lezione corrente.',
+        }),
+      ).toThrow('Prompt export material boundary changed');
+    } finally {
+      builder.mockRestore();
+    }
   });
   it('rejects unsupported/invalid payloads without a provider', () => {
     expect(() => exportCurrentContentPrompt({ kind: 'other' })).toThrow();
