@@ -16,13 +16,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const workspace = readFileSync(resolve(__dirname, '../CourseWorkspace.tsx'), 'utf8');
 
 describe('voce di menu', () => {
-  it('vive nel menu Azioni del corso, subito dopo «Importa UDA»', () => {
+  it('vive nel sottomenu UDA del corso, prima di «Importa UDA»', () => {
     const menu = workspace.slice(
       workspace.indexOf('ariaLabel="Azioni corso"'),
       workspace.indexOf('Elimina corso'),
     );
     expect(menu).toContain('Importa struttura UDA');
-    expect(menu.indexOf('Importa UDA\n')).toBeLessThan(menu.indexOf('Importa struttura UDA'));
+    expect(menu).toContain('ActionsSubmenu label="UDA"');
+    expect(menu.indexOf('Importa struttura UDA')).toBeLessThan(menu.indexOf('Importa UDA\n'));
   });
 
   it('usa un’icona del set del progetto e apre il dialog dedicato', () => {

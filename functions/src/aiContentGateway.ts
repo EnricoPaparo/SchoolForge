@@ -73,23 +73,33 @@ export async function loadRuntimeConfig(database: Firestore): Promise<AiRuntimeC
 }
 
 /**
- * Policy retry dalla config runtime validata (ceiling DEV: retry ≤ 1, timeout
- * ≤ 60 s). Esportata per MULTI-VISUAL-03A: la lease TTL della chiamata
+ * Policy retry dalla config runtime validata (retry ≤ 1). Le lezioni hanno
+ * un timeout dedicato di default 180 s, configurabile entro lo stesso tetto;
+ * gli altri contenuti mantengono il limite di 60 s. Esportata per MULTI-VISUAL-03A: la lease TTL della chiamata
  * interna `generateContent` per `visual_plan_proposal` deve derivare dalla
  * stessa policy delle altre fasi testuali, non da un valore proprio.
  */
-export function retryPolicyFromConfig(config: AiRuntimeConfig | null): RetryPolicy {
-  if (!config) return DEFAULT_OPENAI_RETRY_POLICY;
+export function retryPolicyFromConfig(config: AiRuntimeConfig | null, kind?: string): RetryPolicy {
+  const attemptTimeoutMs =
+    kind === 'lesson'
+      ? (config?.limits.lessonAttemptTimeoutMs ?? 180_000)
+      : Math.max(
+          1,
+          Math.min(
+            DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
+            config?.limits.attemptTimeoutMs ?? DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
+          ),
+        );
   return {
     ...DEFAULT_OPENAI_RETRY_POLICY,
     maxRetries: Math.max(
       0,
-      Math.min(DEFAULT_OPENAI_RETRY_POLICY.maxRetries, config.limits.maxApplicationRetries),
+      Math.min(
+        DEFAULT_OPENAI_RETRY_POLICY.maxRetries,
+        config?.limits.maxApplicationRetries ?? DEFAULT_OPENAI_RETRY_POLICY.maxRetries,
+      ),
     ),
-    attemptTimeoutMs: Math.max(
-      1,
-      Math.min(DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs, config.limits.attemptTimeoutMs),
-    ),
+    attemptTimeoutMs,
   };
 }
 
@@ -175,8 +185,9 @@ export function createPorts(
   mode: AiContentMode,
   secret: string | undefined,
   withProvider: boolean,
+  kind?: string,
 ): AiContentPorts {
-  const policy = retryPolicyFromConfig(config);
+  const policy = retryPolicyFromConfig(config, kind);
   // Il provider è costruito **solo** per il percorso generate (`withProvider`), mai
   // per la preview: `selectContentProvider` ritorna `null` in preview e non tocca
   // il secret. In generate mode openai senza secret/transport →
@@ -491,10 +502,10 @@ export const aiContentGenerate = onCall(
   {
     region: SCHOOLFORGE_FUNCTION_REGION,
     secrets: [OPENAI_API_KEY],
-    // A cold start plus a long Quality response can legitimately exceed the
-    // platform default of 60 seconds. Keep this bounded and aligned with the
-    // visual generation slot; provider/runtime budgets stay unchanged.
-    timeoutSeconds: 120,
+    // Covers two 180s lesson attempts, hard-abort/backoff and finalization.
+    // Client deadline is 450s; lease uses the same per-kind provider policy.
+    // Retry count, output tokens and economic reservations are unchanged.
+    timeoutSeconds: 420,
   },
   (request) =>
     runContentGateway('generate', async (database, mode) => {
@@ -508,7 +519,7 @@ export const aiContentGenerate = onCall(
       const config = await loadRuntimeConfig(database);
       // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
       const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
-      const ports = createPorts(database, config, mode, secret, true);
+      const ports = createPorts(database, config, mode, secret, true, validated.kind);
       return await generateContent(
         validated,
         {
@@ -516,7 +527,7 @@ export const aiContentGenerate = onCall(
           nowMs: Date.now(),
           executionId: randomUUID(),
           mode,
-          leaseMs: computeContentLeaseTtlMs(retryPolicyFromConfig(config)),
+          leaseMs: computeContentLeaseTtlMs(retryPolicyFromConfig(config, validated.kind)),
         },
         ports,
       );

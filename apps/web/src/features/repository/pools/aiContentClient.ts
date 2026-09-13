@@ -191,6 +191,7 @@ export function createAiContentCallables(functions: Functions): AiContentCallabl
   const generateFn = httpsCallable<AiPoolContentRequest, AiPoolGenerateResult>(
     functions,
     'aiContentGenerate',
+    { timeout: 450_000 },
   );
   return {
     preview: async (req) => (await previewFn(req)).data,
@@ -509,6 +510,7 @@ export function createAiLessonCallables(functions: Functions): AiLessonCallables
   const generateFn = httpsCallable<AiLessonContentRequest, AiLessonGenerateResult>(
     functions,
     'aiContentGenerate',
+    { timeout: 450_000 },
   );
   return {
     preview: async (req) => (await previewFn(req)).data,

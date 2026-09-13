@@ -832,7 +832,7 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
       target: { value: 'Testo modificato dal docente' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+    fireEvent.click(screen.getByRole('button', { name: /Continua/ }));
 
     expect(onClose).not.toHaveBeenCalled();
     expect((screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement).value).toBe(
@@ -887,7 +887,7 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     // Annuncio modale accessibile + tutte le azioni raggiungibili come button.
     const alert = screen.getByRole('alertdialog');
     expect(alert.textContent).toContain('Abbandonare la proposta?');
-    const keep = screen.getByRole('button', { name: 'Continua la revisione' });
+    const keep = screen.getByRole('button', { name: /Continua/ });
     const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
     expect(document.activeElement).toBe(keep);
     abandon.focus();
@@ -956,7 +956,7 @@ describe('AiPoolGenerationDialog — back to configure from review', () => {
   it('offers all three explicit actions in the confirmation', async () => {
     await reviewWithCustomConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
-    for (const name of ['Continua la revisione', 'Modifica configurazione', 'Abbandona e chiudi']) {
+    for (const name of [/Continua/, 'Modifica configurazione', 'Abbandona e chiudi']) {
       expect(screen.getByRole('button', { name })).toBeTruthy();
     }
   });
@@ -1124,7 +1124,7 @@ describe('AiPoolGenerationDialog — direct apply (no redundant confirmation)', 
 
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
     expect(screen.getByRole('alertdialog', { name: 'Abbandonare la proposta?' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+    fireEvent.click(screen.getByRole('button', { name: /Continua/ }));
     expect(screen.getByText('Spiega TCP')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
     expect(onApply).not.toHaveBeenCalled();

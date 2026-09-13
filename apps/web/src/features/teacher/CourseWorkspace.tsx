@@ -1,3 +1,4 @@
+import { LessonPdfProgressDialog, type LessonPdfProgress } from './LessonPdfProgressDialog.js';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -10,6 +11,7 @@ import { db, functions, storage } from '../../lib/firebase.js';
 import { PdfModuleLoadError, reloadCurrentPage } from '../../lib/pdfModuleLoader.js';
 import { createProgramNotesCleanupCallable } from '../repository/programs/programNotesCleanupClient.js';
 import {
+  IconCopy,
   IconBookOpen,
   IconArrowUpDown,
   IconCircleQuestion,
@@ -142,6 +144,7 @@ import {
   type CopyPromptKind,
 } from '../repository/pools/aiContentPromptClient.js';
 import { ActionsMenu } from './ActionsMenu.js';
+import { ActionsSubmenu } from './ActionsSubmenu.js';
 
 const NO_STATUS: EditStatus = { busy: false, error: null, saved: false };
 const MOBILE_QUERY = '(max-width: 640px)';
@@ -387,7 +390,7 @@ function CourseWorkspaceSession({
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [lessonPdfBusy, setLessonPdfBusy] = useState(false);
-  const [lessonPdfError, setLessonPdfError] = useState<string | null>(null);
+  const [lessonPdfProgress, setLessonPdfProgress] = useState<LessonPdfProgress | null>(null);
   const lessonPdfBusyRef = useRef(false);
   const [visualDialogOpen, setVisualDialogOpen] = useState(false);
   const [multiVisualDialogOpen, setMultiVisualDialogOpen] = useState(false);
@@ -399,7 +402,15 @@ function CourseWorkspaceSession({
   const [collapsedUdas, setCollapsedUdas] = useState<Set<string>>(new Set());
 
   // Lesson content is loaded on demand, only when a lesson is selected.
-  const [promptCopyStatus, setPromptCopyStatus] = useState('');
+  const [promptCopyStatus, setPromptCopyStatus] = useState<{
+    message: string;
+    kind: 'success' | 'error';
+  } | null>(null);
+  useEffect(() => {
+    if (!promptCopyStatus) return;
+    const timer = setTimeout(() => setPromptCopyStatus(null), 5000);
+    return () => clearTimeout(timer);
+  }, [promptCopyStatus]);
   const promptCopyBusy = useRef(false);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
@@ -1204,13 +1215,13 @@ function CourseWorkspaceSession({
           ? [selectedLesson]
           : [];
     if (!lessons.length) {
-      setLessonPdfError('Questa UDA non contiene lezioni salvate.');
+      setLessonPdfProgress({ phase: 'error', message: 'Questa UDA non contiene lezioni salvate.' });
       return;
     }
     const udaName = selectedUda ? resolveUdaTitle(selectedUda.dir, selectedUda.titolo) : '';
     lessonPdfBusyRef.current = true;
     setLessonPdfBusy(true);
-    setLessonPdfError(null);
+    setLessonPdfProgress({ phase: 'running', message: 'Preparazione del PDF…' });
     try {
       const {
         loadSavedLessonPdf,
@@ -1219,8 +1230,17 @@ function CourseWorkspaceSession({
         pdfFileName,
         downloadLessonBlob,
       } = await import('./lessonPdfExport.js');
-      const load = (lesson: LessonItem) =>
-        loadSavedLessonPdf({
+      let completedLessons = 0;
+      const load = (lesson: LessonItem) => {
+        completedLessons += 1;
+        if (mountedRef.current)
+          setLessonPdfProgress({
+            phase: 'running',
+            message: asZip
+              ? `Preparazione lezione ${completedLessons} di ${lessons.length}: ${resolveLessonTitle(lesson.filename, lesson.titolo).title}`
+              : 'Preparazione del PDF…',
+          });
+        return loadSavedLessonPdf({
           lesson,
           programId: card.programId,
           importId: card.activeImportId!,
@@ -1229,6 +1249,7 @@ function CourseWorkspaceSession({
           storage,
           functions,
         });
+      };
       if (asZip) {
         const blob = await buildLessonPdfZip(lessons, load);
         downloadLessonBlob(blob, `${pdfFileName(udaName)}.zip`);
@@ -1236,11 +1257,17 @@ function CourseWorkspaceSession({
         const content = await load(lessons[0]!);
         downloadLessonBlob(await renderLessonPdf(content), `${pdfFileName(content.title)}.pdf`);
       }
+      if (mountedRef.current)
+        setLessonPdfProgress({
+          phase: 'complete',
+          message: asZip ? 'Archivio pronto: download avviato.' : 'PDF pronto: download avviato.',
+        });
     } catch (error) {
       if (mountedRef.current)
-        setLessonPdfError(
-          `Esportazione PDF annullata. ${error instanceof Error ? error.message : 'Impossibile completare il download.'}`,
-        );
+        setLessonPdfProgress({
+          phase: 'error',
+          message: `Esportazione PDF annullata. ${error instanceof Error ? error.message : 'Impossibile completare il download.'}`,
+        });
     } finally {
       lessonPdfBusyRef.current = false;
       if (mountedRef.current) setLessonPdfBusy(false);
@@ -2042,7 +2069,7 @@ function CourseWorkspaceSession({
       return;
     promptCopyBusy.current = true;
     setMenuOpen(false);
-    setPromptCopyStatus('Preparazione del prompt…');
+    setPromptCopyStatus(null);
     try {
       const prompt = fetchCurrentPrompt(
         functions,
@@ -2059,11 +2086,12 @@ function CourseWorkspaceSession({
       } else {
         await navigator.clipboard.writeText(await prompt);
       }
-      setPromptCopyStatus('Prompt copiato negli appunti.');
+      setPromptCopyStatus({ message: 'Prompt copiato negli appunti.', kind: 'success' });
     } catch (error) {
-      setPromptCopyStatus(
-        error instanceof Error ? error.message : 'Impossibile copiare il prompt.',
-      );
+      setPromptCopyStatus({
+        message: error instanceof Error ? error.message : 'Impossibile copiare il prompt.',
+        kind: 'error',
+      });
     } finally {
       promptCopyBusy.current = false;
     }
@@ -2073,7 +2101,20 @@ function CourseWorkspaceSession({
 
   return (
     <section aria-label={`Corso — ${card.title}`} className={styles.workspace}>
-      {promptCopyStatus && <p role="status">{promptCopyStatus}</p>}
+      {promptCopyStatus && (
+        <div
+          role={promptCopyStatus.kind === 'error' ? 'alert' : 'status'}
+          aria-atomic="true"
+          className={`${styles.promptToast} ${promptCopyStatus.kind === 'error' ? styles.promptToastError : styles.promptToastSuccess}`}
+        >
+          {promptCopyStatus.kind === 'error' ? (
+            <IconTriangleAlert size={20} />
+          ) : (
+            <IconFileCheck size={20} />
+          )}
+          <span>{promptCopyStatus.message}</span>
+        </div>
+      )}
       <header className={styles.header}>
         <button type="button" className={styles.backBtn} onClick={backRun}>
           {backLabel}
@@ -2087,15 +2128,13 @@ function CourseWorkspaceSession({
         </p>
       )}
 
-      {lessonPdfBusy && (
-        <p role="status" aria-busy="true">
-          Preparazione PDF in corso…
-        </p>
-      )}
-      {lessonPdfError && (
-        <p role="alert" className="text-error">
-          {lessonPdfError}
-        </p>
+      {lessonPdfProgress && (
+        <LessonPdfProgressDialog
+          progress={lessonPdfProgress}
+          onClose={() => {
+            if (!lessonPdfBusyRef.current) setLessonPdfProgress(null);
+          }}
+        />
       )}
       {programPdfBusy && (
         <p aria-busy="true" className="state-loading">
@@ -2359,24 +2398,42 @@ function CourseWorkspaceSession({
                     <IconUpload size={15} />
                     Importa ZIP
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport}
-                    onClick={() => openDialog({ kind: 'importUda' })}
-                  >
-                    <IconUpload size={15} />
-                    Importa UDA
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport}
-                    onClick={() => openDialog({ kind: 'importUdaStructure' })}
-                  >
-                    <IconLayers size={15} />
-                    Importa struttura UDA
-                  </button>
+                  <ActionsSubmenu label="UDA" icon={<IconLayers size={15} />}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => openDialog({ kind: 'importUdaStructure' })}
+                    >
+                      <IconLayers size={15} />
+                      Importa struttura UDA
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => openDialog({ kind: 'importUda' })}
+                    >
+                      <IconUpload size={15} />
+                      Importa UDA
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => openDialog({ kind: 'newUda' })}
+                    >
+                      <IconPlus size={15} />
+                      Nuova UDA
+                    </button>
+                    {card.hasImport && tree && tree.udas.length > 1 && (
+                      <button type="button" role="menuitem" onClick={enterOrganize}>
+                        <IconArrowUpDown size={15} />
+                        Organizza UDA
+                      </button>
+                    )}
+                  </ActionsSubmenu>
+
                   <button
                     type="button"
                     role="menuitem"
@@ -2386,42 +2443,45 @@ function CourseWorkspaceSession({
                     <IconDownload size={15} />
                     Esporta ZIP
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport}
-                    onClick={() => void handleProgramExport('complete', 'md')}
-                  >
-                    <IconFileText size={15} />
-                    Programma completo (MD)
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport || programPdfBusy}
-                    onClick={() => void handleProgramExport('complete', 'pdf')}
-                  >
-                    <IconFileCheck size={15} />
-                    Programma completo (PDF)
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport}
-                    onClick={() => void handleProgramExport('completed', 'md')}
-                  >
-                    <IconFileText size={15} />
-                    Programma svolto (MD)
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport || programPdfBusy}
-                    onClick={() => void handleProgramExport('completed', 'pdf')}
-                  >
-                    <IconFileCheck size={15} />
-                    Programma svolto (PDF)
-                  </button>
+                  <ActionsSubmenu label="Scarica programma" icon={<IconDownload size={15} />}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => void handleProgramExport('complete', 'md')}
+                    >
+                      <IconFileText size={15} />
+                      Programma completo — Markdown
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport || programPdfBusy}
+                      onClick={() => void handleProgramExport('complete', 'pdf')}
+                    >
+                      <IconFileCheck size={15} />
+                      Programma completo — PDF
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => void handleProgramExport('completed', 'md')}
+                    >
+                      <IconFileText size={15} />
+                      Programma svolto — Markdown
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport || programPdfBusy}
+                      onClick={() => void handleProgramExport('completed', 'pdf')}
+                    >
+                      <IconFileCheck size={15} />
+                      Programma svolto — PDF
+                    </button>
+                  </ActionsSubmenu>
+
                   <button
                     type="button"
                     role="menuitem"
@@ -2438,21 +2498,7 @@ function CourseWorkspaceSession({
                     <IconBookOpen size={15} />
                     Modifica metadati corso
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!card.hasImport}
-                    onClick={() => openDialog({ kind: 'newUda' })}
-                  >
-                    <IconPlus size={15} />
-                    Nuova UDA
-                  </button>
-                  {card.hasImport && tree && tree.udas.length > 1 && (
-                    <button type="button" role="menuitem" onClick={enterOrganize}>
-                      <IconArrowUpDown size={15} />
-                      Organizza UDA
-                    </button>
-                  )}
+
                   <button
                     type="button"
                     role="menuitem"
@@ -2604,29 +2650,6 @@ function CourseWorkspaceSession({
                   ariaLabel="Azioni lezione"
                   ref={menuRef}
                 >
-                  {(
-                    [
-                      ['lesson', 'Copia prompt lezione'],
-                      ['concept_map', 'Copia prompt mappa'],
-                      ['pool', 'Copia prompt pool'],
-                    ] as const
-                  ).map(([kind, label]) => (
-                    <button
-                      key={kind}
-                      type="button"
-                      role="menuitem"
-                      disabled={
-                        lessonLoading ||
-                        lessonContent === null ||
-                        anyDirty ||
-                        editingContent ||
-                        editingInfo
-                      }
-                      onClick={() => void copyCurrentPrompt(kind)}
-                    >
-                      {label}
-                    </button>
-                  ))}
                   <button
                     type="button"
                     role="menuitem"
@@ -2721,6 +2744,32 @@ function CourseWorkspaceSession({
                       </span>
                     )}
                   </button>
+                  <ActionsSubmenu label="Copia prompt" icon={<IconCopy size={15} />}>
+                    {(
+                      [
+                        ['lesson', 'Lezione', IconBookOpen],
+                        ['concept_map', 'Mappa', IconLayers],
+                        ['pool', 'Pool', IconCircleQuestion],
+                      ] as const
+                    ).map(([kind, label, Icon]) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        role="menuitem"
+                        disabled={
+                          lessonLoading ||
+                          lessonContent === null ||
+                          anyDirty ||
+                          editingContent ||
+                          editingInfo
+                        }
+                        onClick={() => void copyCurrentPrompt(kind)}
+                      >
+                        <Icon size={15} />
+                        {label}
+                      </button>
+                    ))}
+                  </ActionsSubmenu>
                   <button
                     type="button"
                     role="menuitem"

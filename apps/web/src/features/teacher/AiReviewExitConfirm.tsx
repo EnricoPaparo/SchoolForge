@@ -1,4 +1,5 @@
 import { DialogShell } from '../../components/DialogShell.js';
+import styles from './AiReviewExitConfirm.module.css';
 
 /**
  * Conferma condivisa per l'uscita dalla review di una proposta IA.
@@ -16,11 +17,17 @@ export function AiReviewExitConfirm({
   onAbandon: () => void;
 }) {
   return (
-    <DialogShell title="Abbandonare la proposta?" role="alertdialog" onCancel={onKeepReviewing}>
+    <DialogShell
+      title="Abbandonare la proposta?"
+      role="alertdialog"
+      onCancel={onKeepReviewing}
+      variant="review-confirm"
+    >
       <p>Le modifiche non applicate andranno perse.</p>
-      <div className="dialog-actions">
+      <div className={`dialog-actions ${styles.actions}`}>
         <button type="button" onClick={onKeepReviewing}>
-          Continua la revisione
+          <span className={styles.desktopLabel}>Continua</span>
+          <span className={styles.mobileLabel}>Continua la revisione</span>
         </button>
         <button type="button" onClick={onBackToConfigure}>
           Modifica configurazione

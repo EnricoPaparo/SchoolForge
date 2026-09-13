@@ -1,7 +1,8 @@
 import { useRef } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ActionsMenu } from '../ActionsMenu.js';
+import { ActionsSubmenu } from '../ActionsSubmenu.js';
 
 // jsdom has no layout: stub the trigger rect, the viewport size and the menu
 // box so the pure positioning math is deterministic.
@@ -65,6 +66,33 @@ Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
 });
 
 describe('ActionsMenu — portal + positioning', () => {
+  it('focuses only after the portal becomes visible and does not steal focus on resize', () => {
+    setViewport(1000, 800);
+    mockAnchorRect({ left: 50, top: 80, bottom: 100, right: 130 });
+    const nativeFocus = HTMLButtonElement.prototype.focus;
+    const focusVisibility: string[] = [];
+    vi.spyOn(HTMLButtonElement.prototype, 'focus').mockImplementation(function (
+      this: HTMLButtonElement,
+      options,
+    ) {
+      const menu = this.closest<HTMLElement>('[role="menu"]');
+      if (menu) {
+        focusVisibility.push(menu.style.visibility);
+        // jsdom allows focus on hidden nodes; reproduce the browser restriction.
+        if (menu.style.visibility === 'hidden') return;
+      }
+      nativeFocus.call(this, options);
+    });
+    render(<Harness />);
+    expect(focusVisibility).toEqual(['visible']);
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Azione' }));
+    const trigger = screen.getByRole('button', { name: 'Azioni' });
+    trigger.focus();
+    fireEvent.resize(window);
+    expect(document.activeElement).toBe(trigger);
+    expect(focusVisibility).toEqual(['visible']);
+  });
+
   it('renders into document.body, not next to the trigger', () => {
     setViewport(1000, 800);
     mockAnchorRect({ left: 50, top: 80, bottom: 100, right: 130, width: 80, height: 20 });
@@ -102,5 +130,65 @@ describe('ActionsMenu — portal + positioning', () => {
     const menu = screen.getByRole('menu') as HTMLElement;
     // left = min(950, 1000 − 200 − 8) = 792.
     expect(menu.style.left).toBe('792px');
+  });
+});
+
+function SubmenuHarness({ onAction = () => {} }: { onAction?: () => void }) {
+  const anchor = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={anchor}>Azioni</button>
+      <ActionsMenu open anchorRef={anchor} ariaLabel="Azioni" onAction={onAction}>
+        <button role="menuitem">Prima</button>
+        <ActionsSubmenu label="Copia prompt" icon={<span aria-hidden="true">+</span>}>
+          <button role="menuitem">Lezione</button>
+          <button role="menuitem" disabled>
+            Mappa
+          </button>
+          <button role="menuitem">Pool</button>
+        </ActionsSubmenu>
+      </ActionsMenu>
+    </>
+  );
+}
+
+describe('ActionsSubmenu navigation', () => {
+  it('keeps parent open, skips disabled children with arrows and restores trigger on Escape', () => {
+    setViewport(1000, 800);
+    const action = vi.fn();
+    render(<SubmenuHarness onAction={action} />);
+    const trigger = screen.getByRole('menuitem', { name: 'Copia prompt' });
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(action).not.toHaveBeenCalled();
+    const lesson = screen.getByRole('menuitem', { name: 'Lezione' });
+    lesson.focus();
+    fireEvent.keyDown(lesson, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Pool' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('menu', { name: 'Copia prompt' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+  it('opens a touch next level inside the same panel with a back button', () => {
+    setViewport(390, 800);
+    render(<SubmenuHarness />);
+    const root = screen.getByRole('menu', { name: 'Azioni' });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copia prompt' }));
+    const submenu = within(root).getByRole('menu', { name: 'Copia prompt' });
+    expect(submenu.style.left).toBe('');
+    fireEvent.click(within(submenu).getByRole('button', { name: 'Indietro da Copia prompt' }));
+    expect(screen.queryByRole('menu', { name: 'Copia prompt' })).toBeNull();
+  });
+  it('clamps a desktop flyout at the right and bottom viewport edges and selects its action', () => {
+    setViewport(1000, 800);
+    mockAnchorRect({ left: 850, right: 990, top: 750, bottom: 780 });
+    const action = vi.fn();
+    render(<SubmenuHarness onAction={action} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copia prompt' }));
+    const submenu = screen.getByRole('menu', { name: 'Copia prompt' });
+    expect(submenu.style.left).toBe('650px');
+    expect(submenu.style.top).toBe('492px');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Lezione' }));
+    expect(action).toHaveBeenCalledOnce();
   });
 });

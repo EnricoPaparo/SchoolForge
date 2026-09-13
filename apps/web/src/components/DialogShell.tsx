@@ -22,7 +22,7 @@ export type DialogShellProps = {
   children: ReactNode;
   onCancel: () => void;
   busy?: boolean;
-  variant?: 'default' | 'wide-scroll';
+  variant?: 'default' | 'wide-scroll' | 'review-confirm';
   closeOnBackdrop?: boolean;
   closeOnEscape?: boolean;
   role?: 'dialog' | 'alertdialog';
@@ -134,7 +134,7 @@ export function DialogShell({
     >
       <div
         ref={dialogRef}
-        className={`${styles.dialog} ${variant === 'wide-scroll' ? styles.dialogWideScroll : ''}`}
+        className={`${styles.dialog} ${variant === 'wide-scroll' ? styles.dialogWideScroll : ''} ${variant === 'review-confirm' ? styles.dialogReviewConfirm : ''}`}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}

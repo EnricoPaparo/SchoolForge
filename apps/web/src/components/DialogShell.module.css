@@ -21,8 +21,7 @@
   padding: 1.25rem;
   color: var(--color-text);
   background:
-    linear-gradient(145deg, rgb(255 255 255 / 3%), transparent 42%),
-    var(--color-surface-raised);
+    linear-gradient(145deg, rgb(255 255 255 / 3%), transparent 42%), var(--color-surface-raised);
   border: 0;
   border-radius: 0.9rem;
   box-shadow:
@@ -39,6 +38,12 @@
 
 .dialogWideScroll {
   width: min(100%, 35rem);
+}
+
+@media (min-width: 48rem) {
+  .dialogReviewConfirm {
+    width: min(100%, 38rem);
+  }
 }
 
 .dialogTitle {

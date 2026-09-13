@@ -260,7 +260,7 @@ describe('POOL-ROLLOUT-01 gateway fail-closed order', () => {
     const previewBlock = gatewaySource.slice(previewStart, generateStart);
     const generateBlock = gatewaySource.slice(generateStart);
     expect(previewBlock).not.toContain('timeoutSeconds');
-    expect(generateBlock).toContain('timeoutSeconds: 120');
+    expect(generateBlock).toContain('timeoutSeconds: 420');
   });
 
   it('emits one closed, privacy-minimal terminal telemetry schema for preview and generate', () => {
