@@ -382,6 +382,9 @@ function CourseWorkspaceSession({
   const programPdfBusyRef = useRef(false);
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lessonPdfBusy, setLessonPdfBusy] = useState(false);
+  const [lessonPdfError, setLessonPdfError] = useState<string | null>(null);
+  const lessonPdfBusyRef = useRef(false);
   const [visualDialogOpen, setVisualDialogOpen] = useState(false);
   const [multiVisualDialogOpen, setMultiVisualDialogOpen] = useState(false);
   const [completeLessonDialogOpen, setCompleteLessonDialogOpen] = useState(false);
@@ -1182,6 +1185,59 @@ function CourseWorkspaceSession({
       await exportZip(cardToProgram(card), storage, db);
     } catch {
       if (mountedRef.current) setWsError('Impossibile esportare il ZIP.');
+    }
+  }
+
+  async function handleLessonPdfExport(asZip: boolean) {
+    setMenuOpen(false);
+    if (lessonPdfBusyRef.current || !card.activeImportId) return;
+    const lessons =
+      asZip && selectedUda
+        ? (lessonsByUda.get(selectedUda.dir) ?? [])
+        : selectedLesson
+          ? [selectedLesson]
+          : [];
+    if (!lessons.length) {
+      setLessonPdfError('Questa UDA non contiene lezioni salvate.');
+      return;
+    }
+    const udaName = selectedUda ? resolveUdaTitle(selectedUda.dir, selectedUda.titolo) : '';
+    lessonPdfBusyRef.current = true;
+    setLessonPdfBusy(true);
+    setLessonPdfError(null);
+    try {
+      const {
+        loadSavedLessonPdf,
+        renderLessonPdf,
+        buildLessonPdfZip,
+        pdfFileName,
+        downloadLessonBlob,
+      } = await import('./lessonPdfExport.js');
+      const load = (lesson: LessonItem) =>
+        loadSavedLessonPdf({
+          lesson,
+          programId: card.programId,
+          importId: card.activeImportId!,
+          ownerUid,
+          db,
+          storage,
+          functions,
+        });
+      if (asZip) {
+        const blob = await buildLessonPdfZip(lessons, load);
+        downloadLessonBlob(blob, `${pdfFileName(udaName)}.zip`);
+      } else {
+        const content = await load(lessons[0]!);
+        downloadLessonBlob(await renderLessonPdf(content), `${pdfFileName(content.title)}.pdf`);
+      }
+    } catch (error) {
+      if (mountedRef.current)
+        setLessonPdfError(
+          `Esportazione PDF annullata. ${error instanceof Error ? error.message : 'Impossibile completare il download.'}`,
+        );
+    } finally {
+      lessonPdfBusyRef.current = false;
+      if (mountedRef.current) setLessonPdfBusy(false);
     }
   }
 
@@ -1988,6 +2044,16 @@ function CourseWorkspaceSession({
         </p>
       )}
 
+      {lessonPdfBusy && (
+        <p role="status" aria-busy="true">
+          Preparazione PDF in corso…
+        </p>
+      )}
+      {lessonPdfError && (
+        <p role="alert" className="text-error">
+          {lessonPdfError}
+        </p>
+      )}
       {programPdfBusy && (
         <p aria-busy="true" className="state-loading">
           Generazione PDF in corso…
@@ -2402,6 +2468,15 @@ function CourseWorkspaceSession({
                   <button
                     type="button"
                     role="menuitem"
+                    disabled={lessonPdfBusy}
+                    onClick={() => void handleLessonPdfExport(true)}
+                  >
+                    <IconDownload size={15} />
+                    {lessonPdfBusy ? 'Preparazione PDF…' : 'Scarica lezioni in PDF (.zip)'}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     onClick={() => openDialog({ kind: 'newLesson' })}
                   >
                     <IconPlus size={15} />
@@ -2486,6 +2561,15 @@ function CourseWorkspaceSession({
                   ariaLabel="Azioni lezione"
                   ref={menuRef}
                 >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={lessonPdfBusy}
+                    onClick={() => void handleLessonPdfExport(false)}
+                  >
+                    <IconDownload size={15} />
+                    {lessonPdfBusy ? 'Preparazione PDF…' : 'Scarica PDF'}
+                  </button>
                   <button
                     type="button"
                     role="menuitem"
