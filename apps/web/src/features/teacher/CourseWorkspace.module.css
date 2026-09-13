@@ -786,3 +786,65 @@
   margin: 0;
   word-break: break-word;
 }
+.submenuBranch > button > span {
+  flex: 1;
+}
+.submenuFlyout {
+  position: fixed;
+  z-index: 91;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+}
+.menu:has(> .submenuBranch > .submenuMobile) > :not(.submenuBranch:has(> .submenuMobile)) {
+  display: none;
+}
+.menu .submenuHiddenTrigger {
+  display: none;
+}
+.submenuMobile {
+  min-width: min(19rem, calc(100vw - 26px));
+}
+.submenuMobile button {
+  min-height: 44px;
+}
+.submenuHeading {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.25rem;
+  gap: 0.5rem;
+}
+.submenuHeading button {
+  width: auto;
+}
+.submenuHeading strong {
+  font-size: 0.875rem;
+}
+.menuPortal {
+  max-width: calc(100vw - 16px);
+}
+.promptToast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  color: white;
+}
+.promptToast svg {
+  flex-shrink: 0;
+}
+.promptToastSuccess {
+  background: #166534;
+}
+.promptToastError {
+  background: #b91c1c;
+}

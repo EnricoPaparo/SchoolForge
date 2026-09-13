@@ -10,6 +10,10 @@ import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
 import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
 import type * as PoolEditorServiceModule from '../../repository/pools/poolEditorService.js';
 
+const mockFetchCurrentPrompt = vi.fn();
+vi.mock('../../repository/pools/aiContentPromptClient.js', () => ({
+  fetchCurrentPrompt: (...args: unknown[]) => mockFetchCurrentPrompt(...args),
+}));
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
 const mockFetchLessonContent = vi.fn();
@@ -366,11 +370,19 @@ function clickMenuAction(
   action: string,
 ) {
   fireEvent.click(screen.getByRole('button', { name: context }));
+  if (context === 'Azioni corso' && /UDA/.test(action))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'UDA' }));
+  if (action.startsWith('Programma '))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Scarica programma' }));
   fireEvent.click(screen.getByRole('menuitem', { name: action }));
 }
 
 function openMenuAction(context: 'Azioni corso' | 'Azioni UDA' | 'Azioni lezione', action: string) {
   fireEvent.click(screen.getByRole('button', { name: context }));
+  if (context === 'Azioni corso' && /UDA/.test(action))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'UDA' }));
+  if (action.startsWith('Programma '))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Scarica programma' }));
   return screen.getByRole('menuitem', { name: action });
 }
 
@@ -1641,6 +1653,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Azioni UDA' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'UDA' }));
     expect(screen.getByRole('menuitem', { name: 'Nuova UDA' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
 
@@ -1951,7 +1964,7 @@ describe('CourseWorkspace — Programma completo export', () => {
     renderWorkspace();
     await screen.findByRole('button', { name: 'Azioni corso' });
 
-    clickMenuAction('Azioni corso', 'Programma completo (MD)');
+    clickMenuAction('Azioni corso', 'Programma completo — Markdown');
     await waitFor(() => expect(mockDownloadProgramMarkdown).toHaveBeenCalledTimes(1));
     const markdown = mockDownloadProgramMarkdown.mock.calls[0][0] as string;
     expect(markdown).toContain('# Programma completo — Sistemi e Reti');
@@ -1963,7 +1976,7 @@ describe('CourseWorkspace — Programma completo export', () => {
       'programma-completo-Sistemi_e_Reti.md',
     );
 
-    clickMenuAction('Azioni corso', 'Programma completo (PDF)');
+    clickMenuAction('Azioni corso', 'Programma completo — PDF');
     await waitFor(() => expect(mockDownloadProgramPdf).toHaveBeenCalledTimes(1));
     expect(mockDownloadProgramPdf).toHaveBeenCalledWith(
       markdown,
@@ -1987,7 +2000,7 @@ describe('CourseWorkspace — Programma svolto PDF chunk recovery', () => {
     mockDownloadProgramPdf.mockRejectedValueOnce(new PdfModuleLoadError('stale_chunk'));
     await renderProgramPdfWorkspace();
 
-    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    clickMenuAction('Azioni corso', 'Programma svolto — PDF');
     expect(
       await screen.findByText('SchoolForge è stato aggiornato. Ricarica la pagina e riprova.'),
     ).toBeTruthy();
@@ -2001,12 +2014,13 @@ describe('CourseWorkspace — Programma svolto PDF chunk recovery', () => {
     mockDownloadProgramPdf.mockRejectedValueOnce(new Error('renderer failed'));
     await renderProgramPdfWorkspace();
 
-    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    clickMenuAction('Azioni corso', 'Programma svolto — PDF');
     expect(await screen.findByText('Impossibile generare il PDF. Riprova.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Ricarica pagina' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Scarica programma' }));
     expect(
-      (screen.getByRole('menuitem', { name: 'Programma svolto (PDF)' }) as HTMLButtonElement)
+      (screen.getByRole('menuitem', { name: 'Programma svolto — PDF' }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
   });
@@ -2015,7 +2029,7 @@ describe('CourseWorkspace — Programma svolto PDF chunk recovery', () => {
     mockDownloadProgramPdf.mockRejectedValueOnce(new PdfModuleLoadError('stale_chunk'));
     mockFetchLessonContent.mockResolvedValue('Corpo.');
     await renderProgramPdfWorkspace();
-    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    clickMenuAction('Azioni corso', 'Programma svolto — PDF');
     await screen.findByRole('button', { name: 'Ricarica pagina' });
 
     await expandUda();
@@ -2038,7 +2052,8 @@ describe('CourseWorkspace — Programma svolto PDF chunk recovery', () => {
     await renderProgramPdfWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
-    const action = screen.getByRole('menuitem', { name: 'Programma svolto (PDF)' });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Scarica programma' }));
+    const action = screen.getByRole('menuitem', { name: 'Programma svolto — PDF' });
     fireEvent.click(action);
     fireEvent.click(action);
     await waitFor(() => expect(mockDownloadProgramPdf).toHaveBeenCalledTimes(1));
@@ -2056,7 +2071,7 @@ describe('CourseWorkspace — Programma svolto PDF chunk recovery', () => {
     mockGetImportMeta.mockResolvedValue(null);
     const view = renderWorkspace();
     await screen.findByRole('button', { name: 'Azioni corso' });
-    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    clickMenuAction('Azioni corso', 'Programma svolto — PDF');
     view.unmount();
     rejectPdf(new PdfModuleLoadError('stale_chunk'));
     await act(async () => Promise.resolve());
@@ -2782,6 +2797,43 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     expect(within(menu).queryByRole('menuitem', { name: /segna svolta/i })).toBeNull();
     expect(within(menu).queryByRole('menuitem', { name: /struttura/i })).toBeNull();
   });
+
+  it.each(['success', 'error'] as const)(
+    'shows an accessible %s prompt toast for five seconds',
+    async (kind) => {
+      await openLessonDesktop();
+      mockFetchCurrentPrompt.mockResolvedValue('Prompt');
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText:
+            kind === 'success'
+              ? vi.fn().mockResolvedValue(undefined)
+              : vi.fn().mockRejectedValue(new Error('Copia negata.')),
+        },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+      const items = screen.getAllByRole('menuitem');
+      const copyIndex = items.findIndex((item) => item.textContent?.includes('Copia prompt'));
+      expect(items[copyIndex + 1]?.textContent).toContain('Pulisci lezione');
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Copia prompt' }));
+      expect(screen.getByRole('menuitem', { name: 'Lezione' }).querySelector('svg')).toBeTruthy();
+      vi.useFakeTimers();
+      try {
+        await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Lezione' })));
+        const message = kind === 'success' ? 'Prompt copiato negli appunti.' : 'Copia negata.';
+        const toast = screen.getByText(message).parentElement!;
+        expect(toast.getAttribute('role')).toBe(kind === 'success' ? 'status' : 'alert');
+        expect(toast.querySelector('svg')).toBeTruthy();
+        act(() => vi.advanceTimersByTime(4999));
+        expect(screen.getByText(message)).toBeTruthy();
+        act(() => vi.advanceTimersByTime(1));
+        expect(screen.queryByText(message)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('never duplicates the svolta action inside and outside the menu', async () => {
     await openLessonDesktop();

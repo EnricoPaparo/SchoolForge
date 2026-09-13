@@ -86,15 +86,25 @@ export const ActionsMenu = forwardRef<HTMLDivElement, ActionsMenuProps>(function
       setPos({ left, top, maxHeight });
     };
     compute();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(compute) : null;
+    if (innerRef.current) observer?.observe(innerRef.current);
     // Ancora sempre al trigger: riposiziona su qualunque scroll (anche di un
     // antenato: capture) e su resize del viewport.
     window.addEventListener('scroll', compute, true);
     window.addEventListener('resize', compute);
     return () => {
+      observer?.disconnect();
       window.removeEventListener('scroll', compute, true);
       window.removeEventListener('resize', compute);
     };
   }, [open, anchorRef, children]);
+
+  useLayoutEffect(() => {
+    if (open)
+      innerRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+        ?.focus();
+  }, [open]);
 
   if (!open) return null;
 
@@ -110,6 +120,28 @@ export const ActionsMenu = forwardRef<HTMLDivElement, ActionsMenuProps>(function
       role="menu"
       aria-label={ariaLabel}
       className={`${styles.menu} ${styles.menuPortal}`}
+      onKeyDown={(event) => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+        const menu = (event.target as Element).closest('[role="menu"]');
+        if (!menu) return;
+        const items = Array.from(
+          menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'),
+        ).filter(
+          (item) =>
+            item.closest('[role="menu"]') === menu &&
+            !item.classList.contains(styles.submenuHiddenTrigger),
+        );
+        if (!items.length) return;
+        event.preventDefault();
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        const next =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? items.length - 1
+              : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items[next]?.focus();
+      }}
       onClick={(event) => {
         const item = (event.target as Element | null)?.closest<HTMLElement>('[role="menuitem"]');
         if (!item || item.matches(':disabled') || item.getAttribute('aria-disabled') === 'true') {
