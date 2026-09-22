@@ -14,6 +14,7 @@ const mockBlockStudent = vi.fn();
 const mockResetStudentToPending = vi.fn();
 const mockRemoveStudent = vi.fn();
 const mockAssignStudentClass = vi.fn();
+const mockRenameStudent = vi.fn();
 const mockListClasses = vi.fn();
 const mockCreateClass = vi.fn();
 const mockUpdateClass = vi.fn();
@@ -53,6 +54,7 @@ vi.mock('../../repository/students/studentsService.js', () => ({
   resetStudentToPending: (...args: unknown[]) => mockResetStudentToPending(...args),
   removeStudent: (...args: unknown[]) => mockRemoveStudent(...args),
   assignStudentClass: (...args: unknown[]) => mockAssignStudentClass(...args),
+  renameStudent: (...args: unknown[]) => mockRenameStudent(...args),
 }));
 
 vi.mock('../../repository/verifications/verificationsService.js', () => ({
@@ -165,6 +167,7 @@ beforeEach(() => {
   });
   mockRemoveStudent.mockResolvedValue({ studentUid: 'u-approved', releasedLabel: null });
   mockAssignStudentClass.mockResolvedValue(undefined);
+  mockRenameStudent.mockResolvedValue('Ada Bianchi');
   mockSetStudentPortalEnabled.mockResolvedValue(undefined);
   mockSetNewStudentRequestsEnabled.mockResolvedValue(undefined);
   mockSetExamMode.mockResolvedValue(undefined);
@@ -444,6 +447,27 @@ describe('StudentsView — loading and empty states', () => {
 });
 
 describe('StudentsView — lista card', () => {
+  it('renames only the chosen student and keeps the attempted value after a failed save', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    mockRenameStudent.mockRejectedValueOnce(new Error('Salvataggio non riuscito'));
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await screen.findByText('Ada Approved');
+    fireEvent.click(
+      within(studentCard('Ada Approved')).getByRole('button', { name: /Azioni studente/ }),
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Modifica nome di Ada Approved' }));
+    const input = screen.getByRole('textbox', { name: 'Nome e cognome' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'Ada Bianchi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva nome' }));
+    await screen.findByText('Salvataggio non riuscito');
+    expect(input.value).toBe('Ada Bianchi');
+    fireEvent.click(screen.getByRole('button', { name: 'Salva nome' }));
+    await screen.findByText('Ada Bianchi');
+    expect(mockRenameStudent).toHaveBeenCalledWith('u-approved', 'Ada Bianchi', OWNER_UID, {});
+    expect(mockListStudents).toHaveBeenCalledTimes(1);
+    expect(within(studentCard('Ada Bianchi')).getByText('Approvato')).toBeTruthy();
+  });
+
   it('mostra una card per studente, full-width, con nome, email, stato e classe', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
@@ -877,7 +901,7 @@ describe('StudentsView — dropdown Classe nella card (UI-STUDENTI-CLASSI-01)', 
 });
 
 describe('StudentsView — menu azioni studente (UI-STUDENTI-CLASSI-01)', () => {
-  it('raccoglie le quattro azioni discrete e disabilita quelle non applicabili', async () => {
+  it('raccoglie le cinque azioni discrete e disabilita quelle non applicabili', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
     await waitFor(() => screen.getByText('Ada Approved'));
@@ -892,6 +916,7 @@ describe('StudentsView — menu azioni studente (UI-STUDENTI-CLASSI-01)', () => 
     fireEvent.click(within(card).getByRole('button', { name: /^Azioni studente/ }));
     const items = screen.getAllByRole('menuitem');
     expect(items.map((i) => i.textContent)).toEqual([
+      'Modifica nome',
       'Approva',
       'Blocca',
       'Rimetti in attesa',

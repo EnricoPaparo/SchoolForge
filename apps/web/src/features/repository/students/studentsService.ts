@@ -9,6 +9,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { StudentDoc } from '../../../types/firestore.js';
@@ -158,6 +159,40 @@ export async function assignStudentClass(
 ): Promise<void> {
   await updateDoc(doc(db, 'students', uid), { classId, updatedAt: serverTimestamp() });
   await writeAudit(db, ownerUid, 'student.classAssigned', uid, classId ?? 'nessuna classe');
+}
+
+/** The teacher's roster name is authoritative after the first Google sign-in. */
+export function normalizeStudentName(value: string): string {
+  const name = value.trim().replace(/\s+/gu, ' ');
+  if (!name) throw new Error('Inserisci nome e cognome dello studente.');
+  if (Array.from(name).length > 100 || new TextEncoder().encode(name).length > 400) {
+    throw new Error('Il nome non può superare 100 caratteri.');
+  }
+  if (/[\p{Cc}\p{Cf}]/u.test(name)) {
+    throw new Error('Il nome contiene caratteri non validi.');
+  }
+  return name;
+}
+
+export async function renameStudent(
+  uid: string,
+  nameInput: string,
+  ownerUid: string,
+  db: Firestore,
+): Promise<string> {
+  const displayName = normalizeStudentName(nameInput);
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'students', uid), { displayName, updatedAt: serverTimestamp() });
+  batch.set(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'student.nameChanged',
+    targetId: uid,
+    outcome: 'success',
+    reason: null,
+    timestamp: serverTimestamp(),
+  });
+  await batch.commit();
+  return displayName;
 }
 
 async function writeAudit(

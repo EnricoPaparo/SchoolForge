@@ -7,8 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // StudentShell's internal behavior has its own dedicated suite; mocking only
 // that lazy module keeps this unit test independent from module-transform speed.
 vi.mock('../../student/StudentShell.js', () => ({
-  StudentShell: ({ initialClassId }: { initialClassId: string | null }) => (
-    <nav aria-label="Sezioni studente" data-class-id={initialClassId ?? 'none'}>
+  StudentShell: ({
+    initialClassId,
+    initialDisplayName,
+  }: {
+    initialClassId: string | null;
+    initialDisplayName: string | null;
+  }) => (
+    <nav
+      aria-label="Sezioni studente"
+      data-class-id={initialClassId ?? 'none'}
+      data-student-name={initialDisplayName ?? 'none'}
+    >
       Portale studente
     </nav>
   ),
@@ -151,6 +161,21 @@ describe('RoleGate — approved student', () => {
     const shell = await screen.findByRole('navigation', { name: /Sezioni studente/i });
     expect(shell.getAttribute('data-class-id')).toBe('class-1');
     expect(screen.queryByText('Area docente')).toBeNull();
+  });
+
+  it('passes the roster name instead of the stale Google profile name', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved', { displayName: 'Ada Bianchi' });
+    asStudent();
+    currentUser!.displayName = 'Old Nickname';
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    const shell = await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(shell.getAttribute('data-student-name')).toBe('Ada Bianchi');
   });
 
   it('never renders teacher-only content for an approved student', async () => {

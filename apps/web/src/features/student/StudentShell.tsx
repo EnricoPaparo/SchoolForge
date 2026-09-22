@@ -37,7 +37,14 @@ function SectionIcon({ section }: { section: Section }) {
  * link or UI state that can show Lezioni or leave the exam other than a
  * successful delivery.
  */
-export function StudentShell({ initialClassId = null }: { initialClassId?: string | null }) {
+export function StudentShell({
+  initialClassId = null,
+  initialDisplayName,
+}: {
+  initialClassId?: string | null;
+  /** Name read from students/{uid} at the role gate. */
+  initialDisplayName?: string | null;
+}) {
   const { user, signOut } = useAuth();
   const [activeSection, setActiveSection] = useState<Section>('lezioni');
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -93,7 +100,8 @@ export function StudentShell({ initialClassId = null }: { initialClassId?: strin
     if (examModeActive && activeSection === 'lezioni') setActiveSection('verifiche');
   }, [examModeActive, activeSection]);
 
-  const displayName = user?.displayName ?? user?.email ?? 'Studente';
+  const studentName = initialDisplayName === undefined ? user?.displayName : initialDisplayName;
+  const displayName = studentName?.trim() || user?.email || 'Studente';
   const initials = displayName.charAt(0).toUpperCase();
 
   useEffect(() => {
@@ -221,8 +229,8 @@ export function StudentShell({ initialClassId = null }: { initialClassId?: strin
                   />
                 )}
                 <div className={styles.dropdownIdentityText}>
-                  {user?.displayName && (
-                    <span className={styles.dropdownName}>{user.displayName}</span>
+                  {studentName?.trim() && (
+                    <span className={styles.dropdownName}>{studentName}</span>
                   )}
                   <span className={styles.dropdownEmail}>{user?.email}</span>
                 </div>
@@ -258,6 +266,7 @@ export function StudentShell({ initialClassId = null }: { initialClassId?: strin
             />
           ) : (
             <StudentVerificationsView
+              studentDisplayName={studentName}
               onSessionActiveChange={setExamInProgress}
               examModeActive={examModeActive}
             />

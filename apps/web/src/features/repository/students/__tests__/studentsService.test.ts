@@ -13,6 +13,9 @@ const mockCollection = vi.fn();
 const mockQuery = vi.fn((...args: unknown[]) => ({ args }));
 const mockWhere = vi.fn((...args: unknown[]) => ({ where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
+const mockBatchUpdate = vi.fn();
+const mockBatchSet = vi.fn();
+const mockBatchCommit = vi.fn();
 
 const mockRemoveStudentWithAssignment = vi.fn();
 
@@ -38,6 +41,7 @@ vi.mock('firebase/firestore', () => ({
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   serverTimestamp: () => mockServerTimestamp(),
+  writeBatch: () => ({ update: mockBatchUpdate, set: mockBatchSet, commit: mockBatchCommit }),
 }));
 
 import {
@@ -47,6 +51,7 @@ import {
   countPendingStudents,
   getOwnStudentDoc,
   listStudents,
+  renameStudent,
   recordPortalAccess,
   removeStudent,
   requestStudentAccess,
@@ -67,6 +72,7 @@ beforeEach(() => {
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
   mockDeleteDoc.mockResolvedValue(undefined);
+  mockBatchCommit.mockResolvedValue(undefined);
 });
 
 describe('listStudents', () => {
@@ -143,6 +149,30 @@ describe('requestStudentAccess', () => {
     expect(data.classId).toBeNull();
     expect(data.ownerUid).toBe(OWNER_UID);
     expect(data.uid).toBe(STUDENT_UID);
+  });
+});
+
+describe('renameStudent', () => {
+  it('writes only the canonical roster name and timestamp, then audits without PII', async () => {
+    const result = await renameStudent(STUDENT_UID, '  Ada   Bianchi  ', OWNER_UID, fakeDb);
+    expect(result).toBe('Ada Bianchi');
+    expect(mockBatchUpdate).toHaveBeenCalledWith(fakeDocRef, {
+      displayName: 'Ada Bianchi',
+      updatedAt: { _type: 'serverTimestamp' },
+    });
+    expect(mockBatchSet.mock.calls[0][1]).toMatchObject({
+      actorUid: OWNER_UID,
+      action: 'student.nameChanged',
+      targetId: STUDENT_UID,
+      reason: null,
+    });
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an empty name before writing', async () => {
+    await expect(renameStudent(STUDENT_UID, '  ', OWNER_UID, fakeDb)).rejects.toThrow();
+    expect(mockBatchUpdate).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
   });
 });
 
