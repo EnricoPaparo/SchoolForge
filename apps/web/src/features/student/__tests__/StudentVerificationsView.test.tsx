@@ -5,8 +5,11 @@ import { StudentVerificationsView } from '../StudentVerificationsView.js';
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+let mockGoogleName: string | null = null;
 vi.mock('../../../lib/auth.js', () => ({
-  useAuth: () => ({ user: { uid: 'student-uid', email: 's@test.com', displayName: null } }),
+  useAuth: () => ({
+    user: { uid: 'student-uid', email: 's@test.com', displayName: mockGoogleName },
+  }),
 }));
 
 const mockLoadStudentVerifications = vi.fn();
@@ -97,6 +100,7 @@ vi.mock('../ConfirmationView.js', () => ({
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGoogleName = null;
   sessionStorage.clear();
   mockLoadStudentCorrectionReturns.mockResolvedValue([]);
 });
@@ -240,6 +244,22 @@ describe('StudentVerificationsView', () => {
     // The signed-in Google identity is passed through for the PDF's
     // Nome e Cognome/Data prefill and filename — never persisted anywhere.
     expect(student).toEqual({ displayName: null, email: 's@test.com' });
+  });
+
+  it('passes the teacher roster name to the PDF even when Google still has the old nickname', async () => {
+    mockGoogleName = 'Old Nickname';
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockDownloadStudentPdfFromProjection.mockResolvedValue(undefined);
+    render(<StudentVerificationsView studentDisplayName="Ada Bianchi" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Scarica PDF — Verifica Reti/ }));
+    await waitFor(() => expect(mockDownloadStudentPdfFromProjection).toHaveBeenCalledOnce());
+    expect(mockDownloadStudentPdfFromProjection.mock.calls[0][1]).toEqual({
+      displayName: 'Ada Bianchi',
+      email: 's@test.com',
+    });
   });
 
   it('renders the PDF action icon-only with a contextual accessible name and stable busy shell', async () => {

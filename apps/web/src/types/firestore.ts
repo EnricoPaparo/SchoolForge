@@ -52,6 +52,7 @@ export type AuditAction =
   | 'student.reset'
   | 'student.removed'
   | 'student.classAssigned'
+  | 'student.nameChanged'
   /**
    * VDIF-01 — registro delle etichette operative del docente. Grafia
    * `oggetto.azionePassata` come tutte le azioni esistenti (`class.created`,

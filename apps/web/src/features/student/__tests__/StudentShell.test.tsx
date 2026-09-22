@@ -180,6 +180,15 @@ describe('StudentShell', () => {
     expect(screen.getByText('student@test.com')).toBeTruthy();
   });
 
+  it('uses the teacher roster name over the stale Google profile name', async () => {
+    mockUser = { uid: 'student-uid', email: 'student@test.com', displayName: 'Old Nickname' };
+    render(<StudentShell initialDisplayName="Ada Bianchi" />);
+    const account = await screen.findByRole('button', { name: 'Account: Ada Bianchi' });
+    fireEvent.click(account);
+    expect(screen.getByText('Ada Bianchi')).toBeTruthy();
+    expect(screen.queryByText('Old Nickname')).toBeNull();
+  });
+
   it('shows only email in dropdown when displayName is null', () => {
     mockUser = { uid: 'student-uid', email: 'student@test.com', displayName: null };
     render(<StudentShell />);

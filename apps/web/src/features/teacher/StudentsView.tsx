@@ -16,6 +16,7 @@ import {
   blockStudent,
   listStudents,
   removeStudent,
+  renameStudent,
   resetStudentToPending,
   type StudentItem,
 } from '../repository/students/studentsService.js';
@@ -40,6 +41,7 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconClipboardCheck,
+  IconPencil,
   IconRotateCcw,
   IconSend,
   IconTrash,
@@ -274,6 +276,10 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [editNameId, setEditNameId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameBusyRef = useRef(false);
 
   useEffect(() => {
     void loadAll();
@@ -522,6 +528,27 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   function handleClassChange(uid: string, e: ChangeEvent<HTMLSelectElement>) {
     const classId = e.target.value === '' ? null : e.target.value;
     void runAction(uid, () => assignStudentClass(uid, classId, ownerUid, db));
+  }
+
+  async function handleSaveName(uid: string) {
+    if (nameBusyRef.current || actionLoadingId !== null) return;
+    nameBusyRef.current = true;
+    setNameError(null);
+    setActionLoadingId(uid);
+    try {
+      const displayName = await renameStudent(uid, nameDraft, ownerUid, db);
+      setStudents(
+        (prev) =>
+          prev?.map((student) => (student.id === uid ? { ...student, displayName } : student)) ??
+          null,
+      );
+      setEditNameId(null);
+    } catch (error) {
+      setNameError(error instanceof Error ? error.message : 'Impossibile salvare il nome.');
+    } finally {
+      nameBusyRef.current = false;
+      setActionLoadingId(null);
+    }
   }
 
   /**
@@ -933,6 +960,21 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                         <button
                           type="button"
                           role="menuitem"
+                          aria-label={`Modifica nome di ${name}`}
+                          disabled={busy}
+                          onClick={() => {
+                            setDeleteConfirmId(null);
+                            setEditNameId(s.id);
+                            setNameDraft(s.displayName ?? '');
+                            setNameError(null);
+                          }}
+                        >
+                          <IconPencil size={15} />
+                          <span>Modifica nome</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
                           title="Approva"
                           aria-label={`Approva ${name}`}
                           disabled={busy || s.status === 'approved'}
@@ -984,7 +1026,46 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                       </RecordActionsMenu>
                     }
                     errors={
-                      deleteConfirmId === s.id ? (
+                      editNameId === s.id ? (
+                        <form
+                          className={styles.nameEdit}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleSaveName(s.id);
+                          }}
+                        >
+                          <label htmlFor={`student-name-${s.id}`}>Nome e cognome</label>
+                          <input
+                            id={`student-name-${s.id}`}
+                            type="text"
+                            autoFocus
+                            value={nameDraft}
+                            disabled={busy}
+                            onChange={(event) => setNameDraft(event.target.value)}
+                            aria-invalid={!!nameError}
+                          />
+                          {nameError && (
+                            <p role="alert" className="text-error">
+                              {nameError}
+                            </p>
+                          )}
+                          <div className={styles.confirmActions}>
+                            <button type="submit" disabled={busy}>
+                              Salva nome
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                setEditNameId(null);
+                                setNameError(null);
+                              }}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </form>
+                      ) : deleteConfirmId === s.id ? (
                         /* La conferma resta ancorata alla card che la riguarda:
                            la lista non si sposta e nessun'altra card cambia. */
                         <div

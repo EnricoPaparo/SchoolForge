@@ -79,6 +79,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GateState>('loading');
   const [resolvedForUid, setResolvedForUid] = useState<string | null>(null);
   const [studentClassId, setStudentClassId] = useState<string | null>(null);
+  const [studentDisplayName, setStudentDisplayName] = useState<string | null>(null);
   const requestAttempted = useRef(false);
   // TWU-01: guards a single portal-access telemetry write per real entry. It
   // holds the uid the current entry already recorded for (null = none yet), so
@@ -93,6 +94,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
       recordedForUid.current = null;
       setResolvedForUid(null);
       setStudentClassId(null);
+      setStudentDisplayName(null);
       setState('loading');
       return;
     }
@@ -100,11 +102,17 @@ export function RoleGate({ children }: { children: ReactNode }) {
     // remain mounted while the new identity is being resolved.
     setResolvedForUid(null);
     setStudentClassId(null);
+    setStudentDisplayName(null);
     setState('loading');
     let active = true;
-    const commitState = (nextState: GateState, classId: string | null = null) => {
+    const commitState = (
+      nextState: GateState,
+      classId: string | null = null,
+      displayName: string | null = null,
+    ) => {
       if (!active) return;
       setStudentClassId(classId);
+      setStudentDisplayName(displayName);
       setResolvedForUid(user.uid);
       setState(nextState);
     };
@@ -151,7 +159,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
             // students/{uid} read above. Pass it through the student subtree
             // so the shell and Didattica do not immediately read the same doc
             // two more times. Firestore Rules remain the security boundary.
-            commitState('student', studentDoc.classId ?? null);
+            commitState('student', studentDoc.classId ?? null, studentDoc.displayName ?? null);
             // TWU-01: this is the first point at which an approved student
             // actually enters the portal. Stamp their access telemetry once
             // per entry. It is deliberately **non-blocking**: a failed write
@@ -215,7 +223,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
   if (state === 'student') {
     return (
       <Suspense fallback={<PortalLoadingFallback />}>
-        <StudentShell initialClassId={studentClassId} />
+        <StudentShell initialClassId={studentClassId} initialDisplayName={studentDisplayName} />
       </Suspense>
     );
   }

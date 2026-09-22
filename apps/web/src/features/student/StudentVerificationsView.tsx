@@ -165,6 +165,8 @@ function clearLastSubmittedId(): void {
  * refresh.
  */
 type StudentVerificationsViewProps = {
+  /** Canonical roster name, passed from RoleGate via StudentShell. */
+  studentDisplayName?: string | null;
   /**
    * Reports whether an online exam is currently being taken (`view.mode ===
    * 'exam'`), so `StudentShell` can hide the Lezioni/Verifiche nav for the
@@ -182,10 +184,12 @@ type StudentVerificationsViewProps = {
 };
 
 export function StudentVerificationsView({
+  studentDisplayName,
   onSessionActiveChange,
   examModeActive = false,
 }: StudentVerificationsViewProps) {
   const { user } = useAuth();
+  const displayName = studentDisplayName === undefined ? user?.displayName : studentDisplayName;
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
   const [pdfErrors, setPdfErrors] = useState<Record<string, string>>({});
@@ -373,7 +377,7 @@ export function StudentVerificationsView({
       await downloadStudentPdfFromProjection(
         { ...item, questions },
         {
-          displayName: user?.displayName ?? null,
+          displayName: displayName?.trim() || null,
           email: user?.email ?? null,
         },
       );
@@ -461,7 +465,7 @@ export function StudentVerificationsView({
         verificationId={view.item.id}
         title={view.item.title}
         className={view.item.className}
-        studentName={user?.displayName?.trim() || user?.email || 'Studente'}
+        studentName={displayName?.trim() || user?.email || 'Studente'}
         ownerUid={view.item.ownerUid}
         studentUid={uid ?? ''}
         questions={view.questions}

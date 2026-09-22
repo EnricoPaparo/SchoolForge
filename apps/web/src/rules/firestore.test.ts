@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -306,6 +306,32 @@ describe('programs', () => {
 });
 
 // ─── auditEvents ─────────────────────────────────────────────────────────────
+
+describe('students — teacher controlled name', () => {
+  it('allows the owner to rename and denies the student and other users', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `students/${OTHER_UID}`), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@test.com',
+        displayName: 'Old Google Name',
+        status: 'approved',
+        classId: null,
+      });
+    });
+    const ownerDb = testEnv.authenticatedContext(OWNER_UID).firestore();
+    const studentDb = testEnv.authenticatedContext(OTHER_UID).firestore();
+    const unrelatedDb = testEnv.authenticatedContext('unrelated').firestore();
+    await assertSucceeds(
+      updateDoc(doc(ownerDb, `students/${OTHER_UID}`), { displayName: 'Ada Bianchi' }),
+    );
+    await assertFails(updateDoc(doc(studentDb, `students/${OTHER_UID}`), { displayName: 'Alias' }));
+    await assertFails(
+      updateDoc(doc(unrelatedDb, `students/${OTHER_UID}`), { displayName: 'Alias' }),
+    );
+  });
+});
 
 describe('auditEvents', () => {
   it('allows owner to write and read audit events', async () => {
