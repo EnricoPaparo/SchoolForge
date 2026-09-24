@@ -195,6 +195,26 @@ describe('UDA PDF ZIP filename', () => {
         udaPosition: 7,
       }),
     ).toBe('Storia-dell’arte-città_UDA07_Ètica-società-futuro.zip');
+    expect(
+      buildUdaPdfZipFilename({
+        programTitle: 'Corso\u200binvisibile',
+        udaTitle: 'Titolo\u2060nascosto',
+        udaPosition: 3,
+      }),
+    ).toBe('Corso-invisibile_UDA03_Titolo-nascosto.zip');
+  });
+
+  it('keeps the complete filename within 255 UTF-8 bytes without losing marker or extension', () => {
+    const filename = buildUdaPdfZipFilename({
+      programTitle: `Programma ${'🎓'.repeat(120)}`,
+      udaTitle: `Città ${'è'.repeat(180)}`,
+      udaPosition: 100,
+    });
+    expect(new TextEncoder().encode(filename).length).toBeLessThanOrEqual(255);
+    expect(filename).toContain('_UDA100_');
+    expect(filename.endsWith('.zip')).toBe(true);
+    // A dangling surrogate would prove the truncation split a Unicode code point.
+    expect(filename).not.toMatch(/[\ud800-\udfff](?![\udc00-\udfff])/u);
   });
 
   it('avoids empty and Windows device-name segments and strips trailing dots', () => {

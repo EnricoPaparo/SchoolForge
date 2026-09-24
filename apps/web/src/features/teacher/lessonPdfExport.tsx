@@ -70,21 +70,30 @@ const WINDOWS_DEVICE_NAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
  * separators forbidden by common desktop filesystems become a single dash.
  */
 export function udaArchiveFilenamePart(value: string, fallback: string): string {
-  const withoutControls = Array.from(value.normalize('NFC'), (char) => {
-    const code = char.charCodeAt(0);
-    return code < 32 || code === 127 ? '-' : char;
-  }).join('');
-  const normalized = withoutControls
+  const normalized = value
+    .normalize('NFC')
     .trim()
+    .replace(/[\p{Cc}\p{Cf}]/gu, '-')
     .replace(/[<>:"/\\|?*\s]+/gu, '-')
     .replace(/-+/g, '-')
     .replace(/^-+|[. -]+$/g, '');
-  const safe = Array.from(normalized)
-    .slice(0, 100)
-    .join('')
-    .replace(/[. -]+$/g, '');
-  if (!safe) return fallback;
-  return WINDOWS_DEVICE_NAME_RE.test(safe) ? `${fallback}-${safe}` : safe;
+  if (!normalized) return fallback;
+  return WINDOWS_DEVICE_NAME_RE.test(normalized) ? `${fallback}-${normalized}` : normalized;
+}
+
+const MAX_FILENAME_BYTES = 255;
+const utf8 = new TextEncoder();
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  let bytes = 0;
+  const chars: string[] = [];
+  for (const char of value) {
+    const charBytes = utf8.encode(char).length;
+    if (bytes + charBytes > maxBytes) break;
+    chars.push(char);
+    bytes += charBytes;
+  }
+  return chars.join('').replace(/[. -]+$/g, '');
 }
 
 /** `udaPosition` is the current one-based position in the ordered tree. */
@@ -95,9 +104,18 @@ export function buildUdaPdfZipFilename(params: {
 }): string {
   const position =
     Number.isInteger(params.udaPosition) && params.udaPosition > 0 ? params.udaPosition : 1;
-  const program = udaArchiveFilenamePart(params.programTitle, 'Programma');
-  const uda = udaArchiveFilenamePart(params.udaTitle, 'UDA');
-  return `${program}_UDA${String(position).padStart(2, '0')}_${uda}.zip`;
+  const marker = `_UDA${String(position).padStart(2, '0')}_`;
+  const extension = '.zip';
+  const rawProgram = udaArchiveFilenamePart(params.programTitle, 'Programma');
+  const rawUda = udaArchiveFilenamePart(params.udaTitle, 'UDA');
+  const availableBytes = MAX_FILENAME_BYTES - utf8.encode(marker + extension).length;
+  const half = Math.floor(availableBytes / 2);
+  let programBudget = Math.min(utf8.encode(rawProgram).length, half);
+  const udaBudget = Math.min(utf8.encode(rawUda).length, availableBytes - programBudget);
+  programBudget = Math.min(utf8.encode(rawProgram).length, availableBytes - udaBudget);
+  const program = truncateUtf8(rawProgram, programBudget) || 'Programma';
+  const uda = truncateUtf8(rawUda, udaBudget) || 'UDA';
+  return `${program}${marker}${uda}${extension}`;
 }
 
 export function udaPositionInOrderedTree(
