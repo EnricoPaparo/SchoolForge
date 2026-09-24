@@ -1227,7 +1227,9 @@ function CourseWorkspaceSession({
         loadSavedLessonPdf,
         renderLessonPdf,
         buildLessonPdfZip,
+        buildUdaPdfZipFilename,
         pdfFileName,
+        udaPositionInOrderedTree,
         downloadLessonBlob,
       } = await import('./lessonPdfExport.js');
       let completedLessons = 0;
@@ -1252,7 +1254,14 @@ function CourseWorkspaceSession({
       };
       if (asZip) {
         const blob = await buildLessonPdfZip(lessons, load);
-        downloadLessonBlob(blob, `${pdfFileName(udaName)}.zip`);
+        downloadLessonBlob(
+          blob,
+          buildUdaPdfZipFilename({
+            programTitle: card.title,
+            udaTitle: udaName,
+            udaPosition: udaPositionInOrderedTree(tree?.udas ?? [], selectedUda?.id ?? ''),
+          }),
+        );
       } else {
         const content = await load(lessons[0]!);
         downloadLessonBlob(await renderLessonPdf(content), `${pdfFileName(content.title)}.pdf`);
