@@ -62,6 +62,53 @@ export function pdfFileName(title: string): string {
     : safe;
 }
 
+const WINDOWS_DEVICE_NAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+
+/**
+ * Builds one readable, cross-platform-safe archive-name segment. Unicode is
+ * intentionally preserved; only whitespace, control characters and filename
+ * separators forbidden by common desktop filesystems become a single dash.
+ */
+export function udaArchiveFilenamePart(value: string, fallback: string): string {
+  const withoutControls = Array.from(value.normalize('NFC'), (char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || code === 127 ? '-' : char;
+  }).join('');
+  const normalized = withoutControls
+    .trim()
+    .replace(/[<>:"/\\|?*\s]+/gu, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|[. -]+$/g, '');
+  const safe = Array.from(normalized)
+    .slice(0, 100)
+    .join('')
+    .replace(/[. -]+$/g, '');
+  if (!safe) return fallback;
+  return WINDOWS_DEVICE_NAME_RE.test(safe) ? `${fallback}-${safe}` : safe;
+}
+
+/** `udaPosition` is the current one-based position in the ordered tree. */
+export function buildUdaPdfZipFilename(params: {
+  programTitle: string;
+  udaTitle: string;
+  udaPosition: number;
+}): string {
+  const position =
+    Number.isInteger(params.udaPosition) && params.udaPosition > 0 ? params.udaPosition : 1;
+  const program = udaArchiveFilenamePart(params.programTitle, 'Programma');
+  const uda = udaArchiveFilenamePart(params.udaTitle, 'UDA');
+  return `${program}_UDA${String(position).padStart(2, '0')}_${uda}.zip`;
+}
+
+export function udaPositionInOrderedTree(
+  udas: readonly { id: string }[],
+  selectedUdaId: string,
+): number {
+  const index = udas.findIndex((uda) => uda.id === selectedUdaId);
+  if (index < 0) throw new Error('Posizione UDA non disponibile. Ricarica il corso e riprova.');
+  return index + 1;
+}
+
 export async function loadSavedLessonPdf(params: {
   lesson: LessonItem;
   programId: string;

@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import {
   buildLessonPdfZip,
+  buildUdaPdfZipFilename,
   loadSavedLessonPdf,
   pdfFileName,
   renderLessonPdf,
+  udaPositionInOrderedTree,
 } from '../lessonPdfExport.js';
 import type { LessonItem } from '../../repository/programs/programsService.js';
 
@@ -156,5 +158,51 @@ describe('complete ordered PDF ZIP', () => {
   it('rejects empty UDA and sanitizes path/control characters', async () => {
     await expect(buildLessonPdfZip([], vi.fn(), render)).rejects.toThrow('non contiene lezioni');
     expect(pdfFileName('../lezione\\test?: .')).toBe('.._lezione_test__');
+  });
+});
+
+describe('UDA PDF ZIP filename', () => {
+  it('derives the position from the current ordered array, including after reorder', () => {
+    const firstOrder = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const reordered = [{ id: 'c' }, { id: 'a' }, { id: 'b' }];
+    expect(udaPositionInOrderedTree(firstOrder, 'c')).toBe(3);
+    expect(udaPositionInOrderedTree(reordered, 'c')).toBe(1);
+    expect(() => udaPositionInOrderedTree(reordered, 'missing')).toThrow('Posizione UDA');
+  });
+
+  it('uses the current one-based UDA position with at least two digits', () => {
+    expect(
+      buildUdaPdfZipFilename({
+        programTitle: 'Sistemi e reti',
+        udaTitle: 'Modello OSI',
+        udaPosition: 1,
+      }),
+    ).toBe('Sistemi-e-reti_UDA01_Modello-OSI.zip');
+    expect(
+      buildUdaPdfZipFilename({
+        programTitle: 'Sistemi e reti',
+        udaTitle: 'Modello OSI',
+        udaPosition: 100,
+      }),
+    ).toBe('Sistemi-e-reti_UDA100_Modello-OSI.zip');
+  });
+
+  it('preserves Unicode while collapsing whitespace and forbidden separators', () => {
+    expect(
+      buildUdaPdfZipFilename({
+        programTitle: '  Storia dell’arte / città  ',
+        udaTitle: 'Ètica:\u0000 società\\futuro? ',
+        udaPosition: 7,
+      }),
+    ).toBe('Storia-dell’arte-città_UDA07_Ètica-società-futuro.zip');
+  });
+
+  it('avoids empty and Windows device-name segments and strips trailing dots', () => {
+    expect(buildUdaPdfZipFilename({ programTitle: '***', udaTitle: 'CON.', udaPosition: 0 })).toBe(
+      'Programma_UDA01_UDA-CON.zip',
+    );
+    expect(
+      buildUdaPdfZipFilename({ programTitle: 'Corso... ', udaTitle: 'Titolo. ', udaPosition: 2 }),
+    ).toBe('Corso_UDA02_Titolo.zip');
   });
 });
