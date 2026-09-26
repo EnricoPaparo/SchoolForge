@@ -490,6 +490,10 @@ export async function generateContent(
         usage.outputTokens,
         resolved.priceListVersion,
         resolved.model,
+        {
+          cachedInputTokens: usage.cachedInputTokens,
+          cacheWriteInputTokens: usage.cacheWriteInputTokens,
+        },
       ) ?? 0;
     settledCost = actualCost;
   }

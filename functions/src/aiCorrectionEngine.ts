@@ -1917,6 +1917,9 @@ export async function runExecution(
   let outputTokensEstimated = 0;
   let inputTokensActual = 0;
   let outputTokensActual = 0;
+  let cachedInputTokensActual = 0;
+  let cacheWriteInputTokensActual = 0;
+  let cacheDetailsKnown = true;
   // M5-05D2B-2 — token dal costo **incerto** (bound prudente) + telemetria retry.
   let settledInputTokens = 0;
   let settledOutputTokens = 0;
@@ -1960,6 +1963,17 @@ export async function runExecution(
     outputTokensEstimated += o.estimate.outputTokens;
     inputTokensActual += o.actual.inputTokens;
     outputTokensActual += o.actual.outputTokens;
+    if (o.actual.inputTokens > 0) {
+      if (
+        o.actual.cachedInputTokens === undefined ||
+        o.actual.cacheWriteInputTokens === undefined
+      ) {
+        cacheDetailsKnown = false;
+      } else {
+        cachedInputTokensActual += o.actual.cachedInputTokens;
+        cacheWriteInputTokensActual += o.actual.cacheWriteInputTokens;
+      }
+    }
     settledInputTokens += o.settledBound.inputTokens;
     settledOutputTokens += o.settledBound.outputTokens;
     retry.attemptsTotal += o.attempts.attemptsTotal;
@@ -1994,6 +2008,12 @@ export async function runExecution(
         outputTokensActual,
         effectiveConfig.priceListVersion,
         effectiveConfig.model,
+        cacheDetailsKnown
+          ? {
+              cachedInputTokens: cachedInputTokensActual,
+              cacheWriteInputTokens: cacheWriteInputTokensActual,
+            }
+          : undefined,
       ) ?? 0)
     : 0;
   // M5-05D2B-2 — costo **contabilizzato prudenziale**: effettivo noto + tetto
@@ -2082,7 +2102,12 @@ interface GradeOutcome {
   /** Stima deterministica dei token (input=prompt, output=quota feedback). */
   estimate: { inputTokens: number; outputTokens: number };
   /** Token REALI consumati dal provider (0/0 in modalità mock o senza usage). */
-  actual: { inputTokens: number; outputTokens: number };
+  actual: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedInputTokens?: number;
+    cacheWriteInputTokens?: number;
+  };
   /**
    * M5-05D2B-2 — tetto prudente dei tentativi dal costo **incerto** di questa
    * consegna (0/0 se nessun tentativo incerto): `unknownBillingAttempts × bound`.
@@ -2184,13 +2209,25 @@ async function gradeEligible(
   // **anche** se l'output viene poi rifiutato (costo comunque contabilizzato).
   let actualInput = 0;
   let actualOutput = 0;
+  let actualCachedInput: number | undefined;
+  let actualCacheWriteInput: number | undefined;
   const billUsage = (usage: Parameters<typeof normalizeUsageActual>[0]) => {
     const normalized = normalizeUsageActual(usage);
     if (normalized) {
       actualInput = normalized.inputTokens;
       actualOutput = normalized.outputTokens;
+      actualCachedInput = normalized.cachedInputTokens;
+      actualCacheWriteInput = normalized.cacheWriteInputTokens;
     }
   };
+  const actualUsage = () => ({
+    inputTokens: actualInput,
+    outputTokens: actualOutput,
+    ...(actualCachedInput !== undefined ? { cachedInputTokens: actualCachedInput } : {}),
+    ...(actualCacheWriteInput !== undefined
+      ? { cacheWriteInputTokens: actualCacheWriteInput }
+      : {}),
+  });
 
   // 1) Chiuse: scoring deterministico con feedback (M5-04C), zero grader.
   //    Accumula i punti chiusi per il totale finale del feedback generale.
@@ -2273,7 +2310,7 @@ async function gradeEligible(
             reason: 'write_error',
           },
           estimate,
-          actual: { inputTokens: actualInput, outputTokens: actualOutput },
+          actual: actualUsage(),
           settledBound,
           attempts,
         };
@@ -2310,7 +2347,7 @@ async function gradeEligible(
           reason,
         },
         estimate,
-        actual: { inputTokens: actualInput, outputTokens: actualOutput },
+        actual: actualUsage(),
         settledBound,
         attempts,
       };
@@ -2353,7 +2390,7 @@ async function gradeEligible(
         reason: 'write_error',
       },
       estimate,
-      actual: { inputTokens: actualInput, outputTokens: actualOutput },
+      actual: actualUsage(),
       settledBound,
       attempts,
     };
@@ -2374,7 +2411,7 @@ async function gradeEligible(
       // Dati cambiati dopo il preflight: nessuna scrittura, ma se il grader era già
       // stato chiamato l'usage consumato resta contabilizzato (mai un costo perso).
       estimate,
-      actual: { inputTokens: actualInput, outputTokens: actualOutput },
+      actual: actualUsage(),
       settledBound,
       attempts,
     };
@@ -2409,7 +2446,7 @@ async function gradeEligible(
       alreadyIgnored: eligible.alreadyGraded,
     },
     estimate,
-    actual: { inputTokens: actualInput, outputTokens: actualOutput },
+    actual: actualUsage(),
     settledBound,
     attempts,
   };
