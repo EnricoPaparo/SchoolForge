@@ -1453,18 +1453,19 @@ con payload/slot/piano divergente: `invalid_input`, zero scritture. Le race con
 generazione sono serializzate dal documento piano: se la generazione ha già
 portato lo slot fuori da `pending`, la modifica fallisce senza resuscitarlo.
 
-## MODEL-GPT6-01 — profili modello e accounting prompt cache
+## MODEL-GPT6-ROLLBACK-01 — profili modello e accounting prompt cache
 
 Dal 26 settembre 2026 il mapping server-side dei profili è:
 
-- `economy` → `gpt-6-luna` + `v10-2026-09-26-gpt6-luna-standard`;
-- `quality` → `gpt-6-sol` + `v11-2026-09-26-gpt6-sol-standard`.
+- `economy` → `gpt-5.6-luna` + `v8-2026-09-26-luna-cache-standard`;
+- `quality` → `gpt-5.6-sol` + `v9-2026-09-26-sol-cache-standard`.
 
 Il payload client resta chiuso su `modelProfile: 'economy' | 'quality'`; model ID
-e listino non sono accettati dal client. I listini GPT-5.6 precedenti restano
-immutabili. Le nuove coppie cache-aware GPT-5.6 per rollback esplicito sono
-`gpt-5.6-luna` + `v8-2026-09-26-luna-cache-standard` e `gpt-5.6-sol` +
-`v9-2026-09-26-sol-cache-standard`.
+e listino non sono accettati dal client. Il rollout GPT-6 è stato ritirato da
+DEV dopo la regressione qualitativa osservata sulle lezioni approfondite. Le
+coppie `gpt-6-luna` + `v10-2026-09-26-gpt6-luna-standard` e `gpt-6-sol` +
+`v11-2026-09-26-gpt6-sol-standard` restano nell'allowlist, ma non sono
+selezionate dai profili operativi.
 
 Per i listini cache-aware il costo usa quattro categorie dell'usage Responses:
 input ordinario, `input_tokens_details.cached_tokens`,

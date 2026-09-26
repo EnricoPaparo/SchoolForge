@@ -37,13 +37,13 @@ export const POOL_MODEL_PROFILE_OPTIONS: readonly {
   {
     value: 'economy',
     label: 'Economy',
-    modelId: 'gpt-6-luna',
+    modelId: 'gpt-5.6-luna',
     description: 'Più economico e rapido.',
   },
   {
     value: 'quality',
     label: 'Quality',
-    modelId: 'gpt-6-sol',
+    modelId: 'gpt-5.6-sol',
     description: 'Qualità superiore, costo maggiore.',
   },
 ];

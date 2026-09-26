@@ -96,13 +96,13 @@ export const MODEL_PROFILE_OPTIONS: readonly {
   {
     value: 'economy',
     label: 'Economico',
-    modelId: 'gpt-6-luna',
+    modelId: 'gpt-5.6-luna',
     description: 'Costo inferiore.',
   },
   {
     value: 'quality',
     label: 'Qualità',
-    modelId: 'gpt-6-sol',
+    modelId: 'gpt-5.6-sol',
     description: 'Feedback più approfonditi, costo maggiore.',
   },
 ];

@@ -16,9 +16,7 @@
 
 import {
   OPENAI_RUNTIME_GPT6_LUNA_MODEL,
-  OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_GPT6_SOL_MODEL,
-  OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_SOL_MODEL,
   OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_MODEL,
@@ -42,21 +40,8 @@ export interface ModelProfileResolution {
  * che traduce la scelta astratta del docente in un modello reale e nel suo
  * listino accoppiato. Coerente con l'allowlist runtime (`RUNTIME_MODEL_PRICE_LISTS`).
  */
-export const MODEL_PROFILE_RESOLUTIONS: Readonly<Record<ModelProfile, ModelProfileResolution>> = {
-  quality: {
-    model: OPENAI_RUNTIME_GPT6_SOL_MODEL,
-    priceListVersion: OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION,
-  },
-  economy: {
-    model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
-    priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
-  },
-};
-
 /**
- * Coppie GPT-5.6 già validate e mantenute come rollback esplicito. Il rollback
- * consiste nel promuovere questa tabella al posto di `MODEL_PROFILE_RESOLUTIONS`
- * e distribuire le sole Functions IA e l'Hosting; non esiste fallback automatico.
+ * Coppie GPT-5.6 già validate, cache-aware e mantenute come baseline di rollback.
  */
 export const GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS: Readonly<
   Record<ModelProfile, ModelProfileResolution>
@@ -70,6 +55,13 @@ export const GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS: Readonly<
     priceListVersion: OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
   },
 };
+
+/**
+ * Mapping operativo. GPT-5.6 è stato ripristinato dopo la regressione qualitativa
+ * osservata in DEV con GPT-6 sulle lezioni approfondite. Le coppie GPT-6 restano
+ * nell'allowlist runtime per diagnosi future, ma non sono selezionate dai profili.
+ */
+export const MODEL_PROFILE_RESOLUTIONS = GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS;
 
 /** Application default for new operations, independent of runtime configuration. */
 export const DEFAULT_MODEL_PROFILE: ModelProfile = 'economy';
@@ -108,9 +100,9 @@ export function profileForModel(model: string): ModelProfile | null {
   for (const profile of MODEL_PROFILES) {
     if (MODEL_PROFILE_RESOLUTIONS[profile].model === model) return profile;
   }
-  // Explicit rollback models keep their historical profile meaning.
-  if (model === OPENAI_RUNTIME_LUNA_MODEL) return 'economy';
-  if (model === OPENAI_RUNTIME_SOL_MODEL) return 'quality';
+  // GPT-6 remains recognized for historical runs and controlled diagnostics.
+  if (model === OPENAI_RUNTIME_GPT6_LUNA_MODEL) return 'economy';
+  if (model === OPENAI_RUNTIME_GPT6_SOL_MODEL) return 'quality';
   return null;
 }
 
