@@ -12,30 +12,28 @@ import {
 } from './aiCorrectionModelProfile.js';
 import {
   OPENAI_RUNTIME_GPT6_LUNA_MODEL,
-  OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_GPT6_SOL_MODEL,
-  OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_SOL_MODEL,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
 
 describe('TWU-02 — closed model profiles', () => {
-  it('economy resolves to Luna model + standard price list', () => {
+  it('economy resolves to the cache-aware GPT-5.6 Luna rollback pair', () => {
     expect(MODEL_PROFILE_RESOLUTIONS.economy).toEqual({
-      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
-      priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+      model: 'gpt-5.6-luna',
+      priceListVersion: 'v8-2026-09-26-luna-cache-standard',
     });
     expect(resolveModelProfile('economy')).toEqual({
-      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
-      priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+      model: 'gpt-5.6-luna',
+      priceListVersion: 'v8-2026-09-26-luna-cache-standard',
     });
   });
 
-  it('quality resolves to Sol model + standard price list', () => {
+  it('quality resolves to the cache-aware GPT-5.6 Sol rollback pair', () => {
     expect(resolveModelProfile('quality')).toEqual({
-      model: OPENAI_RUNTIME_GPT6_SOL_MODEL,
-      priceListVersion: OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION,
+      model: 'gpt-5.6-sol',
+      priceListVersion: 'v9-2026-09-26-sol-cache-standard',
     });
   });
 
