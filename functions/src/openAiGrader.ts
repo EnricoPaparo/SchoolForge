@@ -121,6 +121,8 @@ export interface OpenAiTransportResponse {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    cachedInputTokens?: unknown;
+    cacheWriteInputTokens?: unknown;
   };
 }
 
@@ -175,6 +177,10 @@ interface OpenAiSdkResponse {
   incomplete_details?: { reason?: string } | null;
   usage?: {
     input_tokens: number;
+    input_tokens_details?: {
+      cached_tokens?: unknown;
+      cache_write_tokens?: unknown;
+    };
     output_tokens: number;
     total_tokens: number;
   } | null;
@@ -285,6 +291,8 @@ export class OpenAiSdkTransport implements OpenAiTransport {
                 inputTokens: response.usage.input_tokens,
                 outputTokens: response.usage.output_tokens,
                 totalTokens: response.usage.total_tokens,
+                cachedInputTokens: response.usage.input_tokens_details?.cached_tokens,
+                cacheWriteInputTokens: response.usage.input_tokens_details?.cache_write_tokens,
               },
             }
           : {}),
@@ -609,6 +617,8 @@ export class OpenAiGrader implements AiGrader {
               tokens: response.usage.totalTokens,
               inputTokens: response.usage.inputTokens,
               outputTokens: response.usage.outputTokens,
+              cachedInputTokens: response.usage.cachedInputTokens,
+              cacheWriteInputTokens: response.usage.cacheWriteInputTokens,
             }
           : undefined;
         let validated;

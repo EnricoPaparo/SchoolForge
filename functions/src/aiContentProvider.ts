@@ -21,6 +21,8 @@ export type ContentProviderMode = 'mock' | 'openai' | 'disabled';
 export interface ProviderUsage {
   inputTokens?: number;
   outputTokens?: number;
+  cachedInputTokens?: unknown;
+  cacheWriteInputTokens?: unknown;
 }
 
 /**

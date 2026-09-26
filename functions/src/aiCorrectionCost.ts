@@ -17,6 +17,10 @@ export const USD_MICRO = 1_000_000;
 export interface ModelPrice {
   /** micro-USD interi per 1M token di input. */
   inputMicroUsdPerMillion: number;
+  /** Cached input rate. Absent only on frozen historical price lists. */
+  cachedInputMicroUsdPerMillion?: number;
+  /** Cache-write rate. Absent only on frozen historical price lists. */
+  cacheWriteMicroUsdPerMillion?: number;
   /** micro-USD interi per 1M token di output. */
   outputMicroUsdPerMillion: number;
 }
@@ -41,6 +45,11 @@ export const OPENAI_BENCHMARK_CANDIDATE_MODEL = 'gpt-5.4-mini-2026-03-17';
  * `OPENAI_PRODUCTION_MODEL`, non persistito, nessun fallback.
  */
 export const OPENAI_BENCHMARK_LUNA_MODEL = 'gpt-5.6-luna';
+
+/** Explicit GPT-5.6 rollback model retained by the runtime allowlist. */
+export const OPENAI_RUNTIME_LUNA_MODEL = OPENAI_BENCHMARK_LUNA_MODEL;
+export const OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION = 'v5-2026-07-20-luna-dev';
+export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION = 'v6-2026-09-12-luna-standard';
 
 /**
  * Fonte ufficiale: https://developers.openai.com/api/docs/models/gpt-5.4-nano
@@ -90,6 +99,12 @@ export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_VERIFIED_ON = '2026-09-12';
 export const OPENAI_RUNTIME_SOL_MODEL = 'gpt-5.6-sol';
 export const OPENAI_RUNTIME_SOL_PRICE_LIST_VERSION = 'v7-2026-09-13-sol-standard';
 /** https://developers.openai.com/api/docs/models/gpt-5.6-sol, verified 2026-09-13. */
+export const OPENAI_RUNTIME_GPT6_LUNA_MODEL = 'gpt-6-luna';
+export const OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION = 'v10-2026-09-26-gpt6-luna-standard';
+export const OPENAI_RUNTIME_GPT6_SOL_MODEL = 'gpt-6-sol';
+export const OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION = 'v11-2026-09-26-gpt6-sol-standard';
+export const OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION = 'v8-2026-09-26-luna-cache-standard';
+export const OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION = 'v9-2026-09-26-sol-cache-standard';
 export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelPrice>>>> = {
   'v1-2026-07-16': {
     [OPENAI_LEGACY_MODEL]: {
@@ -147,6 +162,40 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
       outputMicroUsdPerMillion: 1_200_000,
     },
   },
+  // MODEL-GPT6-01 — nuove versioni, senza modificare v1..v7 già pubblicate.
+  // v8/v9 mantengono GPT-5.6 come rollback esplicito con accounting cache completo.
+  [OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION]: {
+    [OPENAI_RUNTIME_LUNA_MODEL]: {
+      inputMicroUsdPerMillion: 200_000,
+      cachedInputMicroUsdPerMillion: 20_000,
+      cacheWriteMicroUsdPerMillion: 250_000,
+      outputMicroUsdPerMillion: 1_200_000,
+    },
+  },
+  [OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION]: {
+    [OPENAI_RUNTIME_SOL_MODEL]: {
+      inputMicroUsdPerMillion: 4_000_000,
+      cachedInputMicroUsdPerMillion: 400_000,
+      cacheWriteMicroUsdPerMillion: 5_000_000,
+      outputMicroUsdPerMillion: 20_000_000,
+    },
+  },
+  [OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION]: {
+    [OPENAI_RUNTIME_GPT6_LUNA_MODEL]: {
+      inputMicroUsdPerMillion: 100_000,
+      cachedInputMicroUsdPerMillion: 10_000,
+      cacheWriteMicroUsdPerMillion: 125_000,
+      outputMicroUsdPerMillion: 500_000,
+    },
+  },
+  [OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION]: {
+    [OPENAI_RUNTIME_GPT6_SOL_MODEL]: {
+      inputMicroUsdPerMillion: 2_000_000,
+      cachedInputMicroUsdPerMillion: 200_000,
+      cacheWriteMicroUsdPerMillion: 2_500_000,
+      outputMicroUsdPerMillion: 10_000_000,
+    },
+  },
 };
 
 /** Versione di listino di default per DEV (deve esistere in `PRICE_LISTS`). */
@@ -157,24 +206,6 @@ export const OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION = 'v3-2026-07-20-mini
 
 /** Versione di listino del candidato benchmark Luna (solo CLI di benchmark). */
 export const OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION = 'v4-2026-07-20-luna-benchmark';
-
-/**
- * M5-QUALITY-07 — modello runtime `gpt-5.6-luna` e sua versione di listino
- * **runtime DEV** dedicata. Lo stesso id modello del benchmark, ma con listino
- * runtime separato: la config runtime lo accoppia esclusivamente a questa
- * versione.
- */
-export const OPENAI_RUNTIME_LUNA_MODEL = OPENAI_BENCHMARK_LUNA_MODEL;
-export const OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION = 'v5-2026-07-20-luna-dev';
-
-/**
- * LUNA-PRICES-20260912 — versione di listino runtime **standard** di Luna:
- * stesso `OPENAI_RUNTIME_LUNA_MODEL`, listino distinto e più recente. Le nuove
- * operazioni Quality (contenuti+correzioni) risolvono questa versione; `v5`
- * resta la coppia storica per compatibilità PROD e rollback (vedi allowlist
- * runtime `RUNTIME_MODEL_PRICE_LISTS`).
- */
-export const OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION = 'v6-2026-09-12-luna-standard';
 
 /** Prezzo del modello per una versione di listino, o `null` se assente. */
 export function lookupModelPrice(priceListVersion: string, model: string): ModelPrice | null {
@@ -197,6 +228,46 @@ export function tokenCostMicroUsd(
   return rounding === 'ceil' ? Math.ceil(raw) : Math.round(raw);
 }
 
+export interface CacheTokenDetails {
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+}
+
+/**
+ * Prezzo dell'usage reale. Se il listino conosce le tariffe cache ma il provider
+ * omette o malforma il dettaglio, tratta prudentemente tutto l'input come cache
+ * write (la categoria input più costosa). I listini storici senza tariffe cache
+ * conservano esattamente il calcolo precedente.
+ */
+export function usageCostMicroUsd(
+  inputTokens: number,
+  outputTokens: number,
+  price: ModelPrice,
+  rounding: 'ceil' | 'nearest',
+  cache?: CacheTokenDetails,
+): number {
+  const hasCacheRates =
+    price.cachedInputMicroUsdPerMillion !== undefined &&
+    price.cacheWriteMicroUsdPerMillion !== undefined;
+  if (!hasCacheRates) return tokenCostMicroUsd(inputTokens, outputTokens, price, rounding);
+  const cached = cache?.cachedInputTokens;
+  const written = cache?.cacheWriteInputTokens;
+  const validDetails =
+    isNonNegativeInteger(cached) &&
+    isNonNegativeInteger(written) &&
+    cached + written <= inputTokens;
+  const uncached = validDetails ? inputTokens - cached - written : 0;
+  const billedCached = validDetails ? cached : 0;
+  const billedWritten = validDetails ? written : inputTokens;
+  const numerator =
+    uncached * price.inputMicroUsdPerMillion +
+    billedCached * price.cachedInputMicroUsdPerMillion! +
+    billedWritten * price.cacheWriteMicroUsdPerMillion! +
+    outputTokens * price.outputMicroUsdPerMillion;
+  const raw = numerator / 1_000_000;
+  return rounding === 'ceil' ? Math.ceil(raw) : Math.round(raw);
+}
+
 /** Converte µUSD interi in USD a 6 decimali (per persistenza/visualizzazione). */
 export function microUsdToUsd(microUsd: number): number {
   return Math.round(microUsd) / USD_MICRO;
@@ -209,6 +280,9 @@ export interface TokenBreakdown {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Presenti insieme solo quando il dettaglio cache del provider è valido. */
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
 }
 
 /** Ripartizione token + costo intero in micro-USD. */
@@ -252,7 +326,8 @@ export function estimateCostBreakdown(
     inputTokens: input,
     outputTokens: output,
     totalTokens: input + output,
-    costMicroUsd: tokenCostMicroUsd(input, output, price, 'ceil'),
+    // Nessun dettaglio è disponibile in prenotazione: usa il massimo cache-write.
+    costMicroUsd: usageCostMicroUsd(input, output, price, 'ceil'),
   };
 }
 
@@ -264,7 +339,16 @@ export function estimateCostBreakdown(
  * (coerenza del totale). Usage assente (mock/sole-chiuse) ⇒ `null`.
  */
 export function normalizeUsageActual(
-  usage: { tokens?: number; inputTokens?: number; outputTokens?: number } | undefined | null,
+  usage:
+    | {
+        tokens?: number;
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedInputTokens?: unknown;
+        cacheWriteInputTokens?: unknown;
+      }
+    | undefined
+    | null,
 ): TokenBreakdown | null {
   if (!usage) return null;
   const { inputTokens, outputTokens, tokens } = usage;
@@ -272,7 +356,17 @@ export function normalizeUsageActual(
   const totalTokens = inputTokens + outputTokens;
   if (tokens !== undefined && (!isNonNegativeInteger(tokens) || tokens !== totalTokens))
     return null;
-  return { inputTokens, outputTokens, totalTokens };
+  const { cachedInputTokens, cacheWriteInputTokens } = usage;
+  const validCacheDetails =
+    isNonNegativeInteger(cachedInputTokens) &&
+    isNonNegativeInteger(cacheWriteInputTokens) &&
+    cachedInputTokens + cacheWriteInputTokens <= inputTokens;
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    ...(validCacheDetails ? { cachedInputTokens, cacheWriteInputTokens } : {}),
+  };
 }
 
 /**
@@ -285,10 +379,11 @@ export function actualCostMicroUsd(
   outputTokens: number,
   priceListVersion: string,
   model: string,
+  cache?: CacheTokenDetails,
 ): number | null {
   const price = lookupModelPrice(priceListVersion, model);
   if (!price) return null;
   const input = isNonNegativeInteger(inputTokens) ? inputTokens : 0;
   const output = isNonNegativeInteger(outputTokens) ? outputTokens : 0;
-  return tokenCostMicroUsd(input, output, price, 'nearest');
+  return usageCostMicroUsd(input, output, price, 'nearest', cache);
 }

@@ -1452,3 +1452,26 @@ server-only. Stesso id e stesso payload: replay con zero scritture; stesso id
 con payload/slot/piano divergente: `invalid_input`, zero scritture. Le race con
 generazione sono serializzate dal documento piano: se la generazione ha già
 portato lo slot fuori da `pending`, la modifica fallisce senza resuscitarlo.
+
+## MODEL-GPT6-01 — profili modello e accounting prompt cache
+
+Dal 26 settembre 2026 il mapping server-side dei profili è:
+
+- `economy` → `gpt-6-luna` + `v10-2026-09-26-gpt6-luna-standard`;
+- `quality` → `gpt-6-sol` + `v11-2026-09-26-gpt6-sol-standard`.
+
+Il payload client resta chiuso su `modelProfile: 'economy' | 'quality'`; model ID
+e listino non sono accettati dal client. I listini GPT-5.6 precedenti restano
+immutabili. Le nuove coppie cache-aware GPT-5.6 per rollback esplicito sono
+`gpt-5.6-luna` + `v8-2026-09-26-luna-cache-standard` e `gpt-5.6-sol` +
+`v9-2026-09-26-sol-cache-standard`.
+
+Per i listini cache-aware il costo usa quattro categorie dell'usage Responses:
+input ordinario, `input_tokens_details.cached_tokens`,
+`input_tokens_details.cache_write_tokens` e output. I dettagli cache sono validi
+solo se interi non negativi e la loro somma non supera l'input totale. Dettagli
+assenti o malformati non riducono il settlement: tutto l'input viene valorizzato
+alla tariffa cache-write. La prenotazione applica lo stesso limite prudenziale e
+continua a coprire tutti i tentativi ammessi. I listini storici senza tariffe
+cache conservano il calcolo precedente per garantire replay e audit dei run già
+persistiti.

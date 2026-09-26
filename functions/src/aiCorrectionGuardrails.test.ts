@@ -5,6 +5,10 @@ import { AiGatewayError } from './aiCorrectionGatewayCore.js';
 import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
+  OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+  OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_GPT6_SOL_MODEL,
+  OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
@@ -15,6 +19,7 @@ import {
   estimateCostBreakdown,
   normalizeUsageActual,
   actualCostMicroUsd,
+  usageCostMicroUsd,
   USD_MICRO,
 } from './aiCorrectionCost.js';
 import {
@@ -368,6 +373,78 @@ describe('cost breakdown (M5-05D2B-1)', () => {
     );
     expect(actualCostMicroUsd(0, 0, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)).toBe(0);
     expect(actualCostMicroUsd(1, 1, 'nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
+  });
+});
+
+describe('MODEL-GPT6-01 — cache-aware accounting', () => {
+  it('pins GPT-6 Standard prices and prices uncached, hit, write and output exactly', () => {
+    const luna = lookupModelPrice(
+      OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+    )!;
+    expect(luna).toEqual({
+      inputMicroUsdPerMillion: 100_000,
+      cachedInputMicroUsdPerMillion: 10_000,
+      cacheWriteMicroUsdPerMillion: 125_000,
+      outputMicroUsdPerMillion: 500_000,
+    });
+    expect(
+      usageCostMicroUsd(1_000_000, 100_000, luna, 'nearest', {
+        cachedInputTokens: 300_000,
+        cacheWriteInputTokens: 100_000,
+      }),
+    ).toBe(125_500);
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION, OPENAI_RUNTIME_GPT6_SOL_MODEL),
+    ).toEqual({
+      inputMicroUsdPerMillion: 2_000_000,
+      cachedInputMicroUsdPerMillion: 200_000,
+      cacheWriteMicroUsdPerMillion: 2_500_000,
+      outputMicroUsdPerMillion: 10_000_000,
+    });
+  });
+
+  it('falls back to the maximum cache-write rate when details are absent or malformed', () => {
+    const price = lookupModelPrice(
+      OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+    )!;
+    expect(usageCostMicroUsd(1_000_000, 100_000, price, 'nearest')).toBe(175_000);
+    expect(
+      usageCostMicroUsd(1_000_000, 100_000, price, 'nearest', {
+        cachedInputTokens: 900_000,
+        cacheWriteInputTokens: 200_000,
+      }),
+    ).toBe(175_000);
+    expect(
+      estimateCostBreakdown(
+        1_000_000,
+        100_000,
+        OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+        OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+      )?.costMicroUsd,
+    ).toBe(175_000);
+  });
+
+  it('keeps valid cache details and ignores malformed details without losing total usage', () => {
+    expect(
+      normalizeUsageActual({
+        inputTokens: 1_000,
+        outputTokens: 100,
+        tokens: 1_100,
+        cachedInputTokens: 300,
+        cacheWriteInputTokens: 100,
+      }),
+    ).toMatchObject({ cachedInputTokens: 300, cacheWriteInputTokens: 100 });
+    expect(
+      normalizeUsageActual({
+        inputTokens: 1_000,
+        outputTokens: 100,
+        tokens: 1_100,
+        cachedInputTokens: 'bad',
+        cacheWriteInputTokens: 100,
+      }),
+    ).toEqual({ inputTokens: 1_000, outputTokens: 100, totalTokens: 1_100 });
   });
 });
 

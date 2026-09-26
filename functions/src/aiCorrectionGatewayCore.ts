@@ -367,7 +367,13 @@ export interface AiGraderOutput {
 }
 
 /** Usage provider-agnostico (token effettivi), riusato dagli errori tecnici. */
-export type AiGraderUsage = { tokens: number; inputTokens?: number; outputTokens?: number };
+export type AiGraderUsage = {
+  tokens: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: unknown;
+  cacheWriteInputTokens?: unknown;
+};
 
 /**
  * M5-05D2B-2 — statistiche **tecniche e aggregate** dei tentativi di una singola

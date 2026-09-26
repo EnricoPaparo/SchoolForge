@@ -485,6 +485,29 @@ describe('OpenAI timeout and retry boundaries', () => {
       signal: controller.signal,
     });
   });
+
+  it('preserves cached and cache-write token details from Responses usage', async () => {
+    const create = vi.fn(async () => ({
+      output_text: validOutput(),
+      usage: {
+        input_tokens: 1_000,
+        input_tokens_details: { cached_tokens: 300, cache_write_tokens: 100 },
+        output_tokens: 200,
+        total_tokens: 1_200,
+      },
+    }));
+    const transport = new OpenAiSdkTransport({ responses: { create } });
+    const result = await transport.send(buildOpenAiGradingRequest(input, 'gpt-6-luna'), {
+      timeoutMs: OPENAI_ATTEMPT_TIMEOUT_MS,
+      signal: new AbortController().signal,
+    });
+    expect(result.usage).toMatchObject({
+      inputTokens: 1_000,
+      cachedInputTokens: 300,
+      cacheWriteInputTokens: 100,
+      outputTokens: 200,
+    });
+  });
 });
 
 // ── M5-05D2B-2 — retry applicativo unico (backoff/jitter/Retry-After/deadline) ──

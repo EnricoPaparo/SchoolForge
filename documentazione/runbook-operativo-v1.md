@@ -157,6 +157,25 @@ Vedi §8 (incidente costi/traffico). In sintesi: identifica il servizio, riduci 
 
 ### 4.5 Correzione IA in DEV — modello runtime, rollout e rollback (G7 PASS)
 
+> **Configurazione corrente MODEL-GPT6-01 (26/09/2026).** `settings/aiConfig`
+> continua a governare kill switch, provider, limiti e budget. Per ogni nuova
+> operazione, il profilo chiuso scelto nell'applicazione determina la coppia
+> modello/listino: Economy usa `gpt-6-luna` con
+> `v10-2026-09-26-gpt6-luna-standard`; Quality usa `gpt-6-sol` con
+> `v11-2026-09-26-gpt6-sol-standard`. Il ledger contabilizza separatamente input
+> ordinario, cache hit, cache write e output; se il provider omette o malforma il
+> dettaglio cache, usa prudenzialmente la tariffa cache-write per tutto l'input.
+>
+> I rollback espliciti restano `gpt-5.6-luna` con
+> `v8-2026-09-26-luna-cache-standard` per Economy e `gpt-5.6-sol` con
+> `v9-2026-09-26-sol-cache-standard` per Quality. Le coppie sono già presenti
+> nell'allowlist e nella tabella `GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS`; per
+> attivarle si promuove quella tabella nel mapping dei profili e si ridistribuiscono
+> le sole Functions IA e l'Hosting. Nessun fallback è automatico. Il kill switch
+> `enabled=false` resta il blocco immediato senza deploy.
+
+La procedura G7 seguente resta evidenza storica del primo rollout GPT-5.6.
+
 Il modello del provider reale è deciso **esclusivamente** da `settings/aiConfig` (Admin
 SDK, mai dal client). Modelli runtime ammessi e listino **obbligatorio** accoppiato:
 

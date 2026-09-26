@@ -35,7 +35,12 @@ export type StructuredRunOutcome =
   | {
       status: 'ok';
       outputText: string;
-      usage: { inputTokens: number; outputTokens: number } | null;
+      usage: {
+        inputTokens: number;
+        outputTokens: number;
+        cachedInputTokens?: unknown;
+        cacheWriteInputTokens?: unknown;
+      } | null;
       /**
        * `true` se un tentativo **precedente** (poi ritentato con successo) poteva
        * aver generato costo (`billingRisk`): il consumo totale non è conoscibile,
@@ -100,7 +105,12 @@ export async function runStructuredCall(
         status: 'ok',
         outputText: response.outputText,
         usage: response.usage
-          ? { inputTokens: response.usage.inputTokens, outputTokens: response.usage.outputTokens }
+          ? {
+              inputTokens: response.usage.inputTokens,
+              outputTokens: response.usage.outputTokens,
+              cachedInputTokens: response.usage.cachedInputTokens,
+              cacheWriteInputTokens: response.usage.cacheWriteInputTokens,
+            }
           : null,
         priorBillingRisk: anyBillingRisk,
       };

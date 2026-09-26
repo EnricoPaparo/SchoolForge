@@ -14,8 +14,8 @@ describe('offline benchmark identity and consent', () => {
       model: 'gpt-5.6-luna',
       priceListVersion: 'v6-2026-09-12-luna-standard',
     });
-    expect(resolveModelProfile('economy').model).toBe('gpt-5.6-luna');
-    expect(resolveModelProfile('quality').model).toBe('gpt-5.6-sol');
+    expect(resolveModelProfile('economy').model).toBe('gpt-6-luna');
+    expect(resolveModelProfile('quality').model).toBe('gpt-6-sol');
     for (const profile of ['economy', 'quality'] as const) {
       const { model, priceListVersion } = resolveBenchmarkContentModel(profile);
       expect(lookupModelPrice(priceListVersion, model)).not.toBeNull();
