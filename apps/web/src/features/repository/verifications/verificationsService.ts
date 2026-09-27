@@ -72,11 +72,12 @@ import { listQuestionIndex } from './questionIndexService.js';
 
 export type VerificationItem = { id: string } & Omit<
   VerificationDoc,
-  'visibility' | 'onlineEnabled' | 'studentPdfEnabled'
+  'visibility' | 'onlineEnabled' | 'studentPdfEnabled' | 'returnToDraftPending'
 > & {
     visibility: VerificationVisibility;
     onlineEnabled: boolean;
     studentPdfEnabled: boolean;
+    returnToDraftPending: boolean;
   };
 
 export const VERIFICATION_TITLE_MAX_LENGTH = 100;
@@ -108,6 +109,7 @@ export async function listVerifications(
         visibility: normalizeVisibility(data.visibility),
         onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
         studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
+        returnToDraftPending: data.returnToDraftPending === true,
       };
     })
     .filter((item) => item.ownerUid === ownerUid);

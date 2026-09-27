@@ -173,6 +173,32 @@ describe('listVerifications', () => {
     const result = await listVerifications(OWNER_UID, fakeDb);
     expect(result[0].visibility).toBe('public');
   });
+
+  it('normalizes the server-only return-to-draft fence to a strict boolean', async () => {
+    const fenced: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      returnToDraftPending: true,
+      config: VALID_CONFIG,
+    };
+    const legacy: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: VALID_CONFIG,
+    };
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        { id: 'fenced', data: () => fenced },
+        { id: 'legacy', data: () => legacy },
+      ],
+    });
+
+    const result = await listVerifications(OWNER_UID, fakeDb);
+    expect(result.map((item) => [item.id, item.returnToDraftPending])).toEqual([
+      ['fenced', true],
+      ['legacy', false],
+    ]);
+  });
 });
 
 describe('listActiveOnlineVerificationClassIds', () => {

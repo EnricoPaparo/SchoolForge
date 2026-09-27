@@ -1678,6 +1678,47 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('keeps a fenced active verification offline while allowing only the retry', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      {
+        ...activeVerWithSnapshot(),
+        returnToDraftPending: true,
+        visibility: 'hidden',
+        onlineEnabled: false,
+        studentPdfEnabled: false,
+      },
+    ]);
+    render(<VerificationsView />);
+
+    await waitFor(() => actionsTriggers());
+    expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/pubblica allo studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/abilita pdf studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/chiudi verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/riporta in bozza/i) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('blocks reopen, exposure toggles and deletion on a fenced closed verification', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      {
+        ...closedVer(),
+        returnToDraftPending: true,
+        visibility: 'hidden',
+        studentPdfEnabled: false,
+      },
+    ]);
+    render(<VerificationsView />);
+
+    await waitFor(() => actionsTriggers());
+    expect((menuItem(/pubblica allo studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/abilita pdf studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/riapri verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/riporta in bozza/i) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('keeps the card delete action visually destructive', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);

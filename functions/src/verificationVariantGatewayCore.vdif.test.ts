@@ -43,6 +43,7 @@ function differentiatedSnapshotRaw() {
 function verification(over: Partial<VerificationContext> = {}): VerificationContext {
   return {
     ownerUid: OWNER,
+    activationId: '100:1',
     status: 'active',
     onlineEnabled: true,
     studentPdfEnabled: true,

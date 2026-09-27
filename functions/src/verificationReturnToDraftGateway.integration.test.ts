@@ -7,9 +7,23 @@ import {
   installReturnToDraftFence,
   returnVerificationToDraftWithDb,
 } from './verificationReturnToDraftGateway.js';
+import { persistAssignment, persistPdfAssignment } from './verificationVariantGateway.js';
+import type { ResolvableSnapshot } from './verificationVariantCore.js';
 
 const OWNER = 'return-draft-owner';
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
+
+const oldSnapshot: ResolvableSnapshot = {
+  questions: [{ order: 0, tipo: 'aperta', maxPoints: 1, difficolta: 1, testo: 'Versione A' }],
+  commonQuestionOrders: [],
+  equivalentGroups: [{ id: 'g1', alternativeOrders: [0] }],
+  differentiation: null,
+  labelAssignments: null,
+};
+
+function activationId(value: Timestamp): string {
+  return `${value.seconds}:${value.nanoseconds}`;
+}
 
 function verification(status: 'active' | 'closed', labelId?: string) {
   const now = Timestamp.now();
@@ -222,5 +236,57 @@ emulatorDescribe('returnVerificationToDraft — Firestore transaction fence', ()
       db.doc(`submissions/${id}_student-race`).get(),
     ]);
     expect(verificationSnap.data()?.status === 'draft' && submissionSnap.exists).toBe(false);
+  });
+
+  it('rejects online assignment if the verification was reactivated after preflight', async () => {
+    const id = await seed('active');
+    const oldActivation = Timestamp.fromMillis(1_000);
+    const newActivation = Timestamp.fromMillis(2_000);
+    await db.doc(`verifications/${id}`).update({ activatedAt: oldActivation });
+    const preflightActivationId = activationId(oldActivation);
+    await db.doc(`verifications/${id}`).update({ activatedAt: newActivation });
+
+    await expect(
+      persistAssignment(db)({
+        submissionId: `${id}_student-reactivated-online`,
+        verificationId: id,
+        studentUid: 'student-reactivated-online',
+        ownerUid: OWNER,
+        activationId: preflightActivationId,
+        verificationTitle: 'Versione A',
+        className: 'Classe A',
+        snapshot: oldSnapshot,
+        randomIntBelow: () => 0,
+      }),
+    ).rejects.toThrow('La verifica non è più disponibile.');
+
+    expect((await db.doc(`submissions/${id}_student-reactivated-online`).get()).exists).toBe(false);
+  });
+
+  it('rejects a personal PDF if the verification was reactivated after preflight', async () => {
+    const id = await seed('active');
+    const oldActivation = Timestamp.fromMillis(3_000);
+    const newActivation = Timestamp.fromMillis(4_000);
+    await db.doc(`verifications/${id}`).update({ activatedAt: oldActivation });
+    const preflightActivationId = activationId(oldActivation);
+    await db.doc(`verifications/${id}`).update({ activatedAt: newActivation });
+
+    await expect(
+      persistPdfAssignment(db)({
+        submissionId: `${id}_student-reactivated-pdf`,
+        verificationId: id,
+        studentUid: 'student-reactivated-pdf',
+        ownerUid: OWNER,
+        activationId: preflightActivationId,
+        verificationTitle: 'Versione A',
+        className: 'Classe A',
+        snapshot: oldSnapshot,
+        randomIntBelow: () => 0,
+      }),
+    ).rejects.toThrow('PDF non disponibile.');
+
+    expect(
+      (await db.doc(`verifications/${id}/studentAssignments/student-reactivated-pdf`).get()).exists,
+    ).toBe(false);
   });
 });

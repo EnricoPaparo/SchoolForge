@@ -2307,6 +2307,7 @@ export function VerificationsView() {
           {filtered.length > 0 && (
             <div className={styles.verificationList} role="list" aria-label="Archivio verifiche">
               {filtered.map((verification) => {
+                const lifecycleLocked = verification.returnToDraftPending === true;
                 const programTitle =
                   programs.find((program) => program.id === verification.config.programId)?.title ??
                   verification.config.programId;
@@ -2414,6 +2415,7 @@ export function VerificationsView() {
                                 verification.onlineEnabled ? styles.onlineSwitchOn : ''
                               }`}
                               disabled={
+                                lifecycleLocked ||
                                 onlineLoadingId === verification.id ||
                                 (!verification.onlineEnabled && verification.config.classId == null)
                               }
@@ -2489,6 +2491,7 @@ export function VerificationsView() {
                           } allo studente — ${verification.config.title}`}
                           disabled={
                             verification.status === 'draft' ||
+                            lifecycleLocked ||
                             visibilityLoadingId === verification.id
                           }
                           onClick={() => void handleToggleVisibility(verification)}
@@ -2514,7 +2517,7 @@ export function VerificationsView() {
                             verification.studentPdfEnabled ? 'Disabilita' : 'Abilita'
                           } PDF studente — ${verification.config.title}`}
                           aria-pressed={verification.studentPdfEnabled}
-                          disabled={pdfEnabledLoadingId === verification.id}
+                          disabled={lifecycleLocked || pdfEnabledLoadingId === verification.id}
                           onClick={() =>
                             verification.studentPdfEnabled
                               ? handleStartDisableStudentPdf(verification.id)
@@ -2544,7 +2547,7 @@ export function VerificationsView() {
                             role="menuitem"
                             title="Riapri verifica"
                             aria-label={`Riapri verifica — ${verification.config.title}`}
-                            disabled={reopening}
+                            disabled={lifecycleLocked || reopening}
                             onClick={() => handleStartReopen(verification.id)}
                           >
                             <IconRotateCcw size={15} />
@@ -2560,7 +2563,9 @@ export function VerificationsView() {
                                 : 'Attiva prima la verifica'
                             }
                             aria-label={`Chiudi verifica — ${verification.config.title}`}
-                            disabled={verification.status !== 'active' || closing}
+                            disabled={
+                              verification.status !== 'active' || lifecycleLocked || closing
+                            }
                             onClick={() => handleStartClose(verification.id)}
                           >
                             <IconCircleX size={15} />
@@ -2590,7 +2595,7 @@ export function VerificationsView() {
                               : 'Elimina verifica'
                           }
                           aria-label={`Elimina verifica — ${verification.config.title}`}
-                          disabled={verification.status === 'active' || deleting}
+                          disabled={verification.status === 'active' || lifecycleLocked || deleting}
                           onClick={() => handleStartDelete(verification.id)}
                         >
                           <IconTrash size={15} />

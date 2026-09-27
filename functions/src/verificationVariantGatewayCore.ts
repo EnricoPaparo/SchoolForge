@@ -81,6 +81,8 @@ export function parseAssignInput(raw: unknown): AssignInput {
 
 export interface VerificationContext {
   ownerUid: string;
+  /** Identità immutabile della singola attivazione letta nel preflight. */
+  activationId: string | null;
   status: string;
   onlineEnabled: boolean;
   studentPdfEnabled: boolean;
@@ -103,6 +105,7 @@ export interface PersistAssignmentInput {
   verificationId: string;
   studentUid: string;
   ownerUid: string;
+  activationId: string;
   verificationTitle: string;
   className: string | null;
   snapshot: ResolvableSnapshot;
@@ -244,6 +247,9 @@ export async function runAssignVariant(
   if (!verification.onlineEnabled) {
     throw new AssignGatewayError('failed_precondition', 'Lo svolgimento online non è abilitato.');
   }
+  if (!verification.activationId) {
+    throw new AssignGatewayError('failed_precondition', 'Attivazione della verifica non valida.');
+  }
   if (verification.classId === null || verification.classId !== student.classId) {
     throw new AssignGatewayError(
       'permission_denied',
@@ -271,6 +277,7 @@ export async function runAssignVariant(
       verificationId: input.verificationId,
       studentUid: callerUid,
       ownerUid: verification.ownerUid,
+      activationId: verification.activationId,
       verificationTitle: verification.title,
       className: verification.className,
       snapshot,
@@ -322,6 +329,9 @@ export async function runResolveStudentPdf(
   if (verification.visibility !== 'public' || !verification.studentPdfEnabled) {
     throw new AssignGatewayError('failed_precondition', 'Il PDF non è disponibile.');
   }
+  if (!verification.activationId) {
+    throw new AssignGatewayError('failed_precondition', 'Attivazione della verifica non valida.');
+  }
   if (verification.classId === null || verification.classId !== student.classId) {
     throw new AssignGatewayError(
       'permission_denied',
@@ -344,6 +354,7 @@ export async function runResolveStudentPdf(
       verificationId: input.verificationId,
       studentUid: callerUid,
       ownerUid: verification.ownerUid,
+      activationId: verification.activationId,
       verificationTitle: verification.title,
       className: verification.className,
       snapshot,

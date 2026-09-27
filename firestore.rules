@@ -1110,6 +1110,7 @@ service cloud.firestore {
       // Delete allowed for draft (discard) and closed (tidy up) — active is
       // an immutable snapshot and can only be closed, never deleted.
       allow delete: if isOwner()
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && (resource.data.status == 'draft' || resource.data.status == 'closed');
       // `returnToDraftPending` is a server-only lifecycle fence. Clients may
       // neither forge it on create nor persist it while editing a draft.
@@ -1127,19 +1128,23 @@ service cloud.firestore {
       // Closed: no other update allowed beyond the explicit controls below.
       allow update: if isOwner()
         && resource.data.status == 'draft'
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && !request.resource.data.keys().hasAny(['returnToDraftPending']);
       allow update: if isOwner()
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && resource.data.status == 'active'
         && request.resource.data.status == 'closed'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'closedAt', 'updatedAt']);
       allow update: if isOwner()
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && resource.data.status == 'closed'
         && request.resource.data.status == 'active'
         && request.resource.data.closedAt == null
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'closedAt', 'updatedAt']);
       allow update: if isOwner()
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && (resource.data.status == 'active' || resource.data.status == 'closed')
         && request.resource.data.status == resource.data.status
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -1151,6 +1156,7 @@ service cloud.firestore {
       // every submission anyway (config is immutable once active, so
       // resource.data.config.classId reflects the current assignment).
       allow update: if isOwner()
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && resource.data.status == 'active'
         && request.resource.data.status == 'active'
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -1166,6 +1172,7 @@ service cloud.firestore {
       // the verification is separately active +
       // public + class-assigned (see publishedProjection below).
       allow update: if isOwner()
+        && !resource.data.keys().hasAny(['returnToDraftPending'])
         && (resource.data.status == 'active' || resource.data.status == 'closed')
         && request.resource.data.status == resource.data.status
         && request.resource.data.diff(resource.data).affectedKeys()
