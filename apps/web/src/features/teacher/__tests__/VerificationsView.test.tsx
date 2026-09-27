@@ -6,6 +6,7 @@ import type * as CorrectionProgressModule from '../../repository/corrections/cor
 import type * as CorrectionReturnVisibilityModule from '../../repository/corrections/correctionReturnVisibilityService.js';
 import type * as TeacherAiPrefsModule from '../../repository/corrections/teacherAiPreferencesService.js';
 import type * as ForceCloseClientModule from '../../repository/verifications/forceCloseClient.js';
+import type * as ReturnToDraftClientModule from '../../repository/verifications/returnToDraftClient.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 
 afterEach(cleanup);
@@ -52,6 +53,7 @@ const mockSetVerificationStudentPdfEnabled = vi.fn();
 const mockCloseVerification = vi.fn();
 const mockReopenVerification = vi.fn();
 const mockDeleteVerification = vi.fn();
+const mockReturnVerificationToDraft = vi.fn();
 const mockListQuestionIndex = vi.fn();
 const mockListDifferentiationLabels = vi.fn();
 const mockListPrograms = vi.fn();
@@ -103,6 +105,13 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   reopenVerification: (...args: unknown[]) => mockReopenVerification(...args),
   deleteVerification: (...args: unknown[]) => mockDeleteVerification(...args),
 }));
+vi.mock('../../repository/verifications/returnToDraftClient.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ReturnToDraftClientModule>();
+  return {
+    ...actual,
+    createReturnVerificationToDraft: () => mockReturnVerificationToDraft,
+  };
+});
 vi.mock('../../repository/verifications/questionIndexService.js', () => ({
   listQuestionIndex: (...args: unknown[]) => mockListQuestionIndex(...args),
 }));
@@ -1582,7 +1591,7 @@ describe('VerificationsView', () => {
       },
     });
 
-  it('keeps six action slots on active verifications and disables Elimina', async () => {
+  it('adds return-to-draft on active verifications and disables Elimina', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     render(<VerificationsView />);
@@ -1590,12 +1599,13 @@ describe('VerificationsView', () => {
     expect(menuItem(/scarica pdf studenti/i)).toBeTruthy();
     expect(menuItem(/scarica pdf soluzioni/i)).toBeTruthy();
     expect(menuItem(/chiudi verifica/i)).toBeTruthy();
+    expect(menuItem(/riporta in bozza/i)).toBeTruthy();
     expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(true);
     // UI-VERIFICHE-06A/06B — sulla card restano superficie apribile, «Azioni» e
     // il controllo «Argomenti»: nessun pulsante azione sciolto.
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
     expect(within(card).getAllByRole('button')).toHaveLength(3);
-    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(7);
   });
 
   it('keeps six action slots on drafts, disabling visibility and lifecycle controls', async () => {
@@ -1627,7 +1637,86 @@ describe('VerificationsView', () => {
     expect(menuItem(/elimina verifica/i)).toBeTruthy();
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
     expect(within(card).getAllByRole('button')).toHaveLength(3);
-    expect(screen.getAllByRole('menuitem')).toHaveLength(7);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(8);
+  });
+
+  it('returns an active verification to draft and opens its editor after confirmation', async () => {
+    setupDefaults();
+    const active = activeVerWithSnapshot();
+    const draft = makeDraftVer();
+    mockListVerifications.mockResolvedValueOnce([active]).mockResolvedValue([draft]);
+    mockReturnVerificationToDraft.mockResolvedValue(undefined);
+    render(<VerificationsView />);
+
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/riporta in bozza/i));
+    const region = await screen.findByRole('region', { name: /conferma ritorno in bozza/i });
+    expect(within(region).getByText(/dovrai attivarla nuovamente/i)).toBeTruthy();
+    fireEvent.click(within(region).getByRole('button', { name: 'Riporta in bozza' }));
+
+    await waitFor(() => expect(mockReturnVerificationToDraft).toHaveBeenCalledWith('ver-1'));
+    await waitFor(() => expect(screen.getByLabelText('Dettaglio verifica')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Attiva verifica' })).toBeTruthy();
+  });
+
+  it('shows the concise submissions blocker returned by the server', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([closedVer()]);
+    mockReturnVerificationToDraft.mockRejectedValue({
+      code: 'functions/failed-precondition',
+      message: 'Elimina prima tutte le consegne associate alla verifica.',
+    });
+    render(<VerificationsView />);
+
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/riporta in bozza/i));
+    const region = await screen.findByRole('region', { name: /conferma ritorno in bozza/i });
+    fireEvent.click(within(region).getByRole('button', { name: 'Riporta in bozza' }));
+
+    expect((await within(region).findByRole('alert')).textContent).toBe(
+      'Elimina prima tutte le consegne associate alla verifica.',
+    );
+  });
+
+  it('keeps a fenced active verification offline while allowing only the retry', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      {
+        ...activeVerWithSnapshot(),
+        returnToDraftPending: true,
+        visibility: 'hidden',
+        onlineEnabled: false,
+        studentPdfEnabled: false,
+      },
+    ]);
+    render(<VerificationsView />);
+
+    await waitFor(() => actionsTriggers());
+    expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/pubblica allo studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/abilita pdf studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/chiudi verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/riporta in bozza/i) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('blocks reopen, exposure toggles and deletion on a fenced closed verification', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      {
+        ...closedVer(),
+        returnToDraftPending: true,
+        visibility: 'hidden',
+        studentPdfEnabled: false,
+      },
+    ]);
+    render(<VerificationsView />);
+
+    await waitFor(() => actionsTriggers());
+    expect((menuItem(/pubblica allo studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/abilita pdf studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/riapri verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/riporta in bozza/i) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('keeps the card delete action visually destructive', async () => {
@@ -4681,9 +4770,10 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     await renderCards([makeDraftVer({ id: 'ver-3', status: 'closed' })]);
     fireEvent.click(actionsTriggers()[0]!);
     const labels = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());
-    expect(labels).toHaveLength(7);
+    expect(labels).toHaveLength(8);
     expect(labels[4]).toBe('Esiti');
     expect(labels[5]).toBe('Riapri verifica');
+    expect(labels[6]).toBe('Riporta in bozza');
     expect(labels).not.toContain('Chiudi verifica');
   });
 

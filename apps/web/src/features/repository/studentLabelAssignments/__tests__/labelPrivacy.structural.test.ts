@@ -133,13 +133,19 @@ describe('VDIF-02 — Rules: la collezione è owner-only e l’assegnazione non 
   });
 });
 
-describe('VDIF-02 — nessuna etichetta nei payload AI né nelle Functions', () => {
-  it('le Functions non conoscono le etichette', () => {
+describe('VDIF-02 — nessuna etichetta nei payload AI né nelle Functions studente', () => {
+  it('solo il lifecycle owner-only del ritorno in bozza conosce le etichette', () => {
     const functionsSources = sourcesUnder('functions/src');
+    const returnToDraftModules = new Set([
+      'functions/src/verificationReturnToDraftGateway.ts',
+      'functions/src/verificationReturnToDraftGateway.integration.test.ts',
+    ]);
     expect(functionsSources.size).toBeGreaterThan(0);
     for (const [path, source] of functionsSources) {
       expect(source, path).not.toMatch(/studentLabelAssignments/);
-      expect(source, path).not.toMatch(/differentiationLabel/i);
+      if (!returnToDraftModules.has(path)) {
+        expect(source, path).not.toMatch(/differentiationLabel/i);
+      }
     }
   });
 

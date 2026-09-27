@@ -153,6 +153,17 @@ describe('Firestore rules — /verifications/{verificationId}', () => {
     );
   });
 
+  it('owner cannot forge the server-only return-to-draft fence on create', async () => {
+    await seedOwner();
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v-fenced'), {
+        ownerUid: OWNER_UID,
+        status: 'draft',
+        returnToDraftPending: true,
+      }),
+    );
+  });
+
   it('authenticated owner can read their verification', async () => {
     await seedOwner();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -224,6 +235,74 @@ describe('Firestore rules — verification immutability', () => {
         config: { ...DRAFT_DOC.config, title: 'V1 aggiornata' },
       }),
     );
+  });
+
+  it('owner cannot forge the server-only return-to-draft fence on a draft', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...DRAFT_DOC,
+        returnToDraftPending: true,
+      }),
+    );
+  });
+
+  it('return-to-draft fence blocks every client lifecycle, exposure toggle and closed delete', async () => {
+    await seedOwner();
+    const activePending = {
+      ...ACTIVE_DOC,
+      visibility: 'hidden',
+      onlineEnabled: false,
+      studentPdfEnabled: false,
+      returnToDraftPending: true,
+    };
+    const closedPending = { ...activePending, status: 'closed', closedAt: null };
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/active-pending'), activePending);
+      await setDoc(doc(ctx.firestore(), 'verifications/closed-pending'), closedPending);
+    });
+
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/active-pending'), {
+        ...activePending,
+        status: 'closed',
+        closedAt: null,
+        updatedAt: null,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/closed-pending'), {
+        ...closedPending,
+        status: 'active',
+        closedAt: null,
+        updatedAt: null,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/active-pending'), {
+        ...activePending,
+        visibility: 'public',
+        updatedAt: null,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/active-pending'), {
+        ...activePending,
+        onlineEnabled: true,
+        updatedAt: null,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/closed-pending'), {
+        ...closedPending,
+        studentPdfEnabled: true,
+        updatedAt: null,
+      }),
+    );
+    await assertFails(deleteDoc(doc(ownerDb(), 'verifications/closed-pending')));
   });
 
   it('owner cannot update config when status is active', async () => {

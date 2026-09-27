@@ -84,6 +84,26 @@ Deploy **manuale**, solo su autorizzazione esplicita del docente (vedi `CONTRIBU
    - nessun errore in console del browser.
 8. **Registrazione del commit distribuito** — annota **data, ambiente, commit SHA e cosa è stato deployato** (`--only ...`). Tienilo in un file locale o in un issue; non serve committarlo nel repo.
 
+### 2.1 Ritorno verifica in bozza
+
+La funzione usa tre componenti che devono essere distribuiti insieme: Hosting,
+Firestore Rules e le callable `returnVerificationToDraft`,
+`assignVerificationVariant`, `resolveStudentVerificationPdf`. Le ultime due
+rileggono lo stato autorevole dentro la transazione di assegnazione e chiudono
+la gara con il nuovo fence. Esempio DEV mirato:
+
+```
+firebase deploy --project schoolforge-dev --config firebase.json --only hosting,firestore:rules,functions:returnVerificationToDraft,functions:assignVerificationVariant,functions:resolveStudentVerificationPdf
+```
+
+Dopo il deploy verificare su fixture sacrificabili: ritorno da `active` e
+`closed` senza consegne, rifiuto con una consegna presente, scomparsa immediata
+dal portale studente e riapertura dell'editor bozza. In caso di errore dopo il
+fence, eliminare l'eventuale consegna e ripetere la stessa azione: il flusso è
+idempotente e mantiene la verifica nascosta, offline e senza PDF fino alla
+conclusione. Il rollback richiede lo stesso commit per Hosting, Rules e le tre
+Functions; non cancellare manualmente `returnToDraftPending`.
+
 ---
 
 ## 3. Rollback

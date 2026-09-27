@@ -51,9 +51,11 @@ function loadVerification(db: Firestore) {
     const snap = await db.doc(`verifications/${verificationId}`).get();
     if (!snap.exists) return null;
     const data = snap.data() as Record<string, unknown>;
+    const activatedAt = data.activatedAt;
     const teacherSnapshot = (data.teacherSnapshot ?? null) as Record<string, unknown> | null;
     return {
       ownerUid: (data.ownerUid as string) ?? '',
+      activationId: activationIdOf(activatedAt),
       status: (data.status as string) ?? '',
       onlineEnabled: data.onlineEnabled === true,
       studentPdfEnabled: data.studentPdfEnabled === true,
@@ -69,8 +71,41 @@ function loadVerification(db: Firestore) {
   };
 }
 
+function activationIdOf(value: unknown): string | null {
+  return value instanceof Timestamp ? `${value.seconds}:${value.nanoseconds}` : null;
+}
+
 function sameOrders(left: number[], right: number[]): boolean {
   return left.length === right.length && left.every((order, index) => order === right[index]);
+}
+
+function assertAssignmentStillAvailable(
+  raw: Record<string, unknown>,
+  input: Pick<PersistAssignmentInput, 'ownerUid' | 'activationId'>,
+): void {
+  if (
+    raw.ownerUid !== input.ownerUid ||
+    raw.status !== 'active' ||
+    raw.onlineEnabled !== true ||
+    activationIdOf(raw.activatedAt) !== input.activationId
+  ) {
+    throw new VexAssignmentError('invalid_assignment', 'La verifica non è più disponibile.');
+  }
+}
+
+function assertPdfStillAvailable(
+  raw: Record<string, unknown>,
+  input: Pick<PersistAssignmentInput, 'ownerUid' | 'activationId'>,
+): void {
+  if (
+    raw.ownerUid !== input.ownerUid ||
+    (raw.status !== 'active' && raw.status !== 'closed') ||
+    raw.visibility !== 'public' ||
+    raw.studentPdfEnabled !== true ||
+    activationIdOf(raw.activatedAt) !== input.activationId
+  ) {
+    throw new VexAssignmentError('invalid_assignment', 'PDF non disponibile.');
+  }
 }
 
 function readPdfAssignment(
@@ -118,14 +153,23 @@ function loadStudent(db: Firestore) {
  * pura, e scrive **una sola volta** (0 scritture al riuso). L'estrazione casuale
  * avviene solo quando l'assegnazione non esiste ancora.
  */
-function persistAssignment(db: Firestore) {
+export function persistAssignment(db: Firestore) {
   return async (input: PersistAssignmentInput): Promise<PersistAssignmentResult> => {
     const ref = db.doc(`submissions/${input.submissionId}`);
     const pdfAssignmentRef = db.doc(
       `verifications/${input.verificationId}/studentAssignments/${input.studentUid}`,
     );
+    const verificationRef = db.doc(`verifications/${input.verificationId}`);
     return db.runTransaction(async (tx: Transaction): Promise<PersistAssignmentResult> => {
-      const [snap, pdfAssignmentSnap] = await Promise.all([tx.get(ref), tx.get(pdfAssignmentRef)]);
+      const [verificationSnap, snap, pdfAssignmentSnap] = await Promise.all([
+        tx.get(verificationRef),
+        tx.get(ref),
+        tx.get(pdfAssignmentRef),
+      ]);
+      if (!verificationSnap.exists) {
+        throw new VexAssignmentError('invalid_assignment', 'La verifica non è più disponibile.');
+      }
+      assertAssignmentStillAvailable(verificationSnap.data() as Record<string, unknown>, input);
       const pdfOrders = pdfAssignmentSnap.exists
         ? readPdfAssignment(pdfAssignmentSnap.data() as Record<string, unknown>, input)
         : null;
@@ -210,17 +254,23 @@ function persistAssignment(db: Firestore) {
  * fissare le domande, ma non marca la verifica come iniziata. La callable di
  * svolgimento rilegge lo stesso documento prima di creare la submission.
  */
-function persistPdfAssignment(db: Firestore) {
+export function persistPdfAssignment(db: Firestore) {
   return async (input: PersistAssignmentInput): Promise<PersistAssignmentResult> => {
     const submissionRef = db.doc(`submissions/${input.submissionId}`);
     const assignmentRef = db.doc(
       `verifications/${input.verificationId}/studentAssignments/${input.studentUid}`,
     );
+    const verificationRef = db.doc(`verifications/${input.verificationId}`);
     return db.runTransaction(async (tx: Transaction): Promise<PersistAssignmentResult> => {
-      const [submissionSnap, assignmentSnap] = await Promise.all([
+      const [verificationSnap, submissionSnap, assignmentSnap] = await Promise.all([
+        tx.get(verificationRef),
         tx.get(submissionRef),
         tx.get(assignmentRef),
       ]);
+      if (!verificationSnap.exists) {
+        throw new VexAssignmentError('invalid_assignment', 'PDF non disponibile.');
+      }
+      assertPdfStillAvailable(verificationSnap.data() as Record<string, unknown>, input);
       const assignmentOrders = assignmentSnap.exists
         ? readPdfAssignment(assignmentSnap.data() as Record<string, unknown>, input)
         : null;

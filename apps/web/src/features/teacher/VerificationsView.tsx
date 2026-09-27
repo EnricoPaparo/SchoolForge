@@ -120,6 +120,10 @@ import {
   type ForceClosePlan,
   type ScheduleForceCloseResponse,
 } from '../repository/verifications/forceCloseClient.js';
+import {
+  createReturnVerificationToDraft,
+  describeReturnToDraftError,
+} from '../repository/verifications/returnToDraftClient.js';
 import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
@@ -459,6 +463,10 @@ export function VerificationsView() {
   const [reopening, setReopening] = useState(false);
   const [reopenError, setReopenError] = useState<string | null>(null);
 
+  const [returnToDraftConfirmId, setReturnToDraftConfirmId] = useState<string | null>(null);
+  const [returningToDraft, setReturningToDraft] = useState(false);
+  const [returnToDraftError, setReturnToDraftError] = useState<string | null>(null);
+
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -569,6 +577,7 @@ export function VerificationsView() {
   const aiCallables = useMemo(() => createAiCorrectionCallables(functions), []);
   /** FORCE-SUBMIT-01 — wrapper tipizzato della callable, creato una sola volta. */
   const scheduleForceCloseRef = useRef(createScheduleForceClose(functions));
+  const returnToDraftRef = useRef(createReturnVerificationToDraft(functions));
 
   const sortedMonitorRows = useMemo(() => {
     if (!monitorStudents || !monitorItems) return [];
@@ -1984,6 +1993,7 @@ export function VerificationsView() {
     setDeleteConfirmId(null);
     setOnlineDisableConfirmId(null);
     setPdfDisableConfirmId(null);
+    setReturnToDraftConfirmId(null);
   }
 
   async function handleConfirmClose(id: string) {
@@ -2012,6 +2022,7 @@ export function VerificationsView() {
     setDeleteConfirmId(null);
     setOnlineDisableConfirmId(null);
     setPdfDisableConfirmId(null);
+    setReturnToDraftConfirmId(null);
   }
 
   async function handleConfirmReopen(id: string) {
@@ -2033,6 +2044,34 @@ export function VerificationsView() {
     }
   }
 
+  function handleStartReturnToDraft(id: string) {
+    setReturnToDraftConfirmId(id);
+    setReturnToDraftError(null);
+    setCloseConfirmId(null);
+    setReopenConfirmId(null);
+    setDeleteConfirmId(null);
+    setOnlineDisableConfirmId(null);
+    setPdfDisableConfirmId(null);
+  }
+
+  async function handleConfirmReturnToDraft(id: string) {
+    if (returningToDraft) return;
+    setReturningToDraft(true);
+    setReturnToDraftError(null);
+    try {
+      await returnToDraftRef.current(id);
+      const updated = await listVerifications(ownerUid, db);
+      setVerifications(updated);
+      setReturnToDraftConfirmId(null);
+      const draft = updated.find((verification) => verification.id === id);
+      if (draft) await handleSelectVer(draft);
+    } catch (error) {
+      setReturnToDraftError(describeReturnToDraftError(error));
+    } finally {
+      setReturningToDraft(false);
+    }
+  }
+
   function handleStartDelete(id: string) {
     setDeleteConfirmId(id);
     setDeleteError(null);
@@ -2040,6 +2079,7 @@ export function VerificationsView() {
     setReopenConfirmId(null);
     setOnlineDisableConfirmId(null);
     setPdfDisableConfirmId(null);
+    setReturnToDraftConfirmId(null);
   }
 
   async function handleConfirmDelete(id: string) {
@@ -2180,6 +2220,9 @@ export function VerificationsView() {
     activationPlan !== null && activateError === null && activationPlan.blockers.length === 0;
   const closeConfirmVerification = verifications.find((item) => item.id === closeConfirmId);
   const reopenConfirmVerification = verifications.find((item) => item.id === reopenConfirmId);
+  const returnToDraftConfirmVerification = verifications.find(
+    (item) => item.id === returnToDraftConfirmId,
+  );
   const deleteConfirmVerification = verifications.find((item) => item.id === deleteConfirmId);
   const onlineDisableVerification = verifications.find(
     (item) => item.id === onlineDisableConfirmId,
@@ -2264,6 +2307,7 @@ export function VerificationsView() {
           {filtered.length > 0 && (
             <div className={styles.verificationList} role="list" aria-label="Archivio verifiche">
               {filtered.map((verification) => {
+                const lifecycleLocked = verification.returnToDraftPending === true;
                 const programTitle =
                   programs.find((program) => program.id === verification.config.programId)?.title ??
                   verification.config.programId;
@@ -2371,6 +2415,7 @@ export function VerificationsView() {
                                 verification.onlineEnabled ? styles.onlineSwitchOn : ''
                               }`}
                               disabled={
+                                lifecycleLocked ||
                                 onlineLoadingId === verification.id ||
                                 (!verification.onlineEnabled && verification.config.classId == null)
                               }
@@ -2446,6 +2491,7 @@ export function VerificationsView() {
                           } allo studente — ${verification.config.title}`}
                           disabled={
                             verification.status === 'draft' ||
+                            lifecycleLocked ||
                             visibilityLoadingId === verification.id
                           }
                           onClick={() => void handleToggleVisibility(verification)}
@@ -2471,7 +2517,7 @@ export function VerificationsView() {
                             verification.studentPdfEnabled ? 'Disabilita' : 'Abilita'
                           } PDF studente — ${verification.config.title}`}
                           aria-pressed={verification.studentPdfEnabled}
-                          disabled={pdfEnabledLoadingId === verification.id}
+                          disabled={lifecycleLocked || pdfEnabledLoadingId === verification.id}
                           onClick={() =>
                             verification.studentPdfEnabled
                               ? handleStartDisableStudentPdf(verification.id)
@@ -2501,7 +2547,7 @@ export function VerificationsView() {
                             role="menuitem"
                             title="Riapri verifica"
                             aria-label={`Riapri verifica — ${verification.config.title}`}
-                            disabled={reopening}
+                            disabled={lifecycleLocked || reopening}
                             onClick={() => handleStartReopen(verification.id)}
                           >
                             <IconRotateCcw size={15} />
@@ -2517,11 +2563,26 @@ export function VerificationsView() {
                                 : 'Attiva prima la verifica'
                             }
                             aria-label={`Chiudi verifica — ${verification.config.title}`}
-                            disabled={verification.status !== 'active' || closing}
+                            disabled={
+                              verification.status !== 'active' || lifecycleLocked || closing
+                            }
                             onClick={() => handleStartClose(verification.id)}
                           >
                             <IconCircleX size={15} />
                             Chiudi verifica
+                          </button>
+                        )}
+                        {verification.status !== 'draft' && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            title="Riporta in bozza"
+                            aria-label={`Riporta in bozza — ${verification.config.title}`}
+                            disabled={returningToDraft}
+                            onClick={() => handleStartReturnToDraft(verification.id)}
+                          >
+                            <IconEraser size={15} />
+                            Riporta in bozza
                           </button>
                         )}
                         <button
@@ -2534,7 +2595,7 @@ export function VerificationsView() {
                               : 'Elimina verifica'
                           }
                           aria-label={`Elimina verifica — ${verification.config.title}`}
-                          disabled={verification.status === 'active' || deleting}
+                          disabled={verification.status === 'active' || lifecycleLocked || deleting}
                           onClick={() => handleStartDelete(verification.id)}
                         >
                           <IconTrash size={15} />
@@ -2714,6 +2775,44 @@ export function VerificationsView() {
                 onClick={() => void handleConfirmReopen(reopenConfirmVerification.id)}
               >
                 {reopening ? 'Riapertura…' : 'Riapri verifica'}
+              </button>
+            </div>
+          </div>
+        </DialogShell>
+      )}
+
+      {returnToDraftConfirmVerification && (
+        <DialogShell
+          title="Riporta in bozza"
+          role="alertdialog"
+          busy={returningToDraft}
+          onCancel={() => setReturnToDraftConfirmId(null)}
+        >
+          <div role="region" aria-label="Conferma ritorno in bozza">
+            <p>
+              Riportare <strong>{returnToDraftConfirmVerification.config.title}</strong> in bozza?
+              Dopo le modifiche dovrai attivarla nuovamente.
+            </p>
+            {returnToDraftError && (
+              <p role="alert" className="text-error">
+                {returnToDraftError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button
+                type="button"
+                disabled={returningToDraft}
+                onClick={() => setReturnToDraftConfirmId(null)}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={returningToDraft}
+                onClick={() => void handleConfirmReturnToDraft(returnToDraftConfirmVerification.id)}
+              >
+                {returningToDraft ? 'Ritorno in bozza…' : 'Riporta in bozza'}
               </button>
             </div>
           </div>
