@@ -274,17 +274,25 @@ export async function updateVerificationConfig(
     const added = [...nextLabels].filter((labelId) => !previousLabels.has(labelId));
     const removed = [...previousLabels].filter((labelId) => !nextLabels.has(labelId));
     const changed = [...added, ...removed];
+    const addedSet = new Set(added);
 
     const labels = await Promise.all(
       changed.map(async (labelId) => {
         const ref = doc(db, LABELS_COLLECTION, labelId);
         const labelSnap = await transaction.get(ref);
-        const item = parseDifferentiationLabel(labelId, labelSnap.data(), ownerUid);
+        const rawLabel = labelSnap.data();
+        // Una bozza riportata da active/closed può conservare il riferimento a
+        // un'etichetta eliminata nel frattempo. Rimuovere quel riferimento è
+        // una riparazione valida e non ha più alcun contatore da decrementare.
+        // Le etichette aggiunte continuano invece a essere validate fail-closed.
+        if (!addedSet.has(labelId) && rawLabel === undefined) return null;
+        const item = parseDifferentiationLabel(labelId, rawLabel, ownerUid);
         return { ref, item };
       }),
     );
-    const addedSet = new Set(added);
-    for (const { ref, item } of labels) {
+    for (const label of labels) {
+      if (label === null) continue;
+      const { ref, item } = label;
       const delta = addedSet.has(item.labelId) ? 1 : -1;
       if (delta < 0 && item.draftUsageCount === 0) {
         throw new Error(`Etichetta «${item.name}»: contatore delle bozze incoerente.`);
@@ -1133,11 +1141,18 @@ export async function deleteVerification(
             ].map(async (labelId) => {
               const ref = doc(db, LABELS_COLLECTION, labelId);
               const labelSnap = await transaction.get(ref);
-              return { ref, item: parseDifferentiationLabel(labelId, labelSnap.data(), ownerUid) };
+              const rawLabel = labelSnap.data();
+              // Il riferimento editoriale può sopravvivere a un'etichetta
+              // eliminata mentre la verifica era attiva. Non esiste più un
+              // contatore da rilasciare; le etichette vive restano validate.
+              if (rawLabel === undefined) return null;
+              return { ref, item: parseDifferentiationLabel(labelId, rawLabel, ownerUid) };
             }),
           )
         : [];
-    for (const { ref, item } of labels) {
+    for (const label of labels) {
+      if (label === null) continue;
+      const { ref, item } = label;
       if (item.draftUsageCount === 0) {
         throw new Error(`Etichetta «${item.name}»: contatore delle bozze incoerente.`);
       }
