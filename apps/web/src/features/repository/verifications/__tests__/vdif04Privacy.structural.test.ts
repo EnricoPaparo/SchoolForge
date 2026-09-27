@@ -153,10 +153,16 @@ describe('T36 — autosufficienza dello snapshot dopo l’attivazione', () => {
     expect(resolver).not.toMatch(/getDoc|getDocs|firebase\/firestore/);
   });
 
-  it('le Functions risolvono da teacherSnapshot e non leggono etichette o assegnazioni', () => {
+  it('le Functions studente risolvono da teacherSnapshot e non leggono etichette o assegnazioni', () => {
     const functionsSources = sourcesUnder('functions/src');
+    const returnToDraftModules = new Set([
+      'functions/src/verificationReturnToDraftGateway.ts',
+      'functions/src/verificationReturnToDraftGateway.integration.test.ts',
+    ]);
     for (const [path, source] of functionsSources) {
-      expect(source, path).not.toMatch(/differentiationLabels/);
+      if (!returnToDraftModules.has(path)) {
+        expect(source, path).not.toMatch(/differentiationLabels/);
+      }
       expect(source, path).not.toMatch(/studentLabelAssignments/);
     }
   });

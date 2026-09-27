@@ -43,6 +43,7 @@ export type AuditAction =
   | 'verification.onlineEnabledChanged'
   | 'verification.studentPdfEnabledChanged'
   | 'verification.closed'
+  | 'verification.returnedToDraft'
   | 'verification.deleted'
   | 'submission.deleted'
   | 'studentAccess.updated'
@@ -905,6 +906,8 @@ export type VerificationDoc = {
    * which stay owner-only and ungated by this field.
    */
   studentPdfEnabled?: boolean;
+  /** Server-only fence while the callable removes derived assignments. */
+  returnToDraftPending?: boolean;
   config: VerificationConfig;
   teacherSnapshot: VerificationTeacherSnapshot | null; // set at activation
   createdAt: Timestamp | FieldValue;

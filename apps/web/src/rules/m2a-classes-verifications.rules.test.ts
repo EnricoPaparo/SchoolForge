@@ -153,6 +153,17 @@ describe('Firestore rules — /verifications/{verificationId}', () => {
     );
   });
 
+  it('owner cannot forge the server-only return-to-draft fence on create', async () => {
+    await seedOwner();
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v-fenced'), {
+        ownerUid: OWNER_UID,
+        status: 'draft',
+        returnToDraftPending: true,
+      }),
+    );
+  });
+
   it('authenticated owner can read their verification', async () => {
     await seedOwner();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -222,6 +233,19 @@ describe('Firestore rules — verification immutability', () => {
       setDoc(doc(ownerDb(), 'verifications/v1'), {
         ...DRAFT_DOC,
         config: { ...DRAFT_DOC.config, title: 'V1 aggiornata' },
+      }),
+    );
+  });
+
+  it('owner cannot forge the server-only return-to-draft fence on a draft', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...DRAFT_DOC,
+        returnToDraftPending: true,
       }),
     );
   });
