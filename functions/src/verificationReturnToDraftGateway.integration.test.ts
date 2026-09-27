@@ -127,6 +127,9 @@ emulatorDescribe('returnVerificationToDraft — Firestore transaction fence', ()
         activatedAt: null,
         closedAt: null,
       });
+      expect((await db.doc(`verifications/${id}`).get()).data()?.config).toEqual(
+        verification(status, labelId).config,
+      );
       expect((await db.doc(`verifications/${id}`).get()).data()).not.toHaveProperty(
         'returnToDraftPending',
       );
@@ -201,7 +204,7 @@ emulatorDescribe('returnVerificationToDraft — Firestore transaction fence', ()
     expect((await db.doc(`verifications/${id}`).get()).data()?.status).toBe('draft');
   });
 
-  it('prunes a differentiation label deleted while active instead of blocking forever', async () => {
+  it('preserves the complete editable config when a label was deleted while active', async () => {
     const missingLabelId = `deleted-label-${randomUUID()}`;
     const id = await seed('active', missingLabelId);
 
@@ -210,7 +213,7 @@ emulatorDescribe('returnVerificationToDraft — Firestore transaction fence', ()
     const data = (await db.doc(`verifications/${id}`).get()).data();
     expect(data?.status).toBe('draft');
     expect(data?.config.questionRefs).toEqual([{ questionIndexEntryId: 'q-1' }]);
-    expect(data?.config).not.toHaveProperty('differentiation');
+    expect(data?.config).toEqual(verification('active', missingLabelId).config);
   });
 
   it('serializes a concurrent student start: draft and a new submission can never both win', async () => {

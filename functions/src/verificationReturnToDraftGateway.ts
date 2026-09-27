@@ -56,25 +56,6 @@ function referencedLabelIds(data: DocumentData): string[] {
   return [...result];
 }
 
-function configWithoutMissingLabels(data: DocumentData, missing: Set<string>): DocumentData {
-  if (missing.size === 0) return data.config;
-  const config = { ...(data.config as Record<string, unknown>) };
-  const differentiation = config.differentiation as Record<string, unknown>;
-  const questions = (differentiation.questions as Record<string, unknown>[])
-    .map((question) => {
-      const choices = Object.fromEntries(
-        Object.entries(question.choices as Record<string, unknown>).filter(
-          ([labelId]) => !missing.has(labelId),
-        ),
-      );
-      return { ...question, choices };
-    })
-    .filter((question) => Object.keys(question.choices).length > 0);
-  if (questions.length === 0) delete config.differentiation;
-  else config.differentiation = { ...differentiation, questions };
-  return config;
-}
-
 async function assertNoSubmissions(
   tx: Transaction,
   db: Firestore,
@@ -163,10 +144,12 @@ export async function finalizeReturnToDraft(
         snap: await tx.get(db.doc(`differentiationLabels/${labelId}`)),
       })),
     );
-    const missingLabelIds = new Set<string>();
     for (const { ref, snap } of labels) {
       if (!snap.exists) {
-        missingLabelIds.add(ref.id);
+        // La configurazione della verifica è contenuto editoriale e resta
+        // byte-per-byte quella scelta dal docente. Un'etichetta eliminata
+        // mentre la verifica era attiva non ha più un contatore da ripristinare,
+        // ma non autorizza a riscrivere domande o varianti in questo lifecycle.
         continue;
       }
       const label = snap.data();
@@ -194,9 +177,6 @@ export async function finalizeReturnToDraft(
       returnToDraftPending: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
     };
-    if (missingLabelIds.size > 0) {
-      verificationUpdate.config = configWithoutMissingLabels(data, missingLabelIds);
-    }
     tx.update(verificationRef, verificationUpdate);
     tx.delete(projectionRef);
     tx.set(auditRef, {

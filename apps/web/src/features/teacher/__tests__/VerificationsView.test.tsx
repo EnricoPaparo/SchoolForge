@@ -1640,10 +1640,10 @@ describe('VerificationsView', () => {
     expect(screen.getAllByRole('menuitem')).toHaveLength(8);
   });
 
-  it('returns an active verification to draft and opens its editor after confirmation', async () => {
+  it('returns an active verification to draft with its existing questions selected in the editor', async () => {
     setupDefaults();
     const active = activeVerWithSnapshot();
-    const draft = makeDraftVer();
+    const draft = makeDraftVer({ config: active.config });
     mockListVerifications.mockResolvedValueOnce([active]).mockResolvedValue([draft]);
     mockReturnVerificationToDraft.mockResolvedValue(undefined);
     render(<VerificationsView />);
@@ -1657,6 +1657,9 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(mockReturnVerificationToDraft).toHaveBeenCalledWith('ver-1'));
     await waitFor(() => expect(screen.getByLabelText('Dettaglio verifica')).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Attiva verifica' })).toBeTruthy();
+    expect(
+      ((await screen.findByLabelText(/seleziona domanda q1/i)) as HTMLInputElement).checked,
+    ).toBe(true);
   });
 
   it('shows the concise submissions blocker returned by the server', async () => {
