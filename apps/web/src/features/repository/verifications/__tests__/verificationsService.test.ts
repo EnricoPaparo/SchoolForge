@@ -544,6 +544,72 @@ describe('updateVerificationConfig', () => {
     expect(mockTxSet).toHaveBeenCalledOnce();
   });
 
+  it('rimuove un’etichetta mancante e decrementa soltanto le etichette ancora vive', async () => {
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        {
+          baseQuestionIndexEntryId: 'qi-1',
+          choices: {
+            missing: { kind: 'none' as const },
+            live: { kind: 'none' as const },
+          },
+        },
+      ],
+    };
+    mockTxGet
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          ownerUid: OWNER_UID,
+          status: 'draft',
+          config: { ...VALID_CONFIG, differentiation },
+        }),
+      })
+      .mockResolvedValueOnce({ data: () => undefined })
+      .mockResolvedValueOnce({
+        data: () => ({
+          labelId: 'live',
+          ownerUid: OWNER_UID,
+          name: 'Percorso vivo',
+          nameKey: 'percorso vivo',
+          assignedCount: 0,
+          draftUsageCount: 2,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      });
+
+    await updateVerificationConfig('ver-id', { differentiation: undefined }, OWNER_UID, fakeDb);
+
+    expect(mockTxGet).toHaveBeenCalledTimes(3);
+    expect(mockTxUpdate).toHaveBeenCalledTimes(2);
+    expect(mockTxUpdate.mock.calls[0]?.[1]).toMatchObject({ draftUsageCount: 1 });
+    expect(mockTxUpdate.mock.calls[1]?.[1].config).not.toHaveProperty('differentiation');
+    expect(mockTxSet).toHaveBeenCalledOnce();
+  });
+
+  it('resta fail-closed quando si prova ad aggiungere un’etichetta mancante', async () => {
+    const differentiation = {
+      version: 1 as const,
+      questions: [
+        { baseQuestionIndexEntryId: 'qi-1', choices: { missing: { kind: 'none' as const } } },
+      ],
+    };
+    mockTxGet
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID, status: 'draft', config: VALID_CONFIG }),
+      })
+      .mockResolvedValueOnce({ data: () => undefined });
+
+    await expect(
+      updateVerificationConfig('ver-id', { differentiation }, OWNER_UID, fakeDb),
+    ).rejects.toThrow();
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
+  });
+
   it('non legge né scrive etichette quando l’insieme resta invariato', async () => {
     const differentiation = {
       version: 1 as const,
@@ -1646,6 +1712,52 @@ describe('deleteVerification', () => {
     expect(mockTxUpdate).toHaveBeenCalledTimes(2);
     expect(mockTxUpdate.mock.calls.map((call) => call[1].draftUsageCount).sort()).toEqual([0, 2]);
     expect(mockTxDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it('elimina una bozza con etichetta mancante e decrementa soltanto quella ancora viva', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'draft',
+      config: {
+        ...VALID_CONFIG,
+        differentiation: {
+          version: 1,
+          questions: [
+            {
+              baseQuestionIndexEntryId: 'qi-1',
+              choices: {
+                missing: { kind: 'none' },
+                live: { kind: 'none' },
+              },
+            },
+          ],
+        },
+      },
+    };
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
+    mockTxGet
+      .mockResolvedValueOnce({ exists: () => true, data: () => draftDoc })
+      .mockResolvedValueOnce({ data: () => undefined })
+      .mockResolvedValueOnce({
+        data: () => ({
+          labelId: 'live',
+          ownerUid: OWNER_UID,
+          name: 'Percorso vivo',
+          nameKey: 'percorso vivo',
+          assignedCount: 0,
+          draftUsageCount: 3,
+          createdAt: TEST_TIMESTAMP,
+          updatedAt: TEST_TIMESTAMP,
+        }),
+      });
+
+    await deleteVerification('ver-id', OWNER_UID, fakeDb);
+
+    expect(mockTxUpdate).toHaveBeenCalledOnce();
+    expect(mockTxUpdate.mock.calls[0]?.[1]).toMatchObject({ draftUsageCount: 2 });
+    expect(mockTxDelete).toHaveBeenCalledTimes(2);
+    expect(mockTxSet).toHaveBeenCalledOnce();
   });
 
   it('VDIF-03 fail-closed — non elimina una bozza se un contatore è già a zero', async () => {
