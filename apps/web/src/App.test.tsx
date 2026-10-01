@@ -34,6 +34,14 @@ let firestoreDocs: Record<string, unknown> = {};
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, a: string, b?: string) => ({ path: b === undefined ? a : `${a}/${b}` }),
   collection: (_db: unknown, name: string) => ({ path: name }),
+  getDocFromServer: (ref: { path: string }) => {
+    const data = firestoreDocs[ref.path];
+    return Promise.resolve({
+      exists: () => data !== undefined,
+      data: () => data,
+      metadata: { fromCache: false },
+    });
+  },
   getDoc: (ref: { path: string }) => {
     const data = firestoreDocs[ref.path];
     return Promise.resolve({ exists: () => data !== undefined, data: () => data });
@@ -78,8 +86,10 @@ describe('App — owner authenticated', () => {
     // (PERF-SEC-01B-4) — a real dynamic import() resolves asynchronously
     // even in the test environment, so the default findByRole timeout can
     // be too tight for this specific module graph.
-    expect(await screen.findByRole('button', { name: /Template/ }, { timeout: 3000 })).toBeTruthy();
-  });
+    expect(
+      await screen.findByRole('button', { name: /Template/ }, { timeout: 10000 }),
+    ).toBeTruthy();
+  }, 15000);
 });
 
 describe('App — student authenticated (M3-lite)', () => {

@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDocFromServer } from 'firebase/firestore';
 import { db } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { getStudentAccessSettings } from '../repository/students/studentAccessService.js';
@@ -8,7 +8,6 @@ import {
   recordPortalAccess,
   requestStudentAccess,
 } from '../repository/students/studentsService.js';
-import { OwnerSetup } from './OwnerSetup.js';
 import styles from './OwnerSetup.module.css';
 
 /**
@@ -42,7 +41,6 @@ function PortalLoadingFallback() {
 
 type GateState =
   | 'loading'
-  | 'setup'
   | 'teacher'
   | 'student'
   | 'portalDisabled'
@@ -80,7 +78,8 @@ export function RoleGate({ children }: { children: ReactNode }) {
   const [resolvedForUid, setResolvedForUid] = useState<string | null>(null);
   const [studentClassId, setStudentClassId] = useState<string | null>(null);
   const [studentDisplayName, setStudentDisplayName] = useState<string | null>(null);
-  const requestAttempted = useRef(false);
+  const pendingRequest = useRef<{ uid: string; promise: Promise<void> } | null>(null);
+  const [retry, setRetry] = useState(0);
   // TWU-01: guards a single portal-access telemetry write per real entry. It
   // holds the uid the current entry already recorded for (null = none yet), so
   // React StrictMode's double effect invocation still writes once, while a new
@@ -118,21 +117,25 @@ export function RoleGate({ children }: { children: ReactNode }) {
     };
 
     void (async () => {
-      let ownerUid: string | null;
+      let ownerUid: string;
       try {
-        const ownerPublicSnap = await getDoc(doc(db, 'settings', 'ownerPublic'));
-        ownerUid = ownerPublicSnap.exists() ? (ownerPublicSnap.data()?.ownerUid ?? null) : null;
+        const ownerPublicSnap = await getDocFromServer(doc(db, 'settings', 'ownerPublic'));
+        if (!active) return;
+        const value: unknown = ownerPublicSnap.exists() ? ownerPublicSnap.data()?.ownerUid : null;
+        // Missing projection is not proof that the canonical owner is absent.
+        // Provisioning belongs to an administrator, never to a public login.
+        if (
+          ownerPublicSnap.metadata.fromCache ||
+          typeof value !== 'string' ||
+          !value.trim() ||
+          value !== value.trim()
+        ) {
+          commitState('error');
+          return;
+        }
+        ownerUid = value;
       } catch {
-        // Permission denied or transient error: fall back to setup so
-        // OwnerSetup can resolve which case it actually is by attempting
-        // the write (blocked server-side if an owner already exists and
-        // this user isn't it).
-        commitState('setup');
-        return;
-      }
-
-      if (ownerUid === null) {
-        commitState('setup');
+        commitState('error');
         return;
       }
 
@@ -184,13 +187,23 @@ export function RoleGate({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (requestAttempted.current) return;
-        requestAttempted.current = true;
-
-        await requestStudentAccess(
-          { uid: user.uid, ownerUid, email: user.email ?? '', displayName: user.displayName },
-          db,
-        );
+        // Reuse an in-flight request after an effect restart, but always await
+        // it in the current effect so StrictMode/account changes cannot strand loading.
+        if (pendingRequest.current?.uid !== user.uid) {
+          pendingRequest.current = {
+            uid: user.uid,
+            promise: requestStudentAccess(
+              { uid: user.uid, ownerUid, email: user.email ?? '', displayName: user.displayName },
+              db,
+            ),
+          };
+        }
+        const request = pendingRequest.current;
+        try {
+          await request.promise;
+        } finally {
+          if (pendingRequest.current === request) pendingRequest.current = null;
+        }
         commitState('pending');
       } catch {
         commitState('error');
@@ -200,7 +213,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, retry]);
 
   // Comparing during render makes an identity switch fail closed before the
   // effect for the new user has a chance to run and clear the previous state.
@@ -214,10 +227,6 @@ export function RoleGate({ children }: { children: ReactNode }) {
         </main>
       </div>
     );
-  }
-
-  if (state === 'setup') {
-    return <OwnerSetup onComplete={() => setState('teacher')} />;
   }
 
   if (state === 'student') {
@@ -240,6 +249,18 @@ export function RoleGate({ children }: { children: ReactNode }) {
           <h1 className={styles.title}>{screen.title}</h1>
           <p className={styles.description}>{screen.description}</p>
           <div className={styles.actions}>
+            {state === 'error' && (
+              <button
+                type="button"
+                className={styles.primaryBtn}
+                onClick={() => {
+                  setState('loading');
+                  setRetry((value) => value + 1);
+                }}
+              >
+                Riprova
+              </button>
+            )}
             <button type="button" className={styles.secondaryBtn} onClick={() => void signOut()}>
               Esci
             </button>
@@ -251,7 +272,7 @@ export function RoleGate({ children }: { children: ReactNode }) {
 }
 
 const STATUS_SCREENS: Record<
-  Exclude<GateState, 'loading' | 'setup' | 'teacher' | 'student'>,
+  Exclude<GateState, 'loading' | 'teacher' | 'student'>,
   { title: string; description: string }
 > = {
   portalDisabled: {

@@ -434,3 +434,22 @@ describe('ClassesTab — allineamento azioni e ripristino del focus (UI-STUDENTI
     expect(mockUpdateClass).toHaveBeenCalledTimes(1);
   });
 });
+
+it('opens class cards with a native button and suppresses navigation while editing or confirming', () => {
+  const onOpenClass = vi.fn();
+  renderTab({ onOpenClass });
+  const open = screen.getByRole('button', { name: 'Apri classe 3A Informatica' });
+  open.focus();
+  expect(document.activeElement).toBe(open);
+  fireEvent.click(open);
+  expect(onOpenClass).toHaveBeenCalledWith('class-1');
+  onOpenClass.mockClear();
+  fireEvent.click(menuItem('Modifica classe 3A Informatica'));
+  fireEvent.click(screen.getByText('3A Informatica'));
+  expect(onOpenClass).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Apri classe 3A Informatica' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+  fireEvent.click(menuItem('Elimina classe 3A Informatica'));
+  fireEvent.click(screen.getByText('3A Informatica'));
+  expect(onOpenClass).not.toHaveBeenCalled();
+});

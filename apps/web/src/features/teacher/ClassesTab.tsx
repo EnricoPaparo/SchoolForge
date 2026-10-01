@@ -26,6 +26,7 @@ interface Props {
   ownerUid: string;
   classes: ClassesTabItem[];
   studentCountByClassId: Map<string, number>;
+  onOpenClass?: (id: string) => void;
   onClassCreated: (id: string, name: string) => void;
   onClassRenamed: (id: string, name: string) => void;
   onClassDeleted: (id: string) => void;
@@ -40,6 +41,7 @@ export function ClassesTab({
   ownerUid,
   classes,
   studentCountByClassId,
+  onOpenClass,
   onClassCreated,
   onClassRenamed,
   onClassDeleted,
@@ -194,112 +196,127 @@ export function ClassesTab({
         </p>
       )}
 
-      {classes.length === 0 ? (
+      {classes.length === 0 && !onOpenClass && (
         <p className="state-empty">Nessuna classe ancora creata.</p>
-      ) : (
-        <div className={styles.classList} role="list" aria-label="Classi">
-          {classes.map((item) => {
-            const count = studentCountByClassId.get(item.id) ?? 0;
-            const isEditing = editId === item.id;
-            const isConfirmingDelete = deleteConfirmId === item.id;
-            return (
-              <RecordCard
-                key={item.id}
-                recordLabel="Classe"
-                title={item.name}
-                titleMeta={studentCountLabel(count)}
-                actionLayout="class-admin"
-                metrics={[]}
-                identityControl={
-                  isEditing ? (
-                    <div className={styles.editRow}>
-                      <label
-                        className={styles.visuallyHidden}
-                        htmlFor={`edit-class-name-${item.id}`}
-                      >
-                        Nome classe
-                      </label>
-                      <input
-                        id={`edit-class-name-${item.id}`}
-                        ref={editInputRef}
-                        className={styles.input}
-                        value={editName}
-                        disabled={saving}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => handleEditKeyDown(e, item)}
-                      />
-                      <button
-                        type="button"
-                        className="btn-success"
-                        disabled={
-                          saving || !editName.trim() || editName.trim() === item.name.trim()
-                        }
-                        onClick={() => void handleSave(item)}
-                      >
-                        {saving ? 'Salvataggio…' : 'Salva'}
-                      </button>
-                      <button type="button" disabled={saving} onClick={cancelEdit}>
-                        Annulla
-                      </button>
-                    </div>
-                  ) : isConfirmingDelete ? (
-                    <div className={styles.editRow}>
-                      <span className={styles.confirmText}>Eliminare?</span>
-                      <button
-                        type="button"
-                        className="btn-danger"
-                        disabled={deleting}
-                        onClick={() => void handleDelete(item.id)}
-                      >
-                        {deleting ? 'Eliminazione…' : 'Conferma'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deleting}
-                        onClick={() => setDeleteConfirmId(null)}
-                      >
-                        Annulla
-                      </button>
-                    </div>
-                  ) : undefined
-                }
-                actions={
-                  <RecordActionsMenu
-                    ariaLabel={`Azioni classe — ${item.name}`}
-                    triggerRef={triggerRefFor(item.id)}
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      title="Modifica classe"
-                      aria-label={`Modifica classe ${item.name}`}
-                      onClick={() => startEdit(item)}
-                    >
-                      <IconPencil size={15} />
-                      <span>Modifica classe</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={menuStyles.menuDanger}
-                      title="Elimina classe"
-                      aria-label={`Elimina classe ${item.name}`}
-                      onClick={() => {
-                        setDeleteConfirmId(item.id);
-                        setEditId(null);
-                        setActionError(null);
-                      }}
-                    >
-                      <IconTrash size={15} />
-                      <span>Elimina classe</span>
-                    </button>
-                  </RecordActionsMenu>
-                }
-              />
-            );
-          })}
-        </div>
       )}
+      <div className={styles.classList} role="list" aria-label="Classi">
+        {onOpenClass && (
+          <RecordCard
+            recordLabel="Classe"
+            title="Nessuna classe"
+            titleMeta={studentCountLabel(studentCountByClassId.get('') ?? 0)}
+            actionLayout="class-admin"
+            metrics={[]}
+            openLabel="Apri Nessuna classe"
+            onOpen={() => onOpenClass('')}
+          />
+        )}
+        {classes.map((item) => {
+          const count = studentCountByClassId.get(item.id) ?? 0;
+          const isEditing = editId === item.id;
+          const isConfirmingDelete = deleteConfirmId === item.id;
+          return (
+            <RecordCard
+              key={item.id}
+              recordLabel="Classe"
+              title={item.name}
+              openLabel={
+                onOpenClass && !isEditing && !isConfirmingDelete
+                  ? `Apri classe ${item.name}`
+                  : undefined
+              }
+              onOpen={
+                onOpenClass && !isEditing && !isConfirmingDelete
+                  ? () => onOpenClass(item.id)
+                  : undefined
+              }
+              titleMeta={studentCountLabel(count)}
+              actionLayout="class-admin"
+              metrics={[]}
+              identityControl={
+                isEditing ? (
+                  <div className={styles.editRow}>
+                    <label className={styles.visuallyHidden} htmlFor={`edit-class-name-${item.id}`}>
+                      Nome classe
+                    </label>
+                    <input
+                      id={`edit-class-name-${item.id}`}
+                      ref={editInputRef}
+                      className={styles.input}
+                      value={editName}
+                      disabled={saving}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => handleEditKeyDown(e, item)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-success"
+                      disabled={saving || !editName.trim() || editName.trim() === item.name.trim()}
+                      onClick={() => void handleSave(item)}
+                    >
+                      {saving ? 'Salvataggio…' : 'Salva'}
+                    </button>
+                    <button type="button" disabled={saving} onClick={cancelEdit}>
+                      Annulla
+                    </button>
+                  </div>
+                ) : isConfirmingDelete ? (
+                  <div className={styles.editRow}>
+                    <span className={styles.confirmText}>Eliminare?</span>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      disabled={deleting}
+                      onClick={() => void handleDelete(item.id)}
+                    >
+                      {deleting ? 'Eliminazione…' : 'Conferma'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => setDeleteConfirmId(null)}
+                    >
+                      Annulla
+                    </button>
+                  </div>
+                ) : undefined
+              }
+              actions={
+                <RecordActionsMenu
+                  ariaLabel={`Azioni classe — ${item.name}`}
+                  triggerRef={triggerRefFor(item.id)}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    title="Modifica classe"
+                    aria-label={`Modifica classe ${item.name}`}
+                    onClick={() => startEdit(item)}
+                  >
+                    <IconPencil size={15} />
+                    <span>Modifica classe</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuStyles.menuDanger}
+                    title="Elimina classe"
+                    aria-label={`Elimina classe ${item.name}`}
+                    onClick={() => {
+                      setDeleteConfirmId(item.id);
+                      setEditId(null);
+                      setActionError(null);
+                    }}
+                  >
+                    <IconTrash size={15} />
+                    <span>Elimina classe</span>
+                  </button>
+                </RecordActionsMenu>
+              }
+            />
+          );
+        })}
+      </div>
 
       {createDialogOpen && (
         <DialogShell

@@ -8,8 +8,8 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+import { doc, getDoc, setDoc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = resolve(__dirname, '../../../../firestore.rules');
@@ -382,5 +382,48 @@ describe('default deny', () => {
     const db = testEnv.unauthenticatedContext().firestore();
     await assertFails(getDoc(doc(db, 'programs/p1')));
     await assertFails(getDoc(doc(db, 'anything/doc-1')));
+  });
+});
+
+describe('owner takeover regressions', () => {
+  it.each([true, false])(
+    'rejects forged bootstrap batches with existing owner (projection present: %s)',
+    async (projection) => {
+      await seedOwner();
+      if (projection) await seedOwnerPublic();
+      const db = testEnv.authenticatedContext(OTHER_UID).firestore();
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'settings/owner'), { ownerUid: OTHER_UID });
+      batch.set(doc(db, 'settings/ownerPublic'), { ownerUid: OTHER_UID });
+      await assertFails(batch.commit());
+      await assertFails(updateDoc(doc(db, 'settings/owner'), { ownerUid: OTHER_UID }));
+      await assertFails(deleteDoc(doc(db, 'settings/owner')));
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        expect((await getDoc(doc(ctx.firestore(), 'settings/owner'))).data()?.ownerUid).toBe(
+          OWNER_UID,
+        );
+        expect((await getDoc(doc(ctx.firestore(), 'settings/ownerPublic'))).exists()).toBe(
+          projection,
+        );
+      });
+    },
+  );
+
+  it('allows only one of two concurrent legacy bootstrap batches to win', async () => {
+    const claim = (uid: string) => {
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'settings/owner'), { ownerUid: uid });
+      batch.set(doc(db, 'settings/ownerPublic'), { ownerUid: uid });
+      return batch.commit();
+    };
+    const outcomes = await Promise.allSettled([claim(OWNER_UID), claim(OTHER_UID)]);
+    expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const canonical = (await getDoc(doc(ctx.firestore(), 'settings/owner'))).data()?.ownerUid;
+      expect((await getDoc(doc(ctx.firestore(), 'settings/ownerPublic'))).data()?.ownerUid).toBe(
+        canonical,
+      );
+    });
   });
 });

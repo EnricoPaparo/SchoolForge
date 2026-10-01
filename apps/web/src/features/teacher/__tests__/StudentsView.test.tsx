@@ -182,11 +182,9 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
     const tabs = await screen.findByRole('tablist', {
       name: 'Gestione studenti, classi ed etichette',
     });
-    expect(
-      within(tabs)
-        .getByRole('tab', { name: /Studenti/ })
-        .getAttribute('aria-selected'),
-    ).toBe('true');
+    expect(within(tabs).getByRole('tab', { name: 'Classi' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
 
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Classi' }));
     const panel = screen.getByRole('tabpanel', { name: 'Classi' });
@@ -214,6 +212,7 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
     );
     mockListStudents.mockResolvedValue(withPortal);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     // Nessuna tabella: i due accessi sono riquadri della card.
@@ -238,11 +237,11 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
 
-    const studentsTab = await screen.findByRole('tab', { name: /Studenti/ });
+    const studentsTab = await screen.findByRole('tab', { name: 'Classi' });
     studentsTab.focus();
     fireEvent.keyDown(studentsTab, { key: 'ArrowRight' });
 
-    const classesTab = screen.getByRole('tab', { name: 'Classi' });
+    const classesTab = screen.getByRole('tab', { name: 'Etichette' });
     expect(classesTab.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(classesTab);
   });
@@ -276,11 +275,8 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
 
-    const studentsTab = await screen.findByRole('tab', { name: /Studenti/ });
+    const studentsTab = await screen.findByRole('tab', { name: 'Classi' });
     studentsTab.focus();
-
-    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Classi' }));
 
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
     const labelsTab = screen.getByRole('tab', { name: 'Etichette' });
@@ -289,14 +285,13 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
 
     // Ciclo: dall'ultima si torna alla prima.
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Studenti/ }));
-
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Classi' }));
     // E all'indietro dalla prima si arriva all'ultima.
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Etichette' }));
 
     fireEvent.keyDown(document.activeElement!, { key: 'Home' });
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Studenti/ }));
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Classi' }));
 
     fireEvent.keyDown(document.activeElement!, { key: 'End' });
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Etichette' }));
@@ -305,10 +300,11 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
   it('roving tabindex: solo la scheda selezionata è raggiungibile con Tab', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Etichette' }));
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
+    expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['-1', '0']);
   });
 
   /**
@@ -326,6 +322,7 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     it('al mount le etichette sono caricate una sola volta', async () => {
       mockListStudents.mockResolvedValue(STUDENTS);
       render(<StudentsView ownerUid={OWNER_UID} />);
+      await showAllStudents();
       await waitFor(() => screen.getByText('Ada Approved'));
       expect(mockListDifferentiationLabels).toHaveBeenCalledTimes(1);
     });
@@ -333,6 +330,7 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     it('approvare uno studente ricarica i core ma non le etichette', async () => {
       mockListStudents.mockResolvedValue(STUDENTS);
       render(<StudentsView ownerUid={OWNER_UID} />);
+      await showAllStudents();
       await waitFor(() => screen.getByText('Pia Pending'));
 
       await actOn('Pia Pending', /^Approva/);
@@ -345,6 +343,7 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     it('bloccare e rimettere in attesa non ricaricano le etichette', async () => {
       mockListStudents.mockResolvedValue(STUDENTS);
       render(<StudentsView ownerUid={OWNER_UID} />);
+      await showAllStudents();
       await waitFor(() => screen.getByText('Ada Approved'));
 
       await actOn('Ada Approved', /^Blocca/);
@@ -358,6 +357,7 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     it('cambiare classe non ricarica le etichette', async () => {
       mockListStudents.mockResolvedValue(STUDENTS);
       render(<StudentsView ownerUid={OWNER_UID} />);
+      await showAllStudents();
       await waitFor(() => screen.getByText('Ada Approved'));
 
       const select = within(studentCard('Ada Approved')).getByLabelText(
@@ -373,6 +373,7 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     it('rimuovere uno studente non ricarica le etichette', async () => {
       mockListStudents.mockResolvedValue(STUDENTS);
       render(<StudentsView ownerUid={OWNER_UID} />);
+      await showAllStudents();
       await waitFor(() => screen.getByText('Bo Blocked'));
 
       fireEvent.click(studentMenuItem('Bo Blocked', /^Rimuovi/));
@@ -404,6 +405,7 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
     mockListDifferentiationLabels.mockRejectedValue(new Error('Etichette non leggibili.'));
     render(<StudentsView ownerUid={OWNER_UID} />);
 
+    await showAllStudents();
     // Le altre schede restano operative.
     await waitFor(() => screen.getByText('Ada Approved'));
 
@@ -420,6 +422,12 @@ describe('StudentsView — terza scheda Etichette (VDIF-01)', () => {
  * vivono nel menu «…» (`RecordActionsMenu`). Questi helper aprono il menu della
  * card indicata e restituiscono la voce richiesta.
  */
+async function showAllStudents() {
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Cerca studenti' }), {
+    target: { value: '@' },
+  });
+}
+
 function studentCard(name: string): HTMLElement {
   return screen.getByRole('listitem', { name: `Studente ${name}` });
 }
@@ -442,6 +450,7 @@ describe('StudentsView — loading and empty states', () => {
   it('shows empty state when there are no students at all', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => expect(screen.getByText(/nessuno studente ha ancora/i)).toBeTruthy());
   });
 });
@@ -451,6 +460,7 @@ describe('StudentsView — lista card', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     mockRenameStudent.mockRejectedValueOnce(new Error('Salvataggio non riuscito'));
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await screen.findByText('Ada Approved');
     fireEvent.click(
       within(studentCard('Ada Approved')).getByRole('button', { name: /Azioni studente/ }),
@@ -471,6 +481,7 @@ describe('StudentsView — lista card', () => {
   it('mostra una card per studente, full-width, con nome, email, stato e classe', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     const list = screen.getByRole('list', { name: 'Elenco studenti' });
@@ -487,6 +498,7 @@ describe('StudentsView — lista card', () => {
   it('shows "Nessuna classe" for a student with no classId', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     const select = screen.getByLabelText('Classe di Pia Pending') as HTMLSelectElement;
@@ -498,6 +510,7 @@ describe('StudentsView — search', () => {
   it('filters by displayName', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Cerca studenti'), { target: { value: 'Ada' } });
@@ -508,6 +521,7 @@ describe('StudentsView — search', () => {
   it('filters by email', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Cerca studenti'), { target: { value: 'blocked@' } });
@@ -518,6 +532,7 @@ describe('StudentsView — search', () => {
   it('filters by status label', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Cerca studenti'), { target: { value: 'attesa' } });
@@ -528,6 +543,7 @@ describe('StudentsView — search', () => {
   it('filters by class name', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Cerca studenti'), {
@@ -540,6 +556,7 @@ describe('StudentsView — search', () => {
   it('shows "nessuno studente trovato" when the search matches nothing', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Cerca studenti'), {
@@ -553,6 +570,7 @@ describe('StudentsView — toggles', () => {
   it('renders all three toggles as accessible switches with a clear on/off state', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText(/Portale studenti/i));
 
     const switches = screen.getAllByRole('switch');
@@ -565,6 +583,7 @@ describe('StudentsView — toggles', () => {
   it('calls setStudentPortalEnabled when the portal switch is clicked', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText(/Portale studenti/i));
 
     fireEvent.click(screen.getByRole('switch', { name: 'Portale studenti' }));
@@ -577,6 +596,7 @@ describe('StudentsView — toggles', () => {
   it('calls setNewStudentRequestsEnabled when the requests switch is clicked', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText(/Nuove richieste/i));
 
     fireEvent.click(screen.getByRole('switch', { name: 'Nuove richieste' }));
@@ -594,6 +614,7 @@ describe('StudentsView — toggles', () => {
       examMode: EXAM_MODE_OFF,
     });
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText(/Portale studenti/i));
 
     expect(
@@ -607,6 +628,7 @@ describe('StudentsView — row actions', () => {
   it('approves a pending student', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.click(studentMenuItem('Pia Pending', 'Approva Pia Pending'));
@@ -619,6 +641,7 @@ describe('StudentsView — row actions', () => {
   it('blocks an approved student', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Ada Approved'));
 
     fireEvent.click(studentMenuItem('Ada Approved', 'Blocca Ada Approved'));
@@ -629,6 +652,7 @@ describe('StudentsView — row actions', () => {
   it('resets a blocked student to pending', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Bo Blocked'));
 
     fireEvent.click(studentMenuItem('Bo Blocked', 'Rimetti in attesa Bo Blocked'));
@@ -641,6 +665,7 @@ describe('StudentsView — row actions', () => {
   it('removes a student after confirmation', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.click(studentMenuItem('Pia Pending', 'Rimuovi Pia Pending'));
@@ -653,6 +678,7 @@ describe('StudentsView — row actions', () => {
   it('cancels the removal confirmation without calling removeStudent', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.click(studentMenuItem('Pia Pending', 'Rimuovi Pia Pending'));
@@ -666,6 +692,7 @@ describe('StudentsView — row actions', () => {
   it('assigns a class to a student', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     const select = screen.getByLabelText('Classe di Pia Pending');
@@ -679,6 +706,7 @@ describe('StudentsView — row actions', () => {
   it('clears a class assignment when "Nessuna classe" is selected', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Ada Approved'));
 
     const select = screen.getByLabelText('Classe di Ada Approved');
@@ -693,6 +721,7 @@ describe('StudentsView — row actions', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     const onStudentsChanged = vi.fn();
     render(<StudentsView ownerUid={OWNER_UID} onStudentsChanged={onStudentsChanged} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.click(studentMenuItem('Pia Pending', 'Approva Pia Pending'));
@@ -705,6 +734,7 @@ describe('StudentsView — Modalità verifica (M3F-11A)', () => {
   it('shows "Disattivata" and no banner when off', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
 
     expect(screen.getByText('Disattivata')).toBeTruthy();
@@ -742,6 +772,7 @@ describe('StudentsView — Modalità verifica (M3F-11A)', () => {
   it('shows only the concise requested description and the derived class names', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await screen.findByRole('switch', { name: 'Modalità verifica' });
     expect(
       screen.getByText('Nasconde temporaneamente le Lezioni agli studenti delle classi coinvolte.'),
@@ -767,6 +798,7 @@ describe('StudentsView — Modalità verifica (M3F-11A)', () => {
       examMode: { enabled: true, scope: 'classes', classIds: ['class-1'], enabledAt: null },
     });
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
     expect(screen.getByRole('status').textContent).toMatch(/3A Informatica/);
@@ -832,6 +864,7 @@ describe('StudentsView — dropdown Classe nella card (UI-STUDENTI-CLASSI-01)', 
   it('resta nella card, con label visibile, e non finisce nel menu «…»', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     const card = studentCard('Pia Pending');
@@ -849,6 +882,7 @@ describe('StudentsView — dropdown Classe nella card (UI-STUDENTI-CLASSI-01)', 
   it('salva il cambio classe una sola volta e non apre il menu azioni', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     const card = studentCard('Pia Pending');
@@ -874,6 +908,7 @@ describe('StudentsView — dropdown Classe nella card (UI-STUDENTI-CLASSI-01)', 
       STUDENTS.map((s) => (s.id === 'u-pending' ? { ...s, classId: 'class-1' } : s)),
     );
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Classe di Pia Pending'), { target: { value: '' } });
@@ -886,6 +921,7 @@ describe('StudentsView — dropdown Classe nella card (UI-STUDENTI-CLASSI-01)', 
     mockListStudents.mockResolvedValue(STUDENTS);
     mockAssignStudentClass.mockRejectedValueOnce(new Error('denied'));
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     fireEvent.change(screen.getByLabelText('Classe di Pia Pending'), {
@@ -904,6 +940,7 @@ describe('StudentsView — menu azioni studente (UI-STUDENTI-CLASSI-01)', () => 
   it('raccoglie le cinque azioni discrete e disabilita quelle non applicabili', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Ada Approved'));
 
     const card = studentCard('Ada Approved');
@@ -933,6 +970,7 @@ describe('StudentsView — menu azioni studente (UI-STUDENTI-CLASSI-01)', () => 
   it('marca «Rimuovi studente» come distruttiva', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     const remove = studentMenuItem('Pia Pending', 'Rimuovi Pia Pending');
@@ -942,6 +980,7 @@ describe('StudentsView — menu azioni studente (UI-STUDENTI-CLASSI-01)', () => 
   it('non annida pulsanti dentro pulsanti', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
     await waitFor(() => screen.getByText('Pia Pending'));
 
     for (const button of screen.getAllByRole('button')) {
@@ -1059,6 +1098,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
   it('carica le assegnazioni con UNA query nello stesso caricamento, zero letture per card', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     expect(mockListStudentLabelAssignments).toHaveBeenCalledOnce();
@@ -1071,6 +1111,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     const select = labelSelectOf('Ada Approved');
@@ -1089,7 +1130,9 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       { studentUid: 'u-approved', ownerUid: OWNER_UID, labelId: 'label-1' },
     ]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
+    await showAllStudents();
     await waitFor(() => expect(labelSelectOf('Ada Approved').value).toBe('label-1'));
     const card = studentCard('Ada Approved');
     expect(card.textContent).toContain('Percorso A');
@@ -1106,6 +1149,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       changed: true,
     });
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
@@ -1143,6 +1187,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       changed: true,
     });
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => expect(labelSelectOf('Ada Approved').value).toBe('label-1'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: '' } });
@@ -1162,6 +1207,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       new Error('Questa etichetta non esiste più. Ricarica la pagina e riprova.'),
     );
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
@@ -1193,6 +1239,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
         changed: true,
       });
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
@@ -1225,6 +1272,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       }),
     );
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
@@ -1256,6 +1304,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       }).then(() => ({ studentUid: uid, labelId, labelCounts: [], changed: true })),
     );
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
@@ -1285,6 +1334,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
         }),
       );
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.change(labelSelectOf('Ada Approved'), { target: { value: 'label-1' } });
@@ -1307,6 +1357,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
   it('le altre azioni sullo studente non rileggono etichette né assegnazioni', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Pia Pending'));
     fireEvent.click(studentMenuItem('Pia Pending', /^Approva/));
@@ -1330,6 +1381,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       releasedLabel: { labelId: 'label-1', assignedCount: 0 },
     });
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.click(studentMenuItem('Ada Approved', /^Rimuovi/));
@@ -1351,6 +1403,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
       { studentUid: 'u-approved', ownerUid: OWNER_UID, labelId: 'label-1' },
     ]);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     const search = screen.getByLabelText('Cerca studenti');
@@ -1368,6 +1421,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     mockListDifferentiationLabels.mockResolvedValue(TWO_LABELS);
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     fireEvent.click(labelSelectOf('Ada Approved'));
@@ -1383,6 +1437,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     mockListDifferentiationLabels.mockRejectedValue(new Error('Etichette non leggibili.'));
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(true));
@@ -1392,6 +1447,7 @@ describe('StudentsView — assegnazione etichetta (VDIF-02)', () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     mockListStudentLabelAssignments.mockRejectedValue(new Error('Assegnazioni non leggibili.'));
     render(<StudentsView ownerUid={OWNER_UID} />);
+    await showAllStudents();
 
     await waitFor(() => screen.getByText('Ada Approved'));
     await waitFor(() => expect(labelSelectOf('Ada Approved').disabled).toBe(true));
@@ -1430,5 +1486,108 @@ describe('StudentsView — contratto CSS del campo Etichetta (VDIF-02)', () => {
     expect(labelFieldCss).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.labelRetryButton\s*\{[^}]*min-height:\s*2\.75rem/s,
     );
+  });
+});
+
+describe('StudentsView — class navigation', () => {
+  it('starts with only two tabs, class cards and an immutable unassigned group', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    const unassigned = await screen.findByRole('listitem', { name: 'Classe Nessuna classe' });
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Classi',
+      'Etichette',
+    ]);
+    expect(unassigned.textContent).toContain('2 studenti');
+    expect(within(unassigned).getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByRole('list', { name: 'Elenco studenti' })).toBeNull();
+    fireEvent.click(within(unassigned).getByRole('button', { name: 'Apri Nessuna classe' }));
+    expect(screen.getByRole('heading', { name: 'Nessuna classe' })).toBeTruthy();
+    expect(studentCard('Pia Pending')).toBeTruthy();
+    expect(studentCard('Bo Blocked')).toBeTruthy();
+    expect(screen.queryByText('Ada Approved')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Tutte le classi/ })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Classi' }));
+    expect(screen.getByRole('button', { name: 'Apri Nessuna classe' })).toBeTruthy();
+    expect(screen.queryByText('Pia Pending')).toBeNull();
+  });
+
+  it('searches globally from the overview but only inside an open class', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    const search = await screen.findByRole('textbox', { name: 'Cerca studenti' });
+    fireEvent.change(search, { target: { value: 'Ada' } });
+    expect(studentCard('Ada Approved')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Classi' }));
+    expect((search as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Apri Nessuna classe' }));
+    fireEvent.change(search, { target: { value: 'Ada' } });
+    expect(screen.getByText('Nessuno studente trovato.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Classi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apri classe 3A Informatica' }));
+    expect(studentCard('Ada Approved')).toBeTruthy();
+    expect(screen.queryByText('Pia Pending')).toBeNull();
+  });
+
+  it('moves a newly assigned student out of the group and updates both counts', async () => {
+    mockListStudents
+      .mockResolvedValueOnce(STUDENTS)
+      .mockResolvedValue(
+        STUDENTS.map((s) => (s.id === 'u-pending' ? { ...s, classId: 'class-1' } : s)),
+      );
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri Nessuna classe' }));
+    fireEvent.change(within(studentCard('Pia Pending')).getByLabelText('Classe di Pia Pending'), {
+      target: { value: 'class-1' },
+    });
+    await waitFor(() => expect(screen.queryByText('Pia Pending')).toBeNull());
+    expect(mockAssignStudentClass).toHaveBeenCalledWith('u-pending', 'class-1', OWNER_UID, {});
+    fireEvent.click(screen.getByRole('tab', { name: 'Classi' }));
+    expect(screen.getByRole('listitem', { name: 'Classe Nessuna classe' }).textContent).toContain(
+      '1 studente',
+    );
+    expect(screen.getByRole('listitem', { name: 'Classe 3A Informatica' }).textContent).toContain(
+      '2 studenti',
+    );
+  });
+
+  it('includes orphaned students and students of a deleted class without changing their documents', async () => {
+    mockListStudents.mockResolvedValue([
+      ...STUDENTS,
+      { ...STUDENTS[0], id: 'orphan', uid: 'orphan', displayName: 'Orphan', classId: 'deleted' },
+    ]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    const unassigned = await screen.findByRole('listitem', { name: 'Classe Nessuna classe' });
+    expect(unassigned.textContent).toContain('3 studenti');
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni classe — 3A Informatica' }));
+    expect(screen.queryByRole('heading', { name: '3A Informatica' })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina classe 3A Informatica' }));
+    fireEvent.click(
+      within(screen.getByRole('listitem', { name: 'Classe 3A Informatica' })).getByRole('button', {
+        name: 'Conferma',
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Apri classe 3A Informatica' })).toBeNull(),
+    );
+    expect(screen.getByRole('listitem', { name: 'Classe Nessuna classe' }).textContent).toContain(
+      '4 studenti',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Apri Nessuna classe' }));
+    expect(studentCard('Ada Approved')).toBeTruthy();
+    expect(studentCard('Orphan')).toBeTruthy();
+    expect(
+      (within(studentCard('Orphan')).getByLabelText('Classe di Orphan') as HTMLSelectElement).value,
+    ).toBe('');
+    expect(mockAssignStudentClass).not.toHaveBeenCalled();
+  });
+
+  it('keeps the empty unassigned group even before the first student connects', async () => {
+    mockListStudents.mockResolvedValue([]);
+    mockListClasses.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    expect(
+      (await screen.findByRole('listitem', { name: 'Classe Nessuna classe' })).textContent,
+    ).toContain('0 studenti');
   });
 });
