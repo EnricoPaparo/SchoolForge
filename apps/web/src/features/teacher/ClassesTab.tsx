@@ -225,7 +225,11 @@ export function ClassesTab({
                   ? `Apri classe ${item.name}`
                   : undefined
               }
-              onOpen={onOpenClass ? () => onOpenClass(item.id) : undefined}
+              onOpen={
+                onOpenClass && !isEditing && !isConfirmingDelete
+                  ? () => onOpenClass(item.id)
+                  : undefined
+              }
               titleMeta={studentCountLabel(count)}
               actionLayout="class-admin"
               metrics={[]}
