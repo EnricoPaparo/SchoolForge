@@ -139,6 +139,14 @@ describe('OpenAiGrader payload and mapping', () => {
     });
   });
 
+  it('applies profile reasoning to active GPT-6 models and omits it on rollback models', () => {
+    expect(buildOpenAiGradingRequest(input, 'gpt-6-luna').reasoning).toEqual({ effort: 'low' });
+    expect(buildOpenAiGradingRequest(input, 'gpt-6.1-sol').reasoning).toEqual({
+      effort: 'medium',
+    });
+    expect(buildOpenAiGradingRequest(input, 'gpt-5.6-sol')).not.toHaveProperty('reasoning');
+  });
+
   it.each([
     ['schema_invalid', 'not-json'],
     [

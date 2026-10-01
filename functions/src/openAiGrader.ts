@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import OpenAI from 'openai';
+import { reasoningEffortForModel } from './aiModelRequestPolicy.js';
 import {
   AiGraderFailure,
   AiGraderInvalidOutputError,
@@ -96,6 +97,7 @@ export interface OpenAiStructuredRequest {
   model: string;
   input: [{ role: 'system'; content: string }, { role: 'user'; content: string }];
   text: {
+    verbosity?: 'low' | 'medium' | 'high';
     format: {
       type: 'json_schema';
       // Ampliato da letterale a `string` (AIGEN-01): consente all'adapter
@@ -107,6 +109,7 @@ export interface OpenAiStructuredRequest {
       schema: Record<string, unknown>;
     };
   };
+  reasoning?: { effort: 'low' | 'medium' };
   max_output_tokens: number;
   store: false;
 }
@@ -385,6 +388,7 @@ export function buildOpenAiGradingRequest(
     ...(input.teacherGuidance ? { teacherGuidance: input.teacherGuidance } : {}),
   };
 
+  const reasoningEffort = reasoningEffortForModel(model);
   return {
     model,
     input: [
@@ -399,6 +403,7 @@ export function buildOpenAiGradingRequest(
         schema: OUTPUT_SCHEMA,
       },
     },
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
     store: false,
   };

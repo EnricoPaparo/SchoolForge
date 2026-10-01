@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MODEL_PROFILE,
+  ACTIVE_AI_RUNTIME_POLICY,
   GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS,
+  GPT6_MODEL_PROFILE_RESOLUTIONS,
   MODEL_PROFILE_RESOLUTIONS,
   parseModelProfileField,
   profileForModel,
@@ -13,28 +15,35 @@ import {
 import {
   OPENAI_RUNTIME_GPT6_LUNA_MODEL,
   OPENAI_RUNTIME_GPT6_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_MODEL,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_SOL_MODEL,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
 
 describe('TWU-02 — closed model profiles', () => {
-  it('economy resolves to the cache-aware GPT-5.6 Luna rollback pair', () => {
+  it('economy resolves to GPT-6 Luna with its cache-aware list', () => {
     expect(MODEL_PROFILE_RESOLUTIONS.economy).toEqual({
-      model: 'gpt-5.6-luna',
-      priceListVersion: 'v8-2026-09-26-luna-cache-standard',
+      model: 'gpt-6-luna',
+      priceListVersion: 'v10-2026-09-26-gpt6-luna-standard',
     });
     expect(resolveModelProfile('economy')).toEqual({
-      model: 'gpt-5.6-luna',
-      priceListVersion: 'v8-2026-09-26-luna-cache-standard',
+      model: 'gpt-6-luna',
+      priceListVersion: 'v10-2026-09-26-gpt6-luna-standard',
     });
   });
 
-  it('quality resolves to the cache-aware GPT-5.6 Sol rollback pair', () => {
+  it('quality resolves to GPT-6.1 Sol with its cache-aware list', () => {
     expect(resolveModelProfile('quality')).toEqual({
-      model: 'gpt-5.6-sol',
-      priceListVersion: 'v9-2026-09-26-sol-cache-standard',
+      model: 'gpt-6.1-sol',
+      priceListVersion: 'v12-2026-09-29-gpt61-sol-standard',
     });
+  });
+
+  it('keeps the active GPT-6 mapping separate from the rollback mapping', () => {
+    expect(ACTIVE_AI_RUNTIME_POLICY).toBe('gpt6');
+    expect(MODEL_PROFILE_RESOLUTIONS).toBe(GPT6_MODEL_PROFILE_RESOLUTIONS);
+    expect(MODEL_PROFILE_RESOLUTIONS).not.toBe(GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS);
   });
 
   it('keeps GPT-5.6 Luna/Sol as explicit cache-aware rollback pairs', () => {
@@ -95,6 +104,7 @@ describe('TWU-02 — closed model profiles', () => {
       expect(profileForModel(OPENAI_RUNTIME_SOL_MODEL)).toBe('quality');
       expect(profileForModel(OPENAI_RUNTIME_GPT6_LUNA_MODEL)).toBe('economy');
       expect(profileForModel(OPENAI_RUNTIME_GPT6_SOL_MODEL)).toBe('quality');
+      expect(profileForModel(OPENAI_RUNTIME_GPT61_SOL_MODEL)).toBe('quality');
     });
     it('returns null for an unmapped model (no silent fallback)', () => {
       expect(profileForModel('some-other-model')).toBeNull();

@@ -14,10 +14,17 @@
 import {
   buildConceptMapPrompt,
   buildLessonPrompt,
+  buildLegacyLessonPrompt,
   buildPoolPrompt,
   buildVisualPlanProposalPrompt,
   buildVisualProposalPrompt,
 } from './aiContentPrompt.js';
+import {
+  lessonVerbosity,
+  reasoningEffortForModel,
+  usesGpt6LessonPolicy,
+} from './aiModelRequestPolicy.js';
+import { ACTIVE_AI_RUNTIME_POLICY } from './aiCorrectionModelProfile.js';
 import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
@@ -574,7 +581,9 @@ export function buildContentStructuredRequest(
           ? buildVisualProposalPrompt(request)
           : request.kind === 'visual_plan_proposal'
             ? buildVisualPlanProposalPrompt(request)
-            : buildLessonPrompt(request);
+            : ACTIVE_AI_RUNTIME_POLICY === 'gpt6'
+              ? buildLessonPrompt(request)
+              : buildLegacyLessonPrompt(request);
   const schema =
     request.kind === 'pool'
       ? buildPoolOutputSchema(request)
@@ -585,6 +594,7 @@ export function buildContentStructuredRequest(
           : request.kind === 'visual_plan_proposal'
             ? buildVisualPlanProposalOutputSchema(request)
             : LESSON_OUTPUT_SCHEMA;
+  const reasoningEffort = reasoningEffortForModel(model);
   return {
     model,
     input: [
@@ -592,6 +602,9 @@ export function buildContentStructuredRequest(
       { role: 'user', content: prompt.user },
     ],
     text: {
+      ...(request.kind === 'lesson' && usesGpt6LessonPolicy(model)
+        ? { verbosity: lessonVerbosity(request.depth) }
+        : {}),
       format: {
         type: 'json_schema',
         name: AI_CONTENT_SCHEMA_NAME,
@@ -599,6 +612,7 @@ export function buildContentStructuredRequest(
         schema,
       },
     },
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     max_output_tokens: resolveMaxOutputTokens(request),
     store: false,
   };

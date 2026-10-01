@@ -103,6 +103,8 @@ export const OPENAI_RUNTIME_GPT6_LUNA_MODEL = 'gpt-6-luna';
 export const OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION = 'v10-2026-09-26-gpt6-luna-standard';
 export const OPENAI_RUNTIME_GPT6_SOL_MODEL = 'gpt-6-sol';
 export const OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION = 'v11-2026-09-26-gpt6-sol-standard';
+export const OPENAI_RUNTIME_GPT61_SOL_MODEL = 'gpt-6.1-sol';
+export const OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION = 'v12-2026-09-29-gpt61-sol-standard';
 export const OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION = 'v8-2026-09-26-luna-cache-standard';
 export const OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION = 'v9-2026-09-26-sol-cache-standard';
 export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelPrice>>>> = {
@@ -192,6 +194,17 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
     [OPENAI_RUNTIME_GPT6_SOL_MODEL]: {
       inputMicroUsdPerMillion: 2_000_000,
       cachedInputMicroUsdPerMillion: 200_000,
+      cacheWriteMicroUsdPerMillion: 2_500_000,
+      outputMicroUsdPerMillion: 10_000_000,
+    },
+  },
+  // LESSON-GPT6-PHASE1 — listino immutabile GPT-6.1 Sol. Le tariffe sono
+  // separate da quelle del precedente GPT-6 Sol, che resta disponibile per la
+  // riconciliazione dei run storici.
+  [OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION]: {
+    [OPENAI_RUNTIME_GPT61_SOL_MODEL]: {
+      inputMicroUsdPerMillion: 2_000_000,
+      cachedInputMicroUsdPerMillion: 100_000,
       cacheWriteMicroUsdPerMillion: 2_500_000,
       outputMicroUsdPerMillion: 10_000_000,
     },

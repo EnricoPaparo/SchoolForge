@@ -42,17 +42,12 @@ export function exportCurrentContentPrompt(input: unknown): { prompt: string } {
   // References to schema in injection protection are not output instructions.
   system = system.trim();
   if (request.kind === 'lesson') {
-    instructions = instructions.replace('Scrivi il corpo Markdown', 'Scrivi il corpo');
-    move(/Struttura editoriale e compatibilità SchoolForge:[\s\S]*?(?=Prima di rispondere)/);
-    move(
-      /6\) verifica numero e collocazione[\s\S]*?(?=7\))/,
-      '6) verifica numero e collocazione delle attività;\n',
+    instructions = instructions.replace(
+      'Scrivi esclusivamente il corpo Markdown',
+      'Scrivi il corpo',
     );
-    move(/Restituisci soltanto il Markdown finale corretto\./);
-    move(
-      /Scegli tu il tono[\s\S]*?nessuno script\)\./,
-      'Scegli tu il tono e l’organizzazione più efficaci entro questi criteri.',
-    );
+    move(/Stile e compatibilità SchoolForge:[\s\S]*?(?=Prima di rispondere)/);
+    move(/Restituisci soltanto il corpo Markdown finale\./);
     format.push(
       'Rispondi con il solo corpo Markdown da incollare nell’editor della lezione, senza oggetto JSON né fence attorno all’intera risposta. Esempio di struttura (da sostituire con il contenuto richiesto):\n\n## Concetto principale\n\nSpiegazione motivata.\n\n### Esempio svolto\n\nDati, metodo, passaggi, risultato e motivazione.',
     );

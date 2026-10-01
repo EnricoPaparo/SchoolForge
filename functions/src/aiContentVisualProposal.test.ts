@@ -979,7 +979,7 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
   });
 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-v1');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
   });
 

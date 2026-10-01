@@ -65,7 +65,7 @@ Legenda stato:
 | ID | Titolo | Stato | Documento | Sintesi decisione |
 |---|---|---|---|---|
 | C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8` (target UE deciso storicamente); backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. *(Nota HARD-F02: su DEV Storage/Function sono in `us-central1`, mentre Firestore è stata verificata in `europe-west8`; il target UE resta valido per PROD — `evidenze/hard-01c-region-matrix.md`.)* |
-| C-02 | Provider IA e modello | ✅ **Chiusa (HG-M5-1..4 + G7 + MODEL-GPT6-ROLLBACK-01)** | brief.md, m5-ai-assisted-roadmap.md, api-contract.md | OpenAI Responses API; dopo la regressione qualitativa osservata in DEV con GPT-6, Economy usa `gpt-5.6-luna` e Quality usa `gpt-5.6-sol`. L'accounting include cache hit e cache write. GPT-6 resta disponibile ma inattivo per diagnosi future. Applica solo a M5. |
+| C-02 | Provider IA e modello | 🟡 **Candidata DEV (LESSON-GPT6-PHASE1)** | brief.md, m5-ai-assisted-roadmap.md, api-contract.md, proposta-gpt6-generazione-lezioni.md | OpenAI Responses API; Economy usa `gpt-6-luna`, Quality usa `gpt-6.1-sol`, con reasoning server-side e verbosity delle lezioni. Accounting cache-aware; GPT-5.6, prompt precedente e parametri precedenti restano un rollback atomico. Validazione didattica umana in DEV ancora necessaria. |
 | C-03 | Regola didattica correzione automatica | ⏳ Rinviata (G8) | brief.md | Regola d'uso della modalità automatica IA; **fuori** dalla linea M5-00→M5-05 (correzione assistita). Rimandata a un eventuale Gate G8. |
 
 ---
