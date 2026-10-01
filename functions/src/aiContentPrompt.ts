@@ -729,6 +729,14 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
   return { system: LESSON_SECURITY_PREAMBLE, user };
 }
 
+/** Selettore unico del prompt lesson, condiviso da payload provider ed export. */
+export function buildLessonPromptForPolicy(
+  request: LessonRequest,
+  policy: 'gpt6' | 'gpt56',
+): BuiltPrompt {
+  return policy === 'gpt6' ? buildLessonPrompt(request) : buildLegacyLessonPrompt(request);
+}
+
 /**
  * VISUAL-ENRICHMENT-01 — gerarchia della proposta visuale. Tre livelli sopra i
  * dati: sicurezza, contratto di output, e poi **tutto** il resto come dato.

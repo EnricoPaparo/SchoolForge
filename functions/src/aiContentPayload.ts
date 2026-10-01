@@ -13,8 +13,7 @@
 
 import {
   buildConceptMapPrompt,
-  buildLessonPrompt,
-  buildLegacyLessonPrompt,
+  buildLessonPromptForPolicy,
   buildPoolPrompt,
   buildVisualPlanProposalPrompt,
   buildVisualProposalPrompt,
@@ -581,9 +580,7 @@ export function buildContentStructuredRequest(
           ? buildVisualProposalPrompt(request)
           : request.kind === 'visual_plan_proposal'
             ? buildVisualPlanProposalPrompt(request)
-            : ACTIVE_AI_RUNTIME_POLICY === 'gpt6'
-              ? buildLessonPrompt(request)
-              : buildLegacyLessonPrompt(request);
+            : buildLessonPromptForPolicy(request, ACTIVE_AI_RUNTIME_POLICY);
   const schema =
     request.kind === 'pool'
       ? buildPoolOutputSchema(request)

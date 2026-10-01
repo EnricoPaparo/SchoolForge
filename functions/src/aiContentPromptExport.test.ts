@@ -6,7 +6,7 @@ import {
   POOL_FORMAT_EXAMPLE,
 } from './aiContentPromptExport.js';
 import * as promptBuilders from './aiContentPrompt.js';
-import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import { buildLegacyLessonPrompt, buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
 import { parsePool } from '@schoolforge/lesson-contract';
 import { validateAiContentRequest } from './aiContentCore.js';
 import { AI_VISUAL_SERVER_CONFIG, AI_VISUAL_LEGACY_SERVER_CONFIG } from './aiVisualCore.js';
@@ -104,6 +104,37 @@ describe('current prompt export and immutable visual presets', () => {
   );
   it('provides an importer-compatible pool example', () => {
     expect(parsePool(POOL_FORMAT_EXAMPLE).ok).toBe(true);
+  });
+  it('exports the legacy lesson prompt when the atomic policy rolls back to gpt56', () => {
+    const input = {
+      kind: 'lesson',
+      requestId: '11111111-1111-4111-8111-111111111111',
+      modelProfile: 'quality',
+      depth: 'complete',
+      titolo: 'Reti',
+      difficolta: 'intermedia',
+      concettiChiave: ['TCP'],
+      obiettivi: ['Capire le reti'],
+      udaTitle: 'UDA',
+      udaContext: {
+        title: 'UDA',
+        descrizione: '',
+        competenze: [],
+        obiettivi: [],
+        currentLessonPosition: 1,
+        lessons: [{ position: 1, titolo: 'Reti', sottotitolo: null }],
+      },
+      currentBody: '',
+      hasCurrentContent: false,
+    } as const;
+    const request = validateAiContentRequest(input);
+    if (request.kind !== 'lesson') throw new Error('lesson expected');
+    const legacy = buildLegacyLessonPrompt(request);
+    const exported = exportCurrentContentPrompt(input, 'gpt56').prompt;
+
+    expect(exported).toContain(legacy.user.slice(legacy.user.indexOf('<<<')));
+    expect(exported).toContain('un testo che sostiene un’ora di lezione');
+    expect(exported).not.toContain('Risultato didattico:');
   });
   it('fails closed when the trusted material boundary is missing', () => {
     const builder = vi.spyOn(promptBuilders, 'buildConceptMapPrompt').mockReturnValueOnce({

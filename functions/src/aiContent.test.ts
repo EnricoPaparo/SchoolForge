@@ -57,6 +57,9 @@ import {
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_GPT6_LUNA_MODEL,
   OPENAI_RUNTIME_GPT61_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+  lookupModelPrice,
+  usageCostMicroUsd,
 } from './aiCorrectionCost.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import type { OpenAiStructuredRequest, OpenAiTransport } from './openAiGrader.js';
@@ -687,6 +690,33 @@ describe('estimateContentCost (informational estimate vs conservative reservatio
     // Un output al cap con input entro il bound produce un actual ≤ reservation.
     expect(est.reservationOutputTokens).toBeLessThanOrEqual(est.maxOutputTokens);
     expect(est.reservationCostMicroUsd).toBeGreaterThan(0);
+  });
+  it('GPT-6.1 Sol single-attempt reservation covers absent and maximal cache-write details', () => {
+    const req = validateAiContentRequest(lessonPayload({ depth: 'in_depth' })) as AiContentRequest;
+    const est = estimateContentCost(
+      req,
+      OPENAI_RUNTIME_GPT61_SOL_MODEL,
+      OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+      1,
+    );
+    const price = lookupModelPrice(
+      OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_GPT61_SOL_MODEL,
+    )!;
+    const input = est.reservationInputTokenUpperBound;
+    const output = est.maxOutputTokens;
+    const actualWithoutDetails = usageCostMicroUsd(input, output, price, 'nearest');
+    const actualWithMaxWrite = usageCostMicroUsd(input, output, price, 'nearest', {
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: input,
+    });
+
+    for (const actual of [actualWithoutDetails, actualWithMaxWrite]) {
+      const settled = Math.min(actual, est.reservationCostMicroUsd);
+      expect(actual).toBeLessThanOrEqual(settled);
+      expect(settled).toBeLessThanOrEqual(est.reservationCostMicroUsd);
+    }
+    expect(est.reservationOutputTokens).toBe(output);
   });
 });
 

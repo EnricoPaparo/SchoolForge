@@ -1,9 +1,9 @@
 # SchoolForge — proposta GPT-6 per la generazione delle lezioni
 
-**Stato:** fase 1 implementata su branch, in attesa di review/merge e deploy DEV; fasi 2–3 ancora proposte  
-**Data:** 1 ottobre 2026  
-**Ambito previsto:** configurazione dei modelli IA, progettazione didattica condivisa fra lezioni, pool e mappe, accounting dei costi e rollback  
-**Ambiente iniziale previsto:** DEV  
+**Stato:** fase 1 implementata su branch, in attesa di review/merge e deploy DEV; fasi 2–3 ancora proposte
+**Data:** 1 ottobre 2026
+**Ambito previsto:** configurazione dei modelli IA, progettazione didattica condivisa fra lezioni, pool e mappe, accounting dei costi e rollback
+**Ambiente iniziale previsto:** DEV
 
 ## Stato di implementazione della fase 1
 

@@ -15,8 +15,8 @@
 
 import {
   estimateCostBreakdown,
-  tokenCostMicroUsd,
   lookupModelPrice,
+  usageCostMicroUsd,
   type CostBreakdown,
 } from './aiCorrectionCost.js';
 import { AiContentError, type AiContentRequest } from './aiContentCore.js';
@@ -83,7 +83,10 @@ export function estimateContentCost(
   // volte in caso di retry). ceil → mai sotto-riservare.
   const inputUpperBound = reservationInputTokenUpperBound(request, model);
   const attempts = Math.max(1, Math.floor(maxAttempts));
-  const perAttemptMicroUsd = tokenCostMicroUsd(inputUpperBound, maxOutputTokens, price, 'ceil');
+  // I listini cache-aware contabilizzano prudentemente i dettagli cache assenti
+  // come cache write. La prenotazione usa la stessa regola del settlement, così
+  // copre anche la tariffa cache-write (più alta dell'input ordinario).
+  const perAttemptMicroUsd = usageCostMicroUsd(inputUpperBound, maxOutputTokens, price, 'ceil');
   const reservationCostMicroUsd = perAttemptMicroUsd * attempts;
 
   return {
