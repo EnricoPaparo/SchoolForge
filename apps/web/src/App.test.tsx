@@ -34,6 +34,14 @@ let firestoreDocs: Record<string, unknown> = {};
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, a: string, b?: string) => ({ path: b === undefined ? a : `${a}/${b}` }),
   collection: (_db: unknown, name: string) => ({ path: name }),
+  getDocFromServer: (ref: { path: string }) => {
+    const data = firestoreDocs[ref.path];
+    return Promise.resolve({
+      exists: () => data !== undefined,
+      data: () => data,
+      metadata: { fromCache: false },
+    });
+  },
   getDoc: (ref: { path: string }) => {
     const data = firestoreDocs[ref.path];
     return Promise.resolve({ exists: () => data !== undefined, data: () => data });
