@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This suite verifies role resolution, student approval, selection of the
@@ -51,6 +51,7 @@ const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockBatchSet = vi.fn();
 const mockBatchCommit = vi.fn();
+const mockGetDocFromServer = vi.fn();
 
 function pathFor(_db: unknown, a: string, b?: string): string {
   return b === undefined ? a : `${a}/${b}`;
@@ -59,6 +60,7 @@ function pathFor(_db: unknown, a: string, b?: string): string {
 vi.mock('firebase/firestore', () => ({
   doc: (db: unknown, a: string, b?: string) => ({ path: pathFor(db, a, b) }),
   collection: (_db: unknown, name: string) => ({ path: name }),
+  getDocFromServer: (...args: unknown[]) => mockGetDocFromServer(...args),
   getDoc: (ref: { path: string }) => {
     if (firestoreErrors.has(ref.path)) return Promise.reject(new Error('boom'));
     const data = firestoreDocs[ref.path];
@@ -87,6 +89,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   firestoreDocs = {};
   firestoreErrors = new Set();
+  mockGetDocFromServer.mockImplementation((ref: { path: string }) => {
+    if (firestoreErrors.has(ref.path)) return Promise.reject(new Error('unavailable'));
+    const data = firestoreDocs[ref.path];
+    return Promise.resolve({
+      exists: () => data !== undefined,
+      data: () => data,
+      metadata: { fromCache: false },
+    });
+  });
   currentUser = { uid: OWNER_UID, email: 'teacher@test.com', displayName: null };
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
@@ -587,38 +598,94 @@ describe('RoleGate — no students/{uid} document yet (independent of the portal
   });
 });
 
-describe('RoleGate — setup flow (no owner configured)', () => {
-  it('shows setup page when ownerPublic does not exist yet', async () => {
+describe('RoleGate — fail-closed owner resolution', () => {
+  it.each([
+    undefined,
+    {},
+    { ownerUid: null },
+    { ownerUid: '' },
+    { ownerUid: '  ' },
+    { ownerUid: ' owner-uid ' },
+    { ownerUid: 42 },
+  ])('denies missing or malformed owner projection %j', async (value) => {
+    firestoreDocs['settings/ownerPublic'] = value;
     render(
       <RoleGate>
         <div>Area docente</div>
       </RoleGate>,
     );
-    expect(await screen.findByRole('heading', { name: /Inizializza SchoolForge/i })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /Impossibile verificare/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Diventa proprietario/ })).toBeNull();
+    expect(screen.queryByText('Area docente')).toBeNull();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 
-  it('renders children after successful ownership claim', async () => {
-    mockBatchCommit.mockResolvedValue(undefined);
+  it('denies offline, timeout and permission failures and retries against the server', async () => {
+    seedOwnerPublic();
+    firestoreErrors.add('settings/ownerPublic');
     render(
       <RoleGate>
         <div>Area docente</div>
       </RoleGate>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: /Diventa proprietario/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Riprova' }));
+    await screen.findByRole('button', { name: 'Riprova' });
+    expect(screen.queryByRole('button', { name: /Diventa proprietario/ })).toBeNull();
+    firestoreErrors.clear();
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
     expect(await screen.findByText('Area docente')).toBeTruthy();
+    expect(mockGetDocFromServer).toHaveBeenCalledTimes(3);
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
-});
 
-describe('RoleGate — non-owner blocked during claim attempt', () => {
-  it('shows blocked message when the claim batch fails (owner already exists)', async () => {
-    mockBatchCommit.mockRejectedValue({ code: 'permission-denied' });
+  it('rejects cached owner data even when it matches the signed-in user', async () => {
+    mockGetDocFromServer.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ownerUid: OWNER_UID }),
+      metadata: { fromCache: true },
+    });
     render(
       <RoleGate>
         <div>Area docente</div>
       </RoleGate>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: /Diventa proprietario/i }));
-    expect(await screen.findByRole('heading', { name: /Accesso non autorizzato/i })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /Impossibile verificare/ })).toBeTruthy();
+    expect(screen.queryByText('Area docente')).toBeNull();
+  });
+
+  it('keeps a slow connection in loading and discards completion for a previous account', async () => {
+    let resolveOwner!: (value: unknown) => void;
+    mockGetDocFromServer.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOwner = resolve;
+      }),
+    );
+    const view = render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(screen.getByText('Caricamento…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Diventa proprietario/ })).toBeNull();
+    seedOwnerPublic();
+    seedStudentDoc('pending');
+    asStudent();
+    view.rerender(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await screen.findByRole('heading', { name: 'Richiesta inviata' });
+    await act(async () =>
+      resolveOwner({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID }),
+        metadata: { fromCache: false },
+      }),
+    );
+    expect(screen.getByRole('heading', { name: 'Richiesta inviata' })).toBeTruthy();
+    expect(screen.queryByText('Area docente')).toBeNull();
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });
 
@@ -654,5 +721,85 @@ describe('RoleGate — loading state', () => {
       </RoleGate>,
     );
     expect(screen.getByText('Caricamento…')).toBeTruthy();
+  });
+});
+
+describe('RoleGate — pending-request effect races', () => {
+  it('awaits the existing request when auth refreshes with the same uid', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true, true);
+    asStudent();
+    let finish!: () => void;
+    mockSetDoc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const view = render(
+      <StrictMode>
+        <RoleGate>
+          <div>Area docente</div>
+        </RoleGate>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(mockSetDoc).toHaveBeenCalledTimes(1));
+    currentUser = { ...currentUser! };
+    view.rerender(
+      <StrictMode>
+        <RoleGate>
+          <div>Area docente</div>
+        </RoleGate>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(mockGetDocFromServer).toHaveBeenCalledTimes(3));
+    await act(async () => finish());
+    expect(await screen.findByRole('heading', { name: 'Richiesta inviata' })).toBeTruthy();
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed student request instead of leaving loading forever', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true, true);
+    asStudent();
+    mockSetDoc.mockRejectedValueOnce(new Error('unavailable'));
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Riprova' }));
+    expect(await screen.findByRole('heading', { name: 'Richiesta inviata' })).toBeTruthy();
+    expect(mockSetDoc).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores delayed resolution after logout without creating a student request', async () => {
+    let finish!: (value: unknown) => void;
+    mockGetDocFromServer.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    asStudent();
+    const view = render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    currentUser = null;
+    view.rerender(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await act(async () =>
+      finish({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID }),
+        metadata: { fromCache: false },
+      }),
+    );
+    expect(screen.getByText('Caricamento…')).toBeTruthy();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(screen.queryByText('Area docente')).toBeNull();
   });
 });

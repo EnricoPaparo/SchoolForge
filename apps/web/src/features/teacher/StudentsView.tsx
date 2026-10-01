@@ -49,8 +49,8 @@ import {
 import menuStyles from './CourseWorkspace.module.css';
 import styles from './StudentsView.module.css';
 
-/** VDIF-01 — la sezione Studenti ha ora tre schede. L'ordine è vincolante. */
-const STUDENTS_TABS = ['students', 'classes', 'labels'] as const;
+/** The class overview is the entry point; students are grouped virtually. */
+const STUDENTS_TABS = ['classes', 'labels'] as const;
 type StudentsTab = (typeof STUDENTS_TABS)[number];
 
 const STATUS_LABEL: Record<StudentStatus, string> = {
@@ -215,14 +215,13 @@ function ExamModeCard({
 }
 
 export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
-  const [activeTab, setActiveTab] = useState<StudentsTab>('students');
+  const [activeTab, setActiveTab] = useState<StudentsTab>('classes');
   /**
    * Un ref per scheda, indicizzato dal nome: con tre schede una coppia di ref
    * separati diventerebbe una catena di ternari, e una quarta scheda la
    * romperebbe di nuovo.
    */
   const tabRefs = useRef<Record<StudentsTab, HTMLButtonElement | null>>({
-    students: null,
     classes: null,
     labels: null,
   });
@@ -258,6 +257,8 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
+  // null = overview; empty string = the virtual unassigned group.
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | StudentStatus>('all');
 
   const [togglingPortal, setTogglingPortal] = useState(false);
@@ -399,19 +400,21 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const studentCountByClassId = useMemo(() => {
     const counts = new Map<string, number>();
     for (const student of students ?? []) {
-      if (!student.classId) continue;
-      counts.set(student.classId, (counts.get(student.classId) ?? 0) + 1);
+      const id = student.classId && classNameById.has(student.classId) ? student.classId : '';
+      counts.set(id, (counts.get(id) ?? 0) + 1);
     }
     return counts;
-  }, [students]);
+  }, [students, classNameById]);
 
   const filteredStudents = useMemo(() => {
     if (!students) return [];
     const term = search.trim().toLowerCase();
     return students.filter((s) => {
+      const groupId = s.classId && classNameById.has(s.classId) ? s.classId : '';
+      if (selectedClassId !== null && groupId !== selectedClassId) return false;
       if (statusFilter !== 'all' && s.status !== statusFilter) return false;
       if (!term) return true;
-      const className = s.classId ? (classNameById.get(s.classId) ?? '') : 'nessuna classe';
+      const className = classNameById.get(s.classId ?? '') ?? 'nessuna classe';
       // VDIF-02 — l'etichetta entra nel testo cercabile: sia il suo nome sia la
       // stringa «Nessuna etichetta», così si trovano anche gli studenti senza.
       const haystack = [
@@ -426,7 +429,15 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
       return haystack.includes(term);
     });
     // `labelTextFor` dipende dalle due mappe elencate: cambiano insieme a loro.
-  }, [students, search, statusFilter, classNameById, labelNameById, labelIdByStudentUid]);
+  }, [
+    students,
+    search,
+    statusFilter,
+    selectedClassId,
+    classNameById,
+    labelNameById,
+    labelIdByStudentUid,
+  ]);
 
   async function handleTogglePortal() {
     if (!access) return;
@@ -630,6 +641,11 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
 
   function selectTab(tab: StudentsTab) {
     setActiveTab(tab);
+    if (tab === 'classes') {
+      setSelectedClassId(null);
+      setSearch('');
+      setStatusFilter('all');
+    }
     tabRefs.current[tab]?.focus();
   }
 
@@ -784,23 +800,6 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
       >
         <button
           ref={(node) => {
-            tabRefs.current.students = node;
-          }}
-          type="button"
-          role="tab"
-          id="students-tab"
-          aria-controls="students-panel"
-          aria-selected={activeTab === 'students'}
-          tabIndex={activeTab === 'students' ? 0 : -1}
-          className={`${styles.tab}${activeTab === 'students' ? ` ${styles.tabActive}` : ''}`}
-          onClick={() => setActiveTab('students')}
-          onKeyDown={handleTabKeyDown}
-        >
-          Studenti
-          {pendingCount > 0 && <span className={styles.tabCount}>{pendingCount}</span>}
-        </button>
-        <button
-          ref={(node) => {
             tabRefs.current.classes = node;
           }}
           type="button"
@@ -810,7 +809,12 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           aria-selected={activeTab === 'classes'}
           tabIndex={activeTab === 'classes' ? 0 : -1}
           className={`${styles.tab}${activeTab === 'classes' ? ` ${styles.tabActive}` : ''}`}
-          onClick={() => setActiveTab('classes')}
+          onClick={() => {
+            setActiveTab('classes');
+            setSelectedClassId(null);
+            setSearch('');
+            setStatusFilter('all');
+          }}
           onKeyDown={handleTabKeyDown}
         >
           Classi
@@ -833,13 +837,18 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
         </button>
       </div>
 
-      {activeTab === 'students' ? (
+      {activeTab === 'classes' ? (
         <div
           role="tabpanel"
-          id="students-panel"
-          aria-labelledby="students-tab"
+          id="classes-panel"
+          aria-labelledby="classes-tab"
           className={styles.tabPanel}
         >
+          {selectedClassId !== null && (
+            <h2>
+              {selectedClassId === '' ? 'Nessuna classe' : classNameById.get(selectedClassId)}
+            </h2>
+          )}
           {actionError && (
             <p role="alert" className="text-error">
               {actionError}
@@ -868,7 +877,20 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
             </select>
           </div>
 
-          {students.length === 0 ? (
+          {selectedClassId === null && !search.trim() && statusFilter === 'all' ? (
+            <ClassesTab
+              ownerUid={ownerUid}
+              classes={classes}
+              studentCountByClassId={studentCountByClassId}
+              onOpenClass={(id) => {
+                setSelectedClassId(id);
+                setSearch('');
+              }}
+              onClassCreated={handleClassCreated}
+              onClassRenamed={handleClassRenamed}
+              onClassDeleted={handleClassDeleted}
+            />
+          ) : students.length === 0 ? (
             <p className="state-empty">Nessuno studente ha ancora effettuato l&apos;accesso.</p>
           ) : filteredStudents.length === 0 ? (
             <p className="state-empty">Nessuno studente trovato.</p>
@@ -907,7 +929,7 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                         studentId={s.id}
                         studentName={name}
                         classes={classes ?? []}
-                        classId={s.classId}
+                        classId={s.classId && classNameById.has(s.classId) ? s.classId : null}
                         classDisabled={busy}
                         onClassChange={(e) => handleClassChange(s.id, e)}
                         labels={sortedLabels}
@@ -1116,22 +1138,6 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
               {pendingCount} student{pendingCount === 1 ? 'e' : 'i'} in attesa di approvazione.
             </p>
           )}
-        </div>
-      ) : activeTab === 'classes' ? (
-        <div
-          role="tabpanel"
-          id="classes-panel"
-          aria-labelledby="classes-tab"
-          className={styles.tabPanel}
-        >
-          <ClassesTab
-            ownerUid={ownerUid}
-            classes={classes}
-            studentCountByClassId={studentCountByClassId}
-            onClassCreated={handleClassCreated}
-            onClassRenamed={handleClassRenamed}
-            onClassDeleted={handleClassDeleted}
-          />
         </div>
       ) : (
         <div

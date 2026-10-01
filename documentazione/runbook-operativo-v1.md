@@ -417,3 +417,30 @@ superata, marcatori presenti e nessuna ricevuta.
 - [ ] **Warning Firebase:** avvisi in Console (quota, fatturazione, deprecazioni)?
 
 > Se una voce è rossa, apri la sezione corrispondente (§4/§7/§8/§9). La checklist mensile serve a **notare presto**, non a risolvere tutto sul momento.
+
+
+## 10. Bootstrap amministrativo e gate proprietario
+
+Dal fix #505 il login pubblico non offre più «Diventa proprietario». Errori di
+rete, letture da cache e `settings/ownerPublic` mancante o malformato mostrano
+«Impossibile verificare l’accesso» con Riprova: non dimostrano che il proprietario
+canonico sia assente e non devono avviare scritture di bootstrap.
+
+Per un **nuovo ambiente**, prima di pubblicarne il login:
+
+1. **[Console]** Un amministratore autorizzato verifica progetto e account docente
+   in Firebase Authentication e ricava il suo UID nello stesso progetto.
+2. **[Console]** Verifica l’assenza di `settings/owner` prima di inizializzare.
+   Se esiste, non sostituirlo: seguire la procedura incidente/recupero (§7).
+3. **[Console]** Crea `settings/owner` con `ownerUid` uguale all’UID verificato e
+   `createdAt` timestamp, quindi `settings/ownerPublic` con il solo `ownerUid`
+   identico. Completa entrambi prima di rendere accessibile l’ambiente.
+4. Smoke con account docente e account non proprietario. Le Rules restano la
+   barriera di autorizzazione e consultano il documento canonico `settings/owner`.
+
+Su un ambiente già esistente, una proiezione pubblica mancante richiede un
+controllo amministrativo del canonico e l’eventuale ripristino della sola
+proiezione, mai un nuovo claim dal browser. Le Rules legacy consentono ancora
+la prima creazione autenticata quando il canonico è assente: non esporre un
+nuovo progetto prima del provisioning. Nessuna modifica ai dati cloud è stata
+eseguita per introdurre questa procedura; PROD richiede autorizzazione esplicita.
