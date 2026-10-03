@@ -1,18 +1,26 @@
 import { AiContentError, validateAiContentRequest } from './aiContentCore.js';
-import { buildConceptMapPrompt, buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import {
+  buildConceptMapPrompt,
+  buildLessonPromptForPolicy,
+  buildPoolPrompt,
+} from './aiContentPrompt.js';
+import { ACTIVE_AI_RUNTIME_POLICY } from './aiCorrectionModelProfile.js';
 import { composeConceptMapMarkdown } from './aiContentConceptMap.js';
 
 export const RESPONSE_FORMAT_HEADING = '## Formato di risposta per SchoolForge';
 
 // Work only on the trusted instruction prefix. Fenced teacher/context materials
 // are kept byte-for-byte, even when they contain words used by format rules.
-export function exportCurrentContentPrompt(input: unknown): { prompt: string } {
+export function exportCurrentContentPrompt(
+  input: unknown,
+  policy: 'gpt6' | 'gpt56' = ACTIVE_AI_RUNTIME_POLICY,
+): { prompt: string } {
   const request = validateAiContentRequest(input);
   if (request.kind !== 'lesson' && request.kind !== 'concept_map' && request.kind !== 'pool')
     throw new AiContentError('invalid_input', 'Tipo di prompt non supportato.');
   const built =
     request.kind === 'lesson'
-      ? buildLessonPrompt(request)
+      ? buildLessonPromptForPolicy(request, policy)
       : request.kind === 'pool'
         ? buildPoolPrompt(request)
         : buildConceptMapPrompt(request);
@@ -42,17 +50,26 @@ export function exportCurrentContentPrompt(input: unknown): { prompt: string } {
   // References to schema in injection protection are not output instructions.
   system = system.trim();
   if (request.kind === 'lesson') {
-    instructions = instructions.replace('Scrivi il corpo Markdown', 'Scrivi il corpo');
-    move(/Struttura editoriale e compatibilità SchoolForge:[\s\S]*?(?=Prima di rispondere)/);
-    move(
-      /6\) verifica numero e collocazione[\s\S]*?(?=7\))/,
-      '6) verifica numero e collocazione delle attività;\n',
-    );
-    move(/Restituisci soltanto il Markdown finale corretto\./);
-    move(
-      /Scegli tu il tono[\s\S]*?nessuno script\)\./,
-      'Scegli tu il tono e l’organizzazione più efficaci entro questi criteri.',
-    );
+    if (policy === 'gpt56') {
+      instructions = instructions.replace('Scrivi il corpo Markdown', 'Scrivi il corpo');
+      move(/Struttura editoriale e compatibilità SchoolForge:[\s\S]*?(?=Prima di rispondere)/);
+      move(
+        /6\) verifica numero e collocazione[\s\S]*?(?=7\))/,
+        '6) verifica numero e collocazione delle attività;\n',
+      );
+      move(/Restituisci soltanto il Markdown finale corretto\./);
+      move(
+        /Scegli tu il tono[\s\S]*?nessuno script\)\./,
+        'Scegli tu il tono e l’organizzazione più efficaci entro questi criteri.',
+      );
+    } else {
+      instructions = instructions.replace(
+        'Scrivi esclusivamente il corpo Markdown',
+        'Scrivi il corpo',
+      );
+      move(/Stile e compatibilità SchoolForge:[\s\S]*?(?=Prima di rispondere)/);
+      move(/Restituisci soltanto il corpo Markdown finale\./);
+    }
     format.push(
       'Rispondi con il solo corpo Markdown da incollare nell’editor della lezione, senza oggetto JSON né fence attorno all’intera risposta. Esempio di struttura (da sostituire con il contenuto richiesto):\n\n## Concetto principale\n\nSpiegazione motivata.\n\n### Esempio svolto\n\nDati, metodo, passaggi, risultato e motivazione.',
     );

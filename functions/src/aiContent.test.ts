@@ -20,6 +20,8 @@ import { resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
 import {
   AI_CONTENT_PROMPT_VERSION,
+  AI_CONTENT_ROLLBACK_PROMPT_VERSION,
+  buildLegacyLessonPrompt,
   buildLessonPrompt,
   buildPoolPrompt,
 } from './aiContentPrompt.js';
@@ -53,6 +55,11 @@ import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+  lookupModelPrice,
+  usageCostMicroUsd,
 } from './aiCorrectionCost.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import type { OpenAiStructuredRequest, OpenAiTransport } from './openAiGrader.js';
@@ -569,6 +576,34 @@ describe('OpenAI content provider (mocked transport, no real network)', () => {
     }
   });
 
+  it.each([
+    ['synthetic', 'low'],
+    ['complete', 'medium'],
+    ['in_depth', 'high'],
+  ] as const)(
+    'sets lesson verbosity %s → %s only for the GPT-6 lesson policy',
+    (depth, verbosity) => {
+      const request = lessonReq({ depth });
+      const economy = buildContentStructuredRequest(request, OPENAI_RUNTIME_GPT6_LUNA_MODEL);
+      const quality = buildContentStructuredRequest(request, OPENAI_RUNTIME_GPT61_SOL_MODEL);
+      const rollback = buildContentStructuredRequest(request, OPENAI_RUNTIME_LUNA_MODEL);
+
+      expect(economy.reasoning).toEqual({ effort: 'low' });
+      expect(economy.text.verbosity).toBe(verbosity);
+      expect(quality.reasoning).toEqual({ effort: 'medium' });
+      expect(quality.text.verbosity).toBe(verbosity);
+      expect(rollback).not.toHaveProperty('reasoning');
+      expect(rollback.text).not.toHaveProperty('verbosity');
+    },
+  );
+
+  it('adds reasoning to non-lesson GPT-6 content without adding lesson verbosity', () => {
+    const request = validateAiContentRequest(poolPayload()) as AiContentRequest;
+    const built = buildContentStructuredRequest(request, OPENAI_RUNTIME_GPT61_SOL_MODEL);
+    expect(built.reasoning).toEqual({ effort: 'medium' });
+    expect(built.text).not.toHaveProperty('verbosity');
+  });
+
   it('metered outcome with missing usage never becomes zero cost', async () => {
     const provider = createContentProvider({
       mode: 'openai',
@@ -655,6 +690,33 @@ describe('estimateContentCost (informational estimate vs conservative reservatio
     // Un output al cap con input entro il bound produce un actual ≤ reservation.
     expect(est.reservationOutputTokens).toBeLessThanOrEqual(est.maxOutputTokens);
     expect(est.reservationCostMicroUsd).toBeGreaterThan(0);
+  });
+  it('GPT-6.1 Sol single-attempt reservation covers absent and maximal cache-write details', () => {
+    const req = validateAiContentRequest(lessonPayload({ depth: 'in_depth' })) as AiContentRequest;
+    const est = estimateContentCost(
+      req,
+      OPENAI_RUNTIME_GPT61_SOL_MODEL,
+      OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+      1,
+    );
+    const price = lookupModelPrice(
+      OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_GPT61_SOL_MODEL,
+    )!;
+    const input = est.reservationInputTokenUpperBound;
+    const output = est.maxOutputTokens;
+    const actualWithoutDetails = usageCostMicroUsd(input, output, price, 'nearest');
+    const actualWithMaxWrite = usageCostMicroUsd(input, output, price, 'nearest', {
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: input,
+    });
+
+    for (const actual of [actualWithoutDetails, actualWithMaxWrite]) {
+      const settled = Math.min(actual, est.reservationCostMicroUsd);
+      expect(actual).toBeLessThanOrEqual(settled);
+      expect(settled).toBeLessThanOrEqual(est.reservationCostMicroUsd);
+    }
+    expect(est.reservationOutputTokens).toBe(output);
   });
 });
 
@@ -1431,79 +1493,50 @@ describe('lesson pedagogical contract', () => {
   const built = buildLessonPrompt(
     lessonReq({ teacherGuidance: 'parti da un esempio', currentBody: '## Vecchio' }) as never,
   );
-  it('requires didactic completeness and self-sufficiency, without brevity sacrifice', () => {
-    expect(built.user).toMatch(/didatticamente completa, chiara, motivata e autosufficiente/);
-    expect(built.user).toMatch(/Non sacrificare spiegazioni, esempi o passaggi/);
+  it('targets an applicable mental model and a self-contained explanation', () => {
+    expect(built.user).toMatch(/comprendere il modello mentale/);
+    expect(built.user).toMatch(/applicarlo in situazioni pertinenti/);
+    expect(built.user).toMatch(/modo autosufficiente/);
   });
-  it('asks for cognitive progression, examples and worked exercise solutions', () => {
-    expect(built.user).toMatch(/spiega ogni concetto nuovo prima di utilizzarlo/);
-    expect(built.user).toMatch(/svolgili integralmente passo passo/);
-    expect(built.user).toMatch(/motivando metodo, passaggi/);
+  it('asks for cognitive progression and useful, verifiable examples', () => {
+    expect(built.user).toMatch(/introduci ogni passaggio quando lo studente possiede già/);
+    expect(built.user).toMatch(/spiega i termini prima di usarli/);
+    expect(built.user).toMatch(/esempi soltanto quando chiariscono un passaggio reale/);
+    expect(built.user).toMatch(/coerenti e verificabili dati, calcoli e condizioni/);
   });
-  it('makes exercises conditional on their actual pedagogical value', () => {
-    expect(built.user).toMatch(/sostenere la spiegazione, non sostituirla né accorciarla/);
-    expect(built.user).toMatch(/operativo, procedurale, tecnico o di calcolo/);
-    expect(built.user).toMatch(/prevalentemente teorico/);
-    expect(built.user).toMatch(/al massimo UNA sola sezione/);
-    expect(built.user).toMatch(/non più di due domande risolte/);
-    expect(built.user).toMatch(/non distribuire altre attività altrove/);
-    expect(built.user).toMatch(
-      /richiedano comprensione,\s+collegamento o ragionamento, non semplice memoria/,
-    );
-    expect(built.user).toMatch(/se un’attività non aggiunge valore didattico, omettila/);
-    expect(built.user).toMatch(/non comprimere definizioni, spiegazioni o nessi causali/);
+  it('removes activity quotas and adapts the explanation to the discipline', () => {
+    expect(built.user).toMatch(/Adattamento disciplinare/);
+    expect(built.user).toMatch(/contenuti quantitativi/);
+    expect(built.user).toMatch(/contenuti storici e sociali/);
+    expect(built.user).toMatch(/contenuti scientifici/);
+    expect(built.user).toMatch(/contenuti linguistici e letterari/);
+    expect(built.user).toMatch(/contenuti tecnici/);
+    expect(built.user).not.toMatch(/al massimo UNA|al massimo DUE|domande risolte/);
   });
   it('requires epistemic precision and labels hypothetical evidence', () => {
-    expect(built.user).toMatch(/non presentare come fatti dati, misure, studi/);
-    expect(built.user).toMatch(/caso è ipotetico o costruito a scopo didattico/);
-    expect(built.user).toMatch(/dipende da condizioni, contesto o eccezioni/);
-    expect(built.user).toMatch(/non deve insegnare un meccanismo causale falso/);
-    expect(built.user).toMatch(/causa proposta deve spiegare TUTTI i sintomi/);
-    expect(built.user).toMatch(/non presentarne una come certa o unica/);
-    expect(built.user).toMatch(/test diagnostico può sostenere o escludere ipotesi/);
-    expect(built.user).toMatch(/non dimostra da solo che un intero/);
-    expect(built.user).toMatch(/passaggio indicato sia davvero errato/);
-    expect(built.user).toMatch(/non una trasformazione equivalente/);
-    expect(built.user).toMatch(/non può essere usato come evidenza reale/);
-    expect(built.user).toMatch(/rispettare definizioni, formule e condizioni già introdotte/);
-    expect(built.user).toMatch(/elimina qualsiasi contraddizione interna/);
-    expect(built.user).toMatch(/uguali tutte le grandezze da cui dipende un risultato/);
-    expect(built.user).toMatch(/condizione\s+causalmente rilevante cambia/);
-    expect(built.user).toMatch(/tutti i dati, i vincoli, le etichette/);
-    expect(built.user).toMatch(/premesse sono incompatibili/);
-    expect(built.user).toMatch(/correggi o sostituisci il caso/);
-    expect(built.user).toMatch(/termine tecnico e ogni categoria/);
-    expect(built.user).toMatch(/solo se ne soddisfa la definizione/);
+    expect(built.user).toMatch(/non inventare fatti, fonti, studi, misure o testimonianze/);
+    expect(built.user).toMatch(/caso è ipotetico/);
+    expect(built.user).toMatch(/dipende da condizioni o ammette eccezioni/);
+    expect(built.user).toMatch(/non deve insegnare un meccanismo falso/);
+    expect(built.user).toMatch(/reciprocamente coerenti/);
   });
   it('produces a proportional lesson body compatible with the current renderer', () => {
-    expect(built.user).toMatch(/produci solo il CORPO della lezione/);
-    expect(built.user).toMatch(/heading da H2 in poi/);
-    expect(built.user).toMatch(/evita un titolo per ogni breve paragrafo/);
-    expect(built.user).toMatch(/non usare separatori orizzontali `---`/);
+    expect(built.user).toMatch(/Restituisci soltanto il corpo Markdown finale/);
+    expect(built.user).toMatch(/sezioni H2 o inferiori/);
+    expect(built.user).toMatch(/soltanto per reali cambi concettuali/);
+    expect(built.user).toMatch(/non usare HTML, front matter, separatori orizzontali/);
     expect(built.user).toMatch(/> \[!DEFINITION\]/);
-    expect(built.user).toMatch(/ogni\s+riga del contenuto del callout deve iniziare con `>`/);
-    expect(built.user).toMatch(/non può essere vuoto o\s+contenere soltanto un titolo/);
-    expect(built.user).toMatch(/non usare LaTeX/);
-    expect(built.user).toMatch(/né Mermaid/);
-    expect(built.user).toMatch(/formule ed equazioni in testo piano/);
-    expect(built.user).toMatch(/non aggiungere automaticamente un riepilogo/);
+    expect(built.user).toMatch(/Mermaid o LaTeX/);
+    expect(built.user).toMatch(/formule in testo piano o codice Markdown/);
+    expect(built.user).toMatch(/riepiloghi obbligatori/);
   });
-  it('requires a silent final consistency and proofreading pass', () => {
-    expect(built.user).toMatch(/controllo finale obbligatorio/);
-    expect(built.user).toMatch(/ricalcola da zero ogni esercizio/);
-    expect(built.user).toMatch(/confronta ogni esempio e conclusione con definizioni/);
-    expect(built.user).toMatch(/non dicano più di quanto provano i dati/);
-    expect(built.user).toMatch(/tutte le premesse di ogni caso possano coesistere/);
-    expect(built.user).toMatch(/appartengano davvero alle categorie dichiarate/);
-    expect(built.user).toMatch(/elimina ogni riferimento all’indice/);
-    expect(built.user).toMatch(/lezioni precedenti\/successive/);
-    expect(built.user).toMatch(/numero e collocazione delle attività/);
-    expect(built.user).toMatch(/correggi ortografia, parole spezzate, etichette residue/);
-    expect(built.user).toMatch(/terminologia italiana, nomi delle/);
-    expect(built.user).toMatch(/soltanto il Markdown finale corretto/);
+  it('requires one short silent consistency pass', () => {
+    expect(built.user).toMatch(/verifica silenziosamente correttezza disciplinare/);
+    expect(built.user).toMatch(/progressione logica, validità degli esempi/);
+    expect(built.user).toMatch(/assenza di ripetizioni/);
   });
   it('does NOT force a summary, ban blog/marketing, or set length/paragraph targets', () => {
-    expect(built.user).toMatch(/non aggiungere automaticamente un riepilogo/);
+    expect(built.user).toMatch(/riepiloghi obbligatori/);
     expect(built.user).not.toMatch(/blog/i);
     expect(built.user).not.toMatch(/marketing/i);
     expect(built.user).not.toMatch(/esattamente \d+ paragrafi/i);
@@ -1512,17 +1545,17 @@ describe('lesson pedagogical contract', () => {
     );
   });
   it('keeps the Markdown-only technical constraints', () => {
-    expect(built.user).toMatch(/nessun front matter, nessun HTML, nessuno script/);
+    expect(built.user).toMatch(/non usare HTML, front matter/);
   });
   it('describes depth pedagogically per value, not as a character count', () => {
     expect(buildLessonPrompt(lessonReq({ depth: 'synthetic' }) as never).user).toMatch(
-      /sintetica: OGNI concetto chiave/,
+      /Sintetica: presenta con chiarezza/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'complete' }) as never).user).toMatch(
-      /completa: OGNI concetto chiave/,
+      /Completa: sviluppa l’argomento/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
-      /approfondita: OGNI concetto chiave/,
+      /Approfondita: esplora motivazioni/,
     );
   });
   it('fences current content as untrusted and guidance as authoritative within the perimeter', () => {
@@ -1814,8 +1847,8 @@ describe('AIGEN-CONTEXT-01 — lesson prompt hierarchy and UDA perimeter', () =>
   });
 
   it('marks difficolta as pedagogical level, distinct from depth', () => {
-    expect(built.user).toMatch(/LIVELLO PEDAGOGICO/);
-    expect(built.user).toMatch(/non va confusa con la profondità/);
+    expect(built.user).toMatch(/titolo, difficoltà, concetti, obiettivi/);
+    expect(built.user).toMatch(/argomento, livello e confini/);
     expect(built.user).toMatch(/Difficoltà: intermedia/);
   });
 
@@ -1827,17 +1860,17 @@ describe('AIGEN-CONTEXT-01 — lesson prompt hierarchy and UDA perimeter', () =>
   });
 
   it('forbids repeating previous lessons and developing later ones, without naming the mechanism', () => {
-    expect(built.user).toMatch(/evita di rispiegarli per intero/);
+    expect(built.user).toMatch(/evitare di rispiegare per intero ciò che precede/);
     expect(built.user).toMatch(/brevi richiami/);
-    expect(built.user).toMatch(/RISERVATI: non svilupparli in modo sostanziale/);
-    expect(built.user).toMatch(/collegamenti brevi/);
-    expect(built.user).toMatch(/NON citare allo studente l’indice/);
+    expect(built.user).toMatch(/sviluppare in anticipo ciò che segue/);
+    expect(built.user).toMatch(/collegamenti utili/);
+    expect(built.user).toMatch(/non citare allo studente l’indice/);
   });
 
   it('keeps teacherGuidance authoritative but inside the perimeter', () => {
     expect(built.user).toMatch(/<<<INDICAZIONI_DOCENTE \(autorevoli entro il perimetro\)>>>/);
     expect(built.user).toContain('usa un tono formale');
-    expect(built.user).toMatch(/non possono spostare la lezione/);
+    expect(built.user).toMatch(/compatibili con perimetro, accuratezza e vincoli tecnici/);
   });
 
   it('places the perimeter before guidance, and untrusted content last', () => {
@@ -2104,10 +2137,8 @@ describe('STRUCTURE-IMPORT-03 — blocco CONTESTO_GENERALE_UDA nel prompt', () =
   });
 
   it('dice che orienta, non allarga il perimetro e non va copiato', () => {
-    expect(built.user).toMatch(/ORIENTANO taglio ed esempi/);
-    expect(built.user).toMatch(/NON allargano il perimetro/);
-    expect(built.user).toMatch(/non autorizzano a trattare l’intera UDA/);
-    expect(built.user).toMatch(/non riportarli né parafrasarli meccanicamente/);
+    expect(built.user).toMatch(/orienta taglio ed esempi senza estendere il perimetro/);
+    expect(built.user).toMatch(/non ripetere titolo, sottotitolo, UDA, metadati o obiettivi/);
   });
 
   it('è dichiarato dato, non istruzione eseguibile', () => {
@@ -2125,10 +2156,11 @@ describe('STRUCTURE-IMPORT-03 — blocco CONTESTO_GENERALE_UDA nel prompt', () =
 
   it('non duplica istruzioni già presenti nel prompt', () => {
     for (const line of [
-      'Perimetro didattico (METADATI_DIDATTICI):',
-      'Delimitazione rispetto all’UDA (INDICE_UDA):',
-      'Contesto generale dell’UDA (CONTESTO_GENERALE_UDA):',
-      'Struttura editoriale e compatibilità SchoolForge:',
+      'Risultato didattico:',
+      'Adattamento disciplinare:',
+      'Accuratezza:',
+      'Perimetro UDA:',
+      'Stile e compatibilità SchoolForge:',
     ]) {
       expect(built.user.split(line).length - 1).toBe(1);
     }
@@ -2155,19 +2187,14 @@ describe('STRUCTURE-IMPORT-03 — il tuning validato resta invariato', () => {
     expect(sha(pool.user)).toBe('991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020');
   });
 
-  it('il prompt utente della lezione è ancorato al candidato E', () => {
-    // LESSON-DEPTH-01 ha riscritto **intenzionalmente** il contratto di
-    // profondità: l'ancora non dice più «identico a prima», dice «identico a
-    // ciò che è stato misurato». Se cambia senza che qualcuno rifaccia il
-    // benchmark, questo test lo ferma — che è il motivo per cui esiste.
-    const legacy = buildLessonPrompt(lessonReq({ udaContext: legacyUdaContext() }) as never);
+  it('il prompt rollback resta byte-identico al candidato E', () => {
+    const legacy = buildLegacyLessonPrompt(lessonReq({ udaContext: legacyUdaContext() }) as never);
     expect(sha(legacy.user)).toBe(
       '6cb8c31ef2c9c60e57446a633887c23671d7a7aaa8f3ece89c4ee5278e4a47fe',
     );
   });
 
-  it('profili, modelli, listino e schema di output non sono toccati', () => {
-    expect(resolveContentModel('economy')).toEqual(resolveContentModel('economy'));
+  it('pool e schema di output restano separati dal nuovo prompt lesson', () => {
     const pool = buildPoolPrompt(poolReq() as never);
     expect(pool.system).not.toContain('CONTESTO_GENERALE_UDA');
     expect(pool.user).not.toContain('CONTESTO_GENERALE_UDA');
@@ -2195,79 +2222,47 @@ const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
   const built = buildLessonPrompt(lessonReq() as never);
 
-  it('separa esplicitamente che cosa trattare da quanto scrivere', () => {
-    expect(built.user).toMatch(/CONCETTI CHIAVE dicono CHE COSA va trattato, non QUANTO scrivere/);
-    expect(built.user).toMatch(/non è mezza lezione/);
+  it('costruisce comprensione e applicazione senza checklist meccaniche', () => {
+    expect(built.user).toMatch(/comprendere il modello mentale/);
+    expect(built.user).toMatch(/applicarlo in situazioni pertinenti/);
+    expect(built.user).toMatch(/non trasformarli in una checklist/);
   });
 
-  it('l’unità di misura è la lezione scolastica, non il numero di voci', () => {
-    expect(built.user).toMatch(/unità di misura è la LEZIONE SCOLASTICA completa/);
-    expect(built.user).toMatch(/qualunque sia il numero di voci ricevute/);
-  });
-
-  it('meno concetti chiave ⇒ più profondità, non meno testo', () => {
-    expect(built.user).toMatch(/MENO concetti chiave ricevi, PIÙ a fondo vanno trattati/);
-    expect(built.user).toMatch(/non in numero di argomenti/);
-  });
-
-  it('i concetti di supporto sono compito del modello, non del docente', () => {
-    expect(built.user).toMatch(/individua e introduci tu i CONCETTI DI SUPPORTO/);
-    expect(built.user).toMatch(/è compito tuo,\s*\n?\s*non del docente/);
-  });
-
-  it('il confine contro le divagazioni è verificabile, non un’esortazione', () => {
-    // Senza un criterio decidibile, «non spaziare troppo» non è applicabile:
-    // qui il modello ha un test da eseguire su ogni contenuto che aggiunge.
-    expect(built.user).toMatch(/è DENTRO il perimetro/);
-    expect(built.user).toMatch(/è FUORI se la/);
-    expect(built.user).toMatch(/Ciò che è fuori non va/);
-  });
-
-  it('più profondo non significa più ampio: la distinzione è scritta', () => {
-    expect(built.user).toMatch(/non un argomento diverso né più AMPIO/);
-    expect(built.user).toMatch(/più PROFONDO/);
-    expect(built.user).toMatch(/non allarga il perimetro/);
-  });
-
-  it('ogni profondità è ancorata al singolo concetto chiave', () => {
-    for (const depth of ['synthetic', 'complete', 'in_depth'] as const) {
-      const prompt = buildLessonPrompt(lessonReq({ depth }) as never);
-      expect(prompt.user).toMatch(/OGNI concetto chiave/);
-    }
-    // I tre livelli restano distinguibili: la profondità continua a significare
-    // qualcosa, non è diventata una parola sola per tutti.
+  it('distingue le tre profondità senza durata o quote editoriali', () => {
     const testi = new Set(
       (['synthetic', 'complete', 'in_depth'] as const).map(
         (depth) => buildLessonPrompt(lessonReq({ depth }) as never).user,
       ),
     );
     expect(testi.size).toBe(3);
-  });
-
-  it('il controllo finale può far crescere il testo, e lo fa per primo', () => {
-    const controllo = built.user.slice(built.user.indexOf('controllo finale obbligatorio'));
-    expect(controllo).toMatch(/1\) verifica che OGNI concetto chiave/);
-    expect(controllo).toMatch(/ESPANDILA prima di rispondere/);
-    // Prima della potatura: un passaggio di revisione che comincia da «elimina»
-    // comprime, ed è esattamente ciò che accadeva.
-    expect(controllo.indexOf('ESPANDILA')).toBeLessThan(
-      controllo.indexOf('elimina ogni riferimento'),
+    expect(buildLessonPrompt(lessonReq({ depth: 'synthetic' }) as never).user).toMatch(
+      /nucleo dell’argomento e i passaggi indispensabili/,
     );
-  });
-
-  it('i tetti alle attività seguono la profondità richiesta', () => {
-    const completa = buildLessonPrompt(lessonReq({ depth: 'complete' }) as never);
-    const approfondita = buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never);
-    expect(completa.user).toMatch(/al massimo UNA sola sezione/);
-    expect(approfondita.user).toMatch(/al massimo DUE sezioni/);
-    expect(approfondita.user).toMatch(/quattro domande risolte/);
+    expect(buildLessonPrompt(lessonReq({ depth: 'complete' }) as never).user).toMatch(
+      /modo autosufficiente/,
+    );
+    expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
+      /condizioni, limiti ed errori frequenti/,
+    );
+    expect(built.user).not.toMatch(/un’ora di lezione|al massimo (UNA|DUE)|quattro domande/i);
   });
 
   it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
-    // Il dataset congela la versione: lasciarla a «candidate-d» farebbe passare
-    // per misurato un prompt che non lo è.
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
-    expect(AI_CONTENT_PROMPT_VERSION).not.toContain('candidate-d');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-v1');
+    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
+  });
+
+  it('rimuove autoverifiche e mantiene un controllo finale breve', () => {
+    expect(built.user).toMatch(/non includere autoverifiche/);
+    expect(built.user).not.toMatch(/domande risolte|attività\/autoverifica/);
+    expect(built.user).toMatch(/verifica silenziosamente correttezza disciplinare/);
+  });
+
+  it('conserva integralmente il prompt precedente per il rollback', () => {
+    const legacy = buildLegacyLessonPrompt(lessonReq() as never);
+    expect(legacy.user).toMatch(/un testo che sostiene un’ora di lezione/);
+    expect(legacy.user).toMatch(/attività\/autoverifica/);
+    expect(legacy.user).toMatch(/verifica che OGNI concetto chiave e OGNI obiettivo/);
   });
 
   it('il prompt del pool resta ancorato al candidato del tuning dedicato', () => {

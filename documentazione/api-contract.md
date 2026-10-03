@@ -1483,3 +1483,31 @@ alla tariffa cache-write. La prenotazione applica lo stesso limite prudenziale e
 continua a coprire tutti i tentativi ammessi. I listini storici senza tariffe
 cache conservano il calcolo precedente per garantire replay e audit dei run già
 persistiti.
+
+## LESSON-GPT6-PHASE1 — modelli GPT-6 e nuovo prompt lesson
+
+La politica candidata della fase 1 risolve i profili server-side come segue:
+
+- `economy` → `gpt-6-luna` + `v10-2026-09-26-gpt6-luna-standard`;
+- `quality` → `gpt-6.1-sol` + `v12-2026-09-29-gpt61-sol-standard`.
+
+Il nuovo listino GPT-6.1 Sol è immutabile e cache-aware: 2.000.000 µUSD/M
+input, 100.000 µUSD/M cached input, 2.500.000 µUSD/M cache write e 10.000.000
+µUSD/M output. Il precedente `gpt-6-sol` e i listini GPT-5.6 restano
+riconoscibili per run storici e rollback.
+
+Le richieste sui modelli attivi includono `reasoning.effort: low` per Economy e
+`medium` per Quality. Le sole richieste `kind: lesson` includono inoltre
+`text.verbosity`: `low` per `synthetic`, `medium` per `complete`, `high` per
+`in_depth`. Schema strict, `store: false` e tetti di output 8.000/14.000/18.000
+restano invariati.
+
+Il prompt lesson attivo è `lesson-gpt6-phase1-v1`: elimina durata obbligatoria,
+autoverifiche, quote editoriali, copertura meccanica di concetti/obiettivi e la
+checklist finale estesa. Conserva sicurezza, indicazioni docente, perimetro UDA,
+accuratezza disciplinare e Markdown SchoolForge. Il prompt precedente
+`lesson-depth-01-candidate-e-v1` resta nel codice. Il selettore server-side
+`ACTIVE_AI_RUNTIME_POLICY` accoppia atomicamente mapping dei modelli e politica
+lesson: impostandolo a `gpt56` vengono ripristinati modelli/listini GPT-5.6,
+prompt precedente e assenza dei nuovi parametri. Il client non può scegliere
+questa politica né inviare model ID, listino, reasoning o verbosity.

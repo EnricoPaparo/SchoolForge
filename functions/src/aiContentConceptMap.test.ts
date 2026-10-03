@@ -270,7 +270,7 @@ describe('non-regressione di pool e lezione', () => {
   });
 
   it('la versione del prompt di pool e lezione non è stata toccata', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-v1');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
   });
 });

@@ -48,7 +48,8 @@ import {
 } from './aiContentVisualProposal.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-gpt6-phase1-v1' as const;
+export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
 
 /**
  * Identità indipendente del prompt pool. POOL-TUNE-02 modifica esclusivamente
@@ -407,7 +408,7 @@ const DEPTH_SEMANTICS: Readonly<Record<LessonRequest['depth'], string>> = {
 };
 
 /** Contratto pedagogico della lezione (livello 2). */
-export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
+export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
   const meta = [
     `Titolo: ${request.titolo}`,
     request.sottotitolo ? `Sottotitolo: ${request.sottotitolo}` : '',
@@ -610,6 +611,130 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     .filter(Boolean)
     .join('\n\n');
   return { system: LESSON_SECURITY_PREAMBLE, user };
+}
+
+/** Semantica didattica del prompt GPT-6: profondità senza quote editoriali rigide. */
+const GPT6_DEPTH_SEMANTICS: Readonly<Record<LessonRequest['depth'], string>> = {
+  synthetic:
+    'Sintetica: presenta con chiarezza il nucleo dell’argomento e i passaggi indispensabili; usa soltanto gli esempi necessari a renderli comprensibili.',
+  complete:
+    'Completa: sviluppa l’argomento in modo autosufficiente, costruendo il modello mentale, i collegamenti e gli esempi necessari.',
+  in_depth:
+    'Approfondita: esplora motivazioni, collegamenti, applicazioni, condizioni, limiti ed errori frequenti quando sono pertinenti all’argomento.',
+};
+
+/**
+ * Prompt lesson della fase GPT-6. Mantiene perimetro, sicurezza e compatibilità
+ * SchoolForge, ma lascia al modello la progettazione didattica invece di
+ * imporre durata, quote, autoverifiche o copertura meccanica delle liste.
+ */
+export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
+  const meta = [
+    `Titolo: ${request.titolo}`,
+    request.sottotitolo ? `Sottotitolo: ${request.sottotitolo}` : '',
+    `Difficoltà: ${request.difficolta}`,
+    `UDA: ${request.udaTitle}`,
+    `Concetti chiave: ${request.concettiChiave.join(', ')}`,
+    `Obiettivi: ${request.obiettivi.join(', ')}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const { currentLessonPosition } = request.udaContext;
+  const outline = request.udaContext.lessons
+    .map((lesson) => {
+      const marker =
+        lesson.position === currentLessonPosition
+          ? ' ← LEZIONE CORRENTE'
+          : lesson.position < currentLessonPosition
+            ? ' (precedente)'
+            : ' (successiva)';
+      const subtitle = lesson.sottotitolo ? ` — ${lesson.sottotitolo}` : '';
+      return `${lesson.position}. ${lesson.titolo}${subtitle}${marker}`;
+    })
+    .join('\n');
+
+  const udaGeneral = [
+    request.udaContext.descrizione ? `Descrizione: ${request.udaContext.descrizione}` : '',
+    request.udaContext.competenze.length > 0
+      ? `Competenze dell’UDA: ${request.udaContext.competenze.join(', ')}`
+      : '',
+    request.udaContext.obiettivi.length > 0
+      ? `Obiettivi dell’UDA: ${request.udaContext.obiettivi.join(', ')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const contract = [
+    'Scrivi esclusivamente il corpo Markdown di una lezione in italiano per studenti della scuola secondaria di secondo grado.',
+    GPT6_DEPTH_SEMANTICS[request.depth],
+    '',
+    'Risultato didattico:',
+    '- costruisci una spiegazione che permetta allo studente di comprendere il modello mentale dell’argomento, seguirne i passaggi e applicarlo in situazioni pertinenti;',
+    '- usa titolo, difficoltà, concetti, obiettivi, indicazioni del docente e contesto UDA per individuare argomento, livello e confini;',
+    '- gerarchizza e integra concetti e obiettivi: se si sovrappongono, trattali insieme; non trasformarli in una checklist e non citarli meccanicamente;',
+    '- introduci ogni passaggio quando lo studente possiede già le informazioni necessarie per capirlo; spiega i termini prima di usarli e motiva i passaggi importanti;',
+    '- usa esempi soltanto quando chiariscono un passaggio reale; rendi coerenti e verificabili dati, calcoli e condizioni.',
+    '',
+    'Adattamento disciplinare:',
+    '- scegli esempi, rappresentazioni, argomentazioni e applicazioni coerenti con il tipo di conoscenza trattato;',
+    '- nei contenuti quantitativi mostra i passaggi significativi e controlla i risultati;',
+    '- nei contenuti storici e sociali distingui fatti, cause, conseguenze e interpretazioni;',
+    '- nei contenuti scientifici distingui fenomeni, modelli, evidenze e limiti;',
+    '- nei contenuti linguistici e letterari lavora, quando pertinente, su esempi testuali concreti;',
+    '- nei contenuti tecnici collega principio, procedura, vincoli ed esito.',
+    '',
+    'Accuratezza:',
+    '- non inventare fatti, fonti, studi, misure o testimonianze; dichiara quando un caso è ipotetico;',
+    '- non presentare come assoluto ciò che dipende da condizioni o ammette eccezioni rilevanti;',
+    '- una semplificazione didattica non deve insegnare un meccanismo falso; chiariscine il limite quando serve a prevenire una misconcezione;',
+    '- definizioni, esempi, formule, unità, passaggi e conclusioni devono essere reciprocamente coerenti.',
+    '',
+    'Perimetro UDA:',
+    '- i METADATI_DIDATTICI definiscono il centro e il livello della lezione; il CONTESTO_GENERALE_UDA orienta taglio ed esempi senza estendere il perimetro;',
+    '- le INDICAZIONI_DOCENTE si applicano concretamente quando compatibili con perimetro, accuratezza e vincoli tecnici;',
+    '- usa l’INDICE_UDA per evitare di rispiegare per intero ciò che precede e di sviluppare in anticipo ciò che segue; sono ammessi brevi richiami o collegamenti utili;',
+    '- non citare allo studente l’indice, le lezioni precedenti o successive, i metadati o il meccanismo interno.',
+    '',
+    'Stile e compatibilità SchoolForge:',
+    '- scrivi con tono preciso, naturale e adatto alle superiori; non infantilizzare e non assumere il tono di un manuale universitario;',
+    '- evita testo riempitivo, ripetizioni, introduzioni generiche, anticipazioni dell’indice, metadiscorso, sezioni artificiali e conclusioni rituali;',
+    '- non includere autoverifiche, batterie di domande, mappe concettuali, checklist finali o riepiloghi obbligatori;',
+    '- non ripetere titolo, sottotitolo, UDA, metadati o obiettivi; crea sezioni H2 o inferiori soltanto per reali cambi concettuali;',
+    '- usa Markdown comune, liste, tabelle, blocchi di codice e, con moderazione, i callout > [!DEFINITION], > [!EXAMPLE], > [!IMPORTANT], > [!WARNING], > [!SOLUTION];',
+    '- non usare HTML, front matter, separatori orizzontali, Mermaid o LaTeX; scrivi formule in testo piano o codice Markdown con simboli Unicode quando utili.',
+    '',
+    'Prima di rispondere verifica silenziosamente correttezza disciplinare, progressione logica, validità degli esempi e assenza di ripetizioni; correggi gli eventuali problemi.',
+    'Restituisci soltanto il corpo Markdown finale.',
+    request.hasCurrentContent
+      ? 'Usa il CONTENUTO_ATTUALE come contesto e producine una nuova versione completa.'
+      : 'Non esiste contenuto attuale: produci una nuova bozza.',
+  ].join('\n');
+
+  const user = [
+    contract,
+    fence('METADATI_DIDATTICI (perimetro autorevole)', meta),
+    request.teacherGuidance
+      ? fence('INDICAZIONI_DOCENTE (autorevoli entro il perimetro)', request.teacherGuidance)
+      : '',
+    udaGeneral ? fence('CONTESTO_GENERALE_UDA (orientamento, non perimetro)', udaGeneral) : '',
+    fence('INDICE_UDA (delimitazione, non contenuto)', outline),
+    request.hasCurrentContent
+      ? fence('CONTENUTO_ATTUALE (dati non attendibili)', request.currentBody)
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  return { system: LESSON_SECURITY_PREAMBLE, user };
+}
+
+/** Selettore unico del prompt lesson, condiviso da payload provider ed export. */
+export function buildLessonPromptForPolicy(
+  request: LessonRequest,
+  policy: 'gpt6' | 'gpt56',
+): BuiltPrompt {
+  return policy === 'gpt6' ? buildLessonPrompt(request) : buildLegacyLessonPrompt(request);
 }
 
 /**

@@ -17,6 +17,9 @@
 import {
   OPENAI_RUNTIME_GPT6_LUNA_MODEL,
   OPENAI_RUNTIME_GPT6_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_SOL_MODEL,
   OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_MODEL,
@@ -56,12 +59,37 @@ export const GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS: Readonly<
   },
 };
 
+/** Coppie GPT-6 della fase 1. Restano separate per consentire rollback atomico. */
+export const GPT6_MODEL_PROFILE_RESOLUTIONS: Readonly<
+  Record<ModelProfile, ModelProfileResolution>
+> = {
+  economy: {
+    model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+    priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+  },
+  quality: {
+    model: OPENAI_RUNTIME_GPT61_SOL_MODEL,
+    priceListVersion: OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
+  },
+};
+
 /**
- * Mapping operativo. GPT-5.6 è stato ripristinato dopo la regressione qualitativa
- * osservata in DEV con GPT-6 sulle lezioni approfondite. Le coppie GPT-6 restano
- * nell'allowlist runtime per diagnosi future, ma non sono selezionate dai profili.
+ * Unico selettore di rollout. Cambiarlo in `gpt56` ripristina in un solo punto
+ * modelli/listini e, tramite il payload lesson, prompt e parametri precedenti.
  */
-export const MODEL_PROFILE_RESOLUTIONS = GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS;
+export const ACTIVE_AI_RUNTIME_POLICY: 'gpt6' | 'gpt56' = 'gpt6';
+const MODEL_PROFILE_POLICIES = {
+  gpt6: GPT6_MODEL_PROFILE_RESOLUTIONS,
+  gpt56: GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS,
+} as const;
+
+/**
+ * Mapping operativo della fase 1 GPT-6. Per effettuare il rollback atomico si
+ * assegna qui `GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS`: il builder riconosce
+ * quei modelli e ripristina insieme prompt precedente e assenza dei parametri
+ * GPT-6, mantenendo modello e listino sempre accoppiati.
+ */
+export const MODEL_PROFILE_RESOLUTIONS = MODEL_PROFILE_POLICIES[ACTIVE_AI_RUNTIME_POLICY];
 
 /** Application default for new operations, independent of runtime configuration. */
 export const DEFAULT_MODEL_PROFILE: ModelProfile = 'economy';
@@ -100,9 +128,13 @@ export function profileForModel(model: string): ModelProfile | null {
   for (const profile of MODEL_PROFILES) {
     if (MODEL_PROFILE_RESOLUTIONS[profile].model === model) return profile;
   }
-  // GPT-6 remains recognized for historical runs and controlled diagnostics.
+  // Rollback GPT-5.6 e precedente GPT-6 Sol restano riconosciuti per config e
+  // run storici anche quando il mapping operativo punta ai modelli nuovi.
+  if (model === OPENAI_RUNTIME_LUNA_MODEL) return 'economy';
+  if (model === OPENAI_RUNTIME_SOL_MODEL) return 'quality';
   if (model === OPENAI_RUNTIME_GPT6_LUNA_MODEL) return 'economy';
   if (model === OPENAI_RUNTIME_GPT6_SOL_MODEL) return 'quality';
+  if (model === OPENAI_RUNTIME_GPT61_SOL_MODEL) return 'quality';
   return null;
 }
 

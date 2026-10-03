@@ -11,9 +11,10 @@ import {
 } from './aiCorrectionGatewayCore.js';
 import {
   USD_MICRO,
-  OPENAI_RUNTIME_LUNA_MODEL,
-  OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
-  OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+  OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_GPT61_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
 import {
   emptyLedger,
@@ -412,7 +413,7 @@ class FakeStore implements EngineWritePorts {
 const ENABLED_RUNTIME_CONFIG = {
   enabled: true,
   provider: 'openai' as const,
-  model: OPENAI_RUNTIME_LUNA_MODEL,
+  model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
   environment: 'dev' as const,
   limits: {
     maxSubmissionsPerOperation: 30,
@@ -427,7 +428,7 @@ const ENABLED_RUNTIME_CONFIG = {
   dailyBudgetMicroUsd: 1_000_000,
   monthlyBudgetMicroUsd: 5_000_000,
   configVersion: 'cfg-test',
-  priceListVersion: OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
+  priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
 };
 const enabledConfigPort = async () => ENABLED_RUNTIME_CONFIG;
 
@@ -2329,7 +2330,7 @@ function realGrader(
 ): AiGrader {
   return {
     id: 'openai',
-    model: OPENAI_RUNTIME_LUNA_MODEL,
+    model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
     maxOutputTokensPerCall: opts?.maxOutput ?? TEST_MAX_OUTPUT_TOKENS,
     reservationInputTokenUpperBound: () => opts?.inputBound ?? TEST_INPUT_BOUND,
     grade,
@@ -2383,15 +2384,15 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.inputTokensActual).toBe(1000);
     expect(res.outputTokensActual).toBe(200);
     expect(res.totalTokensActual).toBe(1200);
-    // GPT-5.6 Luna: 600 ordinary + 300 cached + 100 cache-write + 200 output.
-    expect(res.costActualMicroUsd).toBe(391);
+    // GPT-6 Luna: 600 ordinary + 300 cached + 100 cache-write + 200 output.
+    expect(res.costActualMicroUsd).toBe(176);
     expect(res.costEstimatedMicroUsd).toBeGreaterThan(0);
     expect(store.reserveBudgetCalls).toBe(1);
     expect(store.reconcileBudgetCalls).toBe(1);
     const ledger = store.ledgers.get(MONTH)!;
-    expect(ledger.spentMicroUsd).toBe(391);
-    expect(availableMicroUsd(ledger, NOW)).toBe(FIVE_USD - 391);
-    expect(store.runs.get(REQ)!.costActualMicroUsd).toBe(391);
+    expect(ledger.spentMicroUsd).toBe(176);
+    expect(availableMicroUsd(ledger, NOW)).toBe(FIVE_USD - 176);
+    expect(store.runs.get(REQ)!.costActualMicroUsd).toBe(176);
   });
 
   it('mock: no reservation, no reconciliation, zero cost', async () => {
@@ -2606,8 +2607,8 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.inputTokensActual).toBe(500);
     expect(res.outputTokensActual).toBe(100);
     // Dettaglio cache assente: contabilizzazione prudente al cache-write rate.
-    expect(res.costActualMicroUsd).toBe(245);
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(245);
+    expect(res.costActualMicroUsd).toBe(113);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(113);
     // Nessun punteggio/feedback invalido persistito.
     expect(store.corrections.has(sid('s1'))).toBe(false);
   });
@@ -2700,7 +2701,11 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     seedOneOpenOneClosed(store, 's1');
     const grade = vi.fn(new MockAiGrader().grade);
     // Grader senza maxOutputTokensPerCall / reservationInputTokenUpperBound.
-    const grader = { id: 'openai', model: OPENAI_RUNTIME_LUNA_MODEL, grade } as unknown as AiGrader;
+    const grader = {
+      id: 'openai',
+      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+      grade,
+    } as unknown as AiGrader;
     await expect(
       runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW)),
     ).rejects.toMatchObject({ code: 'budget_unavailable' });
@@ -2713,7 +2718,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     seedOneOpenOneClosed(store, 's1');
     seedOneOpenOneClosed(store, 's2');
     const grade = vi.fn(new MockAiGrader().grade);
-    const deps = openaiDeps(store, realGrader(grade, { maxOutput: 41_666, inputBound: 0 }), NOW);
+    const deps = openaiDeps(store, realGrader(grade, { maxOutput: 99_999, inputBound: 0 }), NOW);
     deps.loadRuntimeConfig = async () => ({
       ...ENABLED_RUNTIME_CONFIG,
       maxOperationCostMicroUsd: 99_999,
@@ -2729,7 +2734,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     seedOneOpenOneClosed(store, 's1');
     seedOneOpenOneClosed(store, 's2');
     const grade = vi.fn(new MockAiGrader().grade);
-    const deps = openaiDeps(store, realGrader(grade, { maxOutput: 41_667, inputBound: 0 }), NOW);
+    const deps = openaiDeps(store, realGrader(grade, { maxOutput: 100_001, inputBound: 0 }), NOW);
     deps.loadRuntimeConfig = async () => ({
       ...ENABLED_RUNTIME_CONFIG,
       maxOperationCostMicroUsd: 100_000,
@@ -2754,13 +2759,13 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     const grade = vi.fn(new MockAiGrader().grade);
     const grader = {
       ...realGrader(grade, { maxOutput: 8_000, inputBound: 10_000 }),
-      model: OPENAI_RUNTIME_LUNA_MODEL,
+      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
     };
     const deps = openaiDeps(store, grader, NOW);
     deps.loadRuntimeConfig = async () => ({
       ...ENABLED_RUNTIME_CONFIG,
-      model: OPENAI_RUNTIME_LUNA_MODEL,
-      priceListVersion: OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
+      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
       maxOperationCostMicroUsd: FIVE_USD,
       dailyBudgetMicroUsd: FIVE_USD,
       monthlyBudgetMicroUsd: FIVE_USD,
@@ -2768,8 +2773,8 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
 
     const result = await runExecution(req(submissionIds), deps);
 
-    // GPT-5.6 Luna: 25 × 2 tentativi × (cache-write input + output) = $0,605.
-    expect(result.costReservationMicroUsd).toBe(605_000);
+    // GPT-6 Luna: 25 × 2 tentativi × (cache-write input + output) = $0,2625.
+    expect(result.costReservationMicroUsd).toBe(262_500);
     expect(result.costReservationMicroUsd).toBeLessThanOrEqual(FIVE_USD);
     expect(grade).toHaveBeenCalledTimes(25);
   });
@@ -2813,7 +2818,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     );
     expect(res.results[0]!.outcome).toBe('succeeded');
     // La `reserved` scaduta è stata rilasciata: nessun addebito residuo, solo l'effettivo.
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(490);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(225);
   });
 
   it('crash after the provider: an expired pending reservation is charged, not freed', async () => {
@@ -2837,7 +2842,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.results[0]!.outcome).toBe('succeeded');
     const ledger = store.ledgers.get(MONTH)!;
     // La `pending` scaduta è addebitata al tetto (3 USD) + l'effettivo del nuovo run (130).
-    expect(ledger.spentMicroUsd).toBe(300_000 + 490);
+    expect(ledger.spentMicroUsd).toBe(300_000 + 225);
     expect(ledger.reservations.crashed).toBeUndefined();
   });
 
@@ -2907,9 +2912,9 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
       now: () => NOW,
     });
 
-    // Bound GPT-5.6 Luna per tentativo 14 900 µUSD; retry=1 raddoppia la riserva.
-    expect(res0.costReservationMicroUsd).toBe(14_900);
-    expect(res1.costReservationMicroUsd).toBe(29_800);
+    // Bound GPT-6 Luna per tentativo 7 250 µUSD; retry=1 raddoppia la riserva.
+    expect(res0.costReservationMicroUsd).toBe(7_250);
+    expect(res1.costReservationMicroUsd).toBe(14_500);
   });
 
   it('settles an uncertain first attempt + successful second: settled = actual + attempt bound ≤ reservation', async () => {
@@ -2929,12 +2934,12 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
     const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
 
     expect(res.results[0]!.outcome).toBe('succeeded');
-    // Dettaglio cache assente: actual prudente 490 µUSD + un tentativo incerto.
-    expect(res.costActualMicroUsd).toBe(490);
-    expect(res.costSettledMicroUsd).toBe(490 + 14_900);
+    // Dettaglio cache assente: actual prudente 225 µUSD + un tentativo incerto.
+    expect(res.costActualMicroUsd).toBe(225);
+    expect(res.costSettledMicroUsd).toBe(225 + 7_250);
     expect(res.costSettledMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
     // Il ledger addebita il costo prudenziale (settled), non solo l'effettivo.
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(490 + 14_900);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(225 + 7_250);
     // Telemetria retry aggregata e persistita.
     expect(res.retry).toEqual({
       attemptsTotal: 2,
@@ -2956,7 +2961,7 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
     );
     const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
     expect(res.costSettledMicroUsd).toBe(res.costReservationMicroUsd); // 25 000, capped
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(29_800);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(14_500);
   });
 
   it('rejects when the budget cannot cover ALL allowed attempts (zero provider calls)', async () => {
@@ -2967,7 +2972,7 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
       monthKey: MONTH,
       budgetMicroUsd: FIVE_USD,
       dailyBudgetMicroUsd: 1_000_000,
-      spentMicroUsd: FIVE_USD - 14_900,
+      spentMicroUsd: FIVE_USD - 7_250,
       dailySpentMicroUsd: {},
       reservations: {},
     });
@@ -3079,18 +3084,18 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
   });
 });
 
-// ── MODEL-GPT6-ROLLBACK-01 — profilo Economy ripristinato su GPT-5.6 Luna ───
+// ── LESSON-GPT6-PHASE1 — profilo Economy attivo su GPT-6 Luna ───────────────
 
-describe('MODEL-GPT6-ROLLBACK-01 — GPT-5.6 Luna runtime execution', () => {
+describe('LESSON-GPT6-PHASE1 — GPT-6 Luna runtime execution', () => {
   const NOW = Date.UTC(2026, 6, 20, 12, 0, 0);
   const MONTH = monthKeyFromMs(NOW);
   const FIVE_USD = 5 * USD_MICRO;
 
   const lunaConfig = {
     ...ENABLED_RUNTIME_CONFIG,
-    model: OPENAI_RUNTIME_LUNA_MODEL,
-    priceListVersion: OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
-    configVersion: 'cfg-gpt56-luna-rollback',
+    model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
+    priceListVersion: OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
+    configVersion: 'cfg-gpt6-luna-phase1',
   };
   const lunaConfigPort = async () => lunaConfig;
 
@@ -3098,7 +3103,7 @@ describe('MODEL-GPT6-ROLLBACK-01 — GPT-5.6 Luna runtime execution', () => {
     const mock = new MockAiGrader();
     return {
       id: 'openai',
-      model: OPENAI_RUNTIME_LUNA_MODEL,
+      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
       maxOutputTokensPerCall: TEST_MAX_OUTPUT_TOKENS,
       reservationInputTokenUpperBound: () => TEST_INPUT_BOUND,
       grade: async (input) => ({ ...(await mock.grade(input)), ...(usage ? { usage } : {}) }),
@@ -3122,14 +3127,14 @@ describe('MODEL-GPT6-ROLLBACK-01 — GPT-5.6 Luna runtime execution', () => {
       lunaDeps(store, lunaGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 })),
     );
     expect(res.mode).toBe('openai');
-    // Dettaglio cache assente: input al cache-write rate + output GPT-5.6 Luna.
-    expect(res.costActualMicroUsd).toBe(490);
+    // Dettaglio cache assente: input al cache-write rate + output GPT-6 Luna.
+    expect(res.costActualMicroUsd).toBe(225);
     expect(res.costActualMicroUsd).toBeLessThanOrEqual(res.costSettledMicroUsd);
     expect(res.costSettledMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
     const persisted = store.runs.get(REQ)!;
-    expect(persisted.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
-    expect(persisted.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION);
-    expect(persisted.configVersion).toBe('cfg-gpt56-luna-rollback');
+    expect(persisted.model).toBe(OPENAI_RUNTIME_GPT6_LUNA_MODEL);
+    expect(persisted.priceListVersion).toBe(OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION);
+    expect(persisted.configVersion).toBe('cfg-gpt6-luna-phase1');
   });
 
   it('holds the invariant with a Unicode-heavy submission under Luna pricing', async () => {
@@ -3158,7 +3163,7 @@ describe('MODEL-GPT6-ROLLBACK-01 — GPT-5.6 Luna runtime execution', () => {
     const grade = vi.fn(new MockAiGrader().grade);
     const grader: AiGrader = {
       id: 'openai',
-      model: OPENAI_RUNTIME_LUNA_MODEL,
+      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
       maxOutputTokensPerCall: TEST_MAX_OUTPUT_TOKENS,
       reservationInputTokenUpperBound: () => TEST_INPUT_BOUND,
       grade,
@@ -3184,7 +3189,7 @@ describe('MODEL-GPT6-ROLLBACK-01 — GPT-5.6 Luna runtime execution', () => {
     const grade = vi.fn(new MockAiGrader().grade);
     const replayGrader: AiGrader = {
       id: 'openai',
-      model: OPENAI_RUNTIME_LUNA_MODEL,
+      model: OPENAI_RUNTIME_GPT6_LUNA_MODEL,
       maxOutputTokensPerCall: TEST_MAX_OUTPUT_TOKENS,
       reservationInputTokenUpperBound: () => TEST_INPUT_BOUND,
       grade,
@@ -3215,36 +3220,36 @@ describe('TWU-02 — model profile server-side resolution', () => {
   const NOW = Date.UTC(2026, 6, 16, 12, 0, 0);
   const USAGE = { inputTokens: 1000, outputTokens: 200, tokens: 1200 };
 
-  it('economy → Luna model + standard list', async () => {
+  it('economy → GPT-6 Luna model + standard list', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
     const res = await runExecution(
       req([sid('s1')], { modelProfile: 'economy' }),
       openaiDeps(store, usageGrader(USAGE), NOW),
     );
-    expect(res.costActualMicroUsd).toBe(490);
-    expect(store.runs.get(REQ)!.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
-    expect(store.runs.get(REQ)!.priceListVersion).toBe(
-      OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
-    );
+    expect(res.costActualMicroUsd).toBe(225);
+    expect(store.runs.get(REQ)!.model).toBe(OPENAI_RUNTIME_GPT6_LUNA_MODEL);
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION);
     expect(store.reserveBudgetCalls).toBe(1);
     expect(store.reconcileBudgetCalls).toBe(1);
   });
 
-  it('quality → Sol model + Sol list (cost differs from economy)', async () => {
+  it('quality → GPT-6.1 Sol model + Sol list (cost differs from economy)', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
+    const qualityGrader = { ...usageGrader(USAGE), model: OPENAI_RUNTIME_GPT61_SOL_MODEL };
     const res = await runExecution(req([sid('s1')], { modelProfile: 'quality' }), {
-      ...openaiDeps(store, usageGrader(USAGE), NOW),
+      ...openaiDeps(store, qualityGrader, NOW),
       loadRuntimeConfig: async () => ({
         ...ENABLED_RUNTIME_CONFIG,
         maxOperationCostMicroUsd: 5_000_000,
       }),
     });
-    expect(store.runs.get(REQ)!.priceListVersion).toBe(OPENAI_RUNTIME_SOL_CACHE_PRICE_LIST_VERSION);
+    expect(store.runs.get(REQ)!.model).toBe(OPENAI_RUNTIME_GPT61_SOL_MODEL);
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION);
     // The injected fake grader exposes Luna; the runtime config/listino assertions above verify routing.
     expect(res.costActualMicroUsd).toBeGreaterThan(0);
-    expect(res.costActualMicroUsd).not.toBe(490);
+    expect(res.costActualMicroUsd).not.toBe(225);
     expect(store.reserveBudgetCalls).toBe(1);
   });
 
@@ -3253,10 +3258,8 @@ describe('TWU-02 — model profile server-side resolution', () => {
     seedOneOpenOneClosed(store, 's1');
     // Il profilo assente usa il default applicativo Economy.
     const res = await runExecution(req([sid('s1')]), openaiDeps(store, usageGrader(USAGE), NOW));
-    expect(res.costActualMicroUsd).toBe(490);
-    expect(store.runs.get(REQ)!.priceListVersion).toBe(
-      OPENAI_RUNTIME_LUNA_CACHE_PRICE_LIST_VERSION,
-    );
+    expect(res.costActualMicroUsd).toBe(225);
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION);
   });
 
   it('same requestId with a different profile → invalid_input (identity conflict)', async () => {

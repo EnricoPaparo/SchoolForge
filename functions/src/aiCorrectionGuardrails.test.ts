@@ -9,6 +9,8 @@ import {
   OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_GPT6_SOL_MODEL,
   OPENAI_RUNTIME_GPT6_SOL_PRICE_LIST_VERSION,
+  OPENAI_RUNTIME_GPT61_SOL_MODEL,
+  OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_MODEL,
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_LUNA_STANDARD_PRICE_LIST_VERSION,
@@ -377,6 +379,16 @@ describe('cost breakdown (M5-05D2B-1)', () => {
 });
 
 describe('MODEL-GPT6-01 — cache-aware accounting', () => {
+  it('prices GPT-6.1 Sol in its immutable cache-aware list', () => {
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_GPT61_SOL_PRICE_LIST_VERSION, OPENAI_RUNTIME_GPT61_SOL_MODEL),
+    ).toEqual({
+      inputMicroUsdPerMillion: 2_000_000,
+      cachedInputMicroUsdPerMillion: 100_000,
+      cacheWriteMicroUsdPerMillion: 2_500_000,
+      outputMicroUsdPerMillion: 10_000_000,
+    });
+  });
   it('pins GPT-6 Standard prices and prices uncached, hit, write and output exactly', () => {
     const luna = lookupModelPrice(
       OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,

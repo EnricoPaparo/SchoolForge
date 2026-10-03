@@ -938,7 +938,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     'ac06611e2358280f483b44ad1cce3df8825a14f59e0cddb753d4f073c686f2e8';
   const STRUCTURED_REQUEST_SHA256 = {
     pool: 'c9e5c6d6178b5ecb24eee81f0bf571d9f1412f1652defcbd3755cbdf9ab994f8',
-    lesson: 'e7e1bd0157eb72c13381f887a085e95906288ff33dcb6222b7f5e09dfc3a62b0',
+    lesson: 'a376995374630b4facba35be363d7f27a58d0b9e5e5457f80ca00122903c7178',
     concept_map: '08dfe67c9c308a8e37fdbcb3bdf7e41041f33e2ebd960f7aa23ffc9bcbf8a6be',
     visual_proposal: '0b7c7f03a0e25d43780094ce2fe1580561f596e384d93a3694c66c8eae7053d6',
   } as const;
@@ -1035,7 +1035,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     }
   });
 
-  it('prompt, schema e tetto di output dei quattro kind sono byte-identici a main 5171859', () => {
+  it('ancora i payload dei kind, inclusa la nuova versione intenzionale della lezione', () => {
     const snapshots = {
       pool: JSON.stringify(buildContentStructuredRequest(poolRequest(), 'gpt-5.6-luna')),
       lesson: JSON.stringify(buildContentStructuredRequest(lessonRequest(), 'gpt-5.6-luna')),
@@ -1060,7 +1060,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
   });
 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-v1');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v7');
   });
