@@ -58,7 +58,8 @@ describe('AiCorrectionSettingsDialog (TWU-02)', () => {
         .value,
     ).toBe('Premia il metodo.');
     // The technical model id is shown as small metadata (informational, not a price).
-    expect(screen.getByText('gpt-5.6-luna')).toBeTruthy();
+    expect(screen.getByText('gpt-6-luna')).toBeTruthy();
+    expect(screen.queryByText('gpt-5.6-luna')).toBeNull();
     const gradingMode = screen.getByLabelText('Stile di valutazione');
     expect(gradingMode.getAttribute('aria-describedby')).toBeNull();
     fireEvent.change(gradingMode, { target: { value: 'compassionate' } });
@@ -74,6 +75,7 @@ describe('AiCorrectionSettingsDialog (TWU-02)', () => {
   it('saves the current values and reports success via aria-live', async () => {
     const { onSaved } = setup();
     fireEvent.change(screen.getByLabelText('Profilo modello'), { target: { value: 'quality' } });
+    expect(screen.getByText('gpt-6.1-sol')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
 
     await waitFor(() => expect(screen.getByText('Impostazioni salvate.')).toBeTruthy());

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AI_POOL_GENERATION_PROFILE,
+  POOL_MODEL_PROFILE_OPTIONS,
   buildLessonContentRequest,
   buildPoolContentRequest,
   describeAiContentError,
@@ -14,6 +15,13 @@ import {
 const REQ = '11111111-2222-3333-4444-555555555555';
 
 describe('buildPoolContentRequest', () => {
+  it('espone i modelli GPT-6 attivi come metadati informativi dei profili', () => {
+    expect(POOL_MODEL_PROFILE_OPTIONS.map(({ value, modelId }) => ({ value, modelId }))).toEqual([
+      { value: 'economy', modelId: 'gpt-6-luna' },
+      { value: 'quality', modelId: 'gpt-6.1-sol' },
+    ]);
+  });
+
   it('builds the closed payload with only allowed fields', () => {
     const req = buildPoolContentRequest({
       requestId: REQ,

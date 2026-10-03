@@ -127,6 +127,8 @@ describe('AiCompleteLessonGenerationDialog', () => {
       'value',
       'economy',
     );
+    expect(screen.getByRole('option', { name: 'Economy — gpt-6-luna' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Quality — gpt-6.1-sol' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Aperte' })).toHaveProperty('value', '5');
     expect(screen.getByRole('textbox', { name: 'Risposta singola' })).toHaveProperty('value', '3');
     expect(screen.getByRole('textbox', { name: 'Risposta multipla' })).toHaveProperty('value', '2');
