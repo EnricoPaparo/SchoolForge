@@ -48,7 +48,7 @@ import {
 } from './aiContentVisualProposal.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-gpt6-phase1-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-gpt6-phase1-1-v1' as const;
 export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
 
 /**
@@ -620,7 +620,7 @@ const GPT6_DEPTH_SEMANTICS: Readonly<Record<LessonRequest['depth'], string>> = {
   complete:
     'Completa: sviluppa l’argomento in modo autosufficiente, costruendo il modello mentale, i collegamenti e gli esempi necessari.',
   in_depth:
-    'Approfondita: esplora motivazioni, collegamenti, applicazioni, condizioni, limiti ed errori frequenti quando sono pertinenti all’argomento.',
+    'Approfondita: costruisci una comprensione profonda dei nuclei didatticamente decisivi, rendendone espliciti motivazioni o meccanismi, passaggi intermedi, collegamenti, applicazioni, condizioni, limiti ed errori concettuali plausibili quando pertinenti.',
 };
 
 /**
@@ -675,8 +675,19 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- usa titolo, difficoltà, concetti, obiettivi, indicazioni del docente e contesto UDA per individuare argomento, livello e confini;',
     '- gerarchizza e integra concetti e obiettivi: se si sovrappongono, trattali insieme; non trasformarli in una checklist e non citarli meccanicamente;',
     '- introduci ogni passaggio quando lo studente possiede già le informazioni necessarie per capirlo; spiega i termini prima di usarli e motiva i passaggi importanti;',
-    '- usa esempi soltanto quando chiariscono un passaggio reale; rendi coerenti e verificabili dati, calcoli e condizioni.',
+    '- usa esempi, casi o confronti quando rendono concreto un passaggio reale e spiega che cosa mostrano; rendi coerenti e verificabili dati, calcoli e condizioni.',
     '',
+    ...(request.depth === 'in_depth'
+      ? [
+          'Criterio di completezza per la modalità Approfondita:',
+          '- non fermarti a definizioni, classificazioni o descrizioni: sviluppa i nessi che spiegano perché, come e in quali condizioni i nuclei centrali funzionano o assumono significato;',
+          '- non dare per impliciti i passaggi che uno studente delle superiori deve comprendere per seguire il ragionamento; introduci i concetti di supporto realmente necessari senza allargare l’argomento;',
+          '- rendi osservabili le idee astratte attraverso esempi, casi, confronti, procedimenti o applicazioni coerenti con la disciplina e spiega che cosa mostrano;',
+          '- considera conclusa la lezione soltanto quando lo studente dispone degli elementi per spiegare i nessi essenziali, usare o interpretare quanto appreso in un caso pertinente e riconoscere gli errori concettuali più plausibili;',
+          '- approfondisci dove cresce la comprensione; evita di ottenere lunghezza con ripetizioni, elenchi decorativi o divagazioni.',
+          '',
+        ]
+      : []),
     'Adattamento disciplinare:',
     '- scegli esempi, rappresentazioni, argomentazioni e applicazioni coerenti con il tipo di conoscenza trattato;',
     '- nei contenuti quantitativi mostra i passaggi significativi e controlla i risultati;',

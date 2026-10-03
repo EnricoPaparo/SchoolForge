@@ -590,7 +590,9 @@ describe('OpenAI content provider (mocked transport, no real network)', () => {
 
       expect(economy.reasoning).toEqual({ effort: 'low' });
       expect(economy.text.verbosity).toBe(verbosity);
-      expect(quality.reasoning).toEqual({ effort: 'medium' });
+      expect(quality.reasoning).toEqual({
+        effort: depth === 'in_depth' ? 'high' : 'medium',
+      });
       expect(quality.text.verbosity).toBe(verbosity);
       expect(rollback).not.toHaveProperty('reasoning');
       expect(rollback.text).not.toHaveProperty('verbosity');
@@ -1501,7 +1503,9 @@ describe('lesson pedagogical contract', () => {
   it('asks for cognitive progression and useful, verifiable examples', () => {
     expect(built.user).toMatch(/introduci ogni passaggio quando lo studente possiede già/);
     expect(built.user).toMatch(/spiega i termini prima di usarli/);
-    expect(built.user).toMatch(/esempi soltanto quando chiariscono un passaggio reale/);
+    expect(built.user).toMatch(
+      /esempi, casi o confronti quando rendono concreto un passaggio reale/,
+    );
     expect(built.user).toMatch(/coerenti e verificabili dati, calcoli e condizioni/);
   });
   it('removes activity quotas and adapts the explanation to the discipline', () => {
@@ -1555,7 +1559,7 @@ describe('lesson pedagogical contract', () => {
       /Completa: sviluppa l’argomento/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
-      /Approfondita: esplora motivazioni/,
+      /Approfondita: costruisci una comprensione profonda/,
     );
   });
   it('fences current content as untrusted and guidance as authoritative within the perimeter', () => {
@@ -2242,13 +2246,13 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
       /modo autosufficiente/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
-      /condizioni, limiti ed errori frequenti/,
+      /condizioni, limiti ed errori concettuali plausibili/,
     );
     expect(built.user).not.toMatch(/un’ora di lezione|al massimo (UNA|DUE)|quattro domande/i);
   });
 
   it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-1-v1');
     expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
   });
 
@@ -2256,6 +2260,19 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
     expect(built.user).toMatch(/non includere autoverifiche/);
     expect(built.user).not.toMatch(/domande risolte|attività\/autoverifica/);
     expect(built.user).toMatch(/verifica silenziosamente correttezza disciplinare/);
+  });
+
+  it('rende verificabile la completezza Approfondita senza quote di lunghezza', () => {
+    const deep = buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user;
+    const complete = buildLessonPrompt(lessonReq({ depth: 'complete' }) as never).user;
+
+    expect(deep).toMatch(/Criterio di completezza per la modalità Approfondita/);
+    expect(deep).toMatch(/non fermarti a definizioni, classificazioni o descrizioni/);
+    expect(deep).toMatch(/non dare per impliciti i passaggi/);
+    expect(deep).toMatch(/esempi, casi, confronti, procedimenti o applicazioni/);
+    expect(deep).toMatch(/considera conclusa la lezione soltanto quando/);
+    expect(deep).not.toMatch(/numero di parole|almeno \d+|un’ora di lezione/i);
+    expect(complete).not.toMatch(/Criterio di completezza per la modalità Approfondita/);
   });
 
   it('conserva integralmente il prompt precedente per il rollback', () => {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import OpenAI from 'openai';
-import { reasoningEffortForModel } from './aiModelRequestPolicy.js';
+import { reasoningEffortForModel, type OpenAiReasoningEffort } from './aiModelRequestPolicy.js';
 import {
   AiGraderFailure,
   AiGraderInvalidOutputError,
@@ -109,7 +109,7 @@ export interface OpenAiStructuredRequest {
       schema: Record<string, unknown>;
     };
   };
-  reasoning?: { effort: 'low' | 'medium' };
+  reasoning?: { effort: OpenAiReasoningEffort };
   max_output_tokens: number;
   store: false;
 }

@@ -93,8 +93,9 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // LUNA-PRICES-20260912: v6 prezza Luna a $0.20/M input + $1.20/M output,
     // sotto l'output nano ($1.25/M) — Quality non implica più un costo
     // superiore a Economy, quindi si ancora il valore esatto del nuovo
-    // listino invece di un confronto fra profili non più garantito.
-    expect(quality.costUpperBoundMicroUsd).toBe(287_784);
+    // listino invece di un confronto fra profili non più garantito. TUNING-1.1
+    // include nel bound anche il contratto Approfondita più esplicito.
+    expect(quality.costUpperBoundMicroUsd).toBe(288_338);
     expect(qualityHoldout.modelProfile).toBe('quality');
     expect(qualityHoldout.model).toBe('gpt-5.6-luna');
     expect(qualityHoldout.priceListVersion).toBe('v6-2026-09-12-luna-standard');
@@ -106,8 +107,9 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // richiesta realmente trasmessa, e il preambolo di sicurezza della lezione
     // ora nomina anche CONTESTO_GENERALE_UDA. La stima resta invariata perché
     // gli scenari sono UDA legacy, prive dei tre campi nuovi.
-    // LUNA-PRICES-20260912: valore esatto ricalcolato sul listino v6.
-    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(175_420);
+    // TUNING-1.1: valore esatto ricalcolato sul prompt approfondito corrente e
+    // sul listino v6; è un tetto offline, non una chiamata provider.
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(176_762);
     expect(qualityHoldout.scenarios.map((scenario) => scenario.id)).toEqual([
       'LM02-05',
       'LM02-06',
@@ -119,8 +121,8 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // economico dell'output nano — Quality non implica più un costo
     // superiore a Economy, quindi si ancora il valore esatto del nuovo
     // listino invece di un confronto fra profili non più garantito.
-    expect(economyHoldout.costUpperBoundMicroUsd).toBe(182_242);
-    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(175_420);
+    expect(economyHoldout.costUpperBoundMicroUsd).toBe(183_578);
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(176_762);
   });
 
   it('costruisce richieste lezione chiuse con requestId stabile per scenario', async () => {
