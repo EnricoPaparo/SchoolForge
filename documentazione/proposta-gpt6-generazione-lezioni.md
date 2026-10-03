@@ -1,7 +1,7 @@
 # SchoolForge — proposta GPT-6 per la generazione delle lezioni
 
-**Stato:** fase 1 implementata su branch, in attesa di review/merge e deploy DEV; fasi 2–3 ancora proposte
-**Data:** 1 ottobre 2026
+**Stato:** fase 1 distribuita in DEV; tuning 1.1 della modalità Approfondita approvato; fasi 2–3 ancora proposte
+**Data:** 3 ottobre 2026
 **Ambito previsto:** configurazione dei modelli IA, progettazione didattica condivisa fra lezioni, pool e mappe, accounting dei costi e rollback
 **Ambiente iniziale previsto:** DEV
 
@@ -15,14 +15,26 @@ prompt delle lezioni. Sul branch dedicato sono stati implementati:
 - listino immutabile GPT-6.1 Sol `v12-2026-09-29-gpt61-sol-standard`;
 - `text.verbosity` delle sole lezioni: `low`, `medium`, `high` rispettivamente
   per sintetica, completa e approfondita;
-- prompt lesson `lesson-gpt6-phase1-v1` alleggerito secondo questa proposta;
+- prompt lesson di fase 1 `lesson-gpt6-phase1-v1`, portato dal tuning 1.1 a
+  `lesson-gpt6-phase1-1-v1`;
 - politica precedente `lesson-depth-01-candidate-e-v1` conservata;
 - selettore unico `ACTIVE_AI_RUNTIME_POLICY`: il valore `gpt56` ripristina
   insieme modelli, listini, prompt lesson e assenza dei parametri GPT-6;
 - compatibilità di allowlist e reverse lookup con il precedente `gpt-6-sol`.
 
-Non fanno parte della fase 1 `didacticCore`, modifiche al contratto del pool o
-la mappa a grafo. Non sono state eseguite chiamate provider reali né deploy.
+La prima prova docente ha mostrato che GPT-6.1 Sol tendeva a considerare
+soddisfatta troppo presto la richiesta Approfondita. Il tuning 1.1:
+
+- porta a `high` il reasoning della sola combinazione Quality + Approfondita;
+- sostituisce la descrizione generica della profondità con un criterio di
+  completezza didattica verificabile;
+- rafforza il ruolo di esempi, casi, confronti e applicazioni senza introdurre
+  quote di parole, durata, sezioni o autoverifiche;
+- conserva i tetti tecnici, Economy, gli altri tipi di operazione e il rollback.
+
+Non fanno parte della fase 1 o 1.1 `didacticCore`, modifiche al contratto del
+pool o la mappa a grafo. Non sono state eseguite chiamate provider reali per il
+tuning 1.1.
 
 ## 1. Scopo
 
@@ -105,14 +117,15 @@ raggiungerli.
 ### 3.3 Reasoning
 
 - Economy usa `reasoning.effort: low`.
-- Quality usa `reasoning.effort: medium`.
-- La profondità della lezione non modifica il reasoning.
-- Non si usa `high` nella prima versione: aumenta costo e latenza e può
-  consumare una quota maggiore del budget di output senza un beneficio
-  didattico ancora dimostrato.
+- Quality usa normalmente `reasoning.effort: medium`.
+- Quality + Approfondita usa `reasoning.effort: high`, perché richiede una
+  progettazione didattica e una sintesi più impegnative.
+- Economy resta `low` a ogni profondità; pool, mappe, correzioni e visuali
+  conservano il reasoning previsto dal profilo.
 
-Questa regola mantiene prevedibili i due profili. La profondità controlla il
-dettaglio visibile; il profilo controlla la capacità di ragionamento impiegata.
+L'override è circoscritto al caso in cui il docente chiede esplicitamente sia il
+profilo di qualità sia la massima profondità. Aumenta potenzialmente costo e
+latenza, perciò non viene esteso alle altre operazioni.
 
 ## 4. Obiettivo didattico del nuovo prompt
 

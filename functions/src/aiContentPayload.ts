@@ -20,7 +20,7 @@ import {
 } from './aiContentPrompt.js';
 import {
   lessonVerbosity,
-  reasoningEffortForModel,
+  reasoningEffortForContentRequest,
   usesGpt6LessonPolicy,
 } from './aiModelRequestPolicy.js';
 import { ACTIVE_AI_RUNTIME_POLICY } from './aiCorrectionModelProfile.js';
@@ -591,7 +591,7 @@ export function buildContentStructuredRequest(
           : request.kind === 'visual_plan_proposal'
             ? buildVisualPlanProposalOutputSchema(request)
             : LESSON_OUTPUT_SCHEMA;
-  const reasoningEffort = reasoningEffortForModel(model);
+  const reasoningEffort = reasoningEffortForContentRequest(model, request);
   return {
     model,
     input: [
