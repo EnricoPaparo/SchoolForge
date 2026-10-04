@@ -4,10 +4,12 @@ import { dirname, resolve } from 'node:path';
 import {
   computeInputHash,
   resolveContentModelForRequest,
+  utf8ByteLength,
   validateAiContentRequest,
   type LessonReviewRequest,
 } from './aiContentCore.js';
 import { estimateContentCost } from './aiContentCost.js';
+import { resolveMaxOutputTokens } from './aiContentPayload.js';
 import { AI_LESSON_REVIEW_PROMPT_VERSION } from './aiContentPrompt.js';
 import type { ModelProfile } from './aiCorrectionModelProfile.js';
 
@@ -345,6 +347,8 @@ export function buildLessonReviewPlan(
         sourceFileName: sample.sourceFileName,
         sourceSha256: sample.sourceSha256,
         expectedDefects: sample.expectedDefects,
+        candidateBodyBytes: utf8ByteLength(sample.request.candidateBody),
+        maxOutputTokens: resolveMaxOutputTokens(sample.request),
         request: sample.request,
         inputHash: computeInputHash(sample.request),
         ...resolved,
@@ -365,6 +369,7 @@ export function buildLessonReviewPlan(
     profile: selection.profile,
     plannedCalls: samples.length,
     maximumProviderAttempts: 1 as const,
+    interSampleDelayMs: selection.profile === 'quality' ? 25_000 : 0,
     estimatedCostMicroUsd: samples.reduce((n, sample) => n + sample.estimatedCostMicroUsd, 0),
     costUpperBoundMicroUsd: samples.reduce((n, sample) => n + sample.costUpperBoundMicroUsd, 0),
     samples,

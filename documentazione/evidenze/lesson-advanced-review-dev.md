@@ -74,3 +74,22 @@ Sostituire split e profile per gli altri tre lotti. Il comando richiede Node 22
 e parte sempre in dry-run. L'esecuzione reale richiede entrambi i flag espliciti
 documentati dalla CLI e una conferma interattiva che include il tetto del lotto.
 Il runner usa zero retry: ogni sample può produrre al massimo una chiamata.
+I lotti Quality dichiarano inoltre nel piano e nel report un pacing di 25
+secondi fra sample consecutivi; l'attesa non aggiunge tentativi e riduce i burst
+che possono produrre `429`.
+
+### Diagnostica di interruzione
+
+Se il provider restituisce un outcome non completato, il runner scrive
+`failure.json` con sample, phase/reason, identità del manifest e del prompt,
+modello/listino, input hash e numero di risultati già completati, quindi
+interrompe il lotto. Il file usa creazione esclusiva: non esistono overwrite,
+resume o retry automatici.
+
+Per `LM02-04` il controllo statico mostra una richiesta `in_depth`, un candidato
+da 8.786 byte (entro il limite input di 200.000 byte) e un tetto output di
+18.000 token. Il profilo Quality usa reasoning `high`: il limite di output è
+quindi una causa tecnicamente possibile di un esito `max_output_tokens`, anche
+se il candidato è piccolo, ma non può essere dimostrata retroattivamente senza
+phase/reason e usage della risposta fallita. Non è invece un rifiuto dovuto ai
+limiti dimensionali del corpo in ingresso.

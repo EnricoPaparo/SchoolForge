@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { createContentProvider } from './aiContentProvider.js';
+import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { validateLessonReviewProposal } from './aiContentValidation.js';
 import {
   buildLessonReviewPlan,
@@ -92,6 +92,77 @@ export async function prepareOutputDirectory(path: string): Promise<void> {
   }
 }
 
+type LessonReviewPlan = ReturnType<typeof buildLessonReviewPlan>;
+
+export async function executeLessonReviewPlan(
+  plan: LessonReviewPlan,
+  provider: ContentProvider,
+  outputDirectory: string,
+  deps: { sleep?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const printablePlan = {
+    ...plan,
+    samples: plan.samples.map(({ request: _request, ...sample }) => sample),
+  };
+  const results: Array<Record<string, unknown>> = [];
+  for (const [sampleIndex, sample] of plan.samples.entries()) {
+    const outcome = await provider.generate(sample.request, sample.model);
+    if (outcome.status !== 'ok') {
+      const reason = outcome.reason ?? null;
+      await writeFile(
+        resolve(outputDirectory, 'failure.json'),
+        JSON.stringify(
+          {
+            id: sample.id,
+            status: outcome.status,
+            phase: outcome.phase,
+            reason,
+            manifestHash: plan.manifestHash,
+            promptContractVersion: plan.promptContractVersion,
+            model: sample.model,
+            priceListVersion: sample.priceListVersion,
+            inputHash: sample.inputHash,
+            partialResultCount: results.length,
+          },
+          null,
+          2,
+        ),
+        { encoding: 'utf8', flag: 'wx' },
+      );
+      throw new Error(
+        `${sample.id}: chiamata fallita (phase=${outcome.phase}, reason=${reason ?? 'none'}).`,
+      );
+    }
+    const reviewed = validateLessonReviewProposal(outcome.output);
+    const record = {
+      id: sample.id,
+      manifestHash: plan.manifestHash,
+      promptContractVersion: plan.promptContractVersion,
+      model: sample.model,
+      priceListVersion: sample.priceListVersion,
+      inputHash: sample.inputHash,
+      reviewed,
+      usage: outcome.usage,
+    };
+    await writeFile(
+      resolve(outputDirectory, `${sample.id}.json`),
+      JSON.stringify(record, null, 2),
+      { encoding: 'utf8', flag: 'wx' },
+    );
+    results.push(record);
+    if (sampleIndex < plan.samples.length - 1 && plan.interSampleDelayMs > 0) {
+      await sleep(plan.interSampleDelayMs);
+    }
+  }
+  await writeFile(
+    resolve(outputDirectory, 'report.json'),
+    JSON.stringify({ ...printablePlan, results }, null, 2),
+    { encoding: 'utf8', flag: 'wx' },
+  );
+}
+
 export async function runLessonReviewBenchmarkCli(args = process.argv.slice(2)): Promise<void> {
   assertNode22();
   const parsed = parseLessonReviewCliArgs(args);
@@ -120,33 +191,7 @@ export async function runLessonReviewBenchmarkCli(args = process.argv.slice(2)):
   rl.close();
   if (answer !== phrase) throw new Error('Conferma non valida.');
   const provider = createLessonReviewBenchmarkProvider({ openAiApiKey: key });
-  const results: Array<Record<string, unknown>> = [];
-  for (const sample of plan.samples) {
-    const outcome = await provider.generate(sample.request, sample.model);
-    if (outcome.status !== 'ok') throw new Error(`${sample.id}: chiamata fallita.`);
-    const reviewed = validateLessonReviewProposal(outcome.output);
-    const record = {
-      id: sample.id,
-      manifestHash: plan.manifestHash,
-      promptContractVersion: plan.promptContractVersion,
-      model: sample.model,
-      priceListVersion: sample.priceListVersion,
-      inputHash: sample.inputHash,
-      reviewed,
-      usage: outcome.usage,
-    };
-    await writeFile(
-      resolve(outputDirectory, `${sample.id}.json`),
-      JSON.stringify(record, null, 2),
-      { encoding: 'utf8', flag: 'wx' },
-    );
-    results.push(record);
-  }
-  await writeFile(
-    resolve(outputDirectory, 'report.json'),
-    JSON.stringify({ ...printablePlan, results }, null, 2),
-    { encoding: 'utf8', flag: 'wx' },
-  );
+  await executeLessonReviewPlan(plan, provider, outputDirectory);
 }
 
 const isMain =
