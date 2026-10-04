@@ -298,6 +298,14 @@ stabilisce revisore, prompt, schema e parametri ammessi per ogni
 `stadio × profilo`. Economy e Quality restano profili distinti anche quando
 il controllo è attivo.
 
+Per la prima vertical slice delle lezioni, la policy validata mantiene la
+generazione Economy su `gpt-5.6-luna` e Quality su `gpt-6.1-sol`, mentre il kind
+separato `lesson_review` risolve `gpt-5.6-luna` per entrambi. Il profilo astratto
+resta nel run e nell'accounting; non forza il revisore a usare lo stesso modello
+della generazione base. La decisione deriva dal benchmark congelato: 5.6 Luna
+ha superato 8/8 tuning e 4/4 holdout, mentre i due lotti 6.1 si sono interrotti
+con `invocation_unknown` senza produrre un confronto didattico completo.
+
 Il testo di supporto è specifico per flusso:
 
 - lezione: «Controlla e migliora la bozza prima dell'anteprima»;

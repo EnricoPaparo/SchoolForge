@@ -1491,6 +1491,21 @@ La politica candidata della fase 1 risolve i profili server-side come segue:
 - `economy` → `gpt-6-luna` + `v10-2026-09-26-gpt6-luna-standard`;
 - `quality` → `gpt-6.1-sol` + `v12-2026-09-29-gpt61-sol-standard`.
 
+La vertical slice di revisione avanzata applica una policy più specifica per
+kind. La generazione `lesson` usa `gpt-5.6-luna` +
+`v8-2026-09-26-luna-cache-standard` per Economy e `gpt-6.1-sol` +
+`v12-2026-09-29-gpt61-sol-standard` per Quality. Il run distinto
+`lesson_review` usa `gpt-5.6-luna` +
+`v8-2026-09-26-luna-cache-standard` per entrambi i profili. Il
+`modelProfile` richiesto resta nell'hash, nel run e nell'accounting: non viene
+convertito e non determina il modello del revisore.
+
+Questa scelta è vincolata all'evidenza congelata disponibile: il revisore 5.6
+ha superato 8/8 casi tuning e 4/4 holdout; entrambi i lotti 6.1 autorizzati si
+sono interrotti con `invocation_unknown`, senza completare un confronto
+didattico utilizzabile. Le interruzioni non equivalgono a una bocciatura
+didattica di 6.1, ma non supportano la sua promozione come revisore.
+
 Il nuovo listino GPT-6.1 Sol è immutabile e cache-aware: 2.000.000 µUSD/M
 input, 100.000 µUSD/M cached input, 2.500.000 µUSD/M cache write e 10.000.000
 µUSD/M output. Il precedente `gpt-6-sol` e i listini GPT-5.6 restano

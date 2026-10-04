@@ -344,7 +344,8 @@ export function AiLessonGenerationDialog({
                 checked={advancedReview}
                 onChange={(event) => updateAdvancedReview(event.target.checked)}
               />{' '}
-              Controlla e migliora la bozza prima dell’anteprima.
+              Controlla e migliora la bozza con il revisore didattico validato, indipendente dal
+              profilo di generazione.
             </label>
           </div>
 

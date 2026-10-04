@@ -4,8 +4,9 @@
 
 - `lesson` e `lesson_review` sono run distinti, con `requestId`, prenotazione,
   costo, replay e retry indipendenti.
-- Le lezioni Economy usano `gpt-5.6-luna`; le lezioni Quality usano
-  `gpt-6.1-sol`. Pool, mappe, visuali e correzioni conservano la politica
+- La generazione base delle lezioni Economy usa `gpt-5.6-luna`; quella Quality
+  usa `gpt-6.1-sol`. Il run separato `lesson_review` usa `gpt-5.6-luna` per
+  entrambi i profili. Pool, mappe, visuali e correzioni conservano la politica
   esistente.
 - `lesson_review` usa il contratto prompt `lesson-review-v1`, incluso
   nell'hash canonico. Output chiuso: `body`, `reviewOutcome`, `issueCodes`.
@@ -78,6 +79,20 @@ I lotti Quality dichiarano inoltre nel piano e nel report un pacing di 25
 secondi fra sample consecutivi; l'attesa non aggiunge tentativi e riduce i burst
 che possono produrre `429`.
 
+### Decisione modello del revisore
+
+Il revisore `gpt-5.6-luna` ha completato e superato tutti gli otto casi tuning
+e tutti i quattro holdout. Il confronto con `gpt-6.1-sol` non ha prodotto una
+misura didattica completa: entrambi i lotti autorizzati si sono interrotti con
+`invocation_unknown`. Queste interruzioni non sono valutate come bocciature
+didattiche, ma impediscono di dimostrare un vantaggio del revisore 6.1 sul gate
+congelato.
+
+La politica DEV fissa quindi `lesson_review` a `gpt-5.6-luna`, anche quando la
+generazione base è Quality su `gpt-6.1-sol`. `modelProfile`, request ID, run,
+prenotazione e riconciliazione restano separati: la decisione cambia soltanto la
+coppia modello/listino risolta server-side per il kind di revisione.
+
 ### Diagnostica di interruzione
 
 Se il provider restituisce un outcome non completato, il runner scrive
@@ -86,10 +101,10 @@ modello/listino, input hash e numero di risultati già completati, quindi
 interrompe il lotto. Il file usa creazione esclusiva: non esistono overwrite,
 resume o retry automatici.
 
-Per `LM02-04` il controllo statico mostra una richiesta `in_depth`, un candidato
-da 8.786 byte (entro il limite input di 200.000 byte) e un tetto output di
-18.000 token. Il profilo Quality usa reasoning `high`: il limite di output è
-quindi una causa tecnicamente possibile di un esito `max_output_tokens`, anche
-se il candidato è piccolo, ma non può essere dimostrata retroattivamente senza
-phase/reason e usage della risposta fallita. Non è invece un rifiuto dovuto ai
-limiti dimensionali del corpo in ingresso.
+Per `LM02-04` nel confronto storico 6.1 il controllo statico mostra una
+richiesta `in_depth`, un candidato da 8.786 byte (entro il limite input di
+200.000 byte) e un tetto output di 18.000 token. Quel payload usava reasoning
+`high`: il limite di output è quindi una causa tecnicamente possibile di un
+esito `max_output_tokens`, anche se il candidato è piccolo, ma non può essere
+dimostrata retroattivamente senza phase/reason e usage della risposta fallita.
+Non è invece un rifiuto dovuto ai limiti dimensionali del corpo in ingresso.

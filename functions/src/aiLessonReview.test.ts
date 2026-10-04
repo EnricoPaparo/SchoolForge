@@ -31,21 +31,55 @@ const raw = {
 };
 
 describe('lesson advanced review', () => {
-  it('has a closed request, dedicated prompt identity and quality policy', () => {
+  it('has a closed request and dedicated prompt identity', () => {
     const request = validateAiContentRequest(raw);
     expect(request.kind).toBe('lesson_review');
     expect(canonicalRequest(request)).toContain('lesson-review-v1');
     const resolved = resolveContentModelForRequest(request);
-    expect(resolved.model).toBe('gpt-6.1-sol');
+    expect(resolved.model).toBe('gpt-5.6-luna');
     const payload = buildContentStructuredRequest(request, resolved.model);
-    expect(payload.reasoning).toEqual({ effort: 'high' });
-    expect(payload.text.verbosity).toBe('high');
+    expect(payload.reasoning).toBeUndefined();
+    expect(payload.text.verbosity).toBeUndefined();
     expect(JSON.stringify(payload.text.format.schema)).toContain('reviewOutcome');
   });
 
-  it('keeps Economy lessons on the qualified GPT-5.6 Luna rollback', () => {
-    const request = validateAiContentRequest({ ...raw, modelProfile: 'economy' });
-    expect(resolveContentModelForRequest(request).model).toBe('gpt-5.6-luna');
+  it('keeps Quality lesson generation on 6.1 Sol but pins both reviewers to 5.6 Luna', () => {
+    const lessonInput: Record<string, unknown> = {
+      ...raw,
+      kind: 'lesson',
+      currentBody: '',
+      hasCurrentContent: false,
+    };
+    delete lessonInput.candidateBody;
+    const lesson = validateAiContentRequest(lessonInput);
+    const qualityReview = validateAiContentRequest(raw);
+    const economyReview = validateAiContentRequest({
+      ...raw,
+      requestId: '22222222-2222-4222-8222-222222222222',
+      modelProfile: 'economy',
+    });
+    expect(resolveContentModelForRequest(lesson).model).toBe('gpt-6.1-sol');
+    expect(resolveContentModelForRequest(qualityReview)).toEqual(
+      resolveContentModelForRequest(economyReview),
+    );
+    expect(resolveContentModelForRequest(qualityReview)).toEqual({
+      model: 'gpt-5.6-luna',
+      priceListVersion: 'v8-2026-09-26-luna-cache-standard',
+    });
+    expect(canonicalRequest(qualityReview)).not.toBe(canonicalRequest(economyReview));
+  });
+
+  it('builds the same reviewer provider payload for both profiles at equal content', () => {
+    const qualityReview = validateAiContentRequest(raw);
+    const economyReview = validateAiContentRequest({
+      ...raw,
+      requestId: '22222222-2222-4222-8222-222222222222',
+      modelProfile: 'economy',
+    });
+    const model = resolveContentModelForRequest(qualityReview).model;
+    expect(buildContentStructuredRequest(qualityReview, model)).toEqual(
+      buildContentStructuredRequest(economyReview, model),
+    );
   });
 
   it('validates the revised body and closed issue codes', () => {

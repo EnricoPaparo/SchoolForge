@@ -54,13 +54,13 @@ export const LESSON_MODEL_PROFILE_OPTIONS = [
     value: 'economy' as const,
     label: 'Economy',
     modelId: 'gpt-5.6-luna',
-    description: 'Qualità efficiente e affidabile.',
+    description: 'Generazione efficiente e affidabile.',
   },
   {
     value: 'quality' as const,
     label: 'Quality',
     modelId: 'gpt-6.1-sol',
-    description: 'Massima qualità didattica.',
+    description: 'Generazione con massima qualità didattica.',
   },
 ] as const;
 

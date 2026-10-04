@@ -466,7 +466,8 @@ export function AiCompleteLessonGenerationDialog({
                   invalidateEstimate();
                 }}
               />{' '}
-              Controlla e migliora il contenuto prima di creare mappa, domande e immagini.
+              Controlla e migliora il contenuto con il revisore didattico validato prima di creare
+              mappa, domande e immagini.
             </label>
           </div>
           <div className={styles.field}>

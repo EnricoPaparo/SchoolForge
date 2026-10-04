@@ -1162,12 +1162,19 @@ export function resolveContentModel(profile: ModelProfile): {
   return resolveModelProfile(profile);
 }
 
-/** Politica per operazione: le lezioni possono evolvere senza cambiare gli altri flussi. */
+/**
+ * Politica per operazione: generatore e revisore evolvono indipendentemente.
+ * Il profilo resta nel run/accounting anche quando entrambi i revisori risolvono
+ * la stessa coppia modello/listino validata.
+ */
 export function resolveContentModelForRequest(request: AiContentRequest): {
   model: string;
   priceListVersion: string;
 } {
-  if (request.kind === 'lesson' || request.kind === 'lesson_review') {
+  if (request.kind === 'lesson_review') {
+    return GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy;
+  }
+  if (request.kind === 'lesson') {
     return request.modelProfile === 'economy'
       ? GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy
       : GPT6_MODEL_PROFILE_RESOLUTIONS.quality;

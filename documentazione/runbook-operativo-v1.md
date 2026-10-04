@@ -456,4 +456,9 @@ verificati in `functions/src/index.ts`. Dopo il deploy eseguire uno smoke con:
    revisionato;
 4. controllo dei due run e delle due riconciliazioni di costo.
 
+Nel controllo dei run verificare la policy per kind: `lesson` deve risolvere
+Economy in `gpt-5.6-luna` e Quality in `gpt-6.1-sol`; `lesson_review` deve
+risolvere `gpt-5.6-luna` per entrambi i profili, conservando il `modelProfile`
+richiesto e un accounting indipendente.
+
 Il rollback dell'interfaccia non richiede la cancellazione dei run tecnici.
