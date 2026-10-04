@@ -134,6 +134,58 @@ async function goToReview(
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
+  it.each(['improved', 'disabled'] as const)(
+    'riprende un completamento con revisione %s senza nuove chiamate',
+    async (reviewStatus) => {
+      const { callables } = makeCallables();
+      const onCompleteDraft = vi.fn(async () => ({
+        imagesApplied: 0,
+        imagesSkipped: 0,
+        imagesFailed: 0,
+      }));
+      render(
+        <AiCompleteLessonGenerationDialog
+          context={{ ...CONTEXT, currentBody: '## Corpo salvato' }}
+          callables={callables}
+          resumeDraft={{
+            body: '## Corpo salvato',
+            message: 'Riprendi dalla mappa.',
+            options: {
+              level: 'balanced',
+              counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
+              modelProfile: 'quality',
+              reviewStatus,
+            },
+          }}
+          onCompleteDraft={onCompleteDraft}
+          onClose={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText('Riprendi dalla mappa.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Riprova completamento' }));
+      await screen.findByText('Il modello non ha individuato immagini didatticamente necessarie.');
+      if (reviewStatus === 'improved') {
+        expect(screen.getByText('✓ Revisione didattica completata')).toBeTruthy();
+        expect(
+          screen.getByText('Il revisore ha controllato e migliorato il contenuto.'),
+        ).toBeTruthy();
+      } else {
+        expect(screen.getByText('Revisione non richiesta')).toBeTruthy();
+        expect(screen.queryByText('✓ Revisione didattica completata')).toBeNull();
+      }
+      expect(callables.preview).not.toHaveBeenCalled();
+      expect(callables.generate).not.toHaveBeenCalled();
+      expect(callables.previewReview).not.toHaveBeenCalled();
+      expect(callables.generateReview).not.toHaveBeenCalled();
+      expect(onCompleteDraft).toHaveBeenCalledWith(
+        '## Corpo salvato',
+        expect.any(Function),
+        expect.objectContaining({ modelProfile: 'quality' }),
+      );
+    },
+  );
+
   it('mostra uno switch grafico attivo per default e OFF salta davvero il revisore', async () => {
     const { callables } = makeCallables();
     const onCompleteDraft = vi.fn(async () => ({
@@ -182,6 +234,37 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(screen.getByText('Il revisore ha controllato e migliorato il contenuto.')).toBeTruthy();
     expect(callables.previewReview).toHaveBeenCalledTimes(1);
     expect(callables.generateReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('con esito unchanged conserva byte per byte la bozza base', async () => {
+    const misleadingBody = '## Reti\n\nRiscrittura che non deve essere applicata.';
+    const { callables } = makeCallables({
+      generateReview: vi.fn(
+        async (): Promise<AiLessonReviewGenerateResult> => ({
+          ...reviewGenerateResult(),
+          output: { body: misleadingBody, reviewOutcome: 'unchanged', issueCodes: [] },
+        }),
+      ),
+    });
+    const onCompleteDraft = vi.fn(async () => ({
+      imagesApplied: 0,
+      imagesSkipped: 0,
+      imagesFailed: 0,
+    }));
+    renderDialog(callables, onCompleteDraft);
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+
+    await screen.findByText('✓ Revisione didattica completata');
+    expect(onCompleteDraft).toHaveBeenCalledWith(
+      generateResult().output.body,
+      expect.any(Function),
+      expect.any(Object),
+    );
+    expect(onCompleteDraft).not.toHaveBeenCalledWith(
+      misleadingBody,
+      expect.any(Function),
+      expect.any(Object),
+    );
   });
 
   it('dopo un errore ritenta solo il revisore e completa con il corpo revisionato', async () => {
@@ -326,6 +409,7 @@ describe('AiCompleteLessonGenerationDialog', () => {
         level: 'balanced',
         modelProfile: 'economy',
         counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
+        reviewStatus: 'improved',
       },
     );
 

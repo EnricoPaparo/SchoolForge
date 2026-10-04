@@ -106,14 +106,19 @@ export function describeMultiVisualError(error: unknown): string {
   return 'Operazione interrotta. Le immagini già applicate restano nella lezione; puoi riprovare quelle mancanti.';
 }
 export function createMultiVisualClient(functions: Functions) {
+  // I callable visuali possono legittimamente superare il default Firebase di
+  // 70 s. Il client attende più del timeout server (300 s), come già accade per
+  // la generazione testuale 420/450 s.
+  const longRunningOptions = { timeout: 330_000 } as const;
   const authorize = httpsCallable<MultiVisualPlanRequest, MultiVisualPlan>(
     functions,
     'aiVisualPlanAuthorize',
+    longRunningOptions,
   );
   const generate = httpsCallable<
     MultiVisualIdentity & { requestId: string; slotIndex: number },
     PlanEnvelope
-  >(functions, 'aiVisualPlanGenerateSlot');
+  >(functions, 'aiVisualPlanGenerateSlot', longRunningOptions);
   const promote = httpsCallable<
     MultiVisualIdentity & {
       requestId: string;

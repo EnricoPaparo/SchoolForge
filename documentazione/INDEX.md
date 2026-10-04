@@ -128,6 +128,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/gvdif-human-gate.md](evidenze/gvdif-human-gate.md) — smoke multi-studente reale su DEV e verdetto **GVDIF PASS** del 15 agosto 2026.
 - [evidenze/esiti-01-human-gate.md](evidenze/esiti-01-human-gate.md) — conferma umana DEV della vista aggregata per UDA/lezione; UI e comportamento **PASS** il 15 agosto 2026.
 - [evidenze/gaigen-human-gate.md](evidenze/gaigen-human-gate.md) — checklist finale della generazione IA di lezioni, pool e mappe; TTL e smoke reali, **Gate GAIGEN PASS**.
+- [evidenze/complete-lesson-reliability-dev.md](evidenze/complete-lesson-reliability-dev.md) — timeout coerenti, diagnostica per fase, ripresa locale e guardrail del revisore nella generazione completa.
 - [evidenze/gstruct-checklist-finale.md](evidenze/gstruct-checklist-finale.md) — import strutture UDA/lezione, retry/collisioni, responsive e generazione da scheletro; **Gate GSTRUCT PASS**.
 - [evidenze/glesson-checklist-finale.md](evidenze/glesson-checklist-finale.md) — tuning, caso povero, isovariante e holdout reale candidato E; **Gate GLESSON PASS**.
 - [evidenze/vdif-01-smoke.md](evidenze/vdif-01-smoke.md) — smoke dei componenti reali della scheda Etichette (VDIF-01) a 1440/1024/390/320 px. Nessun deploy.

@@ -1443,12 +1443,13 @@ function https(error: AiVisualError | AiVisualMultiError): HttpsError {
 export const aiVisualPlanGenerateSlot = onCall(
   GENERATE_OPTIONS,
   async (request: CallableRequest<unknown>) => {
+    const started = Date.now();
     const db = database();
     try {
       const ownerUid = await requireOwner(request, db);
       const input = validateVisualPlanSlotInput(request.data);
       const mode = resolveAiVisualMode({ AI_VISUAL_MODE: process.env.AI_VISUAL_MODE });
-      return await generateVisualPlanSlotForOwner({
+      const result = await generateVisualPlanSlotForOwner({
         db,
         bucket: getStorage().bucket() as unknown as BucketLike,
         ownerUid,
@@ -1465,9 +1466,29 @@ export const aiVisualPlanGenerateSlot = onCall(
           },
         },
       });
+      logger.info('aiVisualPlanGateway', {
+        stage: 'generate_slot',
+        kind: 'visual_image',
+        outcome: 'ok',
+        durationMs: Math.max(0, Date.now() - started),
+      });
+      return result;
     } catch (error) {
-      if (error instanceof AiVisualError || error instanceof AiVisualMultiError) throw https(error);
-      logger.error('aiVisualPlanGenerateSlot internal error', { name: (error as Error)?.name });
+      if (error instanceof AiVisualError || error instanceof AiVisualMultiError) {
+        logger.info('aiVisualPlanGateway', {
+          stage: 'generate_slot',
+          kind: 'visual_image',
+          outcome: error.code,
+          durationMs: Math.max(0, Date.now() - started),
+        });
+        throw https(error);
+      }
+      logger.error('aiVisualPlanGateway', {
+        stage: 'generate_slot',
+        kind: 'visual_image',
+        outcome: 'internal',
+        durationMs: Math.max(0, Date.now() - started),
+      });
       throw new HttpsError('internal', 'Errore interno nella generazione dello slot.');
     }
   },
@@ -1476,20 +1497,41 @@ export const aiVisualPlanGenerateSlot = onCall(
 export const aiVisualPlanPromoteSlot = onCall(
   COMMON_OPTIONS,
   async (request: CallableRequest<unknown>) => {
+    const started = Date.now();
     const db = database();
     try {
       const ownerUid = await requireOwner(request, db);
       const input = validateVisualPlanPromoteInput(request.data);
-      return await promoteVisualPlanSlotForOwner({
+      const result = await promoteVisualPlanSlotForOwner({
         db,
         bucket: getStorage().bucket() as unknown as BucketLike,
         ownerUid,
         input,
         nowMs: Date.now(),
       });
+      logger.info('aiVisualPlanGateway', {
+        stage: 'promote_slot',
+        kind: 'visual_image',
+        outcome: 'ok',
+        durationMs: Math.max(0, Date.now() - started),
+      });
+      return result;
     } catch (error) {
-      if (error instanceof AiVisualError || error instanceof AiVisualMultiError) throw https(error);
-      logger.error('aiVisualPlanPromoteSlot internal error', { name: (error as Error)?.name });
+      if (error instanceof AiVisualError || error instanceof AiVisualMultiError) {
+        logger.info('aiVisualPlanGateway', {
+          stage: 'promote_slot',
+          kind: 'visual_image',
+          outcome: error.code,
+          durationMs: Math.max(0, Date.now() - started),
+        });
+        throw https(error);
+      }
+      logger.error('aiVisualPlanGateway', {
+        stage: 'promote_slot',
+        kind: 'visual_image',
+        outcome: 'internal',
+        durationMs: Math.max(0, Date.now() - started),
+      });
       throw new HttpsError('internal', 'Errore interno nella promozione dello slot.');
     }
   },

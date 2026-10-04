@@ -45,10 +45,13 @@ export function AiAdvancedReviewControl({
 
 export function AiAdvancedReviewResult({
   result,
+  status,
 }: {
   result: AiLessonReviewGenerateResult | null;
+  status?: 'disabled' | 'improved' | 'unchanged';
 }) {
-  if (!result) {
+  const resolvedStatus = status ?? result?.output.reviewOutcome ?? 'disabled';
+  if (resolvedStatus === 'disabled') {
     return (
       <div
         className={`${styles.result} ${styles.resultSkipped}`}
@@ -61,7 +64,7 @@ export function AiAdvancedReviewResult({
     );
   }
 
-  const improved = result.output.reviewOutcome === 'improved';
+  const improved = resolvedStatus === 'improved';
   return (
     <div
       className={`${styles.result} ${styles.resultCompleted}`}
