@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
+import {
+  AiAdvancedReviewControl,
+  AiAdvancedReviewFailure,
+  AiAdvancedReviewResult,
+} from './AiAdvancedReviewControl.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
   buildLessonContentRequest,
@@ -332,22 +337,12 @@ export function AiLessonGenerationDialog({
             </div>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="ai-lesson-advanced-review">
-              Revisione avanzata
-            </label>
-            <label>
-              <input
-                id="ai-lesson-advanced-review"
-                type="checkbox"
-                role="switch"
-                checked={advancedReview}
-                onChange={(event) => updateAdvancedReview(event.target.checked)}
-              />{' '}
-              Controlla e migliora la bozza con il revisore didattico validato, indipendente dal
-              profilo di generazione.
-            </label>
-          </div>
+          <AiAdvancedReviewControl
+            id="ai-lesson-advanced-review"
+            checked={advancedReview}
+            onChange={updateAdvancedReview}
+            description="Controlla e migliora la bozza con il revisore didattico validato, indipendente dal profilo di generazione."
+          />
 
           {/* Profondità */}
           <div className={styles.field}>
@@ -498,11 +493,7 @@ export function AiLessonGenerationDialog({
               ? 'Consumo esatto non disponibile; è stato contabilizzato prudenzialmente il tetto indicato.'
               : `Costo reale: ${formatMicroUsd(result.actualCostMicroUsd)}.`}
           </p>
-          <p>
-            <strong>
-              {reviewResult ? 'Revisione avanzata completata' : 'Bozza non revisionata'}
-            </strong>
-          </p>
+          <AiAdvancedReviewResult result={reviewResult} />
           {reviewResult && (
             <p>
               {reviewResult.actualCostMicroUsd === null
@@ -543,6 +534,7 @@ export function AiLessonGenerationDialog({
 
       {phase === 'error' && (
         <>
+          {canRetryAdvancedReview && <AiAdvancedReviewFailure />}
           <p role="alert" className="text-error">
             {error}
           </p>
