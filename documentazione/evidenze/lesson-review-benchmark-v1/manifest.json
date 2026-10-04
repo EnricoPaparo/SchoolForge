@@ -8,7 +8,7 @@
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lm02-01.md",
-      "candidateBodySha256": "f1cd3f78c14fcc348b8bf1755b483435d5f1613e525ba87dd28f12b50ee1bfac",
+      "candidateBodySha256": "b4be84bc9192c5f7bf618540221f9ef5c64253112d90c824e6c0abd23d82002c",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000001",
@@ -54,14 +54,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-01-economy.md",
+      "sourceSha256": "b4be84bc9192c5f7bf618540221f9ef5c64253112d90c824e6c0abd23d82002c",
+      "expectedDefects": [
+        "missing_self_check_solutions"
+      ]
     },
     {
       "id": "lr-economy-tuning-lm02-02",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lm02-02.md",
-      "candidateBodySha256": "8048f43b6dc05d988a812fcfab518a9377163f337aaa9fac2e86c31938774e59",
+      "candidateBodySha256": "9910dba8b187907b47e72d2814a5680679b1f0b99ea8cb3d8981d1d86fb4f63a",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000002",
@@ -108,14 +114,21 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-02-economy.md",
+      "sourceSha256": "9910dba8b187907b47e72d2814a5680679b1f0b99ea8cb3d8981d1d86fb4f63a",
+      "expectedDefects": [
+        "blocker_ipv4_false_causal_diagnosis",
+        "excess_horizontal_rules"
+      ]
     },
     {
       "id": "lr-economy-tuning-lm02-03",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lm02-03.md",
-      "candidateBodySha256": "60f35d8a08af26c73f2a2a7b05b3b837d1f15d2f282ed5a8e0d4c8b7b57c2d44",
+      "candidateBodySha256": "819da4eab66d3d3b4c47e2b22cfb7ba912a2895b7ffb0e29fcd3db35d382640b",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000003",
@@ -161,14 +174,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-03-economy.md",
+      "sourceSha256": "819da4eab66d3d3b4c47e2b22cfb7ba912a2895b7ffb0e29fcd3db35d382640b",
+      "expectedDefects": [
+        "blocker_refrigerator_heat_transfer"
+      ]
     },
     {
       "id": "lr-economy-tuning-lm02-04",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lm02-04.md",
-      "candidateBodySha256": "757f98a415997581c0998f0de872f825f47ded4b6f8fcbd8987745f389b5ef36",
+      "candidateBodySha256": "49b4a9156d0cc8004c84c46f2cfb138afb885b19e83c11c09420a304f27400b1",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000004",
@@ -214,7 +233,13 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-04-economy.md",
+      "sourceSha256": "49b4a9156d0cc8004c84c46f2cfb138afb885b19e83c11c09420a304f27400b1",
+      "expectedDefects": [
+        "minor_parenti_typo"
+      ]
     },
     {
       "id": "lr-economy-holdout-lm02-05",
@@ -280,7 +305,11 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LM02-05-quality.md",
+      "sourceSha256": "e6d543f568f35431d68fe007119c9f47f3cc4c799887a5e1d5e1920af3d7b4b5",
+      "expectedDefects": []
     },
     {
       "id": "lr-economy-holdout-lm02-06",
@@ -344,14 +373,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LM02-06-quality.md",
+      "sourceSha256": "59e2dfb26ba6d428d77099117b2337710863e92db3695496ee65f5401edaf001",
+      "expectedDefects": [
+        "minor_markdown_table_stray_pipe"
+      ]
     },
     {
       "id": "lr-economy-tuning-lt01-07",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lt01-07.md",
-      "candidateBodySha256": "9447bad3df5c8e0a79d4cd834ff9d4e4ad57c5a94901fceeb5ca6ec7e09d1eb4",
+      "candidateBodySha256": "602b78dc708b0931cdc6bfc3f2ddd33c293c1978ebdadc0f5e369c350ad857e1",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000007",
@@ -403,14 +438,18 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-07-economy.md",
+      "sourceSha256": "602b78dc708b0931cdc6bfc3f2ddd33c293c1978ebdadc0f5e369c350ad857e1",
+      "expectedDefects": []
     },
     {
       "id": "lr-economy-tuning-lt01-08",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lt01-08.md",
-      "candidateBodySha256": "dd2c39c9b258418c47dbeb4ff591d267323f3bb8320f91181cd9ab62ab0abdb4",
+      "candidateBodySha256": "82fd1527bf3038c56e9579cebe9c9919ce1eaacd61d46baa573e3e2f02dbffff",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000008",
@@ -457,14 +496,18 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-08-economy.md",
+      "sourceSha256": "82fd1527bf3038c56e9579cebe9c9919ce1eaacd61d46baa573e3e2f02dbffff",
+      "expectedDefects": []
     },
     {
       "id": "lr-economy-tuning-lt01-09",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lt01-09.md",
-      "candidateBodySha256": "f851db4263e0192c63cd27ca843b7d325fe27b2aa5b06688ef94c5d468bcf557",
+      "candidateBodySha256": "c93775ded0bc8ae3c2fb3122e00e9648763acaee77d001ed4defd7b5d882d5a3",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000009",
@@ -521,14 +564,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-09-economy.md",
+      "sourceSha256": "c93775ded0bc8ae3c2fb3122e00e9648763acaee77d001ed4defd7b5d882d5a3",
+      "expectedDefects": [
+        "minor_python_nameerror_misclassified"
+      ]
     },
     {
       "id": "lr-economy-tuning-lt01-10",
       "split": "tuning",
       "profile": "economy",
       "fixturePath": "candidates/lt01-10.md",
-      "candidateBodySha256": "e5cf8f1c25ef2366e52ff99785e1372b6435d7f82cfe971c2737922bdf95f8c5",
+      "candidateBodySha256": "f15855faf295f8992f7199fdf46bc788ceb4f416ac77a0d1ec70a0643a5d2b54",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000010",
@@ -580,7 +629,13 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-10-economy.md",
+      "sourceSha256": "f15855faf295f8992f7199fdf46bc788ceb4f416ac77a0d1ec70a0643a5d2b54",
+      "expectedDefects": [
+        "minor_solution_callout_nesting"
+      ]
     },
     {
       "id": "lr-economy-holdout-lt01-11",
@@ -639,7 +694,11 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LT01-11-quality.md",
+      "sourceSha256": "7a833314aa0b08c192128c090acd73f4d2c1c37c06f795b2f6b7780fef2440eb",
+      "expectedDefects": []
     },
     {
       "id": "lr-economy-holdout-lt01-12",
@@ -699,14 +758,18 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LT01-12-quality.md",
+      "sourceSha256": "628f5f3d0c25541f248342352bb47217ced55f80a300bc37ea811d5fe72bd6ff",
+      "expectedDefects": []
     },
     {
       "id": "lr-quality-tuning-lm02-01",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lm02-01.md",
-      "candidateBodySha256": "f1cd3f78c14fcc348b8bf1755b483435d5f1613e525ba87dd28f12b50ee1bfac",
+      "candidateBodySha256": "b4be84bc9192c5f7bf618540221f9ef5c64253112d90c824e6c0abd23d82002c",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000013",
@@ -752,14 +815,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-01-economy.md",
+      "sourceSha256": "b4be84bc9192c5f7bf618540221f9ef5c64253112d90c824e6c0abd23d82002c",
+      "expectedDefects": [
+        "missing_self_check_solutions"
+      ]
     },
     {
       "id": "lr-quality-tuning-lm02-02",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lm02-02.md",
-      "candidateBodySha256": "8048f43b6dc05d988a812fcfab518a9377163f337aaa9fac2e86c31938774e59",
+      "candidateBodySha256": "9910dba8b187907b47e72d2814a5680679b1f0b99ea8cb3d8981d1d86fb4f63a",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000014",
@@ -806,14 +875,21 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-02-economy.md",
+      "sourceSha256": "9910dba8b187907b47e72d2814a5680679b1f0b99ea8cb3d8981d1d86fb4f63a",
+      "expectedDefects": [
+        "blocker_ipv4_false_causal_diagnosis",
+        "excess_horizontal_rules"
+      ]
     },
     {
       "id": "lr-quality-tuning-lm02-03",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lm02-03.md",
-      "candidateBodySha256": "60f35d8a08af26c73f2a2a7b05b3b837d1f15d2f282ed5a8e0d4c8b7b57c2d44",
+      "candidateBodySha256": "819da4eab66d3d3b4c47e2b22cfb7ba912a2895b7ffb0e29fcd3db35d382640b",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000015",
@@ -859,14 +935,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-03-economy.md",
+      "sourceSha256": "819da4eab66d3d3b4c47e2b22cfb7ba912a2895b7ffb0e29fcd3db35d382640b",
+      "expectedDefects": [
+        "blocker_refrigerator_heat_transfer"
+      ]
     },
     {
       "id": "lr-quality-tuning-lm02-04",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lm02-04.md",
-      "candidateBodySha256": "757f98a415997581c0998f0de872f825f47ded4b6f8fcbd8987745f389b5ef36",
+      "candidateBodySha256": "49b4a9156d0cc8004c84c46f2cfb138afb885b19e83c11c09420a304f27400b1",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000016",
@@ -912,7 +994,13 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LM02-04-economy.md",
+      "sourceSha256": "49b4a9156d0cc8004c84c46f2cfb138afb885b19e83c11c09420a304f27400b1",
+      "expectedDefects": [
+        "minor_parenti_typo"
+      ]
     },
     {
       "id": "lr-quality-holdout-lm02-05",
@@ -978,7 +1066,11 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LM02-05-quality.md",
+      "sourceSha256": "e6d543f568f35431d68fe007119c9f47f3cc4c799887a5e1d5e1920af3d7b4b5",
+      "expectedDefects": []
     },
     {
       "id": "lr-quality-holdout-lm02-06",
@@ -1042,14 +1134,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LM02-06-quality.md",
+      "sourceSha256": "59e2dfb26ba6d428d77099117b2337710863e92db3695496ee65f5401edaf001",
+      "expectedDefects": [
+        "minor_markdown_table_stray_pipe"
+      ]
     },
     {
       "id": "lr-quality-tuning-lt01-07",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lt01-07.md",
-      "candidateBodySha256": "9447bad3df5c8e0a79d4cd834ff9d4e4ad57c5a94901fceeb5ca6ec7e09d1eb4",
+      "candidateBodySha256": "602b78dc708b0931cdc6bfc3f2ddd33c293c1978ebdadc0f5e369c350ad857e1",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000019",
@@ -1101,14 +1199,18 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-07-economy.md",
+      "sourceSha256": "602b78dc708b0931cdc6bfc3f2ddd33c293c1978ebdadc0f5e369c350ad857e1",
+      "expectedDefects": []
     },
     {
       "id": "lr-quality-tuning-lt01-08",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lt01-08.md",
-      "candidateBodySha256": "dd2c39c9b258418c47dbeb4ff591d267323f3bb8320f91181cd9ab62ab0abdb4",
+      "candidateBodySha256": "82fd1527bf3038c56e9579cebe9c9919ce1eaacd61d46baa573e3e2f02dbffff",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000020",
@@ -1155,14 +1257,18 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-08-economy.md",
+      "sourceSha256": "82fd1527bf3038c56e9579cebe9c9919ce1eaacd61d46baa573e3e2f02dbffff",
+      "expectedDefects": []
     },
     {
       "id": "lr-quality-tuning-lt01-09",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lt01-09.md",
-      "candidateBodySha256": "f851db4263e0192c63cd27ca843b7d325fe27b2aa5b06688ef94c5d468bcf557",
+      "candidateBodySha256": "c93775ded0bc8ae3c2fb3122e00e9648763acaee77d001ed4defd7b5d882d5a3",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000021",
@@ -1219,14 +1325,20 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-09-economy.md",
+      "sourceSha256": "c93775ded0bc8ae3c2fb3122e00e9648763acaee77d001ed4defd7b5d882d5a3",
+      "expectedDefects": [
+        "minor_python_nameerror_misclassified"
+      ]
     },
     {
       "id": "lr-quality-tuning-lt01-10",
       "split": "tuning",
       "profile": "quality",
       "fixturePath": "candidates/lt01-10.md",
-      "candidateBodySha256": "e5cf8f1c25ef2366e52ff99785e1372b6435d7f82cfe971c2737922bdf95f8c5",
+      "candidateBodySha256": "f15855faf295f8992f7199fdf46bc788ceb4f416ac77a0d1ec70a0643a5d2b54",
       "request": {
         "kind": "lesson_review",
         "requestId": "10000000-0000-4000-8000-000000000022",
@@ -1278,7 +1390,13 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-tuning-2026-08-04T13-17-19-871Z",
+      "sourceFileName": "lesson-tune-01-LT01-10-economy.md",
+      "sourceSha256": "f15855faf295f8992f7199fdf46bc788ceb4f416ac77a0d1ec70a0643a5d2b54",
+      "expectedDefects": [
+        "minor_solution_callout_nesting"
+      ]
     },
     {
       "id": "lr-quality-holdout-lt01-11",
@@ -1337,7 +1455,11 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LT01-11-quality.md",
+      "sourceSha256": "7a833314aa0b08c192128c090acd73f4d2c1c37c06f795b2f6b7780fef2440eb",
+      "expectedDefects": []
     },
     {
       "id": "lr-quality-holdout-lt01-12",
@@ -1397,7 +1519,11 @@
             }
           ]
         }
-      }
+      },
+      "sourceCorpusId": "lesson-tune-01-holdout-2026-08-15T15-15-18-593Z",
+      "sourceFileName": "lesson-tune-01-LT01-12-quality.md",
+      "sourceSha256": "628f5f3d0c25541f248342352bb47217ced55f80a300bc37ea811d5fe72bd6ff",
+      "expectedDefects": []
     }
   ]
 }

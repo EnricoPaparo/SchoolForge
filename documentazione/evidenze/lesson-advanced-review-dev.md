@@ -49,6 +49,21 @@ SHA-256 (8 tuning e 4 holdout), riusati senza duplicazione per Economy e
 Quality. Il manifest chiuso produce quattro lotti indipendenti, ciascuno con il
 proprio tetto costi:
 
+- tuning: gli otto output Economy del candidato D provenienti da
+  `lesson-tune-01-tuning-2026-08-04T13-17-19-871Z`; `LM02-02` e `LM02-03`
+  sono i due `FAIL` disciplinari noti, mentre il manifest congela anche i
+  difetti minori di `LM02-01`, `LM02-04`, `LT01-09` e `LT01-10`;
+- holdout: i quattro output Quality puliti provenienti da
+  `lesson-tune-01-holdout-2026-08-15T15-15-18-593Z`, mantenuti separati dal
+  tuning.
+
+Ogni fixture dichiara source corpus, nome file, SHA-256 della sorgente,
+SHA-256 del corpo tracciato e difetti attesi. Il loader confronta questi valori
+con la provenienza congelata nel codice e rifiuta qualunque discrepanza prima
+di costruire il piano. Le fixture tuning sono copie byte-per-byte; la regola
+mirata in `.gitattributes` conserva quindi anche gli spazi finali presenti negli
+output sorgente senza far fallire `git diff --check`.
+
 ```text
 pnpm --filter @schoolforge/functions benchmark:lesson-review -- \
   --manifest=../documentazione/evidenze/lesson-review-benchmark-v1/manifest.json \

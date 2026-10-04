@@ -18,6 +18,105 @@ export const LESSON_REVIEW_SPLITS = ['tuning', 'holdout'] as const;
 export const LESSON_REVIEW_PROFILES = ['economy', 'quality'] as const;
 export type LessonReviewSplit = (typeof LESSON_REVIEW_SPLITS)[number];
 
+export const LESSON_REVIEW_FIXTURE_PROVENANCE = {
+  'candidates/lm02-01.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LM02-01-economy.md',
+    'b4be84bc9192c5f7bf618540221f9ef5c64253112d90c824e6c0abd23d82002c',
+    'b4be84bc9192c5f7bf618540221f9ef5c64253112d90c824e6c0abd23d82002c',
+    ['missing_self_check_solutions'],
+  ],
+  'candidates/lm02-02.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LM02-02-economy.md',
+    '9910dba8b187907b47e72d2814a5680679b1f0b99ea8cb3d8981d1d86fb4f63a',
+    '9910dba8b187907b47e72d2814a5680679b1f0b99ea8cb3d8981d1d86fb4f63a',
+    ['blocker_ipv4_false_causal_diagnosis', 'excess_horizontal_rules'],
+  ],
+  'candidates/lm02-03.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LM02-03-economy.md',
+    '819da4eab66d3d3b4c47e2b22cfb7ba912a2895b7ffb0e29fcd3db35d382640b',
+    '819da4eab66d3d3b4c47e2b22cfb7ba912a2895b7ffb0e29fcd3db35d382640b',
+    ['blocker_refrigerator_heat_transfer'],
+  ],
+  'candidates/lm02-04.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LM02-04-economy.md',
+    '49b4a9156d0cc8004c84c46f2cfb138afb885b19e83c11c09420a304f27400b1',
+    '49b4a9156d0cc8004c84c46f2cfb138afb885b19e83c11c09420a304f27400b1',
+    ['minor_parenti_typo'],
+  ],
+  'candidates/lt01-07.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LT01-07-economy.md',
+    '602b78dc708b0931cdc6bfc3f2ddd33c293c1978ebdadc0f5e369c350ad857e1',
+    '602b78dc708b0931cdc6bfc3f2ddd33c293c1978ebdadc0f5e369c350ad857e1',
+    [],
+  ],
+  'candidates/lt01-08.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LT01-08-economy.md',
+    '82fd1527bf3038c56e9579cebe9c9919ce1eaacd61d46baa573e3e2f02dbffff',
+    '82fd1527bf3038c56e9579cebe9c9919ce1eaacd61d46baa573e3e2f02dbffff',
+    [],
+  ],
+  'candidates/lt01-09.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LT01-09-economy.md',
+    'c93775ded0bc8ae3c2fb3122e00e9648763acaee77d001ed4defd7b5d882d5a3',
+    'c93775ded0bc8ae3c2fb3122e00e9648763acaee77d001ed4defd7b5d882d5a3',
+    ['minor_python_nameerror_misclassified'],
+  ],
+  'candidates/lt01-10.md': [
+    'tuning',
+    'lesson-tune-01-tuning-2026-08-04T13-17-19-871Z',
+    'lesson-tune-01-LT01-10-economy.md',
+    'f15855faf295f8992f7199fdf46bc788ceb4f416ac77a0d1ec70a0643a5d2b54',
+    'f15855faf295f8992f7199fdf46bc788ceb4f416ac77a0d1ec70a0643a5d2b54',
+    ['minor_solution_callout_nesting'],
+  ],
+  'candidates/lm02-05.md': [
+    'holdout',
+    'lesson-tune-01-holdout-2026-08-15T15-15-18-593Z',
+    'lesson-tune-01-LM02-05-quality.md',
+    'e6d543f568f35431d68fe007119c9f47f3cc4c799887a5e1d5e1920af3d7b4b5',
+    'e6d543f568f35431d68fe007119c9f47f3cc4c799887a5e1d5e1920af3d7b4b5',
+    [],
+  ],
+  'candidates/lm02-06.md': [
+    'holdout',
+    'lesson-tune-01-holdout-2026-08-15T15-15-18-593Z',
+    'lesson-tune-01-LM02-06-quality.md',
+    '59e2dfb26ba6d428d77099117b2337710863e92db3695496ee65f5401edaf001',
+    '59e2dfb26ba6d428d77099117b2337710863e92db3695496ee65f5401edaf001',
+    ['minor_markdown_table_stray_pipe'],
+  ],
+  'candidates/lt01-11.md': [
+    'holdout',
+    'lesson-tune-01-holdout-2026-08-15T15-15-18-593Z',
+    'lesson-tune-01-LT01-11-quality.md',
+    '7a833314aa0b08c192128c090acd73f4d2c1c37c06f795b2f6b7780fef2440eb',
+    '74882aef16567ae53330fd669bdde83107a298ae539d42c6f20f51e2db6868c3',
+    [],
+  ],
+  'candidates/lt01-12.md': [
+    'holdout',
+    'lesson-tune-01-holdout-2026-08-15T15-15-18-593Z',
+    'lesson-tune-01-LT01-12-quality.md',
+    '628f5f3d0c25541f248342352bb47217ced55f80a300bc37ea811d5fe72bd6ff',
+    '628f5f3d0c25541f248342352bb47217ced55f80a300bc37ea811d5fe72bd6ff',
+    [],
+  ],
+} as const;
+
 const REQUEST_KEYS = [
   'kind',
   'requestId',
@@ -39,6 +138,10 @@ export interface RawLessonReviewSample {
   profile: ModelProfile;
   fixturePath: string;
   candidateBodySha256: string;
+  sourceCorpusId: string;
+  sourceFileName: string;
+  sourceSha256: string;
+  expectedDefects: string[];
   request: Record<string, unknown>;
 }
 
@@ -99,7 +202,18 @@ export function parseLessonReviewManifestStructure(value: unknown): RawLessonRev
     if (!isObject(candidate)) throw new Error(`Sample ${index + 1} non valido.`);
     assertExactKeys(
       candidate,
-      ['id', 'split', 'profile', 'fixturePath', 'candidateBodySha256', 'request'],
+      [
+        'id',
+        'split',
+        'profile',
+        'fixturePath',
+        'candidateBodySha256',
+        'sourceCorpusId',
+        'sourceFileName',
+        'sourceSha256',
+        'expectedDefects',
+        'request',
+      ],
       `Sample ${index + 1}`,
     );
     if (
@@ -116,11 +230,34 @@ export function parseLessonReviewManifestStructure(value: unknown): RawLessonRev
       throw new Error(`${candidate.id}: id incoerente con split/profilo.`);
     }
     assertPathSafe(candidate.fixturePath, candidate.id);
+    const provenance =
+      LESSON_REVIEW_FIXTURE_PROVENANCE[
+        candidate.fixturePath as keyof typeof LESSON_REVIEW_FIXTURE_PROVENANCE
+      ];
+    if (!provenance) throw new Error(`${candidate.id}: fixture priva di provenienza.`);
     if (
       typeof candidate.candidateBodySha256 !== 'string' ||
       !/^[a-f0-9]{64}$/.test(candidate.candidateBodySha256)
     ) {
       throw new Error(`${candidate.id}: SHA-256 non valido.`);
+    }
+    const [
+      expectedSplit,
+      expectedSourceCorpusId,
+      expectedSourceFileName,
+      expectedSourceSha256,
+      expectedCandidateSha256,
+      expectedDefects,
+    ] = provenance;
+    if (
+      candidate.split !== expectedSplit ||
+      candidate.candidateBodySha256 !== expectedCandidateSha256 ||
+      candidate.sourceCorpusId !== expectedSourceCorpusId ||
+      candidate.sourceFileName !== expectedSourceFileName ||
+      candidate.sourceSha256 !== expectedSourceSha256 ||
+      JSON.stringify(candidate.expectedDefects) !== JSON.stringify(expectedDefects)
+    ) {
+      throw new Error(`${candidate.id}: provenienza congelata non corrispondente.`);
     }
     if (!isObject(candidate.request)) throw new Error(`${candidate.id}: richiesta non valida.`);
     assertExactKeys(candidate.request, REQUEST_KEYS, `${candidate.id} richiesta`);
@@ -204,6 +341,10 @@ export function buildLessonReviewPlan(
         profile: sample.profile,
         fixturePath: sample.fixturePath,
         candidateBodySha256: sample.candidateBodySha256,
+        sourceCorpusId: sample.sourceCorpusId,
+        sourceFileName: sample.sourceFileName,
+        sourceSha256: sample.sourceSha256,
+        expectedDefects: sample.expectedDefects,
         request: sample.request,
         inputHash: computeInputHash(sample.request),
         ...resolved,
