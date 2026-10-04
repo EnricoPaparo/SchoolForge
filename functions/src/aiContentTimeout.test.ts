@@ -14,6 +14,8 @@ describe('lesson generation timeout budget', () => {
     const pool = retryPolicyFromConfig(config, 'pool');
     expect(pool.attemptTimeoutMs).toBe(180_000);
     expect(pool.maxRetries).toBe(1);
+    // Two 185s hard-abort windows, up to 8s Retry-After and 20s finalization.
+    expect(computeContentLeaseTtlMs(pool)).toBe(398_000);
     expect(computeContentLeaseTtlMs(pool)).toBeGreaterThan(360_000);
     expect(computeContentLeaseTtlMs(pool)).toBeLessThan(420_000);
     for (const kind of ['concept_map', 'visual_plan_proposal']) {
