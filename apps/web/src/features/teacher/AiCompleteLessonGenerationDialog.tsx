@@ -33,6 +33,11 @@ import {
 } from '../repository/pools/aiContentClient.js';
 import { validateLessonDraftResult } from '../repository/pools/aiLessonDraft.js';
 import { QuestionCountStepper } from './QuestionCountStepper.js';
+import {
+  AiAdvancedReviewControl,
+  AiAdvancedReviewFailure,
+  AiAdvancedReviewResult,
+} from './AiAdvancedReviewControl.js';
 import styles from './AiCompleteLessonGenerationDialog.module.css';
 
 export type CompleteLessonProgress =
@@ -451,25 +456,15 @@ export function AiCompleteLessonGenerationDialog({
               invalidateEstimate();
             }}
           />
-          <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="ai-complete-advanced-review">
-              Revisione avanzata
-            </label>
-            <label>
-              <input
-                id="ai-complete-advanced-review"
-                type="checkbox"
-                role="switch"
-                checked={advancedReview}
-                onChange={(event) => {
-                  setAdvancedReview(event.target.checked);
-                  invalidateEstimate();
-                }}
-              />{' '}
-              Controlla e migliora il contenuto con il revisore didattico validato prima di creare
-              mappa, domande e immagini.
-            </label>
-          </div>
+          <AiAdvancedReviewControl
+            id="ai-complete-advanced-review"
+            checked={advancedReview}
+            onChange={(checked) => {
+              setAdvancedReview(checked);
+              invalidateEstimate();
+            }}
+            description="Controlla e migliora il contenuto con il revisore didattico validato prima di creare mappa, domande e immagini."
+          />
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-complete-depth-label">
               Profondità
@@ -706,11 +701,7 @@ export function AiCompleteLessonGenerationDialog({
         <>
           <section className={styles.summary} aria-labelledby="ai-complete-summary-title">
             <h4 id="ai-complete-summary-title">Lezione completata</h4>
-            <p>
-              <strong>
-                {reviewResult ? 'Revisione avanzata completata.' : 'Contenuto non revisionato.'}
-              </strong>
-            </p>
+            <AiAdvancedReviewResult result={reviewResult} />
             {summary.mapGenerated && <p>Mappa concettuale generata e applicata.</p>}
             {summary.questionsGenerated !== undefined && (
               <p>{summary.questionsGenerated} domande generate e applicate.</p>
@@ -767,6 +758,7 @@ export function AiCompleteLessonGenerationDialog({
 
       {phase === 'error' && (
         <>
+          {errorStage === 'review' && <AiAdvancedReviewFailure />}
           <p role="alert" className="text-error">
             {error}
           </p>
@@ -775,7 +767,11 @@ export function AiCompleteLessonGenerationDialog({
               Chiudi
             </button>
             <button type="button" className="btn-primary" onClick={retryError}>
-              {errorStage === 'complete' ? 'Riprova completamento' : 'Riprova'}
+              {errorStage === 'complete'
+                ? 'Riprova completamento'
+                : errorStage === 'review'
+                  ? 'Riprova solo revisione'
+                  : 'Riprova'}
             </button>
           </div>
         </>

@@ -81,7 +81,7 @@ function reviewGenerateResult(): AiLessonReviewGenerateResult {
   };
 }
 
-function makeCallables() {
+function makeCallables(overrides: Partial<AiLessonCallables> = {}) {
   const previewRequests: AiLessonContentRequest[] = [];
   const generateRequests: AiLessonContentRequest[] = [];
   const callables: AiLessonCallables = {
@@ -95,6 +95,7 @@ function makeCallables() {
     }),
     previewReview: vi.fn(async () => reviewPreviewResult()),
     generateReview: vi.fn(async () => reviewGenerateResult()),
+    ...overrides,
   };
   return { callables, previewRequests, generateRequests };
 }
@@ -133,6 +134,112 @@ async function goToReview(
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
+  it('mostra uno switch grafico attivo per default e OFF salta davvero il revisore', async () => {
+    const { callables } = makeCallables();
+    const onCompleteDraft = vi.fn(async () => ({
+      imagesApplied: 0,
+      imagesSkipped: 0,
+      imagesFailed: 0,
+    }));
+    renderDialog(callables, onCompleteDraft);
+
+    const toggle = screen.getByRole('switch', { name: 'Revisione avanzata' });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('Attiva')).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('Disattivata')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+
+    await screen.findByText('Revisione non richiesta');
+    expect(callables.previewReview).not.toHaveBeenCalled();
+    expect(callables.generateReview).not.toHaveBeenCalled();
+    expect(onCompleteDraft).toHaveBeenCalledWith(
+      generateResult().output.body,
+      expect.any(Function),
+      expect.any(Object),
+    );
+  });
+
+  it('mostra revisione in corso e conferma l’esito reale nel riepilogo', async () => {
+    let resolveReview!: (result: AiLessonReviewGenerateResult) => void;
+    const pendingReview = new Promise<AiLessonReviewGenerateResult>((resolve) => {
+      resolveReview = resolve;
+    });
+    const { callables } = makeCallables({
+      generateReview: vi.fn(async () => pendingReview),
+    });
+    renderDialog(callables, async () => ({
+      imagesApplied: 0,
+      imagesSkipped: 0,
+      imagesFailed: 0,
+    }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+
+    expect(await screen.findByText('Revisione avanzata del contenuto…')).toBeTruthy();
+    resolveReview(reviewGenerateResult());
+    expect(await screen.findByText('✓ Revisione didattica completata')).toBeTruthy();
+    expect(screen.getByText('Il revisore ha controllato e migliorato il contenuto.')).toBeTruthy();
+    expect(callables.previewReview).toHaveBeenCalledTimes(1);
+    expect(callables.generateReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('dopo un errore ritenta solo il revisore e completa con il corpo revisionato', async () => {
+    let reviewCalls = 0;
+    const { callables } = makeCallables({
+      generateReview: vi.fn(async () => {
+        reviewCalls += 1;
+        if (reviewCalls === 1) throw new Error('review failed');
+        return reviewGenerateResult();
+      }),
+    });
+    const onBeforeGenerate = vi.fn(async () => undefined);
+    const onCompleteDraft = vi.fn(async () => ({
+      imagesApplied: 0,
+      imagesSkipped: 0,
+      imagesFailed: 0,
+    }));
+    renderDialog(callables, onCompleteDraft, vi.fn(), onBeforeGenerate);
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+    await screen.findByRole('button', { name: 'Riprova solo revisione' });
+
+    expect(screen.getByText('Revisione didattica non completata')).toBeTruthy();
+    expect(callables.generate).toHaveBeenCalledTimes(1);
+    expect(onBeforeGenerate).not.toHaveBeenCalled();
+    expect(onCompleteDraft).not.toHaveBeenCalled();
+    expect(screen.queryByText('✓ Revisione didattica completata')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova solo revisione' }));
+    await screen.findByText('✓ Revisione didattica completata');
+    expect(screen.queryByText('Revisione didattica non completata')).toBeNull();
+    expect(callables.generate).toHaveBeenCalledTimes(1);
+    expect(callables.previewReview).toHaveBeenCalledTimes(2);
+    expect(callables.generateReview).toHaveBeenCalledTimes(2);
+    expect(onBeforeGenerate).toHaveBeenCalledTimes(1);
+    expect(onCompleteDraft).toHaveBeenCalledWith(
+      reviewGenerateResult().output.body,
+      expect.any(Function),
+      expect.any(Object),
+    );
+  });
+
+  it('non etichetta come errore del revisore un errore della generazione iniziale', async () => {
+    const { callables } = makeCallables({
+      generate: vi.fn(async () => {
+        throw new Error('generation failed');
+      }),
+    });
+    renderDialog(callables, async () => ({
+      imagesApplied: 0,
+      imagesSkipped: 0,
+      imagesFailed: 0,
+    }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+
+    await screen.findByRole('button', { name: 'Riprova' });
+    expect(screen.queryByText('Revisione didattica non completata')).toBeNull();
+  });
+
   it('usa Economy selezionabile e propone 5/3/2 domande equilibrate', async () => {
     const { callables, previewRequests, generateRequests } = makeCallables();
     renderDialog(callables, async () => ({

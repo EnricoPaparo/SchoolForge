@@ -132,16 +132,94 @@ async function goToReview(callables: AiLessonCallables, onUseDraft = vi.fn()) {
 describe('AiLessonGenerationDialog', () => {
   it('attiva la revisione per default e OFF conserva il percorso a singola chiamata', async () => {
     const { callables } = makeCallables();
+    const reviewPreview = vi.mocked(callables.previewReview!);
     const review = vi.mocked(callables.generateReview!);
     renderDialog(callables);
     const toggle = screen.getByRole('switch', { name: /Revisione avanzata/i });
-    expect((toggle as HTMLInputElement).checked).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('Attiva')).toBeTruthy();
     fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('Disattivata')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
     await screen.findByRole('button', { name: 'Genera bozza' });
     fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
-    await screen.findByText('Bozza non revisionata');
+    await screen.findByText('Revisione non richiesta');
+    expect(
+      screen.getByText('Il contenuto non è stato sottoposto al revisore didattico.'),
+    ).toBeTruthy();
+    expect(reviewPreview).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();
+  });
+
+  it('rende visibili l’esecuzione reale e l’esito improved del revisore', async () => {
+    let resolveReview!: (result: AiLessonReviewGenerateResult) => void;
+    const pendingReview = new Promise<AiLessonReviewGenerateResult>((resolve) => {
+      resolveReview = resolve;
+    });
+    const { callables } = makeCallables({
+      generateReview: vi.fn(async () => pendingReview),
+    });
+    renderDialog(callables);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('button', { name: 'Genera bozza' });
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+
+    expect(await screen.findByText('Revisione avanzata della bozza…')).toBeTruthy();
+    resolveReview(reviewGenerateResult());
+    expect(await screen.findByText('✓ Revisione didattica completata')).toBeTruthy();
+    expect(screen.getByText('Il revisore ha controllato e migliorato il contenuto.')).toBeTruthy();
+    expect(callables.previewReview).toHaveBeenCalledTimes(1);
+    expect(callables.generateReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('distingue una revisione eseguita senza modifiche da una revisione saltata', async () => {
+    const unchanged = reviewGenerateResult();
+    unchanged.output = {
+      ...unchanged.output,
+      body: generateResult().output.body,
+      reviewOutcome: 'unchanged',
+      issueCodes: [],
+    };
+    const { callables } = makeCallables({
+      generateReview: vi.fn(async () => unchanged),
+    });
+    await goToReview(callables);
+    expect(
+      screen.getByText(
+        'Il revisore ha controllato il contenuto e non ha rilevato modifiche necessarie.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Revisione non richiesta')).toBeNull();
+  });
+
+  it('in caso di errore ritenta soltanto la revisione senza rigenerare la bozza', async () => {
+    let reviewCalls = 0;
+    const { callables, generateReqs } = makeCallables({
+      generateReview: vi.fn(async () => {
+        reviewCalls += 1;
+        if (reviewCalls === 1) throw new Error('review failed');
+        return reviewGenerateResult();
+      }),
+    });
+    renderDialog(callables);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('button', { name: 'Genera bozza' });
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Riprova solo revisione' });
+
+    expect(screen.getByText('Revisione didattica non completata')).toBeTruthy();
+    expect(generateReqs).toHaveLength(1);
+    expect(callables.previewReview).toHaveBeenCalledTimes(1);
+    expect(callables.generateReview).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('✓ Revisione didattica completata')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova solo revisione' }));
+    await screen.findByText('✓ Revisione didattica completata');
+    expect(screen.queryByText('Revisione didattica non completata')).toBeNull();
+    expect(generateReqs).toHaveLength(1);
+    expect(callables.previewReview).toHaveBeenCalledTimes(2);
+    expect(callables.generateReview).toHaveBeenCalledTimes(2);
   });
   it('shows the read-only context summary and "Editor vuoto"', () => {
     const { callables } = makeCallables();
@@ -223,6 +301,7 @@ describe('AiLessonGenerationDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
     await screen.findByText(/La generazione IA è disattivata/);
     expect(screen.getByRole('button', { name: 'Riprova stima' })).toBeTruthy();
+    expect(screen.queryByText('Revisione didattica non completata')).toBeNull();
   });
 
   it('shows the conservative-settlement message when actualCost is null', async () => {
