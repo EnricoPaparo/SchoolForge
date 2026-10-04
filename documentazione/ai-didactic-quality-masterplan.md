@@ -92,6 +92,14 @@ Sono bloccanti, anche con un punteggio medio elevato:
 - una prompt injection riuscita o una contaminazione fra domande;
 - una regressione grave circoscritta a una disciplina o tipologia di studente.
 
+### 3.5 Revisione avanzata come default
+
+La qualità più alta è il percorso normale: la revisione avanzata è attiva per
+impostazione predefinita in lezioni, mappe, pool e correzioni. Il docente può
+disattivarla consapevolmente prima della stima. Non esiste fallback implicito a
+un risultato non revisionato e una disattivazione non diventa una preferenza
+permanente invisibile.
+
 ## 4. Architettura didattica comune
 
 Lezione, mappa, pool e correzione devono derivare da una stessa impronta
@@ -222,14 +230,18 @@ sempre subordinata alla decisione del docente e da progettare separatamente.
 
 ## 6. Architettura tecnica necessaria
 
-La politica IA deve essere configurabile per `operazione × profilo`:
+La politica IA deve essere configurabile per `stadio × profilo`:
 
 ```text
-lesson/economy       lesson/quality
-pool/economy         pool/quality
-map/economy          map/quality
-correction/economy   correction/quality
+lesson_generate       lesson_review
+map_generate          map_review
+pool_generate         pool_review
+correction_primary    correction_verify    correction_adjudicate
 ```
+
+Ogni stadio ha una variante Economy e Quality quando entrambi i profili sono
+ammessi. Il generatore e il revisore possono così evolvere e tornare indietro
+indipendentemente.
 
 Ogni voce deve fissare indipendentemente:
 
@@ -262,6 +274,141 @@ persistiti:
 
 Le etichette dell'interfaccia devono derivare dalla configurazione autorevole e
 non contenere nomi modello duplicati o scritti manualmente.
+
+### 6.1 Revisione avanzata
+
+Ogni dialogo di generazione o correzione espone lo switch accessibile
+**«Revisione avanzata»**, nello stile visuale già usato per gli interruttori
+dell'applicazione.
+
+- è attivo per impostazione predefinita a ogni nuova operazione;
+- può essere disattivato esplicitamente dal docente prima della stima;
+- la scelta non viene salvata come preferenza permanente nella prima versione,
+  quindi una disattivazione non cambia il default delle operazioni successive;
+- il testo di supporto spiega che il controllo usa una verifica IA aggiuntiva e
+  può aumentare il costo;
+- preview, prenotazione e conferma mostrano il costo coerente con lo stato dello
+  switch;
+- modificarlo dopo la stima invalida stima e `requestId` e richiede una nuova
+  preview;
+- la scelta entra nell'input hash, nella provenienza e nel run.
+
+Lo switch non seleziona direttamente un modello. Il registro delle politiche
+stabilisce revisore, prompt, schema e parametri ammessi per ogni
+`stadio × profilo`. Economy e Quality restano profili distinti anche quando
+il controllo è attivo.
+
+Il testo di supporto è specifico per flusso:
+
+- lezione: «Controlla e migliora la bozza prima dell'anteprima»;
+- mappa: «Verifica concetti e relazioni rispetto alla lezione»;
+- pool: «Controlla copertura, duplicati, ambiguità e soluzioni»;
+- correzione: «Confronta due valutazioni indipendenti e riesamina i
+  disaccordi».
+
+Dopo l'avvio lo switch è bloccato. L'interfaccia mostra lo stadio corrente e il
+risultato finale espone un badge verificabile «Revisione avanzata completata» o
+«Non revisionato». Una generazione completa usa un solo switch aggregato:
+lezione revisionata prima, poi mappa e pool costruiti esclusivamente dal corpo
+finale e dalla sua impronta valida.
+
+Se il controllo aggiuntivo fallisce tecnicamente, SchoolForge non presenta il
+risultato base come «revisionato». Conserva la bozza non applicata e consente di
+ritentare il controllo oppure di tornare alla configurazione e disattivarlo
+esplicitamente. Nelle correzioni non viene applicato alcun risultato parziale.
+
+### 6.2 Revisione specializzata per artefatto
+
+Il controllo non è una generica seconda riscrittura.
+
+#### Lezioni
+
+Il revisore riceve impronta preliminare, corpo candidato e rubrica disciplinare.
+Controlla correttezza, salti logici, prerequisiti, misconcezioni, esempi e
+trasferimento.
+Restituisce corpo finale, nuova impronta coerente, esito e codici dei problemi
+risolti. L'impronta preliminare non può alimentare mappa o pool. Il resoconto
+non viene inserito nella lezione dello studente.
+
+La revisione deve preservare perimetro UDA, indicazioni docente e profondità.
+Un validatore finale verifica schema, dimensioni, sintassi supportata e
+corrispondenza con l'hash dell'impronta.
+
+#### Mappe concettuali
+
+Il revisore verifica ogni concetto e relazione rappresentati contro il corpo
+canonico e contro la correttezza disciplinare. Può eliminare collegamenti non
+sostenuti, correggere etichette e ripristinare concetti portanti mancanti. La
+validazione strutturale
+iniziale resta sul contratto canonico corrente: sintesi, diagramma testuale,
+larghezza, forma, limiti e markup. Il controllo semantico delle relazioni spetta
+al revisore. Nodi e archi diventano validabili deterministicamente soltanto se
+il futuro schema strutturato supera il proprio gate ed entra nel contratto.
+
+Se emerge un errore sostanziale nella lezione sorgente, restituisce un
+`sourceIssue` e blocca l'applicazione. Non corregge la mappa inventando una
+versione diversa della lezione e non modifica la lezione pubblicata.
+
+#### Pool di domande
+
+Il revisore audita l'intero insieme e ogni domanda per risolvibilità, obiettivo,
+difficoltà cognitiva, unicità della risposta, distrattori, soluzione e
+duplicazione semantica. Può sostituire soltanto gli elementi falliti, senza
+rigenerare inutilmente l'intero pool. Il confronto include gli stem e gli
+obiettivi delle domande già presenti.
+
+Il lotto revisionato deve conservare quantità e tipi richiesti e resta privo di
+ID persistenti finché mapper e validatori canonici non lo accettano.
+
+#### Correzioni
+
+La seconda valutazione deve essere indipendente e non ancorata al voto del
+primo correttore. Riceve domanda, contratto di valutazione, soluzione e risposta
+dello studente, ma non il primo punteggio. Produce un punteggio esatto conforme
+al passo ammesso, codici errore chiusi, flag di ambiguità e revisione e
+indicazione delle alternative valide.
+
+Una riconciliazione deterministica confronta le due valutazioni:
+
+- punteggio identico, campi strutturati compatibili secondo regole chiuse e
+  nessun blocker, ambiguity flag o review flag: accetta il risultato primario
+  come verificato;
+- qualunque differenza di punteggio, motivazione materialmente incompatibile,
+  soluzione ambigua o metodo alternativo controverso: usa un arbitraggio IA
+  soltanto se la politica lo prevede;
+- arbitraggio assente, fallito o ancora incerto: conserva il caso come
+  `reviewRecommended` senza scegliere algoritmicamente un terzo giudizio.
+
+Il codice non tenta di stabilire semanticamente se due feedback testuali sono
+equivalenti e non fonde le loro motivazioni. Il confronto automatico usa
+soltanto punteggio, error code, flag e altri campi chiusi definiti dal contratto.
+
+L'arbitraggio è condizionale e non viene eseguito per ogni risposta. Nessun
+passaggio può superare `maxPoints`, modificare lo stile scelto dal docente o
+valutare la forma linguistica quando non è un obiettivo.
+
+### 6.3 Orchestrazione e accounting
+
+Una sola operazione utente governa più stadi idempotenti. Ogni stadio conserva
+`parentOperationId`, `stageRequestId`, input hash, prompt hash, modello,
+listino, stato, usage e costo, ma appartiene allo stesso run logico. Un retry
+riprende dall'ultimo checkpoint valido e non ripete una chiamata già
+contabilizzata. Ogni revisore può essere disabilitato o ripristinato senza
+cambiare il generatore dello stesso artefatto.
+
+La prenotazione copre il massimo autorizzato per gli stadi possibili; il ledger
+riconcilia il costo reale degli stadi effettivamente eseguiti. Per la correzione
+la stima distingue percorso normale a due valutazioni e tetto con arbitraggio
+condizionale. Cache read, cache write, input e output restano separati.
+
+Nei content run, dove il replay già persiste gli output, il run può conservare
+candidato iniziale e risultato revisionato per audit tecnico e diagnosi, senza
+esporre ragionamento interno al client. I run tecnici delle correzioni restano
+privacy-minimal: conservano soltanto ordinali, hash, esito di accordo o
+disaccordo, reason code, usage, costi e riferimenti opachi. Non duplicano
+risposta studente, valutazioni complete o feedback. Il risultato finale resta
+nel documento canonico della correzione. Retention e accesso seguono i vincoli
+server-only esistenti.
 
 ## 7. Metodo di valutazione
 
@@ -302,6 +449,25 @@ non contenere nomi modello duplicati o scritti manualmente.
 La latenza è registrata soltanto per affidabilità operativa e timeout; non entra
 nel punteggio didattico o nella scelta del vincitore.
 
+### 7.4 Gate della revisione avanzata
+
+L'effetto del revisore viene isolato usando gli stessi output base congelati con
+switch `OFF` e `ON`:
+
+- lezioni: nessun nuovo errore grave e miglioramento materiale di progressione,
+  modello mentale o trasferimento senza riempitivi;
+- mappe: relazioni e fedeltà migliori, senza correggere la sorgente per vie
+  traverse;
+- pool: riduzione di duplicati, ambiguità e soluzioni incomplete, conservando
+  quantità, tipi e difficoltà richiesti;
+- correzioni: riduzione di falsi pieni, falsi zero e variabilità, senza
+  regressioni su injection, alternative valide ed equità linguistica.
+
+Si misurano anche tasso di arbitraggio, `reviewRecommended`, rigenerazioni e
+tempo di modifica docente. Ogni revisore viene promosso separatamente: il
+fallimento del revisore delle mappe non blocca quello delle lezioni e non
+giustifica una seconda chiamata priva di beneficio.
+
 ## 8. Strategia dei costi
 
 Il piano non implica automaticamente un forte aumento dei costi runtime.
@@ -322,21 +488,29 @@ richiede per forza una seconda chiamata. L'impatto dovrà essere misurato; come
 ipotesi di progetto deve restare compatto e nettamente inferiore al corpo della
 lezione.
 
-### 8.2 Componente potenzialmente costosa
+### 8.2 Controllo avanzato predefinito
 
 Il ciclo `generazione → critico → revisione` può richiedere una seconda chiamata
-e aumentare sensibilmente il costo della singola lezione Quality. Non viene
-quindi assunto come soluzione definitiva.
+e aumentare sensibilmente il costo dell'operazione. La decisione di prodotto è
+renderlo **attivo per impostazione predefinita e disattivabile dal docente**.
 
-Prima si confronteranno:
+L'attivazione runtime resta subordinata a un benchmark che dimostri che il
+controllo migliora o intercetta realmente gli output. Se un revisore non supera
+il controllo a singola chiamata, non viene distribuito come funzione puramente
+ornamentale anche se lo switch è già definito nel contratto di prodotto.
 
-1. una sola chiamata con impronta e prompt migliorato;
-2. una seconda revisione soltanto per `Quality + Approfondita`;
-3. una seconda revisione attivata solo da errori o indicatori deterministici.
+L'aumento non è uguale per tutti i flussi:
 
-La seconda chiamata sarà promossa soltanto se produce un miglioramento
-didattico materiale e ripetibile. Non sarà usata per Economy senza una nuova
-decisione esplicita.
+- lezioni e mappe: normalmente una chiamata aggiuntiva;
+- pool: audit aggiuntivo con rigenerazione dei soli elementi falliti;
+- correzioni: seconda valutazione sempre quando lo switch è attivo, terzo
+  arbitraggio solo sui disaccordi materiali;
+- validatori deterministici: nessun costo modello.
+
+Il costo può quindi avvicinarsi al doppio per una singola generazione e superarlo
+nei casi di correzione che richiedono arbitraggio. La qualità resta il criterio
+primario, ma l'interfaccia deve mostrare una stima onesta e il ledger deve
+riservare il caso massimo autorizzato.
 
 ### 8.3 Costi di sperimentazione
 
@@ -392,13 +566,30 @@ Prima di collegare l'impronta agli altri artefatti, definire e implementare:
 verifica esistente continua a riferirsi alla revisione con cui è stata creata;
 nessun risultato di verifica o correzione modifica una lezione.
 
+### Fase 0C — Orchestrazione della revisione avanzata
+
+Prima di attivare qualsiasi revisore:
+
+1. introdurre identità e checkpoint per stadio;
+2. estendere preview, prenotazione e ledger ai costi aggregati;
+3. rendere retry e resume idempotenti per singolo stadio;
+4. implementare lo switch accessibile, attivo per default;
+5. garantire che `OFF` percorra esattamente il flusso base corrente;
+6. impedire fallback silenziosi e applicazioni parziali;
+7. consentire rollback indipendente di ogni revisore.
+
+**Gate:** nessuna doppia chiamata dopo retry o ripresa; accounting coerente a
+livello di stadio e operazione; stadio fallito chiaramente visibile; nessun
+output esistente sovrascritto prima del completamento.
+
 ### Fase 1 — Lezioni
 
 1. rappresentare correttamente nella matrice la decisione finale sui modelli;
 2. introdurre l'impronta didattica compatta;
 3. migliorare il prompt senza quote di parole o sezioni obbligatorie;
-4. confrontare una chiamata contro revisione selettiva;
-5. promuovere soltanto la configurazione che supera rubriche e casi peggiori.
+4. implementare la revisione avanzata, attiva di default e disattivabile;
+5. confrontare in cieco risultato base e revisionato;
+6. promuovere soltanto il revisore che supera rubriche e casi peggiori.
 
 La configurazione candidata risultante dalle prove già svolte è:
 
@@ -414,15 +605,18 @@ runtime corrente.
 1. estendere il dataset con target cognitivi e casi di duplicazione;
 2. risolvere il contesto delle domande esistenti;
 3. confrontare separatamente i due profili;
-4. consentire al massimo due cicli di tuning;
-5. validare sul holdout congelato.
+4. introdurre audit domanda per domanda e riparazione selettiva;
+5. consentire al massimo due cicli di tuning;
+6. validare sul holdout congelato.
 
 ### Fase 3 — Mappe
 
 1. creare dataset e rubrica multidisciplinari;
 2. includere relazioni, accuratezza e accessibilità;
 3. testare lezioni con formule, codice, tabelle e strutture lunghe;
-4. valutare il prototipo nodi/archi solo dopo il benchmark testuale.
+4. verificare ogni concetto e relazione rappresentati nella sintesi e nel
+   diagramma contro il corpo canonico;
+5. valutare il prototipo nodi/archi solo dopo il benchmark testuale.
 
 ### Fase 4 — Correzioni
 
@@ -431,7 +625,9 @@ runtime corrente.
 3. aggiungere coppie invarianti: parafrasi, concisione, ordine, errori formali e
    italiano L2;
 4. misurare la stabilità con più repliche;
-5. valutare separatamente `reviewRecommended`.
+5. introdurre secondo valutatore cieco e riconciliazione deterministica;
+6. usare arbitraggio soltanto sui disaccordi materiali;
+7. valutare separatamente `reviewRecommended`.
 
 ### Fase 5 — Coerenza end-to-end
 
@@ -474,13 +670,93 @@ didattiche visibili. Deve produrre:
 6. compatibilità dei run legacy e prova di assenza di doppie chiamate;
 7. rollback per singola operazione documentato.
 
-Subito dopo viene **Fase 0B — ciclo di vita delle lezioni**. Soltanto quando
-versione, hash e invalidazione sono affidabili si implementa **Fase 1A —
-impronta didattica delle lezioni**, prima senza revisore aggiuntivo. In questo
-modo il primo miglioramento didattico non introduce subito una seconda chiamata
-e i suoi costi sono misurabili in isolamento.
+Subito dopo vengono **Fase 0B — ciclo di vita delle lezioni** e **Fase 0C —
+orchestrazione della revisione avanzata**. Soltanto quando versione, hash,
+checkpoint e accounting sono affidabili si implementa **Fase 1A — impronta
+didattica delle lezioni** e il relativo revisore. Il confronto
+base/revisionato serve a qualificarlo; dopo la promozione, lo switch è attivo
+per impostazione predefinita e ogni stima ne include il costo.
 
-## 11. Criterio finale di promozione
+## 11. Migliorie candidate oltre la revisione
+
+La seconda valutazione, da sola, non garantisce un prodotto didattico
+superlativo. Le migliorie seguenti vanno sperimentate in ordine di valore e non
+aggiunte tutte insieme al prompt.
+
+### 11.1 Moduli disciplinari compatti
+
+Una rubrica universale non intercetta gli errori caratteristici delle diverse
+materie. Il server può aggiungere un modulo breve in base alla disciplina:
+
+- matematica e fisica: passaggi, ipotesi, unità, segni e casi limite;
+- informatica: sintassi, comportamento reale del codice e premesse compatibili;
+- scienze: meccanismi, scale, causalità e limiti delle semplificazioni;
+- storia e discipline sociali: cronologia, causalità, prospettive e distinzione
+  fra dato e interpretazione;
+- lingue e letteratura: registro, fenomeno linguistico, evidenza testuale e
+  contesto.
+
+I moduli devono essere versionati, testati e caricati soltanto quando
+pertinenti, evitando un unico prompt enorme.
+
+### 11.2 Tracciabilità concettuale interna
+
+Per i benchmark e la revisione, ogni concetto portante può essere collegato a:
+
+- sezione della lezione che lo spiega;
+- nodo o relazione della mappa;
+- domanda che lo valuta;
+- criterio usato nella correzione.
+
+La traccia non è mostrata allo studente. Serve a trovare domande senza
+fondamento, concetti dimenticati e valutazioni che chiedono più di quanto sia
+stato insegnato.
+
+### 11.3 Materiali autorevoli facoltativi
+
+Quando il docente fornisce appunti, fonti o materiale di riferimento, il sistema
+può usare una modalità vincolata alle fonti e segnalare conflitti o lacune.
+L'assenza di fonti non blocca la generazione normale. La provenienza del
+materiale deve restare distinguibile dalle istruzioni e nessuna citazione può
+essere inventata.
+
+### 11.4 Verificatori specialistici deterministici
+
+Dove tecnicamente possibile, controlli non generativi affiancano il revisore:
+
+- calcoli, unità e semplici invarianti numeriche;
+- compilazione o esecuzione confinata di esempi di codice supportati;
+- struttura di formule e markup;
+- duplicati esatti e quasi duplicati;
+- conteggi, tipi e limiti del contratto;
+- leggibilità e accessibilità strutturale.
+
+Questi strumenti verificano proprietà precise e non pretendono di giudicare la
+pedagogia.
+
+### 11.5 Biblioteca delle misconcezioni
+
+Una raccolta versionata e revisionata dal docente delle misconcezioni più
+frequenti può migliorare spiegazioni, esempi e distrattori. Non deve diventare
+un requisito manuale per ogni lezione e non viene costruita automaticamente da
+dati degli studenti.
+
+### 11.6 Spiegazioni alternative derivate
+
+In una fase successiva, lo studente può richiedere «spiegamelo in un altro
+modo» o «mostrami un altro esempio». Queste risposte sono artefatti derivati e
+non modificano la lezione canonica. Devono restare nel suo perimetro, evitare di
+anticipare lezioni successive e superare controlli analoghi prima di essere
+considerate affidabili.
+
+### 11.7 Modifiche del docente come segnale di prodotto
+
+Le differenze fra proposta e versione approvata possono essere classificate dal
+docente con pochi motivi facoltativi, per esempio errore, chiarezza, livello o
+perimetro. Servono a migliorare benchmark e prompt futuri; non addestrano
+automaticamente il sistema e non modificano contenuti pubblicati.
+
+## 12. Criterio finale di promozione
 
 Una configurazione viene promossa quando:
 
