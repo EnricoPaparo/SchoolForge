@@ -1428,6 +1428,53 @@ describe('§5 parseStoredRunDocument output↔kind coherence', () => {
     });
     expect(parseStoredRunDocument(emptyLessonBody)).toBeNull();
   });
+  it('reuses the full lesson-review validator for stored replay', () => {
+    const review = (output: unknown) =>
+      parseStoredRunDocument(
+        serializeRun({
+          ...SAMPLE_RUN,
+          kind: 'lesson_review',
+          status: 'completed',
+          output,
+        }),
+      );
+    expect(
+      review({ body: '## Reti', reviewOutcome: 'improved', issueCodes: ['logical_gap'] }),
+    ).not.toBeNull();
+    expect(
+      review({
+        body: '## Reti',
+        reviewOutcome: 'improved',
+        issueCodes: ['logical_gap'],
+        extra: true,
+      }),
+    ).toBeNull();
+    expect(
+      review({
+        body: '## Reti',
+        reviewOutcome: 'improved',
+        issueCodes: ['logical_gap', 'logical_gap'],
+      }),
+    ).toBeNull();
+    expect(
+      review({ body: '<script>x</script>', reviewOutcome: 'improved', issueCodes: [] }),
+    ).toBeNull();
+    expect(
+      review({ body: '---\ntitle: x\n---', reviewOutcome: 'improved', issueCodes: [] }),
+    ).toBeNull();
+  });
+  it('never propagates exceptions from an untrusted stored document', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('hostile getter');
+        },
+      },
+    );
+    expect(() => parseStoredRunDocument(hostile)).not.toThrow();
+    expect(parseStoredRunDocument(hostile)).toBeNull();
+  });
 });
 
 // ─── AIGEN-PROMPT-01 ─────────────────────────────────────────────────────────

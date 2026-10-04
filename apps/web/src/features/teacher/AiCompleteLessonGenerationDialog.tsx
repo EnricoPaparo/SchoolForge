@@ -205,6 +205,8 @@ export function AiCompleteLessonGenerationDialog({
     setPreviewRequest(null);
     setContentResult(null);
     setDraftBody('');
+    setBaseBody('');
+    setReviewResult(null);
     setSummary(null);
     setProgress(null);
     setError(null);

@@ -590,4 +590,22 @@ describe('AiLessonGenerationDialog — back to configure from review', () => {
     expect(previewReqs[1].depth).toBe('in_depth');
     expect(previewReqs[1].teacherGuidance).toBe('tono formale');
   });
+
+  it('does not offer a stale review retry after discard and a new preview failure', async () => {
+    let calls = 0;
+    const c = makeCallables({
+      preview: vi.fn(async () => {
+        calls += 1;
+        if (calls === 2) throw new Error('preview failed');
+        return previewResult();
+      }),
+    });
+    await goToReview(c.callables);
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Riprova solo revisione' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Riprova stima' })).toBeTruthy();
+  });
 });

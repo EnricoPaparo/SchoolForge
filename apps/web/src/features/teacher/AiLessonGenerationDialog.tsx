@@ -112,6 +112,8 @@ export function AiLessonGenerationDialog({
   function invalidateEstimate() {
     setPreview(null);
     setPreviewRequest(null);
+    setBaseBody('');
+    setReviewResult(null);
     setError(null);
     generateStartedRef.current = false;
     requestIdRef.current = newRequestId();
@@ -281,6 +283,8 @@ export function AiLessonGenerationDialog({
     setShowAbandonConfirm(false);
     invalidateEstimate();
   }
+
+  const canRetryAdvancedReview = previewRequest !== null && baseBody.length > 0;
 
   /** Unica uscita che chiude davvero durante la review; doppio click protetto. */
   function abandonDraft() {
@@ -548,9 +552,11 @@ export function AiLessonGenerationDialog({
             <button
               type="button"
               className="btn-primary"
-              onClick={() => void (baseBody ? retryAdvancedReview() : requestPreview())}
+              onClick={() =>
+                void (canRetryAdvancedReview ? retryAdvancedReview() : requestPreview())
+              }
             >
-              {baseBody ? 'Riprova solo revisione' : 'Riprova stima'}
+              {canRetryAdvancedReview ? 'Riprova solo revisione' : 'Riprova stima'}
             </button>
           </div>
         </>

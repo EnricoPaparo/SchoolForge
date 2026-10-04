@@ -61,6 +61,20 @@ function asObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function assertExactOutputKeys(
+  obj: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  const keys = Object.keys(obj);
+  if (keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) {
+    throw new AiContentError(
+      'provider_invalid_output',
+      `${label} contiene proprietà mancanti o non ammesse.`,
+    );
+  }
+}
+
 function assertNoForbiddenKeys(obj: Record<string, unknown>): void {
   for (const key of FORBIDDEN_QUESTION_KEYS) {
     if (key in obj) {
@@ -276,6 +290,7 @@ export interface ValidatedLessonReviewProposal extends ValidatedLessonProposal {
 
 export function validateLessonReviewProposal(output: unknown): ValidatedLessonReviewProposal {
   const root = asObject(output);
+  assertExactOutputKeys(root, ['body', 'reviewOutcome', 'issueCodes'], 'La revisione');
   const { body } = validateLessonProposal(root);
   if (root.reviewOutcome !== 'improved' && root.reviewOutcome !== 'unchanged') {
     throw new AiContentError('provider_invalid_output', 'Esito della revisione non valido.');

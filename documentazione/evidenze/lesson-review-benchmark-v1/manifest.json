@@ -1,0 +1,1403 @@
+{
+  "version": "lesson-review-benchmark-v2",
+  "dataset": "lesson-review-frozen-01-v1",
+  "rubric": "lesson-manual-02-rubric-v1",
+  "samples": [
+    {
+      "id": "lr-economy-tuning-lm02-01",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lm02-01.md",
+      "candidateBodySha256": "f1cd3f78c14fcc348b8bf1755b483435d5f1613e525ba87dd28f12b50ee1bfac",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "modelProfile": "economy",
+        "teacherGuidance": "Usa esempi vicini alla vita scolastica senza anticipare topologie e modello a livelli.",
+        "depth": "synthetic",
+        "titolo": "Che cos'è una rete informatica",
+        "sottotitolo": "Nodi, collegamenti e scambio di informazioni",
+        "difficolta": "1 — introduttiva",
+        "concettiChiave": [
+          "nodo",
+          "collegamento",
+          "protocollo",
+          "risorsa condivisa"
+        ],
+        "obiettivi": [
+          "Definire una rete informatica con parole proprie",
+          "Distinguere nodi, collegamenti e protocolli",
+          "Riconoscere esempi quotidiani di risorse condivise"
+        ],
+        "udaTitle": "Fondamenti di reti",
+        "udaContext": {
+          "title": "Fondamenti di reti",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 1,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Che cos'è una rete informatica",
+              "sottotitolo": "Nodi, collegamenti e scambio di informazioni"
+            },
+            {
+              "position": 2,
+              "titolo": "Tipi di rete e topologie",
+              "sottotitolo": "LAN, WAN e forme di collegamento"
+            },
+            {
+              "position": 3,
+              "titolo": "Il modello a livelli",
+              "sottotitolo": "Perché i protocolli sono organizzati"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lm02-02",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lm02-02.md",
+      "candidateBodySha256": "8048f43b6dc05d988a812fcfab518a9377163f337aaa9fac2e86c31938774e59",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000002",
+        "modelProfile": "economy",
+        "teacherGuidance": "Presenta la procedura in passi verificabili e associa a ogni parametro la conseguenza concreta di un valore errato.",
+        "depth": "complete",
+        "titolo": "Configurare un indirizzo IPv4 statico",
+        "sottotitolo": "Procedura, controlli e diagnosi degli errori comuni",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "indirizzo IPv4",
+          "subnet mask",
+          "gateway predefinito",
+          "DNS",
+          "verifica della configurazione"
+        ],
+        "obiettivi": [
+          "Configurare correttamente i parametri IPv4 di un host",
+          "Verificare la configurazione con controlli progressivi",
+          "Diagnosticare errori comuni senza procedere per tentativi casuali"
+        ],
+        "udaTitle": "Configurazione e diagnostica di rete",
+        "udaContext": {
+          "title": "Configurazione e diagnostica di rete",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Indirizzi IPv4 e subnet mask",
+              "sottotitolo": "Struttura e appartenenza alla rete"
+            },
+            {
+              "position": 2,
+              "titolo": "Configurare un indirizzo IPv4 statico",
+              "sottotitolo": "Procedura, controlli e diagnosi degli errori comuni"
+            },
+            {
+              "position": 3,
+              "titolo": "DHCP",
+              "sottotitolo": "Assegnazione automatica dei parametri di rete"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lm02-03",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lm02-03.md",
+      "candidateBodySha256": "60f35d8a08af26c73f2a2a7b05b3b837d1f15d2f282ed5a8e0d4c8b7b57c2d44",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000003",
+        "modelProfile": "economy",
+        "teacherGuidance": "Costruisci la spiegazione attorno a esempi osservabili e includi almeno un caso in cui agiscono più meccanismi insieme.",
+        "depth": "complete",
+        "titolo": "Conduzione, convezione e irraggiamento",
+        "sottotitolo": "Riconoscere i meccanismi di trasferimento del calore",
+        "difficolta": "2 — base",
+        "concettiChiave": [
+          "conduzione",
+          "convezione",
+          "irraggiamento",
+          "trasferimento di energia"
+        ],
+        "obiettivi": [
+          "Distinguere i tre meccanismi di trasferimento del calore",
+          "Classificare situazioni reali motivando la scelta",
+          "Comprendere che più meccanismi possono agire contemporaneamente"
+        ],
+        "udaTitle": "Energia termica",
+        "udaContext": {
+          "title": "Energia termica",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Temperatura e calore",
+              "sottotitolo": "Due grandezze da non confondere"
+            },
+            {
+              "position": 2,
+              "titolo": "Conduzione, convezione e irraggiamento",
+              "sottotitolo": "Riconoscere i meccanismi di trasferimento del calore"
+            },
+            {
+              "position": 3,
+              "titolo": "Equilibrio termico",
+              "sottotitolo": "Evoluzione dei sistemi a contatto"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lm02-04",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lm02-04.md",
+      "candidateBodySha256": "757f98a415997581c0998f0de872f825f47ded4b6f8fcbd8987745f389b5ef36",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000004",
+        "modelProfile": "economy",
+        "teacherGuidance": "Inserisci esercizi di difficoltà crescente con soluzione completa, passaggio per passaggio e verifica finale; commenta almeno un errore tipico.",
+        "depth": "in_depth",
+        "titolo": "Equazioni di primo grado: metodo e verifica",
+        "sottotitolo": "Dalla trasformazione dell'equazione al controllo del risultato",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "principi di equivalenza",
+          "isolamento dell'incognita",
+          "controllo della soluzione",
+          "errori di segno"
+        ],
+        "obiettivi": [
+          "Risolvere equazioni di primo grado motivando ogni trasformazione",
+          "Verificare una soluzione per sostituzione",
+          "Riconoscere e correggere gli errori di segno più frequenti"
+        ],
+        "udaTitle": "Equazioni e problemi",
+        "udaContext": {
+          "title": "Equazioni e problemi",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Uguaglianze e principi di equivalenza",
+              "sottotitolo": "Le trasformazioni che conservano le soluzioni"
+            },
+            {
+              "position": 2,
+              "titolo": "Equazioni di primo grado: metodo e verifica",
+              "sottotitolo": "Dalla trasformazione dell'equazione al controllo del risultato"
+            },
+            {
+              "position": 3,
+              "titolo": "Problemi risolvibili con equazioni",
+              "sottotitolo": "Tradurre un testo in un modello algebrico"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-holdout-lm02-05",
+      "split": "holdout",
+      "profile": "economy",
+      "fixturePath": "candidates/lm02-05.md",
+      "candidateBodySha256": "e6d543f568f35431d68fe007119c9f47f3cc4c799887a5e1d5e1920af3d7b4b5",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000005",
+        "modelProfile": "economy",
+        "teacherGuidance": "Usa un caso unitario abbastanza ricco da attraversare 1NF, 2NF e 3NF; esplicita dipendenze, chiavi, anomalie e motivazione di ogni decomposizione.",
+        "depth": "in_depth",
+        "titolo": "Normalizzazione dei database fino alla terza forma normale",
+        "sottotitolo": "Dipendenze, anomalie e decomposizione delle relazioni",
+        "difficolta": "5 — avanzata",
+        "concettiChiave": [
+          "dipendenza funzionale",
+          "chiave candidata",
+          "prima forma normale",
+          "seconda forma normale",
+          "terza forma normale",
+          "decomposizione"
+        ],
+        "obiettivi": [
+          "Individuare dipendenze funzionali e chiavi candidate",
+          "Riconoscere violazioni di 1NF, 2NF e 3NF",
+          "Normalizzare una relazione motivando ogni decomposizione",
+          "Valutare le anomalie eliminate dal nuovo schema"
+        ],
+        "udaTitle": "Progettazione logica dei database",
+        "udaContext": {
+          "title": "Progettazione logica dei database",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 4,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Dal modello concettuale al modello relazionale",
+              "sottotitolo": "Traduzione di entità e relazioni"
+            },
+            {
+              "position": 2,
+              "titolo": "Chiavi e vincoli di integrità",
+              "sottotitolo": "Identificare e proteggere i dati"
+            },
+            {
+              "position": 3,
+              "titolo": "Dipendenze funzionali",
+              "sottotitolo": "Determinanti e attributi dipendenti"
+            },
+            {
+              "position": 4,
+              "titolo": "Normalizzazione dei database fino alla terza forma normale",
+              "sottotitolo": "Dipendenze, anomalie e decomposizione delle relazioni"
+            },
+            {
+              "position": 5,
+              "titolo": "Progettazione fisica e indici",
+              "sottotitolo": "Prestazioni e accesso ai dati"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-holdout-lm02-06",
+      "split": "holdout",
+      "profile": "economy",
+      "fixturePath": "candidates/lm02-06.md",
+      "candidateBodySha256": "59e2dfb26ba6d428d77099117b2337710863e92db3695496ee65f5401edaf001",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000006",
+        "modelProfile": "economy",
+        "teacherGuidance": "Puoi richiamare brevemente IP e le porte, ma non ripetere l'instradamento e non anticipare controllo di congestione o protocolli applicativi. Usa una sequenza numerica concreta per mostrare perdita, ACK e ritrasmissione.",
+        "depth": "complete",
+        "titolo": "Affidabilità TCP: numerazione, ACK e ritrasmissione",
+        "sottotitolo": "Come TCP rileva e recupera segmenti mancanti",
+        "difficolta": "4 — avanzata",
+        "concettiChiave": [
+          "numero di sequenza",
+          "acknowledgement",
+          "timeout",
+          "ritrasmissione",
+          "ordinamento dei segmenti"
+        ],
+        "obiettivi": [
+          "Spiegare il ruolo dei numeri di sequenza e degli ACK",
+          "Ricostruire cosa accade quando un segmento viene perso",
+          "Distinguere l'affidabilità di TCP dall'instradamento svolto da IP"
+        ],
+        "udaTitle": "Dalla rete al trasporto",
+        "udaContext": {
+          "title": "Dalla rete al trasporto",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Indirizzamento e instradamento IP",
+              "sottotitolo": "Portare i pacchetti fra reti diverse"
+            },
+            {
+              "position": 2,
+              "titolo": "Porte e multiplexing",
+              "sottotitolo": "Associare i flussi alle applicazioni"
+            },
+            {
+              "position": 3,
+              "titolo": "Affidabilità TCP: numerazione, ACK e ritrasmissione",
+              "sottotitolo": "Come TCP rileva e recupera segmenti mancanti"
+            },
+            {
+              "position": 4,
+              "titolo": "Controllo di flusso e congestione",
+              "sottotitolo": "Adattare la velocità di trasmissione"
+            },
+            {
+              "position": 5,
+              "titolo": "Protocolli applicativi",
+              "sottotitolo": "HTTP, DNS e posta elettronica"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lt01-07",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lt01-07.md",
+      "candidateBodySha256": "9447bad3df5c8e0a79d4cd834ff9d4e4ad57c5a94901fceeb5ca6ec7e09d1eb4",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000007",
+        "modelProfile": "economy",
+        "teacherGuidance": "Usa un breve esempio inventato ma dichiaratamente esemplificativo; mostra il metodo di analisi senza anticipare il confronto sistematico fra fonti discordanti.",
+        "depth": "complete",
+        "titolo": "Leggere una fonte storica: autore, contesto e intenzione",
+        "sottotitolo": "Distinguere ciò che la fonte dice da ciò che possiamo inferire",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "fonte primaria",
+          "contesto",
+          "punto di vista",
+          "attendibilità",
+          "inferenza"
+        ],
+        "obiettivi": [
+          "Distinguere osservazione e interpretazione di una fonte",
+          "Ricostruire autore, destinatario, contesto e intenzione",
+          "Valutare limiti e attendibilità senza ridurre la fonte a vera o falsa"
+        ],
+        "udaTitle": "Il lavoro dello storico",
+        "udaContext": {
+          "title": "Il lavoro dello storico",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Tracce, fonti e documenti",
+              "sottotitolo": "Come il passato diventa conoscibile"
+            },
+            {
+              "position": 2,
+              "titolo": "Fonti primarie e secondarie",
+              "sottotitolo": "Origine e funzione delle testimonianze"
+            },
+            {
+              "position": 3,
+              "titolo": "Leggere una fonte storica: autore, contesto e intenzione",
+              "sottotitolo": "Distinguere ciò che la fonte dice da ciò che possiamo inferire"
+            },
+            {
+              "position": 4,
+              "titolo": "Confrontare fonti discordanti",
+              "sottotitolo": "Corroborazione e conflitto fra testimonianze"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lt01-08",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lt01-08.md",
+      "candidateBodySha256": "dd2c39c9b258418c47dbeb4ff591d267323f3bb8320f91181cd9ab62ab0abdb4",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000008",
+        "modelProfile": "economy",
+        "teacherGuidance": "Parti dall'errore quotidiano «peso 60 kg», correggilo senza umiliare lo studente e includi un calcolo sulla Terra e uno qualitativo sulla Luna.",
+        "depth": "complete",
+        "titolo": "Massa e peso non sono la stessa cosa",
+        "sottotitolo": "Comprendere grandezze, unità di misura e relazione fisica",
+        "difficolta": "2 — base",
+        "concettiChiave": [
+          "massa",
+          "forza peso",
+          "accelerazione di gravità",
+          "chilogrammo",
+          "newton"
+        ],
+        "obiettivi": [
+          "Distinguere massa e forza peso sul piano concettuale",
+          "Usare correttamente chilogrammo e newton",
+          "Applicare P = m·g in situazioni semplici spiegandone il significato"
+        ],
+        "udaTitle": "Forze e movimento",
+        "udaContext": {
+          "title": "Forze e movimento",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Che cos'è una forza",
+              "sottotitolo": "Interazioni ed effetti sul moto"
+            },
+            {
+              "position": 2,
+              "titolo": "Massa e peso non sono la stessa cosa",
+              "sottotitolo": "Comprendere grandezze, unità di misura e relazione fisica"
+            },
+            {
+              "position": 3,
+              "titolo": "Le leggi della dinamica",
+              "sottotitolo": "Forza risultante e accelerazione"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lt01-09",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lt01-09.md",
+      "candidateBodySha256": "f851db4263e0192c63cd27ca843b7d325fe27b2aa5b06688ef94c5d468bcf557",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000009",
+        "modelProfile": "economy",
+        "teacherGuidance": "Usa due frammenti di codice brevi, una tabella di traccia e una correzione motivata; non introdurre cicli annidati.",
+        "depth": "complete",
+        "titolo": "Trovare un errore in un ciclo Python",
+        "sottotitolo": "Tracciare lo stato del programma invece di procedere per tentativi",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "ciclo for",
+          "range",
+          "indice",
+          "stato delle variabili",
+          "tracciamento"
+        ],
+        "obiettivi": [
+          "Eseguire manualmente il tracciamento di un ciclo",
+          "Distinguere errore di sintassi, runtime e logica",
+          "Correggere un errore off-by-one motivando la modifica"
+        ],
+        "udaTitle": "Programmazione iterativa",
+        "udaContext": {
+          "title": "Programmazione iterativa",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 4,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Ripetere istruzioni con for",
+              "sottotitolo": "Iterazione su sequenze"
+            },
+            {
+              "position": 2,
+              "titolo": "La funzione range",
+              "sottotitolo": "Estremi, passo e valori prodotti"
+            },
+            {
+              "position": 3,
+              "titolo": "Accumulatori e contatori",
+              "sottotitolo": "Aggiornare lo stato a ogni iterazione"
+            },
+            {
+              "position": 4,
+              "titolo": "Trovare un errore in un ciclo Python",
+              "sottotitolo": "Tracciare lo stato del programma invece di procedere per tentativi"
+            },
+            {
+              "position": 5,
+              "titolo": "Cicli annidati",
+              "sottotitolo": "Iterazioni su due dimensioni"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-tuning-lt01-10",
+      "split": "tuning",
+      "profile": "economy",
+      "fixturePath": "candidates/lt01-10.md",
+      "candidateBodySha256": "e5cf8f1c25ef2366e52ff99785e1372b6435d7f82cfe971c2737922bdf95f8c5",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000010",
+        "modelProfile": "economy",
+        "teacherGuidance": "Sviluppa un esempio scolastico controverso ma non politico; fai vedere perché una ragione è pertinente e un'altra no, senza anticipare una tassonomia delle fallacie.",
+        "depth": "complete",
+        "titolo": "Costruire un'argomentazione: tesi, ragioni ed evidenze",
+        "sottotitolo": "Dalla semplice opinione a una posizione sostenuta",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "tesi",
+          "argomento",
+          "evidenza",
+          "controargomento",
+          "confutazione"
+        ],
+        "obiettivi": [
+          "Distinguere una tesi da una preferenza personale",
+          "Collegare ragioni ed evidenze alla tesi",
+          "Considerare un controargomento e rispondere in modo pertinente"
+        ],
+        "udaTitle": "Scrittura argomentativa",
+        "udaContext": {
+          "title": "Scrittura argomentativa",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Opinioni e questioni discutibili",
+              "sottotitolo": "Quando ha senso argomentare"
+            },
+            {
+              "position": 2,
+              "titolo": "Costruire un'argomentazione: tesi, ragioni ed evidenze",
+              "sottotitolo": "Dalla semplice opinione a una posizione sostenuta"
+            },
+            {
+              "position": 3,
+              "titolo": "Organizzare il testo argomentativo",
+              "sottotitolo": "Introduzione, sviluppo e conclusione"
+            },
+            {
+              "position": 4,
+              "titolo": "Fallacie argomentative",
+              "sottotitolo": "Riconoscere ragionamenti ingannevoli"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-holdout-lt01-11",
+      "split": "holdout",
+      "profile": "economy",
+      "fixturePath": "candidates/lt01-11.md",
+      "candidateBodySha256": "74882aef16567ae53330fd669bdde83107a298ae539d42c6f20f51e2db6868c3",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000011",
+        "modelProfile": "economy",
+        "teacherGuidance": "Svolgi almeno due problemi completi con dati realistici, esplicita ogni conversione e verifica le unità; non introdurre il reagente limitante.",
+        "depth": "in_depth",
+        "titolo": "Dal rapporto molare alla massa dei prodotti",
+        "sottotitolo": "Risolvere un problema stechiometrico controllando unità e passaggi",
+        "difficolta": "4 — avanzata",
+        "concettiChiave": [
+          "equazione bilanciata",
+          "mole",
+          "massa molare",
+          "rapporto stechiometrico",
+          "controllo dimensionale"
+        ],
+        "obiettivi": [
+          "Ricavare rapporti molari da un'equazione bilanciata",
+          "Convertire massa, moli e massa del prodotto in una catena motivata",
+          "Controllare plausibilità e unità del risultato"
+        ],
+        "udaTitle": "Calcoli chimici",
+        "udaContext": {
+          "title": "Calcoli chimici",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "La mole e il numero di Avogadro",
+              "sottotitolo": "Contare particelle attraverso la massa"
+            },
+            {
+              "position": 2,
+              "titolo": "Bilanciare le reazioni chimiche",
+              "sottotitolo": "Conservazione degli atomi"
+            },
+            {
+              "position": 3,
+              "titolo": "Dal rapporto molare alla massa dei prodotti",
+              "sottotitolo": "Risolvere un problema stechiometrico controllando unità e passaggi"
+            },
+            {
+              "position": 4,
+              "titolo": "Reagente limitante",
+              "sottotitolo": "Quando un reagente si esaurisce per primo"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-economy-holdout-lt01-12",
+      "split": "holdout",
+      "profile": "economy",
+      "fixturePath": "candidates/lt01-12.md",
+      "candidateBodySha256": "628f5f3d0c25541f248342352bb47217ced55f80a300bc37ea811d5fe72bd6ff",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000012",
+        "modelProfile": "economy",
+        "teacherGuidance": "Confronta esempi biologici, ambientali e organizzativi; evita di associare positivo a buono e negativo a cattivo; non sviluppare il tema dei ritardi.",
+        "depth": "in_depth",
+        "titolo": "Feedback positivo e negativo nei sistemi",
+        "sottotitolo": "Capire come una conseguenza può amplificare o contrastare una variazione",
+        "difficolta": "4 — avanzata",
+        "concettiChiave": [
+          "sistema",
+          "variabile",
+          "retroazione",
+          "feedback positivo",
+          "feedback negativo",
+          "equilibrio dinamico"
+        ],
+        "obiettivi": [
+          "Riconoscere la struttura causale di un circuito di feedback",
+          "Distinguere feedback positivo e negativo dagli esiti desiderabili o indesiderabili",
+          "Costruire e spiegare semplici catene causali in contesti diversi"
+        ],
+        "udaTitle": "Pensare per sistemi",
+        "udaContext": {
+          "title": "Pensare per sistemi",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Elementi e confini di un sistema",
+              "sottotitolo": "Scegliere cosa osservare"
+            },
+            {
+              "position": 2,
+              "titolo": "Relazioni causali",
+              "sottotitolo": "Leggere variazioni e conseguenze"
+            },
+            {
+              "position": 3,
+              "titolo": "Feedback positivo e negativo nei sistemi",
+              "sottotitolo": "Capire come una conseguenza può amplificare o contrastare una variazione"
+            },
+            {
+              "position": 4,
+              "titolo": "Ritardi e comportamenti inattesi",
+              "sottotitolo": "Perché gli effetti non sono sempre immediati"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lm02-01",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lm02-01.md",
+      "candidateBodySha256": "f1cd3f78c14fcc348b8bf1755b483435d5f1613e525ba87dd28f12b50ee1bfac",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000013",
+        "modelProfile": "quality",
+        "teacherGuidance": "Usa esempi vicini alla vita scolastica senza anticipare topologie e modello a livelli.",
+        "depth": "synthetic",
+        "titolo": "Che cos'è una rete informatica",
+        "sottotitolo": "Nodi, collegamenti e scambio di informazioni",
+        "difficolta": "1 — introduttiva",
+        "concettiChiave": [
+          "nodo",
+          "collegamento",
+          "protocollo",
+          "risorsa condivisa"
+        ],
+        "obiettivi": [
+          "Definire una rete informatica con parole proprie",
+          "Distinguere nodi, collegamenti e protocolli",
+          "Riconoscere esempi quotidiani di risorse condivise"
+        ],
+        "udaTitle": "Fondamenti di reti",
+        "udaContext": {
+          "title": "Fondamenti di reti",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 1,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Che cos'è una rete informatica",
+              "sottotitolo": "Nodi, collegamenti e scambio di informazioni"
+            },
+            {
+              "position": 2,
+              "titolo": "Tipi di rete e topologie",
+              "sottotitolo": "LAN, WAN e forme di collegamento"
+            },
+            {
+              "position": 3,
+              "titolo": "Il modello a livelli",
+              "sottotitolo": "Perché i protocolli sono organizzati"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lm02-02",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lm02-02.md",
+      "candidateBodySha256": "8048f43b6dc05d988a812fcfab518a9377163f337aaa9fac2e86c31938774e59",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000014",
+        "modelProfile": "quality",
+        "teacherGuidance": "Presenta la procedura in passi verificabili e associa a ogni parametro la conseguenza concreta di un valore errato.",
+        "depth": "complete",
+        "titolo": "Configurare un indirizzo IPv4 statico",
+        "sottotitolo": "Procedura, controlli e diagnosi degli errori comuni",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "indirizzo IPv4",
+          "subnet mask",
+          "gateway predefinito",
+          "DNS",
+          "verifica della configurazione"
+        ],
+        "obiettivi": [
+          "Configurare correttamente i parametri IPv4 di un host",
+          "Verificare la configurazione con controlli progressivi",
+          "Diagnosticare errori comuni senza procedere per tentativi casuali"
+        ],
+        "udaTitle": "Configurazione e diagnostica di rete",
+        "udaContext": {
+          "title": "Configurazione e diagnostica di rete",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Indirizzi IPv4 e subnet mask",
+              "sottotitolo": "Struttura e appartenenza alla rete"
+            },
+            {
+              "position": 2,
+              "titolo": "Configurare un indirizzo IPv4 statico",
+              "sottotitolo": "Procedura, controlli e diagnosi degli errori comuni"
+            },
+            {
+              "position": 3,
+              "titolo": "DHCP",
+              "sottotitolo": "Assegnazione automatica dei parametri di rete"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lm02-03",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lm02-03.md",
+      "candidateBodySha256": "60f35d8a08af26c73f2a2a7b05b3b837d1f15d2f282ed5a8e0d4c8b7b57c2d44",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000015",
+        "modelProfile": "quality",
+        "teacherGuidance": "Costruisci la spiegazione attorno a esempi osservabili e includi almeno un caso in cui agiscono più meccanismi insieme.",
+        "depth": "complete",
+        "titolo": "Conduzione, convezione e irraggiamento",
+        "sottotitolo": "Riconoscere i meccanismi di trasferimento del calore",
+        "difficolta": "2 — base",
+        "concettiChiave": [
+          "conduzione",
+          "convezione",
+          "irraggiamento",
+          "trasferimento di energia"
+        ],
+        "obiettivi": [
+          "Distinguere i tre meccanismi di trasferimento del calore",
+          "Classificare situazioni reali motivando la scelta",
+          "Comprendere che più meccanismi possono agire contemporaneamente"
+        ],
+        "udaTitle": "Energia termica",
+        "udaContext": {
+          "title": "Energia termica",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Temperatura e calore",
+              "sottotitolo": "Due grandezze da non confondere"
+            },
+            {
+              "position": 2,
+              "titolo": "Conduzione, convezione e irraggiamento",
+              "sottotitolo": "Riconoscere i meccanismi di trasferimento del calore"
+            },
+            {
+              "position": 3,
+              "titolo": "Equilibrio termico",
+              "sottotitolo": "Evoluzione dei sistemi a contatto"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lm02-04",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lm02-04.md",
+      "candidateBodySha256": "757f98a415997581c0998f0de872f825f47ded4b6f8fcbd8987745f389b5ef36",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000016",
+        "modelProfile": "quality",
+        "teacherGuidance": "Inserisci esercizi di difficoltà crescente con soluzione completa, passaggio per passaggio e verifica finale; commenta almeno un errore tipico.",
+        "depth": "in_depth",
+        "titolo": "Equazioni di primo grado: metodo e verifica",
+        "sottotitolo": "Dalla trasformazione dell'equazione al controllo del risultato",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "principi di equivalenza",
+          "isolamento dell'incognita",
+          "controllo della soluzione",
+          "errori di segno"
+        ],
+        "obiettivi": [
+          "Risolvere equazioni di primo grado motivando ogni trasformazione",
+          "Verificare una soluzione per sostituzione",
+          "Riconoscere e correggere gli errori di segno più frequenti"
+        ],
+        "udaTitle": "Equazioni e problemi",
+        "udaContext": {
+          "title": "Equazioni e problemi",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Uguaglianze e principi di equivalenza",
+              "sottotitolo": "Le trasformazioni che conservano le soluzioni"
+            },
+            {
+              "position": 2,
+              "titolo": "Equazioni di primo grado: metodo e verifica",
+              "sottotitolo": "Dalla trasformazione dell'equazione al controllo del risultato"
+            },
+            {
+              "position": 3,
+              "titolo": "Problemi risolvibili con equazioni",
+              "sottotitolo": "Tradurre un testo in un modello algebrico"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-holdout-lm02-05",
+      "split": "holdout",
+      "profile": "quality",
+      "fixturePath": "candidates/lm02-05.md",
+      "candidateBodySha256": "e6d543f568f35431d68fe007119c9f47f3cc4c799887a5e1d5e1920af3d7b4b5",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000017",
+        "modelProfile": "quality",
+        "teacherGuidance": "Usa un caso unitario abbastanza ricco da attraversare 1NF, 2NF e 3NF; esplicita dipendenze, chiavi, anomalie e motivazione di ogni decomposizione.",
+        "depth": "in_depth",
+        "titolo": "Normalizzazione dei database fino alla terza forma normale",
+        "sottotitolo": "Dipendenze, anomalie e decomposizione delle relazioni",
+        "difficolta": "5 — avanzata",
+        "concettiChiave": [
+          "dipendenza funzionale",
+          "chiave candidata",
+          "prima forma normale",
+          "seconda forma normale",
+          "terza forma normale",
+          "decomposizione"
+        ],
+        "obiettivi": [
+          "Individuare dipendenze funzionali e chiavi candidate",
+          "Riconoscere violazioni di 1NF, 2NF e 3NF",
+          "Normalizzare una relazione motivando ogni decomposizione",
+          "Valutare le anomalie eliminate dal nuovo schema"
+        ],
+        "udaTitle": "Progettazione logica dei database",
+        "udaContext": {
+          "title": "Progettazione logica dei database",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 4,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Dal modello concettuale al modello relazionale",
+              "sottotitolo": "Traduzione di entità e relazioni"
+            },
+            {
+              "position": 2,
+              "titolo": "Chiavi e vincoli di integrità",
+              "sottotitolo": "Identificare e proteggere i dati"
+            },
+            {
+              "position": 3,
+              "titolo": "Dipendenze funzionali",
+              "sottotitolo": "Determinanti e attributi dipendenti"
+            },
+            {
+              "position": 4,
+              "titolo": "Normalizzazione dei database fino alla terza forma normale",
+              "sottotitolo": "Dipendenze, anomalie e decomposizione delle relazioni"
+            },
+            {
+              "position": 5,
+              "titolo": "Progettazione fisica e indici",
+              "sottotitolo": "Prestazioni e accesso ai dati"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-holdout-lm02-06",
+      "split": "holdout",
+      "profile": "quality",
+      "fixturePath": "candidates/lm02-06.md",
+      "candidateBodySha256": "59e2dfb26ba6d428d77099117b2337710863e92db3695496ee65f5401edaf001",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000018",
+        "modelProfile": "quality",
+        "teacherGuidance": "Puoi richiamare brevemente IP e le porte, ma non ripetere l'instradamento e non anticipare controllo di congestione o protocolli applicativi. Usa una sequenza numerica concreta per mostrare perdita, ACK e ritrasmissione.",
+        "depth": "complete",
+        "titolo": "Affidabilità TCP: numerazione, ACK e ritrasmissione",
+        "sottotitolo": "Come TCP rileva e recupera segmenti mancanti",
+        "difficolta": "4 — avanzata",
+        "concettiChiave": [
+          "numero di sequenza",
+          "acknowledgement",
+          "timeout",
+          "ritrasmissione",
+          "ordinamento dei segmenti"
+        ],
+        "obiettivi": [
+          "Spiegare il ruolo dei numeri di sequenza e degli ACK",
+          "Ricostruire cosa accade quando un segmento viene perso",
+          "Distinguere l'affidabilità di TCP dall'instradamento svolto da IP"
+        ],
+        "udaTitle": "Dalla rete al trasporto",
+        "udaContext": {
+          "title": "Dalla rete al trasporto",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Indirizzamento e instradamento IP",
+              "sottotitolo": "Portare i pacchetti fra reti diverse"
+            },
+            {
+              "position": 2,
+              "titolo": "Porte e multiplexing",
+              "sottotitolo": "Associare i flussi alle applicazioni"
+            },
+            {
+              "position": 3,
+              "titolo": "Affidabilità TCP: numerazione, ACK e ritrasmissione",
+              "sottotitolo": "Come TCP rileva e recupera segmenti mancanti"
+            },
+            {
+              "position": 4,
+              "titolo": "Controllo di flusso e congestione",
+              "sottotitolo": "Adattare la velocità di trasmissione"
+            },
+            {
+              "position": 5,
+              "titolo": "Protocolli applicativi",
+              "sottotitolo": "HTTP, DNS e posta elettronica"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lt01-07",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lt01-07.md",
+      "candidateBodySha256": "9447bad3df5c8e0a79d4cd834ff9d4e4ad57c5a94901fceeb5ca6ec7e09d1eb4",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000019",
+        "modelProfile": "quality",
+        "teacherGuidance": "Usa un breve esempio inventato ma dichiaratamente esemplificativo; mostra il metodo di analisi senza anticipare il confronto sistematico fra fonti discordanti.",
+        "depth": "complete",
+        "titolo": "Leggere una fonte storica: autore, contesto e intenzione",
+        "sottotitolo": "Distinguere ciò che la fonte dice da ciò che possiamo inferire",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "fonte primaria",
+          "contesto",
+          "punto di vista",
+          "attendibilità",
+          "inferenza"
+        ],
+        "obiettivi": [
+          "Distinguere osservazione e interpretazione di una fonte",
+          "Ricostruire autore, destinatario, contesto e intenzione",
+          "Valutare limiti e attendibilità senza ridurre la fonte a vera o falsa"
+        ],
+        "udaTitle": "Il lavoro dello storico",
+        "udaContext": {
+          "title": "Il lavoro dello storico",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Tracce, fonti e documenti",
+              "sottotitolo": "Come il passato diventa conoscibile"
+            },
+            {
+              "position": 2,
+              "titolo": "Fonti primarie e secondarie",
+              "sottotitolo": "Origine e funzione delle testimonianze"
+            },
+            {
+              "position": 3,
+              "titolo": "Leggere una fonte storica: autore, contesto e intenzione",
+              "sottotitolo": "Distinguere ciò che la fonte dice da ciò che possiamo inferire"
+            },
+            {
+              "position": 4,
+              "titolo": "Confrontare fonti discordanti",
+              "sottotitolo": "Corroborazione e conflitto fra testimonianze"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lt01-08",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lt01-08.md",
+      "candidateBodySha256": "dd2c39c9b258418c47dbeb4ff591d267323f3bb8320f91181cd9ab62ab0abdb4",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000020",
+        "modelProfile": "quality",
+        "teacherGuidance": "Parti dall'errore quotidiano «peso 60 kg», correggilo senza umiliare lo studente e includi un calcolo sulla Terra e uno qualitativo sulla Luna.",
+        "depth": "complete",
+        "titolo": "Massa e peso non sono la stessa cosa",
+        "sottotitolo": "Comprendere grandezze, unità di misura e relazione fisica",
+        "difficolta": "2 — base",
+        "concettiChiave": [
+          "massa",
+          "forza peso",
+          "accelerazione di gravità",
+          "chilogrammo",
+          "newton"
+        ],
+        "obiettivi": [
+          "Distinguere massa e forza peso sul piano concettuale",
+          "Usare correttamente chilogrammo e newton",
+          "Applicare P = m·g in situazioni semplici spiegandone il significato"
+        ],
+        "udaTitle": "Forze e movimento",
+        "udaContext": {
+          "title": "Forze e movimento",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Che cos'è una forza",
+              "sottotitolo": "Interazioni ed effetti sul moto"
+            },
+            {
+              "position": 2,
+              "titolo": "Massa e peso non sono la stessa cosa",
+              "sottotitolo": "Comprendere grandezze, unità di misura e relazione fisica"
+            },
+            {
+              "position": 3,
+              "titolo": "Le leggi della dinamica",
+              "sottotitolo": "Forza risultante e accelerazione"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lt01-09",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lt01-09.md",
+      "candidateBodySha256": "f851db4263e0192c63cd27ca843b7d325fe27b2aa5b06688ef94c5d468bcf557",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000021",
+        "modelProfile": "quality",
+        "teacherGuidance": "Usa due frammenti di codice brevi, una tabella di traccia e una correzione motivata; non introdurre cicli annidati.",
+        "depth": "complete",
+        "titolo": "Trovare un errore in un ciclo Python",
+        "sottotitolo": "Tracciare lo stato del programma invece di procedere per tentativi",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "ciclo for",
+          "range",
+          "indice",
+          "stato delle variabili",
+          "tracciamento"
+        ],
+        "obiettivi": [
+          "Eseguire manualmente il tracciamento di un ciclo",
+          "Distinguere errore di sintassi, runtime e logica",
+          "Correggere un errore off-by-one motivando la modifica"
+        ],
+        "udaTitle": "Programmazione iterativa",
+        "udaContext": {
+          "title": "Programmazione iterativa",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 4,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Ripetere istruzioni con for",
+              "sottotitolo": "Iterazione su sequenze"
+            },
+            {
+              "position": 2,
+              "titolo": "La funzione range",
+              "sottotitolo": "Estremi, passo e valori prodotti"
+            },
+            {
+              "position": 3,
+              "titolo": "Accumulatori e contatori",
+              "sottotitolo": "Aggiornare lo stato a ogni iterazione"
+            },
+            {
+              "position": 4,
+              "titolo": "Trovare un errore in un ciclo Python",
+              "sottotitolo": "Tracciare lo stato del programma invece di procedere per tentativi"
+            },
+            {
+              "position": 5,
+              "titolo": "Cicli annidati",
+              "sottotitolo": "Iterazioni su due dimensioni"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-tuning-lt01-10",
+      "split": "tuning",
+      "profile": "quality",
+      "fixturePath": "candidates/lt01-10.md",
+      "candidateBodySha256": "e5cf8f1c25ef2366e52ff99785e1372b6435d7f82cfe971c2737922bdf95f8c5",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000022",
+        "modelProfile": "quality",
+        "teacherGuidance": "Sviluppa un esempio scolastico controverso ma non politico; fai vedere perché una ragione è pertinente e un'altra no, senza anticipare una tassonomia delle fallacie.",
+        "depth": "complete",
+        "titolo": "Costruire un'argomentazione: tesi, ragioni ed evidenze",
+        "sottotitolo": "Dalla semplice opinione a una posizione sostenuta",
+        "difficolta": "3 — intermedia",
+        "concettiChiave": [
+          "tesi",
+          "argomento",
+          "evidenza",
+          "controargomento",
+          "confutazione"
+        ],
+        "obiettivi": [
+          "Distinguere una tesi da una preferenza personale",
+          "Collegare ragioni ed evidenze alla tesi",
+          "Considerare un controargomento e rispondere in modo pertinente"
+        ],
+        "udaTitle": "Scrittura argomentativa",
+        "udaContext": {
+          "title": "Scrittura argomentativa",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 2,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Opinioni e questioni discutibili",
+              "sottotitolo": "Quando ha senso argomentare"
+            },
+            {
+              "position": 2,
+              "titolo": "Costruire un'argomentazione: tesi, ragioni ed evidenze",
+              "sottotitolo": "Dalla semplice opinione a una posizione sostenuta"
+            },
+            {
+              "position": 3,
+              "titolo": "Organizzare il testo argomentativo",
+              "sottotitolo": "Introduzione, sviluppo e conclusione"
+            },
+            {
+              "position": 4,
+              "titolo": "Fallacie argomentative",
+              "sottotitolo": "Riconoscere ragionamenti ingannevoli"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-holdout-lt01-11",
+      "split": "holdout",
+      "profile": "quality",
+      "fixturePath": "candidates/lt01-11.md",
+      "candidateBodySha256": "74882aef16567ae53330fd669bdde83107a298ae539d42c6f20f51e2db6868c3",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000023",
+        "modelProfile": "quality",
+        "teacherGuidance": "Svolgi almeno due problemi completi con dati realistici, esplicita ogni conversione e verifica le unità; non introdurre il reagente limitante.",
+        "depth": "in_depth",
+        "titolo": "Dal rapporto molare alla massa dei prodotti",
+        "sottotitolo": "Risolvere un problema stechiometrico controllando unità e passaggi",
+        "difficolta": "4 — avanzata",
+        "concettiChiave": [
+          "equazione bilanciata",
+          "mole",
+          "massa molare",
+          "rapporto stechiometrico",
+          "controllo dimensionale"
+        ],
+        "obiettivi": [
+          "Ricavare rapporti molari da un'equazione bilanciata",
+          "Convertire massa, moli e massa del prodotto in una catena motivata",
+          "Controllare plausibilità e unità del risultato"
+        ],
+        "udaTitle": "Calcoli chimici",
+        "udaContext": {
+          "title": "Calcoli chimici",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "La mole e il numero di Avogadro",
+              "sottotitolo": "Contare particelle attraverso la massa"
+            },
+            {
+              "position": 2,
+              "titolo": "Bilanciare le reazioni chimiche",
+              "sottotitolo": "Conservazione degli atomi"
+            },
+            {
+              "position": 3,
+              "titolo": "Dal rapporto molare alla massa dei prodotti",
+              "sottotitolo": "Risolvere un problema stechiometrico controllando unità e passaggi"
+            },
+            {
+              "position": 4,
+              "titolo": "Reagente limitante",
+              "sottotitolo": "Quando un reagente si esaurisce per primo"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lr-quality-holdout-lt01-12",
+      "split": "holdout",
+      "profile": "quality",
+      "fixturePath": "candidates/lt01-12.md",
+      "candidateBodySha256": "628f5f3d0c25541f248342352bb47217ced55f80a300bc37ea811d5fe72bd6ff",
+      "request": {
+        "kind": "lesson_review",
+        "requestId": "10000000-0000-4000-8000-000000000024",
+        "modelProfile": "quality",
+        "teacherGuidance": "Confronta esempi biologici, ambientali e organizzativi; evita di associare positivo a buono e negativo a cattivo; non sviluppare il tema dei ritardi.",
+        "depth": "in_depth",
+        "titolo": "Feedback positivo e negativo nei sistemi",
+        "sottotitolo": "Capire come una conseguenza può amplificare o contrastare una variazione",
+        "difficolta": "4 — avanzata",
+        "concettiChiave": [
+          "sistema",
+          "variabile",
+          "retroazione",
+          "feedback positivo",
+          "feedback negativo",
+          "equilibrio dinamico"
+        ],
+        "obiettivi": [
+          "Riconoscere la struttura causale di un circuito di feedback",
+          "Distinguere feedback positivo e negativo dagli esiti desiderabili o indesiderabili",
+          "Costruire e spiegare semplici catene causali in contesti diversi"
+        ],
+        "udaTitle": "Pensare per sistemi",
+        "udaContext": {
+          "title": "Pensare per sistemi",
+          "descrizione": null,
+          "competenze": [],
+          "obiettivi": [],
+          "currentLessonPosition": 3,
+          "lessons": [
+            {
+              "position": 1,
+              "titolo": "Elementi e confini di un sistema",
+              "sottotitolo": "Scegliere cosa osservare"
+            },
+            {
+              "position": 2,
+              "titolo": "Relazioni causali",
+              "sottotitolo": "Leggere variazioni e conseguenze"
+            },
+            {
+              "position": 3,
+              "titolo": "Feedback positivo e negativo nei sistemi",
+              "sottotitolo": "Capire come una conseguenza può amplificare o contrastare una variazione"
+            },
+            {
+              "position": 4,
+              "titolo": "Ritardi e comportamenti inattesi",
+              "sottotitolo": "Perché gli effetti non sono sempre immediati"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

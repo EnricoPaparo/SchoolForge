@@ -63,5 +63,13 @@ describe('lesson advanced review', () => {
         issueCodes: ['invented'],
       }),
     ).toThrow('Codice della revisione non valido');
+    expect(() =>
+      validateLessonReviewProposal({
+        body: 'x',
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+        commentary: 'campo inatteso',
+      }),
+    ).toThrow('proprietà mancanti o non ammesse');
   });
 });

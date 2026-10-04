@@ -41,3 +41,21 @@ base e il loro accounting restano indipendenti.
 5. smoke autenticato con revisione ON/OFF e generazione completa.
 
 Nessuna lezione pubblicata viene modificata dai risultati delle verifiche.
+
+## Benchmark congelato
+
+Il corpus tracciato è in `lesson-review-benchmark-v1/`: 12 corpi base con
+SHA-256 (8 tuning e 4 holdout), riusati senza duplicazione per Economy e
+Quality. Il manifest chiuso produce quattro lotti indipendenti, ciascuno con il
+proprio tetto costi:
+
+```text
+pnpm --filter @schoolforge/functions benchmark:lesson-review -- \
+  --manifest=../documentazione/evidenze/lesson-review-benchmark-v1/manifest.json \
+  --split=tuning --profile=economy
+```
+
+Sostituire split e profile per gli altri tre lotti. Il comando richiede Node 22
+e parte sempre in dry-run. L'esecuzione reale richiede entrambi i flag espliciti
+documentati dalla CLI e una conferma interattiva che include il tetto del lotto.
+Il runner usa zero retry: ogni sample può produrre al massimo una chiamata.
