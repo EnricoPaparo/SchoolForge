@@ -83,13 +83,15 @@ export function retryPolicyFromConfig(config: AiRuntimeConfig | null, kind?: str
   const attemptTimeoutMs =
     kind === 'lesson'
       ? (config?.limits.lessonAttemptTimeoutMs ?? 180_000)
-      : Math.max(
-          1,
-          Math.min(
-            DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
-            config?.limits.attemptTimeoutMs ?? DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
-          ),
-        );
+      : kind === 'pool'
+        ? (config?.limits.poolAttemptTimeoutMs ?? 180_000)
+        : Math.max(
+            1,
+            Math.min(
+              DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
+              config?.limits.attemptTimeoutMs ?? DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
+            ),
+          );
   return {
     ...DEFAULT_OPENAI_RETRY_POLICY,
     maxRetries: Math.max(

@@ -8,10 +8,15 @@ describe('lesson generation timeout budget', () => {
   const config = {
     limits: { attemptTimeoutMs: 60_000, maxApplicationRetries: 1 },
   } as AiRuntimeConfig;
-  it('allows long lessons while preserving the short policy for maps, pools and visual plans', () => {
+  it('allows long lessons and pools while preserving the short policy for maps and visual plans', () => {
     const lesson = retryPolicyFromConfig(config, 'lesson');
     expect(lesson.attemptTimeoutMs).toBe(180_000);
-    for (const kind of ['pool', 'concept_map', 'visual_plan_proposal']) {
+    const pool = retryPolicyFromConfig(config, 'pool');
+    expect(pool.attemptTimeoutMs).toBe(180_000);
+    expect(pool.maxRetries).toBe(1);
+    expect(computeContentLeaseTtlMs(pool)).toBeGreaterThan(360_000);
+    expect(computeContentLeaseTtlMs(pool)).toBeLessThan(420_000);
+    for (const kind of ['concept_map', 'visual_plan_proposal']) {
       expect(retryPolicyFromConfig(config, kind).attemptTimeoutMs).toBe(60_000);
     }
     expect(computeContentLeaseTtlMs(lesson)).toBeGreaterThan(360_000);
@@ -36,5 +41,19 @@ describe('lesson generation timeout budget', () => {
     );
     expect(policy.attemptTimeoutMs).toBe(90_000);
     expect(policy.maxRetries).toBe(0);
+  });
+  it('honors a restricted pool timeout independently of the lesson timeout', () => {
+    const configured = {
+      ...config,
+      limits: {
+        ...config.limits,
+        poolAttemptTimeoutMs: 90_000,
+        lessonAttemptTimeoutMs: 120_000,
+        maxApplicationRetries: 0,
+      },
+    };
+    expect(retryPolicyFromConfig(configured, 'pool').attemptTimeoutMs).toBe(90_000);
+    expect(retryPolicyFromConfig(configured, 'pool').maxRetries).toBe(0);
+    expect(retryPolicyFromConfig(configured, 'lesson').attemptTimeoutMs).toBe(120_000);
   });
 });
