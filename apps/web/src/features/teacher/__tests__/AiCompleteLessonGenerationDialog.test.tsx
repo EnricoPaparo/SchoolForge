@@ -134,45 +134,57 @@ async function goToReview(
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
-  it('riprende un completamento salvato senza rigenerare lezione o revisione', async () => {
-    const { callables } = makeCallables();
-    const onCompleteDraft = vi.fn(async () => ({
-      imagesApplied: 0,
-      imagesSkipped: 0,
-      imagesFailed: 0,
-    }));
-    render(
-      <AiCompleteLessonGenerationDialog
-        context={{ ...CONTEXT, currentBody: '## Corpo salvato' }}
-        callables={callables}
-        resumeDraft={{
-          body: '## Corpo salvato',
-          message: 'Riprendi dalla mappa.',
-          options: {
-            level: 'balanced',
-            counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
-            modelProfile: 'quality',
-            reviewStatus: 'improved',
-          },
-        }}
-        onCompleteDraft={onCompleteDraft}
-        onClose={vi.fn()}
-      />,
-    );
+  it.each(['improved', 'disabled'] as const)(
+    'riprende un completamento con revisione %s senza nuove chiamate',
+    async (reviewStatus) => {
+      const { callables } = makeCallables();
+      const onCompleteDraft = vi.fn(async () => ({
+        imagesApplied: 0,
+        imagesSkipped: 0,
+        imagesFailed: 0,
+      }));
+      render(
+        <AiCompleteLessonGenerationDialog
+          context={{ ...CONTEXT, currentBody: '## Corpo salvato' }}
+          callables={callables}
+          resumeDraft={{
+            body: '## Corpo salvato',
+            message: 'Riprendi dalla mappa.',
+            options: {
+              level: 'balanced',
+              counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
+              modelProfile: 'quality',
+              reviewStatus,
+            },
+          }}
+          onCompleteDraft={onCompleteDraft}
+          onClose={vi.fn()}
+        />,
+      );
 
-    expect(screen.getByText('Riprendi dalla mappa.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Riprova completamento' }));
-    await screen.findByText('Il modello non ha individuato immagini didatticamente necessarie.');
-    expect(callables.preview).not.toHaveBeenCalled();
-    expect(callables.generate).not.toHaveBeenCalled();
-    expect(callables.previewReview).not.toHaveBeenCalled();
-    expect(callables.generateReview).not.toHaveBeenCalled();
-    expect(onCompleteDraft).toHaveBeenCalledWith(
-      '## Corpo salvato',
-      expect.any(Function),
-      expect.objectContaining({ modelProfile: 'quality' }),
-    );
-  });
+      expect(screen.getByText('Riprendi dalla mappa.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Riprova completamento' }));
+      await screen.findByText('Il modello non ha individuato immagini didatticamente necessarie.');
+      if (reviewStatus === 'improved') {
+        expect(screen.getByText('✓ Revisione didattica completata')).toBeTruthy();
+        expect(
+          screen.getByText('Il revisore ha controllato e migliorato il contenuto.'),
+        ).toBeTruthy();
+      } else {
+        expect(screen.getByText('Revisione non richiesta')).toBeTruthy();
+        expect(screen.queryByText('✓ Revisione didattica completata')).toBeNull();
+      }
+      expect(callables.preview).not.toHaveBeenCalled();
+      expect(callables.generate).not.toHaveBeenCalled();
+      expect(callables.previewReview).not.toHaveBeenCalled();
+      expect(callables.generateReview).not.toHaveBeenCalled();
+      expect(onCompleteDraft).toHaveBeenCalledWith(
+        '## Corpo salvato',
+        expect.any(Function),
+        expect.objectContaining({ modelProfile: 'quality' }),
+      );
+    },
+  );
 
   it('mostra uno switch grafico attivo per default e OFF salta davvero il revisore', async () => {
     const { callables } = makeCallables();
