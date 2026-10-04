@@ -48,6 +48,22 @@ export const POOL_MODEL_PROFILE_OPTIONS: readonly {
   },
 ];
 
+/** Politica specifica delle lezioni; le etichette non alterano pool/correzioni. */
+export const LESSON_MODEL_PROFILE_OPTIONS = [
+  {
+    value: 'economy' as const,
+    label: 'Economy',
+    modelId: 'gpt-5.6-luna',
+    description: 'Generazione efficiente e affidabile.',
+  },
+  {
+    value: 'quality' as const,
+    label: 'Quality',
+    modelId: 'gpt-6.1-sol',
+    description: 'Generazione con massima qualità didattica.',
+  },
+] as const;
+
 /** Stile del pool (mappa 1:1 sul `level` del payload; range difficoltà server). */
 export type PoolLevel = 'base' | 'balanced' | 'advanced';
 
@@ -361,6 +377,34 @@ export interface AiLessonGenerateResult {
 export interface AiLessonCallables {
   preview: (req: AiLessonContentRequest) => Promise<AiLessonPreviewResult>;
   generate: (req: AiLessonContentRequest) => Promise<AiLessonGenerateResult>;
+  previewReview?: (req: AiLessonReviewRequest) => Promise<AiLessonReviewPreviewResult>;
+  generateReview?: (req: AiLessonReviewRequest) => Promise<AiLessonReviewGenerateResult>;
+}
+
+export interface AiLessonReviewRequest {
+  kind: 'lesson_review';
+  requestId: string;
+  modelProfile: PoolModelProfile;
+  teacherGuidance?: string;
+  depth: LessonDepth;
+  titolo: string;
+  sottotitolo?: string;
+  difficolta: string;
+  udaTitle: string;
+  concettiChiave: string[];
+  obiettivi: string[];
+  udaContext: LessonUdaContext;
+  candidateBody: string;
+}
+export interface AiLessonReviewPreviewResult extends Omit<AiLessonPreviewResult, 'kind'> {
+  kind: 'lesson_review';
+}
+export interface AiLessonReviewGenerateResult extends Omit<
+  AiLessonGenerateResult,
+  'kind' | 'output'
+> {
+  kind: 'lesson_review';
+  output: { body: string; reviewOutcome: 'improved' | 'unchanged'; issueCodes: string[] };
 }
 
 /**
@@ -501,19 +545,43 @@ export function buildLessonContentRequest(params: {
   };
 }
 
+export function buildLessonReviewRequest(params: {
+  requestId: string;
+  base: AiLessonContentRequest;
+  candidateBody: string;
+}): AiLessonReviewRequest {
+  const { base } = params;
+  return {
+    kind: 'lesson_review',
+    requestId: params.requestId,
+    modelProfile: base.modelProfile,
+    depth: base.depth,
+    titolo: base.titolo,
+    difficolta: base.difficolta,
+    udaTitle: base.udaTitle,
+    concettiChiave: [...base.concettiChiave],
+    obiettivi: [...base.obiettivi],
+    udaContext: base.udaContext,
+    candidateBody: params.candidateBody,
+    ...(base.sottotitolo ? { sottotitolo: base.sottotitolo } : {}),
+    ...(base.teacherGuidance ? { teacherGuidance: base.teacherGuidance } : {}),
+  };
+}
+
 /** Crea i wrapper delle callable lezione su una `Functions` iniettata (testabile). */
 export function createAiLessonCallables(functions: Functions): AiLessonCallables {
-  const previewFn = httpsCallable<AiLessonContentRequest, AiLessonPreviewResult>(
-    functions,
-    'aiContentPreview',
-  );
-  const generateFn = httpsCallable<AiLessonContentRequest, AiLessonGenerateResult>(
-    functions,
-    'aiContentGenerate',
-    { timeout: 450_000 },
-  );
+  const previewFn = httpsCallable<
+    AiLessonContentRequest | AiLessonReviewRequest,
+    AiLessonPreviewResult | AiLessonReviewPreviewResult
+  >(functions, 'aiContentPreview');
+  const generateFn = httpsCallable<
+    AiLessonContentRequest | AiLessonReviewRequest,
+    AiLessonGenerateResult | AiLessonReviewGenerateResult
+  >(functions, 'aiContentGenerate', { timeout: 450_000 });
   return {
-    preview: async (req) => (await previewFn(req)).data,
-    generate: async (req) => (await generateFn(req)).data,
+    preview: async (req) => (await previewFn(req)).data as AiLessonPreviewResult,
+    generate: async (req) => (await generateFn(req)).data as AiLessonGenerateResult,
+    previewReview: async (req) => (await previewFn(req)).data as AiLessonReviewPreviewResult,
+    generateReview: async (req) => (await generateFn(req)).data as AiLessonReviewGenerateResult,
   };
 }

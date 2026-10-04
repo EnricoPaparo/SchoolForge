@@ -35,6 +35,27 @@ vi.mock('../../repository/pools/aiContentClient.js', async () => {
         actualCostMicroUsd: 3800,
         replayed: false,
       }),
+      previewReview: async () => ({
+        kind: 'lesson_review',
+        modelProfile: 'gpt-5.6-luna',
+        estimatedInputTokens: 900,
+        maxOutputTokens: 3500,
+        estimatedCostMicroUsd: 4000,
+        reservationCostMicroUsd: 9000,
+        requestedTotal: null,
+      }),
+      generateReview: async () => ({
+        status: 'completed',
+        kind: 'lesson_review',
+        modelProfile: 'gpt-5.6-luna',
+        output: {
+          body: '## Nuova bozza\n\nGenerata.',
+          reviewOutcome: 'unchanged',
+          issueCodes: [],
+        },
+        actualCostMicroUsd: 2000,
+        replayed: false,
+      }),
     }),
   };
 });

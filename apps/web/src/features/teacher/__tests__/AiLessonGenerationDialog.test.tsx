@@ -15,6 +15,8 @@ import type {
   AiLessonContentRequest,
   AiLessonGenerateResult,
   AiLessonPreviewResult,
+  AiLessonReviewGenerateResult,
+  AiLessonReviewPreviewResult,
   LessonAiContext,
 } from '../../repository/pools/aiContentClient.js';
 
@@ -66,6 +68,20 @@ function generateResult(over: Partial<AiLessonGenerateResult> = {}): AiLessonGen
     ...over,
   };
 }
+function reviewPreviewResult(): AiLessonReviewPreviewResult {
+  return { ...previewResult(), kind: 'lesson_review' };
+}
+function reviewGenerateResult(): AiLessonReviewGenerateResult {
+  return {
+    ...generateResult(),
+    kind: 'lesson_review',
+    output: {
+      body: '## Reti\n\nBozza revisionata.',
+      reviewOutcome: 'improved',
+      issueCodes: ['structure'],
+    },
+  };
+}
 
 function makeCallables(over: Partial<AiLessonCallables> = {}): {
   callables: AiLessonCallables;
@@ -83,6 +99,8 @@ function makeCallables(over: Partial<AiLessonCallables> = {}): {
       generateReqs.push(req);
       return generateResult();
     },
+    previewReview: vi.fn(async () => reviewPreviewResult()),
+    generateReview: vi.fn(async () => reviewGenerateResult()),
     ...over,
   };
   return { callables, previewReqs, generateReqs };
@@ -112,6 +130,19 @@ async function goToReview(callables: AiLessonCallables, onUseDraft = vi.fn()) {
 }
 
 describe('AiLessonGenerationDialog', () => {
+  it('attiva la revisione per default e OFF conserva il percorso a singola chiamata', async () => {
+    const { callables } = makeCallables();
+    const review = vi.mocked(callables.generateReview!);
+    renderDialog(callables);
+    const toggle = screen.getByRole('switch', { name: /Revisione avanzata/i });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('button', { name: 'Genera bozza' });
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByText('Bozza non revisionata');
+    expect(review).not.toHaveBeenCalled();
+  });
   it('shows the read-only context summary and "Editor vuoto"', () => {
     const { callables } = makeCallables();
     renderDialog(callables);
@@ -157,7 +188,7 @@ describe('AiLessonGenerationDialog', () => {
     await goToReview(callables, onUseDraft);
     fireEvent.click(screen.getByRole('button', { name: 'Usa questa bozza' }));
     expect(onUseDraft).toHaveBeenCalledTimes(1);
-    expect(onUseDraft.mock.calls[0][0]).toContain('Bozza generata');
+    expect(onUseDraft.mock.calls[0][0]).toContain('Bozza revisionata');
   });
 
   it('cancel does not call onUseDraft', async () => {
@@ -558,5 +589,23 @@ describe('AiLessonGenerationDialog — back to configure from review', () => {
     expect(previewReqs[1].requestId).not.toBe(previewReqs[0].requestId);
     expect(previewReqs[1].depth).toBe('in_depth');
     expect(previewReqs[1].teacherGuidance).toBe('tono formale');
+  });
+
+  it('does not offer a stale review retry after discard and a new preview failure', async () => {
+    let calls = 0;
+    const c = makeCallables({
+      preview: vi.fn(async () => {
+        calls += 1;
+        if (calls === 2) throw new Error('preview failed');
+        return previewResult();
+      }),
+    });
+    await goToReview(c.callables);
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Riprova solo revisione' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Riprova stima' })).toBeTruthy();
   });
 });

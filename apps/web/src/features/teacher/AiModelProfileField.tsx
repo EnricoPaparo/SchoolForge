@@ -5,9 +5,11 @@ import {
 export function AiModelProfileField({
   value,
   onChange,
+  options = POOL_MODEL_PROFILE_OPTIONS,
 }: {
   value: PoolModelProfile;
   onChange: (value: PoolModelProfile) => void;
+  options?: typeof POOL_MODEL_PROFILE_OPTIONS;
 }) {
   return (
     <label>
@@ -17,7 +19,7 @@ export function AiModelProfileField({
         value={value}
         onChange={(event) => onChange(event.target.value as PoolModelProfile)}
       >
-        {POOL_MODEL_PROFILE_OPTIONS.map((option) => (
+        {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label} — {option.modelId}
           </option>

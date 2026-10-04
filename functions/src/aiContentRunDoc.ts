@@ -11,21 +11,18 @@
  */
 
 import { Timestamp } from 'firebase-admin/firestore';
-import {
-  AI_CONTENT_CONTRACT_VERSION,
-  AI_CONTENT_LIMITS,
-  timestampToMillis,
-  utf8ByteLength,
-} from './aiContentCore.js';
+import { AI_CONTENT_CONTRACT_VERSION, timestampToMillis } from './aiContentCore.js';
 import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
 import { isValidStoredVisualProposalOutput } from './aiContentVisualProposal.js';
 import { isValidStoredVisualPlanProposalOutput } from './aiContentVisualPlanProposal.js';
 import { VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT } from './aiContentPayload.js';
+import { validateLessonProposal, validateLessonReviewProposal } from './aiContentValidation.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
 const RUN_KINDS = new Set([
   'pool',
   'lesson',
+  'lesson_review',
   'concept_map',
   'visual_proposal',
   'visual_plan_proposal',
@@ -88,11 +85,14 @@ function isCoherentCompletedOutput(
 ): boolean {
   if (typeof output !== 'object' || output === null || Array.isArray(output)) return false;
   const o = output as Record<string, unknown>;
-  if (kind === 'lesson') {
-    if ('questions' in o || 'conceptMapMarkdown' in o) return false;
-    const body = o.body;
-    if (typeof body !== 'string' || body.trim().length === 0) return false;
-    return utf8ByteLength(body) <= AI_CONTENT_LIMITS.MAX_LESSON_OUTPUT_BYTES;
+  if (kind === 'lesson' || kind === 'lesson_review') {
+    try {
+      if (kind === 'lesson_review') validateLessonReviewProposal(o);
+      else validateLessonProposal(o);
+      return true;
+    } catch {
+      return false;
+    }
   }
   // CONCEPT-MAP-01 — il run della mappa persiste il Markdown **canonico**
   // composto dal server, mai i tre campi grezzi. Il controllo non si limita a
@@ -116,7 +116,7 @@ function isCoherentCompletedOutput(
   return Array.isArray(o.questions) && o.questions.length > 0;
 }
 
-export function parseStoredRunDocument(data: unknown): StoredAiContentRun | null {
+function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null {
   if (typeof data !== 'object' || data === null) return null;
   const d = data as Record<string, unknown>;
   if (d.contractVersion !== AI_CONTENT_CONTRACT_VERSION) return null;
@@ -186,4 +186,13 @@ export function parseStoredRunDocument(data: unknown): StoredAiContentRun | null
     updatedAtMs,
     expireAtMs,
   };
+}
+
+/** Nessun documento non attendibile può far propagare eccezioni dal replay. */
+export function parseStoredRunDocument(data: unknown): StoredAiContentRun | null {
+  try {
+    return parseStoredRunDocumentUnsafe(data);
+  } catch {
+    return null;
+  }
 }

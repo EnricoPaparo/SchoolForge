@@ -5,6 +5,7 @@ import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
   buildLessonContentRequest,
+  buildLessonReviewRequest,
   describeAiContentError,
   formatMicroUsd,
   newRequestId,
@@ -14,11 +15,12 @@ import {
   LESSON_DEPTH_OPTIONS,
   LESSON_REQUIRED_FIELD_LABELS,
   MAX_TEACHER_GUIDANCE_CHARS,
-  POOL_MODEL_PROFILE_OPTIONS,
+  LESSON_MODEL_PROFILE_OPTIONS,
   type AiLessonCallables,
   type AiLessonContentRequest,
   type AiLessonGenerateResult,
   type AiLessonPreviewResult,
+  type AiLessonReviewGenerateResult,
   type LessonAiContext,
   type LessonDepth,
   type PoolModelProfile,
@@ -39,7 +41,14 @@ import { validateLessonDraftResult } from '../repository/pools/aiLessonDraft.js'
  * e genera una nuova `requestId`.
  */
 
-type Phase = 'configure' | 'previewing' | 'confirm' | 'generating' | 'review' | 'error';
+type Phase =
+  | 'configure'
+  | 'previewing'
+  | 'confirm'
+  | 'generating'
+  | 'reviewing'
+  | 'review'
+  | 'error';
 
 export function AiLessonGenerationDialog({
   context,
@@ -63,10 +72,14 @@ export function AiLessonGenerationDialog({
   const [modelProfile, setModelProfile] = useState<PoolModelProfile>(defaultModelProfile);
   const [depth, setDepth] = useState<LessonDepth>(DEFAULT_LESSON_DEPTH);
   const [guidance, setGuidance] = useState('');
+  const [advancedReview, setAdvancedReview] = useState(true);
   const [preview, setPreview] = useState<AiLessonPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiLessonContentRequest | null>(null);
   const [result, setResult] = useState<AiLessonGenerateResult | null>(null);
   const [draftBody, setDraftBody] = useState('');
+  const [baseBody, setBaseBody] = useState('');
+  const [reviewResult, setReviewResult] = useState<AiLessonReviewGenerateResult | null>(null);
+  const reviewRequestIdRef = useRef<string>(newRequestId());
   const [error, setError] = useState<string | null>(null);
   /** Conferma leggera di abbandono della bozza (AIGEN-UI-03-FOLLOW-UP). */
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
@@ -99,10 +112,17 @@ export function AiLessonGenerationDialog({
   function invalidateEstimate() {
     setPreview(null);
     setPreviewRequest(null);
+    setBaseBody('');
+    setReviewResult(null);
     setError(null);
     generateStartedRef.current = false;
     requestIdRef.current = newRequestId();
+    reviewRequestIdRef.current = newRequestId();
     setPhase('configure');
+  }
+  function updateAdvancedReview(next: boolean) {
+    setAdvancedReview(next);
+    invalidateEstimate();
   }
   function updateModelProfile(next: PoolModelProfile) {
     setModelProfile(next);
@@ -155,7 +175,9 @@ export function AiLessonGenerationDialog({
     setError(null);
     setPhase('generating');
     try {
-      const res = await callables.generate(previewRequest);
+      const generated = await callables.generate(previewRequest);
+      if (generated.kind !== 'lesson') throw new Error('unexpected_content_kind');
+      const res = generated;
       if (!mountedRef.current) return;
       const validated = validateLessonDraftResult(res);
       if (!validated.ok) {
@@ -166,7 +188,28 @@ export function AiLessonGenerationDialog({
         return;
       }
       setResult(res);
-      setDraftBody(validated.body);
+      setBaseBody(validated.body);
+      if (advancedReview) {
+        setPhase('reviewing');
+        const reviewRequest = buildLessonReviewRequest({
+          requestId: reviewRequestIdRef.current,
+          base: previewRequest,
+          candidateBody: validated.body,
+        });
+        if (!callables.previewReview || !callables.generateReview) {
+          throw new Error('advanced_review_unavailable');
+        }
+        await callables.previewReview(reviewRequest);
+        const reviewed = await callables.generateReview(reviewRequest);
+        if (reviewed.kind !== 'lesson_review') throw new Error('unexpected_review_kind');
+        const validatedReview = validateLessonDraftResult(reviewed, 'bozza revisionata');
+        if (!validatedReview.ok) throw new Error(validatedReview.error);
+        setReviewResult(reviewed);
+        setDraftBody(validatedReview.body);
+      } else {
+        setReviewResult(null);
+        setDraftBody(validated.body);
+      }
       setPhase('review');
     } catch (err) {
       if (!mountedRef.current) return;
@@ -176,13 +219,40 @@ export function AiLessonGenerationDialog({
     }
   }
 
+  async function retryAdvancedReview() {
+    if (!previewRequest || !baseBody) return;
+    setError(null);
+    setPhase('reviewing');
+    try {
+      const request = buildLessonReviewRequest({
+        requestId: reviewRequestIdRef.current,
+        base: previewRequest,
+        candidateBody: baseBody,
+      });
+      if (!callables.previewReview || !callables.generateReview) {
+        throw new Error('advanced_review_unavailable');
+      }
+      await callables.previewReview(request);
+      const reviewed = await callables.generateReview(request);
+      if (reviewed.kind !== 'lesson_review') throw new Error('unexpected_review_kind');
+      const validatedReview = validateLessonDraftResult(reviewed, 'bozza revisionata');
+      if (!validatedReview.ok) throw new Error(validatedReview.error);
+      setReviewResult(reviewed);
+      setDraftBody(validatedReview.body);
+      setPhase('review');
+    } catch (err) {
+      setError(describeAiContentError(err));
+      setPhase('error');
+    }
+  }
+
   function useDraft() {
     // Sostituisce SOLO il valore locale dell'editor; nessun salvataggio.
     onUseDraft(draftBody);
     onClose();
   }
 
-  const busy = phase === 'previewing' || phase === 'generating';
+  const busy = phase === 'previewing' || phase === 'generating' || phase === 'reviewing';
 
   /**
    * AIGEN-UI-03-FOLLOW-UP — dalla generazione in poi il dialog è
@@ -214,6 +284,8 @@ export function AiLessonGenerationDialog({
     invalidateEstimate();
   }
 
+  const canRetryAdvancedReview = previewRequest !== null && baseBody.length > 0;
+
   /** Unica uscita che chiude davvero durante la review; doppio click protetto. */
   function abandonDraft() {
     if (abandonStartedRef.current) return;
@@ -243,7 +315,7 @@ export function AiLessonGenerationDialog({
               role="radiogroup"
               aria-labelledby="ai-lesson-profile-label"
             >
-              {POOL_MODEL_PROFILE_OPTIONS.map((o) => (
+              {LESSON_MODEL_PROFILE_OPTIONS.map((o) => (
                 <button
                   key={o.value}
                   type="button"
@@ -258,6 +330,23 @@ export function AiLessonGenerationDialog({
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="ai-lesson-advanced-review">
+              Revisione avanzata
+            </label>
+            <label>
+              <input
+                id="ai-lesson-advanced-review"
+                type="checkbox"
+                role="switch"
+                checked={advancedReview}
+                onChange={(event) => updateAdvancedReview(event.target.checked)}
+              />{' '}
+              Controlla e migliora la bozza con il revisore didattico validato, indipendente dal
+              profilo di generazione.
+            </label>
           </div>
 
           {/* Profondità */}
@@ -364,12 +453,16 @@ export function AiLessonGenerationDialog({
         <div className={styles.estimate}>
           <ul className={styles.estimateList}>
             <li>
-              Profilo: {POOL_MODEL_PROFILE_OPTIONS.find((o) => o.value === modelProfile)?.label}
+              Profilo: {LESSON_MODEL_PROFILE_OPTIONS.find((o) => o.value === modelProfile)?.label}
             </li>
             <li>Profondità: {LESSON_DEPTH_OPTIONS.find((o) => o.value === depth)?.label}</li>
             <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
+            <li>
+              Revisione avanzata:{' '}
+              {advancedReview ? 'attiva (costo separato stimato dopo la bozza)' : 'disattivata'}
+            </li>
           </ul>
           <div className="dialog-actions">
             <button type="button" onClick={invalidateEstimate}>
@@ -389,6 +482,13 @@ export function AiLessonGenerationDialog({
         </div>
       )}
 
+      {phase === 'reviewing' && (
+        <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
+          <span className="spinner" aria-hidden="true" />
+          <span>Revisione avanzata della bozza…</span>
+        </div>
+      )}
+
       {phase === 'review' && result && (
         <>
           <p role="status">
@@ -398,6 +498,21 @@ export function AiLessonGenerationDialog({
               ? 'Consumo esatto non disponibile; è stato contabilizzato prudenzialmente il tetto indicato.'
               : `Costo reale: ${formatMicroUsd(result.actualCostMicroUsd)}.`}
           </p>
+          <p>
+            <strong>
+              {reviewResult ? 'Revisione avanzata completata' : 'Bozza non revisionata'}
+            </strong>
+          </p>
+          {reviewResult && (
+            <p>
+              {reviewResult.actualCostMicroUsd === null
+                ? 'Costo della revisione non disponibile.'
+                : `Costo revisione: ${formatMicroUsd(reviewResult.actualCostMicroUsd)}.`}
+            </p>
+          )}
+          {reviewResult && reviewResult.output.issueCodes.length > 0 && (
+            <p>Interventi: {reviewResult.output.issueCodes.join(', ')}.</p>
+          )}
           <p>
             <strong>
               La bozza generata sostituirà il testo nell’editor. La lezione non verrà salvata finché
@@ -435,8 +550,14 @@ export function AiLessonGenerationDialog({
             <button type="button" onClick={onClose}>
               Chiudi
             </button>
-            <button type="button" className="btn-primary" onClick={() => void requestPreview()}>
-              Riprova stima
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() =>
+                void (canRetryAdvancedReview ? retryAdvancedReview() : requestPreview())
+              }
+            >
+              {canRetryAdvancedReview ? 'Riprova solo revisione' : 'Riprova stima'}
             </button>
           </div>
         </>
