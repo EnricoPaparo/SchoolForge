@@ -1,4 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../lib/firebase.js', () => ({
+  app: {},
+  auth: {},
+  db: {},
+  storage: {},
+  functions: {},
+}));
 import {
   CompleteWorkflowError,
   describeCompleteWorkflowError,
