@@ -1,6 +1,7 @@
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
   DEFAULT_POOL_MODEL_PROFILE,
+  LESSON_MODEL_PROFILE_OPTIONS,
   type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import { useEffect, useRef, useState } from 'react';
@@ -8,6 +9,7 @@ import { DialogShell } from './workspaceDialogs.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import {
   buildLessonContentRequest,
+  buildLessonReviewRequest,
   describeAiContentError,
   formatMicroUsd,
   newRequestId,
@@ -25,6 +27,7 @@ import {
   type AiLessonContentRequest,
   type AiLessonGenerateResult,
   type AiLessonPreviewResult,
+  type AiLessonReviewGenerateResult,
   type LessonAiContext,
   type LessonDepth,
 } from '../repository/pools/aiContentClient.js';
@@ -73,7 +76,7 @@ type Phase =
   | 'summary'
   | 'error';
 
-type ErrorStage = 'preview' | 'generate' | 'complete';
+type ErrorStage = 'preview' | 'generate' | 'review' | 'complete';
 type CountsDraft = { aperta: string; chiusa_singola: string; chiusa_multipla: string };
 
 function parseCount(value: string): number | null {
@@ -128,16 +131,20 @@ export function AiCompleteLessonGenerationDialog({
     chiusa_multipla: '2',
   });
   const [guidance, setGuidance] = useState('');
+  const [advancedReview, setAdvancedReview] = useState(true);
   const [preview, setPreview] = useState<AiLessonPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiLessonContentRequest | null>(null);
   const [contentResult, setContentResult] = useState<AiLessonGenerateResult | null>(null);
   const [draftBody, setDraftBody] = useState('');
+  const [baseBody, setBaseBody] = useState('');
+  const [reviewResult, setReviewResult] = useState<AiLessonReviewGenerateResult | null>(null);
   const [progress, setProgress] = useState<CompleteLessonProgress | null>(null);
   const [summary, setSummary] = useState<CompleteLessonCompletionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorStage, setErrorStage] = useState<ErrorStage>('preview');
 
   const requestIdRef = useRef(newRequestId());
+  const reviewRequestIdRef = useRef(newRequestId());
   const runningRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -175,9 +182,13 @@ export function AiCompleteLessonGenerationDialog({
   const totalActualCostMicroUsd =
     summary?.actualCostMicroUsd === undefined
       ? undefined
-      : summary.actualCostMicroUsd === null || contentResult?.actualCostMicroUsd == null
+      : summary.actualCostMicroUsd === null ||
+          contentResult?.actualCostMicroUsd == null ||
+          (reviewResult !== null && reviewResult.actualCostMicroUsd === null)
         ? null
-        : summary.actualCostMicroUsd + contentResult.actualCostMicroUsd;
+        : summary.actualCostMicroUsd +
+          contentResult.actualCostMicroUsd +
+          (reviewResult?.actualCostMicroUsd ?? 0);
 
   function currentRequest(): AiLessonContentRequest {
     return buildLessonContentRequest({
@@ -198,6 +209,7 @@ export function AiCompleteLessonGenerationDialog({
     setProgress(null);
     setError(null);
     requestIdRef.current = newRequestId();
+    reviewRequestIdRef.current = newRequestId();
     runningRef.current = false;
     setPhase('configure');
   }
@@ -214,7 +226,6 @@ export function AiCompleteLessonGenerationDialog({
       if (!mountedRef.current) return;
       setPreview(next);
       setPreviewRequest(request);
-      await onBeforeGenerate?.();
       // Modalità pilota automatico: la preview è un preflight tecnico senza
       // una seconda conferma. Dopo la stima parte subito il percorso completo.
       await generateAndComplete(request);
@@ -247,7 +258,9 @@ export function AiCompleteLessonGenerationDialog({
     if (!validatedCounts) throw new Error('Quantità di domande non valida.');
     setErrorStage('generate');
     setPhase('generating');
-    const next = await callables.generate(request);
+    const generated = await callables.generate(request);
+    if (generated.kind !== 'lesson') throw new Error('unexpected_content_kind');
+    const next = generated;
     if (!mountedRef.current) return;
     const validated = validateLessonDraftResult(next);
     if (!validated.ok) {
@@ -256,12 +269,39 @@ export function AiCompleteLessonGenerationDialog({
       return;
     }
     setContentResult(next);
-    setDraftBody(validated.body);
+    setBaseBody(validated.body);
+    let finalBody = validated.body;
+    if (advancedReview) {
+      setErrorStage('review');
+      setProgress({ stage: 'content', label: 'Revisione avanzata del contenuto…' });
+      setPhase('completing');
+      const reviewRequest = buildLessonReviewRequest({
+        requestId: reviewRequestIdRef.current,
+        base: request,
+        candidateBody: validated.body,
+      });
+      if (!callables.previewReview || !callables.generateReview) {
+        throw new Error('advanced_review_unavailable');
+      }
+      await callables.previewReview(reviewRequest);
+      const reviewed = await callables.generateReview(reviewRequest);
+      if (reviewed.kind !== 'lesson_review') throw new Error('unexpected_review_kind');
+      const validatedReview = validateLessonDraftResult(reviewed, 'contenuto revisionato');
+      if (!validatedReview.ok) throw new Error(validatedReview.error);
+      setReviewResult(reviewed);
+      finalBody = validatedReview.body;
+    } else {
+      setReviewResult(null);
+    }
+    setDraftBody(finalBody);
     setErrorStage('complete');
     setProgress({ stage: 'content', label: 'Salvataggio del contenuto…' });
     setPhase('completing');
     try {
-      const completed = await onCompleteDraft(validated.body, updateProgress, {
+      // Solo ora il corpo finale esiste: nessun dato precedente viene cancellato
+      // se generazione o revisione falliscono.
+      await onBeforeGenerate?.();
+      const completed = await onCompleteDraft(finalBody, updateProgress, {
         level,
         counts: validatedCounts,
         modelProfile,
@@ -290,6 +330,7 @@ export function AiCompleteLessonGenerationDialog({
     setProgress({ stage: 'content' });
     setPhase('completing');
     try {
+      await onBeforeGenerate?.();
       const next = await onCompleteDraft(draftBody, updateProgress, {
         level,
         counts: validatedCounts,
@@ -307,6 +348,56 @@ export function AiCompleteLessonGenerationDialog({
     } finally {
       runningRef.current = false;
     }
+  }
+
+  async function retryReview() {
+    if (runningRef.current || !previewRequest || !baseBody) return;
+    runningRef.current = true;
+    setError(null);
+    setErrorStage('review');
+    setProgress({ stage: 'content', label: 'Ripresa della sola revisione avanzata…' });
+    setPhase('completing');
+    try {
+      const request = buildLessonReviewRequest({
+        requestId: reviewRequestIdRef.current,
+        base: previewRequest,
+        candidateBody: baseBody,
+      });
+      if (!callables.previewReview || !callables.generateReview) {
+        throw new Error('advanced_review_unavailable');
+      }
+      await callables.previewReview(request);
+      const reviewed = await callables.generateReview(request);
+      if (reviewed.kind !== 'lesson_review') throw new Error('unexpected_review_kind');
+      const validatedReview = validateLessonDraftResult(reviewed, 'contenuto revisionato');
+      if (!validatedReview.ok) throw new Error(validatedReview.error);
+      setReviewResult(reviewed);
+      setDraftBody(validatedReview.body);
+      setProgress(null);
+      await completeReviewedBody(validatedReview.body);
+    } catch (cause) {
+      setProgress(null);
+      setError(describeAiContentError(cause));
+      setPhase('error');
+    } finally {
+      runningRef.current = false;
+    }
+  }
+
+  async function completeReviewedBody(body: string) {
+    if (!validatedCounts) throw new Error('Quantità di domande non valida.');
+    setErrorStage('complete');
+    setProgress({ stage: 'content', label: 'Salvataggio del contenuto revisionato…' });
+    setPhase('completing');
+    await onBeforeGenerate?.();
+    const next = await onCompleteDraft(body, updateProgress, {
+      level,
+      counts: validatedCounts,
+      modelProfile,
+    });
+    setSummary(next);
+    setProgress(null);
+    setPhase('summary');
   }
 
   async function retryMissing() {
@@ -335,6 +426,7 @@ export function AiCompleteLessonGenerationDialog({
   function retryError() {
     if (errorStage === 'preview') void requestPreview();
     else if (errorStage === 'generate') void generateContent();
+    else if (errorStage === 'review') void retryReview();
     else void completeDraft();
   }
 
@@ -350,12 +442,31 @@ export function AiCompleteLessonGenerationDialog({
       {phase === 'configure' && (
         <div className={styles.config}>
           <AiModelProfileField
+            options={LESSON_MODEL_PROFILE_OPTIONS}
             value={modelProfile}
             onChange={(value) => {
               setModelProfile(value);
               invalidateEstimate();
             }}
           />
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="ai-complete-advanced-review">
+              Revisione avanzata
+            </label>
+            <label>
+              <input
+                id="ai-complete-advanced-review"
+                type="checkbox"
+                role="switch"
+                checked={advancedReview}
+                onChange={(event) => {
+                  setAdvancedReview(event.target.checked);
+                  invalidateEstimate();
+                }}
+              />{' '}
+              Controlla e migliora il contenuto prima di creare mappa, domande e immagini.
+            </label>
+          </div>
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-complete-depth-label">
               Profondità
@@ -539,6 +650,10 @@ export function AiCompleteLessonGenerationDialog({
             </li>
             <li>Costo stimato contenuto: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo contenuto: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
+            <li>
+              Revisione avanzata:{' '}
+              {advancedReview ? 'attiva, con prenotazione separata' : 'disattivata'}
+            </li>
           </ul>
           <p className={styles.costNote}>
             Il riepilogo finale mostrerà anche il costo delle immagini effettivamente necessarie.
@@ -588,6 +703,11 @@ export function AiCompleteLessonGenerationDialog({
         <>
           <section className={styles.summary} aria-labelledby="ai-complete-summary-title">
             <h4 id="ai-complete-summary-title">Lezione completata</h4>
+            <p>
+              <strong>
+                {reviewResult ? 'Revisione avanzata completata.' : 'Contenuto non revisionato.'}
+              </strong>
+            </p>
             {summary.mapGenerated && <p>Mappa concettuale generata e applicata.</p>}
             {summary.questionsGenerated !== undefined && (
               <p>{summary.questionsGenerated} domande generate e applicate.</p>

@@ -895,7 +895,7 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
    * non è «aggiorno la costante?» ma «perché la serializzazione è cambiata?».
    */
   const POOL_INPUT_HASH = '0938486c38232b6c997e4bb365bbaa8764dddedeb4de58db5e1a2f9fa528967f';
-  const LESSON_INPUT_HASH = '2c0dacd58d9ed5304fd964ed973e8c21a370824ef973ab367ed79ba64485798f';
+  const LESSON_INPUT_HASH = '9603c191717bc7c7c75db823c03584218e497e745438357c7043e9bc1d7a5134';
 
   function poolRequest(): AiContentRequest {
     return validateAiContentRequest({
@@ -945,7 +945,7 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
     });
   }
 
-  it('l’inputHash congelato di pool e lezione è invariato', () => {
+  it('gli inputHash congelano pool e la nuova identità prompt della lezione', () => {
     expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
     expect(computeInputHash(lessonRequest())).toBe(LESSON_INPUT_HASH);
   });

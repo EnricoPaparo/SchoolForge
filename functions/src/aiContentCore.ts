@@ -15,6 +15,8 @@
 
 import { createHash } from 'node:crypto';
 import {
+  GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS,
+  GPT6_MODEL_PROFILE_RESOLUTIONS,
   parseModelProfileField,
   resolveModelProfile,
   type ModelProfile,
@@ -161,6 +163,7 @@ export type LessonDepth = (typeof LESSON_DEPTHS)[number];
 export type ContentKind =
   | 'pool'
   | 'lesson'
+  | 'lesson_review'
   | 'concept_map'
   | 'visual_proposal'
   | 'visual_plan_proposal';
@@ -243,6 +246,24 @@ export interface LessonRequest {
   /** Corpo Markdown corrente nell'editor (contesto non attendibile). */
   currentBody: string;
   hasCurrentContent: boolean;
+}
+
+/** Secondo passaggio indipendente: revisiona una bozza senza mutare la lezione salvata. */
+export interface LessonReviewRequest {
+  kind: 'lesson_review';
+  requestId: string;
+  modelProfile: ModelProfile;
+  teacherGuidance: string | null;
+  depth: LessonDepth;
+  titolo: string;
+  sottotitolo: string | null;
+  difficolta: string;
+  concettiChiave: string[];
+  obiettivi: string[];
+  udaTitle: string;
+  udaContext: LessonUdaContext;
+  /** Corpo della bozza appena generata, mai una lezione pubblicata. */
+  candidateBody: string;
 }
 
 /**
@@ -341,6 +362,7 @@ export interface VisualPlanProposalRequest {
 export type AiContentRequest =
   | PoolRequest
   | LessonRequest
+  | LessonReviewRequest
   | ConceptMapRequest
   | VisualProposalRequest
   | VisualPlanProposalRequest;
@@ -438,6 +460,23 @@ export function computeBudgetReservationKey(
  * Deterministico e stabile tra i retry dello stesso payload.
  */
 export function canonicalRequest(request: AiContentRequest): string {
+  if (request.kind === 'lesson_review') {
+    return JSON.stringify({
+      promptContractVersion: 'lesson-review-v1',
+      kind: request.kind,
+      modelProfile: request.modelProfile,
+      teacherGuidance: request.teacherGuidance,
+      depth: request.depth,
+      titolo: request.titolo,
+      sottotitolo: request.sottotitolo,
+      difficolta: request.difficolta,
+      concettiChiave: request.concettiChiave,
+      obiettivi: request.obiettivi,
+      udaTitle: request.udaTitle,
+      udaContext: request.udaContext,
+      candidateBody: request.candidateBody,
+    });
+  }
   // CONCEPT-MAP-01 — l'aggiunta di un terzo kind non deve spostare un solo byte
   // della forma canonica di pool e lezione: `inputHash` è la chiave di replay dei
   // run già memorizzati, e cambiarla li invaliderebbe tutti in silenzio.
@@ -526,6 +565,10 @@ export function canonicalRequest(request: AiContentRequest): string {
         }
       : {
           kind: 'lesson',
+          promptContractVersion:
+            request.modelProfile === 'economy'
+              ? 'lesson-depth-01-candidate-e-v1'
+              : 'lesson-gpt6-phase1-1-v1',
           modelProfile: request.modelProfile,
           depth: request.depth,
           titolo: request.titolo,
@@ -824,6 +867,7 @@ function validateAiContentRequestWithPolicy(
   if (
     input.kind !== 'pool' &&
     input.kind !== 'lesson' &&
+    input.kind !== 'lesson_review' &&
     input.kind !== 'concept_map' &&
     input.kind !== 'visual_proposal' &&
     input.kind !== 'visual_plan_proposal'
@@ -936,6 +980,48 @@ function validateAiContentRequestWithPolicy(
   }
 
   const modelProfile = parseProfile(input.modelProfile);
+
+  if (input.kind === 'lesson_review') {
+    assertNoExtraKeys(input, [
+      'kind',
+      'requestId',
+      'modelProfile',
+      'teacherGuidance',
+      'depth',
+      'titolo',
+      'sottotitolo',
+      'difficolta',
+      'concettiChiave',
+      'obiettivi',
+      'udaTitle',
+      'udaContext',
+      'candidateBody',
+    ]);
+    if (input.depth !== 'synthetic' && input.depth !== 'complete' && input.depth !== 'in_depth') {
+      throw new AiContentError('invalid_input', 'Profondità non valida.');
+    }
+    if (typeof input.candidateBody !== 'string' || input.candidateBody.trim().length === 0) {
+      throw new AiContentError('invalid_input', 'La bozza da revisionare è mancante.');
+    }
+    if (utf8ByteLength(input.candidateBody) > AI_CONTENT_LIMITS.MAX_LESSON_SOURCE_BYTES) {
+      throw new AiContentError('content_too_large', 'La bozza da revisionare è troppo grande.');
+    }
+    return enforceTotalRequestSize({
+      kind: 'lesson_review',
+      requestId,
+      modelProfile,
+      teacherGuidance: parseGuidance(input.teacherGuidance),
+      depth: input.depth,
+      titolo: parseRequiredText(input.titolo, 'Titolo', MAX_TITLE_CHARS),
+      sottotitolo: parseTitle(input.sottotitolo, 'Sottotitolo'),
+      difficolta: parseRequiredText(input.difficolta, 'Difficoltà', MAX_DIFFICOLTA_CHARS),
+      concettiChiave: parseRequiredStringArray(input.concettiChiave, 'Concetti chiave'),
+      obiettivi: parseRequiredStringArray(input.obiettivi, 'Obiettivi'),
+      udaTitle: parseRequiredText(input.udaTitle, 'Titolo UDA', MAX_TITLE_CHARS),
+      udaContext: parseUdaContext(input.udaContext),
+      candidateBody: input.candidateBody,
+    });
+  }
 
   if (input.kind === 'pool') {
     const teacherGuidance = parseGuidance(input.teacherGuidance);
@@ -1074,4 +1160,17 @@ export function resolveContentModel(profile: ModelProfile): {
   priceListVersion: string;
 } {
   return resolveModelProfile(profile);
+}
+
+/** Politica per operazione: le lezioni possono evolvere senza cambiare gli altri flussi. */
+export function resolveContentModelForRequest(request: AiContentRequest): {
+  model: string;
+  priceListVersion: string;
+} {
+  if (request.kind === 'lesson' || request.kind === 'lesson_review') {
+    return request.modelProfile === 'economy'
+      ? GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy
+      : GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
+  }
+  return resolveModelProfile(request.modelProfile);
 }

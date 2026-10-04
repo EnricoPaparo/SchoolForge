@@ -14,6 +14,7 @@
 import {
   buildConceptMapPrompt,
   buildLessonPromptForPolicy,
+  buildLessonReviewPrompt,
   buildPoolPrompt,
   buildVisualPlanProposalPrompt,
   buildVisualProposalPrompt,
@@ -23,7 +24,6 @@ import {
   reasoningEffortForContentRequest,
   usesGpt6LessonPolicy,
 } from './aiModelRequestPolicy.js';
-import { ACTIVE_AI_RUNTIME_POLICY } from './aiCorrectionModelProfile.js';
 import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
@@ -85,6 +85,11 @@ export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
   complete: 14_000,
   in_depth: 18_000,
 };
+export const LESSON_REVIEW_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
+  synthetic: 8_000,
+  complete: 14_000,
+  in_depth: 18_000,
+};
 
 /**
  * CONCEPT-MAP-01 — tetto di output della mappa concettuale. Qui, a differenza
@@ -133,11 +138,24 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
   if (request.kind === 'visual_plan_proposal') {
     return VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT * request.quantity.ceiling;
   }
+  if (request.kind === 'lesson_review') return LESSON_REVIEW_OUTPUT_TOKENS[request.depth];
   return LESSON_OUTPUT_TOKENS[request.depth];
 }
 
 /** Stima **informativa** dei token di input (euristica caratteri/token). */
 export function estimateInputTokens(request: AiContentRequest): number {
+  if (request.kind === 'lesson_review') {
+    const chars =
+      request.candidateBody.length +
+      request.titolo.length +
+      (request.sottotitolo?.length ?? 0) +
+      request.difficolta.length +
+      request.concettiChiave.join('').length +
+      request.obiettivi.join('').length +
+      request.udaTitle.length +
+      (request.teacherGuidance?.length ?? 0);
+    return Math.ceil(chars / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
+  }
   if (request.kind === 'concept_map') {
     return Math.ceil(request.lessonBody.length / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
   }
@@ -312,6 +330,32 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
   required: ['body'],
   properties: { body: { type: 'string' } },
+};
+
+export const LESSON_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['body', 'reviewOutcome', 'issueCodes'],
+  properties: {
+    body: { type: 'string' },
+    reviewOutcome: { type: 'string', enum: ['improved', 'unchanged'] },
+    issueCodes: {
+      type: 'array',
+      items: {
+        type: 'string',
+        enum: [
+          'disciplinary_error',
+          'false_simplification',
+          'logical_gap',
+          'missing_prerequisite',
+          'weak_example',
+          'misconception_risk',
+          'structure',
+          'verbosity',
+        ],
+      },
+    },
+  },
 };
 
 /**
@@ -580,7 +624,9 @@ export function buildContentStructuredRequest(
           ? buildVisualProposalPrompt(request)
           : request.kind === 'visual_plan_proposal'
             ? buildVisualPlanProposalPrompt(request)
-            : buildLessonPromptForPolicy(request, ACTIVE_AI_RUNTIME_POLICY);
+            : request.kind === 'lesson_review'
+              ? buildLessonReviewPrompt(request)
+              : buildLessonPromptForPolicy(request, usesGpt6LessonPolicy(model) ? 'gpt6' : 'gpt56');
   const schema =
     request.kind === 'pool'
       ? buildPoolOutputSchema(request)
@@ -590,7 +636,9 @@ export function buildContentStructuredRequest(
           ? buildVisualProposalOutputSchema(request)
           : request.kind === 'visual_plan_proposal'
             ? buildVisualPlanProposalOutputSchema(request)
-            : LESSON_OUTPUT_SCHEMA;
+            : request.kind === 'lesson_review'
+              ? LESSON_REVIEW_OUTPUT_SCHEMA
+              : LESSON_OUTPUT_SCHEMA;
   const reasoningEffort = reasoningEffortForContentRequest(model, request);
   return {
     model,
@@ -599,7 +647,8 @@ export function buildContentStructuredRequest(
       { role: 'user', content: prompt.user },
     ],
     text: {
-      ...(request.kind === 'lesson' && usesGpt6LessonPolicy(model)
+      ...((request.kind === 'lesson' || request.kind === 'lesson_review') &&
+      usesGpt6LessonPolicy(model)
         ? { verbosity: lessonVerbosity(request.depth) }
         : {}),
       format: {

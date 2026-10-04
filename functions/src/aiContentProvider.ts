@@ -140,6 +140,15 @@ class MockContentProvider implements ContentProvider {
         priorBillingRisk: false,
       };
     }
+    if (request.kind === 'lesson_review') {
+      return {
+        status: 'ok',
+        output: { body: request.candidateBody, reviewOutcome: 'unchanged', issueCodes: [] },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
+    }
     return {
       status: 'ok',
       output: { body: `## ${request.titolo ?? 'Lezione'}\n\nBozza generata (mock).` },

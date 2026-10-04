@@ -257,3 +257,41 @@ export function validateLessonProposal(output: unknown): ValidatedLessonProposal
   }
   return { body };
 }
+
+export const LESSON_REVIEW_ISSUE_CODES = [
+  'disciplinary_error',
+  'false_simplification',
+  'logical_gap',
+  'missing_prerequisite',
+  'weak_example',
+  'misconception_risk',
+  'structure',
+  'verbosity',
+] as const;
+export type LessonReviewIssueCode = (typeof LESSON_REVIEW_ISSUE_CODES)[number];
+export interface ValidatedLessonReviewProposal extends ValidatedLessonProposal {
+  reviewOutcome: 'improved' | 'unchanged';
+  issueCodes: LessonReviewIssueCode[];
+}
+
+export function validateLessonReviewProposal(output: unknown): ValidatedLessonReviewProposal {
+  const root = asObject(output);
+  const { body } = validateLessonProposal(root);
+  if (root.reviewOutcome !== 'improved' && root.reviewOutcome !== 'unchanged') {
+    throw new AiContentError('provider_invalid_output', 'Esito della revisione non valido.');
+  }
+  if (!Array.isArray(root.issueCodes)) {
+    throw new AiContentError('provider_invalid_output', 'Codici della revisione mancanti.');
+  }
+  const allowed = new Set<string>(LESSON_REVIEW_ISSUE_CODES);
+  const issueCodes = root.issueCodes.map((value) => {
+    if (typeof value !== 'string' || !allowed.has(value)) {
+      throw new AiContentError('provider_invalid_output', 'Codice della revisione non valido.');
+    }
+    return value as LessonReviewIssueCode;
+  });
+  if (new Set(issueCodes).size !== issueCodes.length) {
+    throw new AiContentError('provider_invalid_output', 'Codici della revisione duplicati.');
+  }
+  return { body, reviewOutcome: root.reviewOutcome, issueCodes };
+}

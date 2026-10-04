@@ -15,14 +15,18 @@ import {
   computeBudgetReservationKey,
   computeInputHash,
   computeOpaqueRunId,
-  resolveContentModel,
+  resolveContentModelForRequest,
   utf8ByteLength,
   type AiContentMode,
   type AiContentRequest,
   type ContentKind,
 } from './aiContentCore.js';
 import { estimateContentCost } from './aiContentCost.js';
-import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
+import {
+  validateLessonProposal,
+  validateLessonReviewProposal,
+  validatePoolProposal,
+} from './aiContentValidation.js';
 import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
 import {
   assertVisualProposalMatchesRequest,
@@ -229,7 +233,7 @@ function enforceConfigAndLimits(
     throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
   }
   // 6. risoluzione profilo → modello/listino (server-side, nessun fallback).
-  const { model, priceListVersion } = resolveContentModel(request.modelProfile);
+  const { model, priceListVersion } = resolveContentModelForRequest(request);
   // 7. stima informativa + prenotazione conservativa (× tentativi).
   const estimate = estimateContentCost(
     request,
@@ -554,7 +558,9 @@ export async function generateContent(
                     request.lessonBody,
                   ),
                 }
-              : validateLessonProposal(providerOutcome.output);
+              : request.kind === 'lesson_review'
+                ? validateLessonReviewProposal(providerOutcome.output)
+                : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({
       opaqueRunId,

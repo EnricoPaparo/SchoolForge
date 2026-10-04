@@ -444,3 +444,16 @@ proiezione, mai un nuovo claim dal browser. Le Rules legacy consentono ancora
 la prima creazione autenticata quando il canonico è assente: non esporre un
 nuovo progetto prima del provisioning. Nessuna modifica ai dati cloud è stata
 eseguita per introdurre questa procedura; PROD richiede autorizzazione esplicita.
+# Addendum: revisione avanzata lezioni in DEV
+
+Per il rollout della pipeline `lesson_review` distribuire soltanto le Functions
+di generazione contenuti coinvolte e l'hosting DEV, seguendo i nomi esportati
+verificati in `functions/src/index.ts`. Dopo il deploy eseguire uno smoke con:
+
+1. bozza lezione, revisione ON e OFF;
+2. retry della sola revisione dopo un errore controllato;
+3. generazione completa, verificando che mappa/pool/visuali partano dal corpo
+   revisionato;
+4. controllo dei due run e delle due riconciliazioni di costo.
+
+Il rollback dell'interfaccia non richiede la cancellazione dei run tecnici.

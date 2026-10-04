@@ -19,6 +19,8 @@ import type {
   AiLessonContentRequest,
   AiLessonGenerateResult,
   AiLessonPreviewResult,
+  AiLessonReviewGenerateResult,
+  AiLessonReviewPreviewResult,
   LessonAiContext,
 } from '../../repository/pools/aiContentClient.js';
 
@@ -64,6 +66,20 @@ function generateResult(): AiLessonGenerateResult {
     replayed: false,
   };
 }
+function reviewPreviewResult(): AiLessonReviewPreviewResult {
+  return { ...previewResult(), kind: 'lesson_review' };
+}
+function reviewGenerateResult(): AiLessonReviewGenerateResult {
+  return {
+    ...generateResult(),
+    kind: 'lesson_review',
+    output: {
+      body: '## Reti\n\nContenuto revisionato.',
+      reviewOutcome: 'improved',
+      issueCodes: ['structure'],
+    },
+  };
+}
 
 function makeCallables() {
   const previewRequests: AiLessonContentRequest[] = [];
@@ -77,6 +93,8 @@ function makeCallables() {
       generateRequests.push(request);
       return generateResult();
     }),
+    previewReview: vi.fn(async () => reviewPreviewResult()),
+    generateReview: vi.fn(async () => reviewGenerateResult()),
   };
   return { callables, previewRequests, generateRequests };
 }
@@ -127,7 +145,7 @@ describe('AiCompleteLessonGenerationDialog', () => {
       'value',
       'economy',
     );
-    expect(screen.getByRole('option', { name: 'Economy — gpt-6-luna' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Economy — gpt-5.6-luna' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Quality — gpt-6.1-sol' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Aperte' })).toHaveProperty('value', '5');
     expect(screen.getByRole('textbox', { name: 'Risposta singola' })).toHaveProperty('value', '3');
@@ -155,7 +173,7 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(generateRequests[0]?.modelProfile).toBe('quality');
   });
 
-  it('pulisce dopo la preview e prima della generazione a pagamento', async () => {
+  it('pulisce solo dopo che generazione e revisione hanno prodotto il corpo finale', async () => {
     const { callables } = makeCallables();
     const onBeforeGenerate = vi.fn(async () => undefined);
     renderDialog(
@@ -171,8 +189,11 @@ describe('AiCompleteLessonGenerationDialog', () => {
     expect(vi.mocked(callables.preview).mock.invocationCallOrder[0]).toBeLessThan(
       onBeforeGenerate.mock.invocationCallOrder[0]!,
     );
-    expect(onBeforeGenerate.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(callables.generate).mock.invocationCallOrder[0]!,
+    expect(vi.mocked(callables.generate).mock.invocationCallOrder[0]).toBeLessThan(
+      onBeforeGenerate.mock.invocationCallOrder[0]!,
+    );
+    expect(vi.mocked(callables.generateReview!).mock.invocationCallOrder[0]).toBeLessThan(
+      onBeforeGenerate.mock.invocationCallOrder[0]!,
     );
   });
 
@@ -192,7 +213,7 @@ describe('AiCompleteLessonGenerationDialog', () => {
     await screen.findByText('Generazione immagine 2 di 3…');
     expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
     expect(onCompleteDraft).toHaveBeenCalledWith(
-      '## Reti\n\nContenuto completo.',
+      '## Reti\n\nContenuto revisionato.',
       expect.any(Function),
       {
         level: 'balanced',

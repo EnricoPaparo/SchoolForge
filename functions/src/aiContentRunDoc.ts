@@ -26,6 +26,7 @@ import type { StoredAiContentRun } from './aiContentEngine.js';
 const RUN_KINDS = new Set([
   'pool',
   'lesson',
+  'lesson_review',
   'concept_map',
   'visual_proposal',
   'visual_plan_proposal',
@@ -88,11 +89,17 @@ function isCoherentCompletedOutput(
 ): boolean {
   if (typeof output !== 'object' || output === null || Array.isArray(output)) return false;
   const o = output as Record<string, unknown>;
-  if (kind === 'lesson') {
+  if (kind === 'lesson' || kind === 'lesson_review') {
     if ('questions' in o || 'conceptMapMarkdown' in o) return false;
     const body = o.body;
     if (typeof body !== 'string' || body.trim().length === 0) return false;
-    return utf8ByteLength(body) <= AI_CONTENT_LIMITS.MAX_LESSON_OUTPUT_BYTES;
+    if (utf8ByteLength(body) > AI_CONTENT_LIMITS.MAX_LESSON_OUTPUT_BYTES) return false;
+    if (kind === 'lesson_review') {
+      if (o.reviewOutcome !== 'improved' && o.reviewOutcome !== 'unchanged') return false;
+      if (!Array.isArray(o.issueCodes) || !o.issueCodes.every((v) => typeof v === 'string'))
+        return false;
+    }
+    return true;
   }
   // CONCEPT-MAP-01 — il run della mappa persiste il Markdown **canonico**
   // composto dal server, mai i tre campi grezzi. Il controllo non si limita a

@@ -32,7 +32,7 @@ export function reasoningEffortForContentRequest(
   const baseline = reasoningEffortForModel(model);
   if (
     model === OPENAI_RUNTIME_GPT61_SOL_MODEL &&
-    request.kind === 'lesson' &&
+    (request.kind === 'lesson' || request.kind === 'lesson_review') &&
     request.depth === 'in_depth'
   ) {
     return 'high';

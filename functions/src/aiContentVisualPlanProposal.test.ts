@@ -932,13 +932,13 @@ describe('documento run', () => {
 
 describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', () => {
   const POOL_INPUT_HASH = '0938486c38232b6c997e4bb365bbaa8764dddedeb4de58db5e1a2f9fa528967f';
-  const LESSON_INPUT_HASH = '2c0dacd58d9ed5304fd964ed973e8c21a370824ef973ab367ed79ba64485798f';
+  const LESSON_INPUT_HASH = '9603c191717bc7c7c75db823c03584218e497e745438357c7043e9bc1d7a5134';
   const CONCEPT_MAP_INPUT_HASH = '9448ae62cfe2d0bf931782da100023dc19b2a03baec844dbfb5d16401d1effc0';
   const VISUAL_PROPOSAL_INPUT_HASH =
     'ac06611e2358280f483b44ad1cce3df8825a14f59e0cddb753d4f073c686f2e8';
   const STRUCTURED_REQUEST_SHA256 = {
     pool: 'c9e5c6d6178b5ecb24eee81f0bf571d9f1412f1652defcbd3755cbdf9ab994f8',
-    lesson: 'de58281e4a4cc68bea8aac261729a00ca8805b2ba3fee05168e54903d02eefd9',
+    lesson: 'e7e1bd0157eb72c13381f887a085e95906288ff33dcb6222b7f5e09dfc3a62b0',
     concept_map: '08dfe67c9c308a8e37fdbcb3bdf7e41041f33e2ebd960f7aa23ffc9bcbf8a6be',
     visual_proposal: '0b7c7f03a0e25d43780094ce2fe1580561f596e384d93a3694c66c8eae7053d6',
   } as const;
@@ -1014,7 +1014,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     });
   }
 
-  it('gli inputHash congelati su main 5171859 dei quattro kind sono invariati', () => {
+  it('gli inputHash congelano gli altri kind e la nuova identità prompt della lezione', () => {
     expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
     expect(computeInputHash(lessonRequest())).toBe(LESSON_INPUT_HASH);
     expect(computeInputHash(conceptMapRequest())).toBe(CONCEPT_MAP_INPUT_HASH);

@@ -1,5 +1,5 @@
 import { assertLessonContentSize } from '../programs/lessonContentSize.js';
-import type { AiLessonGenerateResult } from './aiContentClient.js';
+import type { AiLessonGenerateResult, AiLessonReviewGenerateResult } from './aiContentClient.js';
 
 /**
  * AIGEN-03 — validazione **fail-closed** della risposta della callable di
@@ -15,10 +15,10 @@ const FRONT_MATTER_RE = /^\uFEFF?\s*---\s*\r?\n/;
 export type LessonDraftResult = { ok: true; body: string } | { ok: false; error: string };
 
 export function validateLessonDraftResult(
-  result: AiLessonGenerateResult,
+  result: AiLessonGenerateResult | AiLessonReviewGenerateResult,
   label = 'bozza generata',
 ): LessonDraftResult {
-  if (result.kind !== 'lesson') {
+  if (result.kind !== 'lesson' && result.kind !== 'lesson_review') {
     return { ok: false, error: 'La risposta generata non è una lezione.' };
   }
   const body = result.output?.body;

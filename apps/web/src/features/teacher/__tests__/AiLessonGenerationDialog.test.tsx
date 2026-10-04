@@ -15,6 +15,8 @@ import type {
   AiLessonContentRequest,
   AiLessonGenerateResult,
   AiLessonPreviewResult,
+  AiLessonReviewGenerateResult,
+  AiLessonReviewPreviewResult,
   LessonAiContext,
 } from '../../repository/pools/aiContentClient.js';
 
@@ -66,6 +68,20 @@ function generateResult(over: Partial<AiLessonGenerateResult> = {}): AiLessonGen
     ...over,
   };
 }
+function reviewPreviewResult(): AiLessonReviewPreviewResult {
+  return { ...previewResult(), kind: 'lesson_review' };
+}
+function reviewGenerateResult(): AiLessonReviewGenerateResult {
+  return {
+    ...generateResult(),
+    kind: 'lesson_review',
+    output: {
+      body: '## Reti\n\nBozza revisionata.',
+      reviewOutcome: 'improved',
+      issueCodes: ['structure'],
+    },
+  };
+}
 
 function makeCallables(over: Partial<AiLessonCallables> = {}): {
   callables: AiLessonCallables;
@@ -83,6 +99,8 @@ function makeCallables(over: Partial<AiLessonCallables> = {}): {
       generateReqs.push(req);
       return generateResult();
     },
+    previewReview: vi.fn(async () => reviewPreviewResult()),
+    generateReview: vi.fn(async () => reviewGenerateResult()),
     ...over,
   };
   return { callables, previewReqs, generateReqs };
@@ -112,6 +130,19 @@ async function goToReview(callables: AiLessonCallables, onUseDraft = vi.fn()) {
 }
 
 describe('AiLessonGenerationDialog', () => {
+  it('attiva la revisione per default e OFF conserva il percorso a singola chiamata', async () => {
+    const { callables } = makeCallables();
+    const review = vi.mocked(callables.generateReview!);
+    renderDialog(callables);
+    const toggle = screen.getByRole('switch', { name: /Revisione avanzata/i });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('button', { name: 'Genera bozza' });
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByText('Bozza non revisionata');
+    expect(review).not.toHaveBeenCalled();
+  });
   it('shows the read-only context summary and "Editor vuoto"', () => {
     const { callables } = makeCallables();
     renderDialog(callables);
@@ -157,7 +188,7 @@ describe('AiLessonGenerationDialog', () => {
     await goToReview(callables, onUseDraft);
     fireEvent.click(screen.getByRole('button', { name: 'Usa questa bozza' }));
     expect(onUseDraft).toHaveBeenCalledTimes(1);
-    expect(onUseDraft.mock.calls[0][0]).toContain('Bozza generata');
+    expect(onUseDraft.mock.calls[0][0]).toContain('Bozza revisionata');
   });
 
   it('cancel does not call onUseDraft', async () => {
