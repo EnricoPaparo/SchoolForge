@@ -20,6 +20,11 @@ describe('lesson generation timeout budget', () => {
     expect(source).toContain('timeoutSeconds: 420');
     expect(source).toContain('retryPolicyFromConfig(config, validated.kind)');
     expect(source).toContain('createPorts(database, config, mode, secret, true, validated.kind)');
+    const visualPlanGateway = readFileSync(
+      new URL('./aiVisualPlanGateway.ts', import.meta.url),
+      'utf8',
+    );
+    expect(visualPlanGateway).toContain('timeoutSeconds: 300');
   });
   it('honors the optional lesson timeout and disabled retries', () => {
     const policy = retryPolicyFromConfig(

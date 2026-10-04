@@ -138,6 +138,10 @@ const VISUAL_PLAN_CALLABLE_OPTIONS = {
   region: SCHOOLFORGE_FUNCTION_REGION,
   invoker: 'public' as const,
   secrets: [OPENAI_API_KEY],
+  // La proposta usa fino a due tentativi provider da 60 s, con backoff,
+  // contabilità e commit finali. Il timeout deve coprire la stessa finestra
+  // protetta dalla lease applicativa, senza troncare un tentativo valido.
+  timeoutSeconds: 300,
 };
 
 function database(): Firestore {
@@ -1539,6 +1543,7 @@ function toHttpsError(error: AiVisualError | AiVisualMultiError | AiContentError
 async function handleAuthorizeVisualPlan(
   request: CallableRequest<unknown>,
 ): Promise<VisualPlanRun> {
+  const started = Date.now();
   const db = database();
   try {
     const ownerUid = await requireOwner(request, db);
@@ -1549,7 +1554,7 @@ async function handleAuthorizeVisualPlan(
     const mode = contentModeFromEnv();
     const visualMode = visualModeFromEnv();
     const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
-    return await authorizeVisualPlanForOwner({
+    const result = await authorizeVisualPlanForOwner({
       db,
       ownerUid,
       input,
@@ -1557,15 +1562,33 @@ async function handleAuthorizeVisualPlan(
       visualMode,
       secret,
     });
+    logger.info('aiVisualPlanGateway', {
+      stage: 'authorize_plan',
+      kind: 'visual_plan_proposal',
+      outcome: 'ok',
+      durationMs: Math.max(0, Date.now() - started),
+    });
+    return result;
   } catch (error) {
     if (
       error instanceof AiVisualMultiError ||
       error instanceof AiVisualError ||
       error instanceof AiContentError
     ) {
+      logger.info('aiVisualPlanGateway', {
+        stage: 'authorize_plan',
+        kind: 'visual_plan_proposal',
+        outcome: error.code,
+        durationMs: Math.max(0, Date.now() - started),
+      });
       throw toHttpsError(error);
     }
-    logger.error('aiVisualPlanAuthorize internal error', { name: (error as Error)?.name });
+    logger.error('aiVisualPlanGateway', {
+      stage: 'authorize_plan',
+      kind: 'visual_plan_proposal',
+      outcome: 'internal',
+      durationMs: Math.max(0, Date.now() - started),
+    });
     throw new HttpsError('internal', 'Errore interno del piano visivo.');
   }
 }

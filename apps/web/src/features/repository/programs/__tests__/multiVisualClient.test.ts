@@ -37,6 +37,14 @@ describe('multiVisualClient', () => {
     vi.clearAllMocks();
   });
 
+  it('attende oltre il timeout server per pianificazione e generazione immagini', () => {
+    createMultiVisualClient({} as never);
+    expect(httpsCallable).toHaveBeenCalledWith({}, 'aiVisualPlanAuthorize', { timeout: 330_000 });
+    expect(httpsCallable).toHaveBeenCalledWith({}, 'aiVisualPlanGenerateSlot', {
+      timeout: 330_000,
+    });
+  });
+
   it('estrae il piano dagli envelope di generate, edit e promote', async () => {
     callable
       .mockResolvedValueOnce({ data: { replayed: false, plan } })

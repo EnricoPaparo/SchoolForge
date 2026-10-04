@@ -284,7 +284,8 @@ describe('POOL-ROLLOUT-01 gateway fail-closed order', () => {
     expect(events).toHaveLength(3);
     for (const event of events) {
       const fields = event[1] ?? '';
-      expect(fields).toContain('phase,');
+      expect(fields).toContain('stage: phase,');
+      expect(fields).toContain('kind:');
       expect(fields).toContain('mode,');
       expect(fields).toContain('outcome:');
       expect(fields).toContain('durationMs:');

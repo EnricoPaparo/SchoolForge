@@ -425,6 +425,7 @@ function readOpenAiSecret(): string | undefined {
 }
 
 type AiContentGatewayPhase = 'preview' | 'generate' | 'prompt_export';
+type AiContentGatewayTelemetry = { kind: string };
 
 /**
  * One terminal, aggregation-friendly event per callable. The schema is
@@ -433,14 +434,20 @@ type AiContentGatewayPhase = 'preview' | 'generate' | 'prompt_export';
  */
 async function runContentGateway<T>(
   phase: AiContentGatewayPhase,
-  handler: (database: Firestore, mode: AiContentMode) => Promise<T>,
+  handler: (
+    database: Firestore,
+    mode: AiContentMode,
+    telemetry: AiContentGatewayTelemetry,
+  ) => Promise<T>,
 ): Promise<T> {
   const started = Date.now();
   const mode = contentMode();
+  const telemetry: AiContentGatewayTelemetry = { kind: 'unknown' };
   try {
-    const result = await handler(db(), mode);
+    const result = await handler(db(), mode, telemetry);
     logger.info('aiContentGateway', {
-      phase,
+      stage: phase,
+      kind: telemetry.kind,
       mode,
       outcome: 'ok',
       durationMs: Math.max(0, Date.now() - started),
@@ -449,7 +456,8 @@ async function runContentGateway<T>(
   } catch (err) {
     if (err instanceof AiContentError) {
       logger.info('aiContentGateway', {
-        phase,
+        stage: phase,
+        kind: telemetry.kind,
         mode,
         outcome: err.code,
         durationMs: Math.max(0, Date.now() - started),
@@ -457,7 +465,8 @@ async function runContentGateway<T>(
       throw toHttpsError(err);
     }
     logger.error('aiContentGateway', {
-      phase,
+      stage: phase,
+      kind: telemetry.kind,
       mode,
       outcome: 'internal',
       durationMs: Math.max(0, Date.now() - started),
@@ -471,7 +480,7 @@ async function runContentGateway<T>(
  * **Nessun** binding del secret: la preview non ha accesso alla API key.
  */
 export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, (request) =>
-  runContentGateway('preview', async (database, mode) => {
+  runContentGateway('preview', async (database, mode, telemetry) => {
     // Ordine contratto: auth → owner → mode/kill switch → payload. Un anonimo
     // riceve `unauthenticated` prima di `feature_disabled`.
     const ownerUid = await requireOwner(request, database);
@@ -479,6 +488,7 @@ export const aiContentPreview = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, 
       throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
     }
     const validated = validateAiContentRequest(request.data);
+    telemetry.kind = validated.kind;
     assertGenericAiContentCallableKind(validated);
     const config = await loadRuntimeConfig(database);
     // La preview non costruisce il provider né legge il secret (withProvider=false).
@@ -508,13 +518,14 @@ export const aiContentGenerate = onCall(
     timeoutSeconds: 420,
   },
   (request) =>
-    runContentGateway('generate', async (database, mode) => {
+    runContentGateway('generate', async (database, mode, telemetry) => {
       // Ordine contratto: auth → owner → mode/kill switch → payload.
       const ownerUid = await requireOwner(request, database);
       if (mode === 'disabled') {
         throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
       }
       const validated = validateAiContentRequest(request.data);
+      telemetry.kind = validated.kind;
       assertGenericAiContentCallableKind(validated);
       const config = await loadRuntimeConfig(database);
       // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
@@ -536,8 +547,10 @@ export const aiContentGenerate = onCall(
 
 /** Owner-only, no secret binding, model invocation, budget reservation or write. */
 export const aiContentPromptExport = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, (request) =>
-  runContentGateway('prompt_export', async (database) => {
+  runContentGateway('prompt_export', async (database, _mode, telemetry) => {
     await requireOwner(request, database);
-    return exportCurrentContentPrompt(request.data);
+    const exported = exportCurrentContentPrompt(request.data);
+    telemetry.kind = 'content_prompt';
+    return exported;
   }),
 );
