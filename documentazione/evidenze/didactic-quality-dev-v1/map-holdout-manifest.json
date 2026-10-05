@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "id": "ram",
+      "source": "## RAM e SSD\n\nLa RAM conserva temporaneamente i dati e le istruzioni usati dalla CPU: senza alimentazione perde il contenuto. Un SSD conserva i file senza alimentazione. La maggiore capacità di un SSD non lo rende equivalente alla RAM: hanno funzioni diverse.",
+      "summary": "La RAM mantiene temporaneamente dati e istruzioni in uso dalla CPU, ma perde il contenuto senza alimentazione. L’SSD conserva i file anche a computer spento. Capacità e funzione non sono equivalenti: una memoria più capiente non sostituisce automaticamente l’altra.",
+      "diagram": "RAM -> contiene -> dati in uso\nRAM -> senza alimentazione -> perde dati\nSSD -> senza alimentazione -> conserva file",
+      "fault": "RAM -> senza alimentazione -> conserva dati"
+    },
+    {
+      "id": "density",
+      "source": "## Densità\n\nLa densità è il rapporto fra massa e volume: ρ=m/V. Per m=100 g e V=20 cm³, ρ=5 g/cm³. Per un materiale omogeneo, alla stessa temperatura e pressione, la densità non dipende dalla quantità. Aumentare soltanto la massa senza specificare il volume non basta per dedurre una variazione di densità.",
+      "summary": "La densità collega massa e volume tramite ρ=m/V: 100 g distribuiti in 20 cm³ corrispondono a 5 g/cm³. Per un materiale omogeneo alle stesse condizioni di temperatura e pressione, resta indipendente dalla quantità. La massa da sola non permette di dedurne una variazione, perché occorre conoscere anche il volume.",
+      "diagram": "Massa e volume -> rapporto m/V -> densità\n100 g / 20 cm³ -> uguale a -> 5 g/cm³\nDensità -> dipende da -> materiale e condizioni",
+      "fault": "Densità -> cresce sempre con -> massa"
+    }
+  ],
+  "version": "concept_map_review-v3",
+  "calls": 4,
+  "split": "holdout",
+  "frozenBeforeCalls": true
+}

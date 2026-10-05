@@ -1,0 +1,48 @@
+{
+  "scenario": "math",
+  "profile": "economy",
+  "reviews": [
+    [
+      0,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ],
+    [
+      1,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ],
+    [
+      2,
+      {
+        "status": "review_recommended",
+        "reasons": [
+          "score_disagreement"
+        ]
+      }
+    ],
+    [
+      3,
+      {
+        "status": "review_recommended",
+        "reasons": [
+          "score_disagreement",
+          "evidence_disagreement"
+        ]
+      }
+    ],
+    [
+      4,
+      {
+        "status": "review_recommended",
+        "reasons": [
+          "evidence_disagreement"
+        ]
+      }
+    ]
+  ]
+}

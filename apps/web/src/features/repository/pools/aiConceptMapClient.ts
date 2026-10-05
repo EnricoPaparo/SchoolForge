@@ -29,6 +29,22 @@ export interface AiConceptMapRequest {
   lessonBody: string;
 }
 
+export interface AiConceptMapReviewRequest extends Omit<AiConceptMapRequest, 'kind'> {
+  kind: 'concept_map_review';
+  candidateMarkdown: string;
+}
+export interface AiConceptMapReviewResult extends Omit<
+  AiConceptMapGenerateResult,
+  'kind' | 'output'
+> {
+  kind: 'concept_map_review';
+  output: AiConceptMapOutput & {
+    reviewOutcome: 'improved' | 'unchanged';
+    issueCodes: string[];
+    sourceIssue: boolean;
+  };
+}
+
 export interface AiConceptMapPreviewResult {
   kind: 'concept_map';
   modelProfile: string;
@@ -59,6 +75,10 @@ export interface AiConceptMapGenerateResult {
 export interface AiConceptMapCallables {
   preview: (req: AiConceptMapRequest) => Promise<AiConceptMapPreviewResult>;
   generate: (req: AiConceptMapRequest) => Promise<AiConceptMapGenerateResult>;
+  previewReview?: (
+    req: AiConceptMapReviewRequest,
+  ) => Promise<Omit<AiConceptMapPreviewResult, 'kind'> & { kind: 'concept_map_review' }>;
+  generateReview?: (req: AiConceptMapReviewRequest) => Promise<AiConceptMapReviewResult>;
 }
 
 /**
@@ -80,6 +100,15 @@ export function buildConceptMapRequest(params: {
 }
 
 export function createAiConceptMapCallables(functions: Functions): AiConceptMapCallables {
+  const previewReviewFn = httpsCallable<
+    AiConceptMapReviewRequest,
+    Omit<AiConceptMapPreviewResult, 'kind'> & { kind: 'concept_map_review' }
+  >(functions, 'aiContentPreview');
+  const generateReviewFn = httpsCallable<AiConceptMapReviewRequest, AiConceptMapReviewResult>(
+    functions,
+    'aiContentGenerate',
+    { timeout: 450_000 },
+  );
   const previewFn = httpsCallable<AiConceptMapRequest, AiConceptMapPreviewResult>(
     functions,
     'aiContentPreview',
@@ -89,6 +118,8 @@ export function createAiConceptMapCallables(functions: Functions): AiConceptMapC
     'aiContentGenerate',
   );
   return {
+    previewReview: async (req) => (await previewReviewFn(req)).data,
+    generateReview: async (req) => (await generateReviewFn(req)).data,
     preview: async (req) => (await previewFn(req)).data,
     generate: async (req) => (await generateFn(req)).data,
   };

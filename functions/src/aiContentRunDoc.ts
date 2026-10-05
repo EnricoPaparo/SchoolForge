@@ -12,7 +12,11 @@ import { isValidStoredDidacticReview } from './aiContentDidacticReview.js';
  */
 
 import { Timestamp } from 'firebase-admin/firestore';
-import { AI_CONTENT_CONTRACT_VERSION, timestampToMillis } from './aiContentCore.js';
+import {
+  AI_CONTENT_CONTRACT_VERSION,
+  DIDACTIC_REVIEW_PROMPT_VERSIONS,
+  timestampToMillis,
+} from './aiContentCore.js';
 import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
 import { isValidStoredVisualProposalOutput } from './aiContentVisualProposal.js';
 import { isValidStoredVisualPlanProposalOutput } from './aiContentVisualPlanProposal.js';
@@ -131,7 +135,7 @@ function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null 
   if (typeof d.status !== 'string' || !RUN_STATUSES.has(d.status)) return null;
   if (
     (d.kind === 'pool_review' || d.kind === 'concept_map_review') &&
-    (d.promptContractVersion !== d.kind + '-v1' ||
+    (d.promptContractVersion !== DIDACTIC_REVIEW_PROMPT_VERSIONS[d.kind] ||
       typeof d.sourceBodyHash !== 'string' ||
       !/^[a-f0-9]{64}$/.test(d.sourceBodyHash))
   )

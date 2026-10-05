@@ -103,7 +103,7 @@ describe('didactic content review', () => {
     expect(resolveContentModelForRequest(map()).model).toBe('gpt-5.6-luna');
     expect(resolveContentModelForRequest(validateAiContentRequest(base)).model).toBe('gpt-6.1-sol');
     expect(canonicalRequest(pool())).toContain('pool_review-v1');
-    expect(canonicalRequest(map())).toContain('concept_map_review-v1');
+    expect(canonicalRequest(map())).toContain('concept_map_review-v3');
     expect(buildContentStructuredRequest(pool(), 'gpt-5.6-luna').max_output_tokens).toBe(16000);
   });
   it('unchanged preserves authoritative candidate despite provider output', () => {
@@ -140,6 +140,13 @@ describe('didactic content review', () => {
       replacementQuestions: [replacement],
     };
     const result = validatePoolReview(output, request);
+    for (const extra of [{ order: 99 }, { extra: 'x' }, { soluzioneIndici: [0] }])
+      expect(() =>
+        validatePoolReview(
+          { ...output, replacementQuestions: [{ ...replacement, ...extra }] },
+          request,
+        ),
+      ).toThrow();
     expect(result.questions[1]).toEqual(request.candidateQuestions[1]);
     expect(result.questions[0]?.testo).toBe(replacement.testo);
     expect(() => validatePoolReview({ ...output, failedOrdinals: [30] }, request)).toThrow();
@@ -230,7 +237,8 @@ describe('didactic replay provenance', () => {
             );
       const run: StoredAiContentRun = {
         contractVersion: AI_CONTENT_CONTRACT_VERSION,
-        promptContractVersion: request.kind + '-v1',
+        promptContractVersion:
+          request.kind === 'concept_map_review' ? 'concept_map_review-v3' : 'pool_review-v1',
         sourceBodyHash: 'b'.repeat(64),
         kind: request.kind,
         status: 'completed',

@@ -1,0 +1,43 @@
+{
+  "id": "holdout-density-healthy-map-v3",
+  "request": {
+    "kind": "concept_map_review",
+    "requestId": "5aa2bee7-0a6f-4479-bc0a-fb8cb9ce2076",
+    "modelProfile": "quality",
+    "lessonBody": "## Densità\n\nLa densità è il rapporto fra massa e volume: ρ=m/V. Per m=100 g e V=20 cm³, ρ=5 g/cm³. Per un materiale omogeneo, alla stessa temperatura e pressione, la densità non dipende dalla quantità. Aumentare soltanto la massa senza specificare il volume non basta per dedurre una variazione di densità.",
+    "candidateMarkdown": "## Sintesi\n\nLa densità collega massa e volume tramite ρ=m/V: 100 g distribuiti in 20 cm³ corrispondono a 5 g/cm³. Per un materiale omogeneo alle stesse condizioni di temperatura e pressione, resta indipendente dalla quantità. La massa da sola non permette di dedurne una variazione, perché occorre conoscere anche il volume.\n\n## Diagramma\n\n```text\nMassa e volume -> rapporto m/V -> densità\n100 g / 20 cm³ -> uguale a -> 5 g/cm³\nDensità -> dipende da -> materiale e condizioni\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n"
+  },
+  "policy": {
+    "model": "gpt-5.6-luna",
+    "priceListVersion": "v8-2026-09-26-luna-cache-standard"
+  },
+  "promptVersion": "concept_map_review-v3",
+  "split": "holdout",
+  "faulty": false,
+  "rawOutput": {
+    "summaryMarkdown": "La densità è il rapporto fra massa e volume, espresso dalla formula ρ=m/V; per 100 g distribuiti in 20 cm³ si ottengono 5 g/cm³. Per un materiale omogeneo, mantenendo uguali temperatura e pressione, la densità non dipende dalla quantità di materiale. Un aumento della sola massa, se non si specifica anche il volume, non permette quindi di dedurre una variazione della densità.",
+    "diagram": "Densità = massa / volume (ρ = m/V)\n100 g e 20 cm³ -> densità = 5 g/cm³\nMateriale omogeneo + stessa temperatura e pressione\n  -> densità indipendente dalla quantità\nAumento della sola massa + volume non specificato\n  -> variazione della densità non deducibile",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "misleading_simplification",
+      "accessibility"
+    ],
+    "sourceIssue": false
+  },
+  "actualCostMicroUsd": 972,
+  "usage": {
+    "inputTokens": 793,
+    "outputTokens": 678,
+    "cachedInputTokens": 0,
+    "cacheWriteInputTokens": 0
+  },
+  "output": {
+    "conceptMapMarkdown": "## Sintesi\n\nLa densità è il rapporto fra massa e volume, espresso dalla formula ρ=m/V; per 100 g distribuiti in 20 cm³ si ottengono 5 g/cm³. Per un materiale omogeneo, mantenendo uguali temperatura e pressione, la densità non dipende dalla quantità di materiale. Un aumento della sola massa, se non si specifica anche il volume, non permette quindi di dedurre una variazione della densità.\n\n## Diagramma\n\n```text\nDensità = massa / volume (ρ = m/V)\n100 g e 20 cm³ -> densità = 5 g/cm³\nMateriale omogeneo + stessa temperatura e pressione\n  -> densità indipendente dalla quantità\nAumento della sola massa + volume non specificato\n  -> variazione della densità non deducibile\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "misleading_simplification",
+      "accessibility"
+    ],
+    "sourceIssue": false
+  }
+}

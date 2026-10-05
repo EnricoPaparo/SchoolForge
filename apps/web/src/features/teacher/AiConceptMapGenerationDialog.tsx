@@ -1,4 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  AiAdvancedReviewControl,
+  AiAdvancedReviewResult,
+  AiAdvancedReviewFailure,
+} from './AiAdvancedReviewControl.js';
+import {
+  reviewMapCandidate,
+  type ArtifactReviewStatus,
+} from '../repository/pools/aiArtifactReview.js';
 import { DialogShell } from '../../components/DialogShell.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
 import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
@@ -45,6 +54,11 @@ export function AiConceptMapGenerationDialog({
   defaultModelProfile?: PoolModelProfile;
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
+  const [advancedReview, setAdvancedReview] = useState(true);
+  const [reviewStatus, setReviewStatus] = useState<ArtifactReviewStatus>('disabled');
+  const [reviewing, setReviewing] = useState(false);
+  const baseResultRef = useRef<AiConceptMapGenerateResult | null>(null);
+  const reviewRequestIdRef = useRef(newRequestId());
   const [modelProfile, setModelProfile] = useState<PoolModelProfile>(defaultModelProfile);
   const [preview, setPreview] = useState<AiConceptMapPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiConceptMapRequest | null>(null);
@@ -74,6 +88,9 @@ export function AiConceptMapGenerationDialog({
     setError(null);
     generateStartedRef.current = false;
     requestIdRef.current = newRequestId();
+    reviewRequestIdRef.current = newRequestId();
+    baseResultRef.current = null;
+    setReviewStatus('disabled');
     setPhase('configure');
   }
 
@@ -118,7 +135,20 @@ export function AiConceptMapGenerationDialog({
     setError(null);
     setPhase('generating');
     try {
-      const response = await callables.generate(previewRequest);
+      const base = baseResultRef.current ?? (await callables.generate(previewRequest));
+      baseResultRef.current = base;
+      let response = base;
+      if (advancedReview) {
+        setReviewing(true);
+        const reviewed = await reviewMapCandidate(
+          callables,
+          previewRequest,
+          base,
+          reviewRequestIdRef.current,
+        );
+        response = { ...reviewed, kind: 'concept_map' };
+        setReviewStatus(reviewed.output.reviewOutcome);
+      }
       if (!mountedRef.current) return;
       const validated = validateConceptMapResult(response);
       if (!validated.ok) {
@@ -127,7 +157,15 @@ export function AiConceptMapGenerationDialog({
         generateStartedRef.current = false;
         return;
       }
-      setResult(response);
+      setResult({
+        ...response,
+        replayed: base.replayed || response.replayed,
+        actualCostMicroUsd:
+          base.actualCostMicroUsd === null ||
+          (advancedReview && response.actualCostMicroUsd === null)
+            ? null
+            : base.actualCostMicroUsd + (advancedReview ? response.actualCostMicroUsd! : 0),
+      });
       setDraft(validated.conceptMapMarkdown);
       setPhase('review');
     } catch (err) {
@@ -135,6 +173,8 @@ export function AiConceptMapGenerationDialog({
       setError(describeAiContentError(err));
       setPhase('error');
       generateStartedRef.current = false;
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -173,6 +213,15 @@ export function AiConceptMapGenerationDialog({
     >
       {phase === 'configure' && (
         <div className={styles.config}>
+          <AiAdvancedReviewControl
+            id="ai-map-review"
+            checked={advancedReview}
+            onChange={(checked) => {
+              setAdvancedReview(checked);
+              invalidateEstimate();
+            }}
+            description="Verifica concetti e relazioni rispetto alla lezione. Il costo aggiuntivo viene stimato e prenotato dopo la bozza."
+          />
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-concept-map-profile-label">
               Profilo modello
@@ -230,6 +279,10 @@ export function AiConceptMapGenerationDialog({
             </li>
             <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
+            <li>
+              Revisione avanzata:{' '}
+              {advancedReview ? 'attiva; stima separata dopo la bozza' : 'disattivata'}
+            </li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
           </ul>
           <div className={`dialog-actions ${editorStyles.actions}`}>
@@ -246,12 +299,17 @@ export function AiConceptMapGenerationDialog({
       {phase === 'generating' && (
         <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
           <span className="spinner" aria-hidden="true" />
-          <span>Generazione della mappa in corso…</span>
+          <span>
+            {reviewing
+              ? 'Revisione dei concetti e delle relazioni…'
+              : 'Generazione della mappa in corso…'}
+          </span>
         </div>
       )}
 
       {phase === 'review' && result && (
         <>
+          <AiAdvancedReviewResult result={null} status={reviewStatus} />
           <p role="status">
             {result.replayed ? 'Bozza già generata: ripristinata.' : 'Bozza generata.'} Profilo:{' '}
             {result.modelProfile}.{' '}
@@ -289,10 +347,19 @@ export function AiConceptMapGenerationDialog({
 
       {phase === 'error' && (
         <>
+          {baseResultRef.current && advancedReview && <AiAdvancedReviewFailure />}
           <p role="alert" className="text-error">
             {error}
           </p>
           <div className={`dialog-actions ${editorStyles.actions}`}>
+            {baseResultRef.current && (
+              <button type="button" className="btn-primary" onClick={() => void confirmGenerate()}>
+                Riprova revisione
+              </button>
+            )}
+            <button type="button" onClick={invalidateEstimate}>
+              Modifica configurazione
+            </button>
             <button type="button" onClick={onClose}>
               Chiudi
             </button>

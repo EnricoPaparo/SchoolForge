@@ -172,6 +172,12 @@ export function validatePoolReview(output: unknown, request: PoolReviewRequest):
   ordinals.forEach((ordinal, i) => {
     const at = ordinal as number;
     const replacement = object(replacements[i]);
+    keys(
+      replacement,
+      replacement.tipo === 'aperta'
+        ? ['tipo', 'testo', 'difficolta', 'soluzione']
+        : ['tipo', 'testo', 'difficolta', 'soluzione', 'opzioni'],
+    );
     if (replacement.tipo !== request.candidateQuestions[at]?.tipo)
       invalid('La riparazione cambia il tipo richiesto.');
     merged[at] = replacement;
@@ -206,15 +212,18 @@ export function validateMapReview(
     invalid('Revisione invariata incoerente.');
   if (reviewOutcome === 'improved' && !issueCodes.length)
     invalid('Revisione migliorata senza motivazione.');
-  const composed = validateAndComposeConceptMap({
-    summaryMarkdown: o.summaryMarkdown,
-    diagram: o.diagram,
-  });
+  const composed =
+    reviewOutcome === 'improved' && !o.sourceIssue
+      ? validateAndComposeConceptMap({
+          summaryMarkdown: o.summaryMarkdown,
+          diagram: o.diagram,
+        })
+      : null;
   return {
     conceptMapMarkdown:
       reviewOutcome === 'unchanged' || o.sourceIssue
         ? request.candidateMarkdown
-        : composed.conceptMapMarkdown,
+        : composed!.conceptMapMarkdown,
     reviewOutcome,
     issueCodes,
     sourceIssue: o.sourceIssue,
@@ -262,7 +271,7 @@ export function buildDidacticReviewPrompt(request: PoolReviewRequest | ConceptMa
   const contract =
     request.kind === 'pool_review'
       ? 'Audita OGNI domanda rispetto alla fonte: correttezza, autonomia, alternative valide, completezza soluzione, indici zero-based, distrattori, copertura e duplicazione concettuale anche con DOMANDE_ESISTENTI. Conserva esattamente tipo e range difficolta. Restituisci failedOrdinals zero-based e replacementQuestions nel medesimo ordine, SOLO per domande difettose. Non riscrivere le domande valide. improved richiede almeno una riparazione e un issueCode; unchanged richiede arrays vuoti. Le replacementQuestions usano soluzione testuale per aperte, soluzione array indici per chiuse; nessun order o ID. Mantieni reali a capo nel codice.'
-      : 'Verifica OGNI concetto e relazione della mappa rispetto al corpo canonico. Correggi relazioni e semplificazioni errate e migliora accessibilita senza inventare contenuti. La sintesi spiega; il diagramma mostra relazioni esplicite entro 80 colonne, senza heading o fence. Se la fonte e ambigua o sbagliata in modo sostanziale, sourceIssue=true e issueCodes include source_issue: non correggere la fonte per vie traverse. unchanged conserva il candidato; improved richiede issueCodes. summaryMarkdown e diagram devono sempre rispettare il contratto mappa.';
+      : 'Verifica OGNI concetto e relazione della mappa rispetto al corpo canonico. Intervieni soltanto su difetti dimostrabili, non per preferenze di stile o per accorciare una mappa già valida. Conserva le parti corrette, le formule, le condizioni e i nessi essenziali nella sezione che li spiega: la presenza nel diagramma non giustifica eliminarli dalla sintesi. Se non trovi un difetto concreto restituisci unchanged. Correggi relazioni e semplificazioni errate e migliora accessibilità senza inventare contenuti. summaryMarkdown è una sintesi ragionata in PROSA CONTINUA: paragrafi senza elenchi puntati o numerati, senza heading, tabelle, callout o fence. Spiega i nessi portanti senza trasformarsi in una mini-lezione. diagram è soltanto testo con relazioni esplicite entro 80 colonne, senza heading, fence o istruzioni Markdown. Non produrre HTML, front matter o separatori. Se la fonte è ambigua o sbagliata in modo sostanziale, sourceIssue=true e issueCodes include source_issue: non correggere la fonte per vie traverse. unchanged conserva il candidato; improved richiede issueCodes. Prima di rispondere verifica correttezza, fedeltà e forma di entrambi i campi.';
   const data =
     request.kind === 'pool_review'
       ? {

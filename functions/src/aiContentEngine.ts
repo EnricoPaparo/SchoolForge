@@ -11,6 +11,7 @@ import { validatePoolReview, validateMapReview } from './aiContentDidacticReview
 import {
   AiContentError,
   AI_CONTENT_CONTRACT_VERSION,
+  DIDACTIC_REVIEW_PROMPT_VERSIONS,
   AI_CONTENT_LIMITS,
   AI_CONTENT_RUN_TTL_MS,
   computeBudgetReservationKey,
@@ -346,7 +347,7 @@ export async function generateContent(
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
     ...(request.kind === 'pool_review' || request.kind === 'concept_map_review'
       ? {
-          promptContractVersion: request.kind + '-v1',
+          promptContractVersion: DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
           sourceBodyHash: computeContentSourceBodyHash(
             request.kind === 'pool_review' ? request.lessonSource : request.lessonBody,
           ),

@@ -19,6 +19,24 @@ const BODY = '## La densità\n\nTesto della lezione.';
 
 function callables(over: Partial<AiConceptMapCallables> = {}): AiConceptMapCallables {
   return {
+    previewReview: vi.fn().mockResolvedValue({
+      kind: 'concept_map_review',
+      estimatedCostMicroUsd: 100,
+      reservationCostMicroUsd: 1000,
+    }),
+    generateReview: vi.fn(async (req) => ({
+      status: 'completed',
+      kind: 'concept_map_review',
+      modelProfile: 'quality',
+      actualCostMicroUsd: 100,
+      replayed: false,
+      output: {
+        conceptMapMarkdown: req.candidateMarkdown,
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+        sourceIssue: false,
+      },
+    })),
     preview: vi.fn().mockResolvedValue({
       kind: 'concept_map',
       modelProfile: 'quality',

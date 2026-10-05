@@ -27,6 +27,8 @@ export interface CompleteLessonCheckpoint {
   poolCompleted: boolean;
   mapRequestId: string;
   poolRequestId: string;
+  mapReviewRequestId?: string;
+  poolReviewRequestId?: string;
   mapCostMicroUsd: number | null;
   poolCostMicroUsd: number | null;
   visual: {
@@ -124,6 +126,11 @@ export function parseCompleteLessonCheckpoint(
       return null;
     }
     if (typeof value.mapRequestId !== 'string' || typeof value.poolRequestId !== 'string')
+      return null;
+    if (
+      (value.mapReviewRequestId !== undefined && typeof value.mapReviewRequestId !== 'string') ||
+      (value.poolReviewRequestId !== undefined && typeof value.poolReviewRequestId !== 'string')
+    )
       return null;
     for (const cost of [value.mapCostMicroUsd, value.poolCostMicroUsd]) {
       if (cost !== null && (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0))

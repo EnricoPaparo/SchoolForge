@@ -63,6 +63,10 @@ export class AiContentError extends Error {
 // ─── Costanti congelate (contratto AIGEN-00) ──────────────────────────────────
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
+export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
+  pool_review: 'pool_review-v1',
+  concept_map_review: 'concept_map_review-v3',
+} as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_GUIDANCE_CHARS = 500;
 export const MAX_POOL_TOTAL_QUESTIONS = 30;
@@ -485,7 +489,7 @@ export function canonicalRequest(request: AiContentRequest): string {
     const { requestId, ...payload } = request;
     void requestId;
     return JSON.stringify({
-      promptContractVersion: request.kind + '-v1',
+      promptContractVersion: DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
       reviewPolicy: resolveContentModelForRequest(request),
       ...payload,
     });
