@@ -1,3 +1,8 @@
+import {
+  buildDidacticReviewPrompt,
+  POOL_REVIEW_ISSUE_CODES,
+  MAP_REVIEW_ISSUE_CODES,
+} from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — costruzione **pura** dell'esatto payload Responses API (Structured
  * Output) per pool e lezione. È l'**unica** fonte del payload: la stima costi, il
@@ -133,6 +138,8 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
         CLOSED_QUESTION_OUTPUT_TOKENS
     );
   }
+  if (request.kind === 'pool_review') return 16000;
+  if (request.kind === 'concept_map_review') return CONCEPT_MAP_OUTPUT_TOKENS;
   if (request.kind === 'concept_map') return CONCEPT_MAP_OUTPUT_TOKENS;
   if (request.kind === 'visual_proposal') return VISUAL_PROPOSAL_OUTPUT_TOKENS;
   if (request.kind === 'visual_plan_proposal') {
@@ -144,6 +151,10 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
 
 /** Stima **informativa** dei token di input (euristica caratteri/token). */
 export function estimateInputTokens(request: AiContentRequest): number {
+  if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
+    const p = buildDidacticReviewPrompt(request);
+    return Math.ceil((p.system.length + p.user.length) / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
+  }
   if (request.kind === 'lesson_review') {
     const chars =
       request.candidateBody.length +
@@ -201,7 +212,9 @@ export function estimateInputTokens(request: AiContentRequest): number {
   }
   const chars =
     request.kind === 'pool'
-      ? request.lessonSource.length + (request.teacherGuidance?.length ?? 0)
+      ? request.lessonSource.length +
+        (request.teacherGuidance?.length ?? 0) +
+        (request.existingQuestionStems?.join('').length ?? 0)
       : request.currentBody.length +
         (request.teacherGuidance?.length ?? 0) +
         request.concettiChiave.join('').length +
@@ -616,29 +629,38 @@ export function buildContentStructuredRequest(
   model: string,
 ): OpenAiStructuredRequest {
   const prompt =
-    request.kind === 'pool'
-      ? buildPoolPrompt(request)
-      : request.kind === 'concept_map'
-        ? buildConceptMapPrompt(request)
-        : request.kind === 'visual_proposal'
-          ? buildVisualProposalPrompt(request)
-          : request.kind === 'visual_plan_proposal'
-            ? buildVisualPlanProposalPrompt(request)
-            : request.kind === 'lesson_review'
-              ? buildLessonReviewPrompt(request)
-              : buildLessonPromptForPolicy(request, usesGpt6LessonPolicy(model) ? 'gpt6' : 'gpt56');
+    request.kind === 'pool_review' || request.kind === 'concept_map_review'
+      ? buildDidacticReviewPrompt(request)
+      : request.kind === 'pool'
+        ? buildPoolPrompt(request)
+        : request.kind === 'concept_map'
+          ? buildConceptMapPrompt(request)
+          : request.kind === 'visual_proposal'
+            ? buildVisualProposalPrompt(request)
+            : request.kind === 'visual_plan_proposal'
+              ? buildVisualPlanProposalPrompt(request)
+              : request.kind === 'lesson_review'
+                ? buildLessonReviewPrompt(request)
+                : buildLessonPromptForPolicy(
+                    request,
+                    usesGpt6LessonPolicy(model) ? 'gpt6' : 'gpt56',
+                  );
   const schema =
-    request.kind === 'pool'
-      ? buildPoolOutputSchema(request)
-      : request.kind === 'concept_map'
-        ? CONCEPT_MAP_OUTPUT_SCHEMA
-        : request.kind === 'visual_proposal'
-          ? buildVisualProposalOutputSchema(request)
-          : request.kind === 'visual_plan_proposal'
-            ? buildVisualPlanProposalOutputSchema(request)
-            : request.kind === 'lesson_review'
-              ? LESSON_REVIEW_OUTPUT_SCHEMA
-              : LESSON_OUTPUT_SCHEMA;
+    request.kind === 'pool_review'
+      ? POOL_REVIEW_OUTPUT_SCHEMA
+      : request.kind === 'concept_map_review'
+        ? MAP_REVIEW_OUTPUT_SCHEMA
+        : request.kind === 'pool'
+          ? buildPoolOutputSchema(request)
+          : request.kind === 'concept_map'
+            ? CONCEPT_MAP_OUTPUT_SCHEMA
+            : request.kind === 'visual_proposal'
+              ? buildVisualProposalOutputSchema(request)
+              : request.kind === 'visual_plan_proposal'
+                ? buildVisualPlanProposalOutputSchema(request)
+                : request.kind === 'lesson_review'
+                  ? LESSON_REVIEW_OUTPUT_SCHEMA
+                  : LESSON_OUTPUT_SCHEMA;
   const reasoningEffort = reasoningEffortForContentRequest(model, request);
   return {
     model,
@@ -653,7 +675,10 @@ export function buildContentStructuredRequest(
         : {}),
       format: {
         type: 'json_schema',
-        name: AI_CONTENT_SCHEMA_NAME,
+        name:
+          request.kind === 'pool_review' || request.kind === 'concept_map_review'
+            ? request.kind + '_v1'
+            : AI_CONTENT_SCHEMA_NAME,
         strict: true,
         schema,
       },
@@ -672,3 +697,35 @@ export function buildContentStructuredRequest(
 export function reservationInputTokenUpperBound(request: AiContentRequest, model: string): number {
   return Buffer.byteLength(JSON.stringify(buildContentStructuredRequest(request, model)), 'utf8');
 }
+
+const reviewOutcomeSchema = { type: 'string', enum: ['improved', 'unchanged'] };
+const reviewCodesSchema = (allowed: readonly string[]) => ({
+  type: 'array',
+  items: { type: 'string', enum: allowed },
+});
+export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['reviewOutcome', 'issueCodes', 'failedOrdinals', 'replacementQuestions'],
+  properties: {
+    reviewOutcome: reviewOutcomeSchema,
+    issueCodes: reviewCodesSchema(POOL_REVIEW_ISSUE_CODES),
+    failedOrdinals: {
+      type: 'array',
+      items: { type: 'integer', minimum: 0, maximum: 29 },
+      maxItems: 30,
+    },
+    replacementQuestions: (POOL_OUTPUT_SCHEMA.properties as Record<string, unknown>).questions,
+  },
+};
+export const MAP_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summaryMarkdown', 'diagram', 'reviewOutcome', 'issueCodes', 'sourceIssue'],
+  properties: {
+    ...(CONCEPT_MAP_OUTPUT_SCHEMA.properties as Record<string, unknown>),
+    reviewOutcome: reviewOutcomeSchema,
+    issueCodes: reviewCodesSchema(MAP_REVIEW_ISSUE_CODES),
+    sourceIssue: { type: 'boolean' },
+  },
+};

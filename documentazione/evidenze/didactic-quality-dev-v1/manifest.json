@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "sources": [
+    "PT00-01",
+    "PT00-04",
+    "PT00-05",
+    "PT00-06"
+  ],
+  "profiles": [
+    "economy",
+    "quality"
+  ],
+  "contentCalls": 41,
+  "correctionCallsPlanned": 12,
+  "visualCallsPlanned": 3,
+  "maxTotalCalls": 60,
+  "maxCostMicroUsd": 5000000,
+  "retries": 0,
+  "syntheticOnly": true,
+  "mapHoldoutCalls": 4,
+  "finalMapPromptVersion": "concept_map_review-v3"
+}

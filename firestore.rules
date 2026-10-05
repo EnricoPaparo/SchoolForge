@@ -1523,6 +1523,11 @@ service cloud.firestore {
     // a Rules concern: the caller who could tamper with it (the owner) is
     // the same principal Rules already trust for every other owner-write
     // path in this codebase (e.g. `teacherSnapshot`, `verifications.config`).
+    // Canonical pending IA proposals are server-only; they never duplicate student answers.
+    match /corrections/{submissionId}/aiPendingDrafts/{draftId} {
+      allow read, write: if false;
+    }
+
     match /corrections/{submissionId} {
       // Create: only once, only for a submitted submission owned by the
       // caller, identity fields pinned to that submission, always starting

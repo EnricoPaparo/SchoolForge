@@ -1,3 +1,5 @@
+import { validateReviewRequest } from './aiContentDidacticReview.js';
+import type { ValidatedProposalQuestion } from './aiContentValidation.js';
 /**
  * AIGEN-01 — core **puro** della generazione IA di contenuti (pool e lezione).
  *
@@ -61,6 +63,10 @@ export class AiContentError extends Error {
 // ─── Costanti congelate (contratto AIGEN-00) ──────────────────────────────────
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
+export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
+  pool_review: 'pool_review-v1',
+  concept_map_review: 'concept_map_review-v3',
+} as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_GUIDANCE_CHARS = 500;
 export const MAX_POOL_TOTAL_QUESTIONS = 30;
@@ -163,6 +169,8 @@ export type LessonDepth = (typeof LESSON_DEPTHS)[number];
 export type ContentKind =
   | 'pool'
   | 'lesson'
+  | 'pool_review'
+  | 'concept_map_review'
   | 'lesson_review'
   | 'concept_map'
   | 'visual_proposal'
@@ -189,6 +197,7 @@ export interface PoolRequest {
   lessonSource: string;
   /** Solo contesto quantitativo; NON abilita deduplicazione semantica. */
   existingPoolQuestionCount: number;
+  existingQuestionStems?: string[];
 }
 
 /**
@@ -359,7 +368,23 @@ export interface VisualPlanProposalRequest {
   quantity: VisualPlanProposalQuantity;
 }
 
+export interface PoolReviewRequest extends Omit<PoolRequest, 'kind'> {
+  kind: 'pool_review';
+  candidateQuestions: ValidatedProposalQuestion[];
+}
+export interface ConceptMapReviewRequest extends ConceptMapRequestBase {
+  kind: 'concept_map_review';
+  candidateMarkdown: string;
+}
+interface ConceptMapRequestBase {
+  requestId: string;
+  modelProfile: ModelProfile;
+  lessonBody: string;
+}
+
 export type AiContentRequest =
+  | PoolReviewRequest
+  | ConceptMapReviewRequest
   | PoolRequest
   | LessonRequest
   | LessonReviewRequest
@@ -460,6 +485,15 @@ export function computeBudgetReservationKey(
  * Deterministico e stabile tra i retry dello stesso payload.
  */
 export function canonicalRequest(request: AiContentRequest): string {
+  if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
+    const { requestId, ...payload } = request;
+    void requestId;
+    return JSON.stringify({
+      promptContractVersion: DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
+      reviewPolicy: resolveContentModelForRequest(request),
+      ...payload,
+    });
+  }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
       promptContractVersion: 'lesson-review-v1',
@@ -561,6 +595,9 @@ export function canonicalRequest(request: AiContentRequest): string {
           },
           teacherGuidance: request.teacherGuidance,
           existingPoolQuestionCount: request.existingPoolQuestionCount,
+          ...(request.existingQuestionStems?.length
+            ? { existingQuestionStems: request.existingQuestionStems }
+            : {}),
           lessonSource: request.lessonSource,
         }
       : {
@@ -865,6 +902,8 @@ function validateAiContentRequestWithPolicy(
     throw new AiContentError('invalid_input', 'requestId mancante o malformato.');
   }
   if (
+    input.kind !== 'pool_review' &&
+    input.kind !== 'concept_map_review' &&
     input.kind !== 'pool' &&
     input.kind !== 'lesson' &&
     input.kind !== 'lesson_review' &&
@@ -878,6 +917,9 @@ function validateAiContentRequestWithPolicy(
   // MULTI-VISUAL-02 — proposta coordinata: stesso payload didattico della
   // proposta visuale singola, esteso da `quantity`. Validata prima di tutto
   // il resto, come le altre fasi testuali.
+  if (input.kind === 'pool_review' || input.kind === 'concept_map_review')
+    return enforceTotalRequestSize(validateReviewRequest(input));
+
   if (input.kind === 'visual_plan_proposal') {
     assertNoExtraKeys(input, [
       'kind',
@@ -1034,6 +1076,7 @@ function validateAiContentRequestWithPolicy(
       'counts',
       'lessonSource',
       'existingPoolQuestionCount',
+      'existingQuestionStems',
     ]);
     if (input.level !== 'base' && input.level !== 'balanced' && input.level !== 'advanced') {
       throw new AiContentError('invalid_input', 'Livello del pool non valido.');
@@ -1076,6 +1119,9 @@ function validateAiContentRequestWithPolicy(
       counts,
       lessonSource: input.lessonSource,
       existingPoolQuestionCount,
+      ...(input.existingQuestionStems === undefined
+        ? {}
+        : { existingQuestionStems: parseExistingQuestionStems(input.existingQuestionStems) }),
     });
   }
 
@@ -1171,7 +1217,11 @@ export function resolveContentModelForRequest(request: AiContentRequest): {
   model: string;
   priceListVersion: string;
 } {
-  if (request.kind === 'lesson_review') {
+  if (
+    request.kind === 'lesson_review' ||
+    request.kind === 'pool_review' ||
+    request.kind === 'concept_map_review'
+  ) {
     return GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy;
   }
   if (request.kind === 'lesson') {
@@ -1180,4 +1230,23 @@ export function resolveContentModelForRequest(request: AiContentRequest): {
       : GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
   }
   return resolveModelProfile(request.modelProfile);
+}
+
+export function parseExistingQuestionStems(value: unknown): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_EXISTING_POOL_QUESTIONS ||
+    value.some((s) => typeof s !== 'string' || !s.trim() || s.length > 2000)
+  ) {
+    throw new AiContentError(
+      'invalid_input',
+      'Domande esistenti non valide (massimo 1000, 2000 caratteri ciascuna).',
+    );
+  }
+  return value.map((s) => (s as string).trim());
+}
+
+/** Exact canonical source identity for didactic review provenance. */
+export function computeContentSourceBodyHash(body: string): string {
+  return sha256Hex(body);
 }

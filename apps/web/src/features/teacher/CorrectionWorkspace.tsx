@@ -27,6 +27,14 @@ import type { AnswerValue, QuestionEvaluation } from '../../types/firestore.js';
 import styles from './CorrectionWorkspace.module.css';
 import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
 
+const REVIEW_REASON_LABELS: Record<string, string> = {
+  score_disagreement: 'punteggi diversi fra i due valutatori',
+  evidence_disagreement: 'interpretazioni diverse degli errori o delle lacune',
+  alternative_disagreement: 'disaccordo sulla validità di un metodo alternativo',
+  ambiguous_reference: 'domanda o soluzione di riferimento ambigua',
+  evaluator_uncertain: 'incertezza segnalata da un valutatore',
+};
+
 export type CorrectionWorkspaceProps = {
   submissionId: string;
   ownerUid: string;
@@ -179,6 +187,7 @@ export function CorrectionWorkspace({
     'save' | 'complete' | 'return' | 'reopen' | 'visibility' | 'solutions' | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmReopen, setConfirmReopen] = useState(false);
@@ -348,6 +357,11 @@ export function CorrectionWorkspace({
       const saved = await saveCorrection(
         {
           submissionId,
+          reviewAcknowledgedOrders: reviewAcknowledged
+            ? Object.values(data.correction.evaluations)
+                .filter((e) => e.aiReview?.status === 'review_recommended')
+                .map((e) => e.order)
+            : [],
           evaluations,
           generalFeedback: generalFeedback === '' ? null : generalFeedback,
         },
@@ -381,6 +395,7 @@ export function CorrectionWorkspace({
       // newer edit is never clobbered by this now-stale result.
       setEdit((current) => (current === editToSave ? persisted : current));
       setSaveStatus('saved');
+      setReviewAcknowledged(false);
     } catch (err) {
       // A failed write keeps every local edit intact — nothing is reset here.
       if (mountedRef.current) setActionError(saveErrorMessage(err));
@@ -524,7 +539,12 @@ export function CorrectionWorkspace({
   }).length;
   const allEvaluated = orders.length > 0 && evaluatedCount === orders.length;
   const canComplete =
-    correction.status === 'in_progress' && !dirty && !hasAnyPointsError && allEvaluated && !busy;
+    correction.status === 'in_progress' &&
+    !dirty &&
+    !hasAnyPointsError &&
+    allEvaluated &&
+    !busy &&
+    !Object.values(correction.evaluations).some((e) => e.aiReview?.status === 'review_recommended');
 
   // Live riepilogo: derived from the locally edited scores (via the same
   // computeCorrectionTotals used by correctionsService.ts, never
@@ -579,6 +599,41 @@ export function CorrectionWorkspace({
               {STATUS_LABELS[uiStatus]}
             </span>
             {dirty && <span className={styles.dirtyBadge}>Modifiche non salvate</span>}
+            {Object.values(correction.evaluations).some(
+              (e) => e.aiReview?.status === 'review_recommended',
+            ) && (
+              <div role="status">
+                <strong>
+                  Revisione docente richiesta: le valutazioni IA non concordano. I punteggi sono
+                  proposte provvisorie.
+                </strong>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={reviewAcknowledged}
+                    disabled={busy !== null}
+                    onChange={(event) => setReviewAcknowledged(event.target.checked)}
+                  />
+                  Ho controllato le domande segnalate e confermo i punteggi; salva per registrare la
+                  revisione.
+                </label>
+              </div>
+            )}
+            {Object.values(correction.evaluations).some(
+              (e) => e.aiReview?.status === 'verified',
+            ) && <span>Revisione avanzata completata</span>}
+            {correction.evaluations[String(currentOrder)]?.aiReview?.status ===
+              'review_recommended' && (
+              <p>
+                Domanda {currentOrder}: revisione richiesta (
+                {correction.evaluations[String(currentOrder)]?.aiReview?.reasons
+                  .map(
+                    (reason) => REVIEW_REASON_LABELS[reason] ?? 'verifica del docente necessaria',
+                  )
+                  .join('; ')}
+                ).
+              </p>
+            )}
           </div>
         </div>
 
@@ -788,7 +843,7 @@ export function CorrectionWorkspace({
                   type="button"
                   className="btn-success"
                   onClick={() => void handleSave()}
-                  disabled={!dirty || hasAnyPointsError || busy !== null}
+                  disabled={(!dirty && !reviewAcknowledged) || hasAnyPointsError || busy !== null}
                 >
                   {busy === 'save' ? 'Salvataggio…' : 'Salva correzione'}
                 </button>

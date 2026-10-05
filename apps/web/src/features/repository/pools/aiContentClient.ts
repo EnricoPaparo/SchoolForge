@@ -116,6 +116,19 @@ export interface AiPoolContentRequest {
   counts: PoolCounts;
   lessonSource: string;
   existingPoolQuestionCount: number;
+  existingQuestionStems?: string[];
+}
+
+export interface AiPoolReviewRequest extends Omit<AiPoolContentRequest, 'kind'> {
+  kind: 'pool_review';
+  candidateQuestions: AiProposalQuestion[];
+}
+export interface AiPoolReviewResult extends Omit<AiPoolGenerateResult, 'kind' | 'output'> {
+  kind: 'pool_review';
+  output: AiPoolProposalOutput & {
+    reviewOutcome: 'improved' | 'unchanged';
+    issueCodes: string[];
+  };
 }
 
 export interface AiPoolPreviewResult {
@@ -160,6 +173,10 @@ export interface AiPoolGenerateResult {
 export interface AiContentCallables {
   preview: (req: AiPoolContentRequest) => Promise<AiPoolPreviewResult>;
   generate: (req: AiPoolContentRequest) => Promise<AiPoolGenerateResult>;
+  previewReview?: (
+    req: AiPoolReviewRequest,
+  ) => Promise<Omit<AiPoolPreviewResult, 'kind'> & { kind: 'pool_review' }>;
+  generateReview?: (req: AiPoolReviewRequest) => Promise<AiPoolReviewResult>;
 }
 
 /** Nuovo `requestId` (idempotenza server-side su `aiContentRuns`). */
@@ -179,6 +196,7 @@ export function buildPoolContentRequest(params: {
   counts: PoolCounts;
   lessonSource: string;
   existingPoolQuestionCount: number;
+  existingQuestionStems?: string[];
   teacherGuidance?: string;
 }): AiPoolContentRequest {
   const guidance = params.teacherGuidance?.trim();
@@ -194,12 +212,24 @@ export function buildPoolContentRequest(params: {
     },
     lessonSource: params.lessonSource,
     existingPoolQuestionCount: params.existingPoolQuestionCount,
+    ...(params.existingQuestionStems?.length
+      ? { existingQuestionStems: params.existingQuestionStems }
+      : {}),
     ...(guidance ? { teacherGuidance: guidance } : {}),
   };
 }
 
 /** Crea i wrapper delle callable su una `Functions` iniettata (testabile). */
 export function createAiContentCallables(functions: Functions): AiContentCallables {
+  const previewReviewFn = httpsCallable<
+    AiPoolReviewRequest,
+    Omit<AiPoolPreviewResult, 'kind'> & { kind: 'pool_review' }
+  >(functions, 'aiContentPreview');
+  const generateReviewFn = httpsCallable<AiPoolReviewRequest, AiPoolReviewResult>(
+    functions,
+    'aiContentGenerate',
+    { timeout: 450_000 },
+  );
   const previewFn = httpsCallable<AiPoolContentRequest, AiPoolPreviewResult>(
     functions,
     'aiContentPreview',
@@ -210,6 +240,8 @@ export function createAiContentCallables(functions: Functions): AiContentCallabl
     { timeout: 450_000 },
   );
   return {
+    previewReview: async (req) => (await previewReviewFn(req)).data,
+    generateReview: async (req) => (await generateReviewFn(req)).data,
     preview: async (req) => (await previewFn(req)).data,
     generate: async (req) => (await generateFn(req)).data,
   };
@@ -224,6 +256,8 @@ export function describeAiContentError(err: unknown): string {
   const code = (err as { details?: { code?: string } })?.details?.code;
   const httpsCode = (err as { code?: string })?.code;
   switch (code) {
+    case 'source_issue':
+      return 'Il revisore ha rilevato un problema nella lezione sorgente. Controlla la lezione prima di applicare la mappa.';
     case 'feature_disabled':
       return 'La generazione IA è disattivata.';
     case 'not_owner':

@@ -120,6 +120,7 @@ export interface AiCorrectionRequest {
   teacherGuidance?: string;
   /** TWU-02 — profilo modello chiuso; il server risolve modello/listino. */
   modelProfile?: ModelProfile;
+  advancedReview?: boolean;
 }
 
 export const MAX_TEACHER_GUIDANCE_CHARS = 500;
@@ -137,6 +138,8 @@ export interface AiPreviewCounts {
 export interface AiPreviewResult {
   mode: 'mock' | 'openai';
   phase: 'preview';
+  maximumCostMicroUsd?: number;
+  advancedReview?: boolean;
   requestId: string;
   verificationId: string;
   counts: AiPreviewCounts;
@@ -168,6 +171,8 @@ export interface AiRunResult {
   tokensEstimated: number;
   tokensActual: number;
   costActual: number;
+  costReservationMicroUsd?: number;
+  costSettledMicroUsd?: number;
   results: AiRunSubmissionResult[];
 }
 
@@ -189,6 +194,7 @@ export function buildRequest(
   gradingMode: GradingMode,
   teacherGuidance?: string,
   modelProfile?: ModelProfile,
+  advancedReview = true,
 ): AiCorrectionRequest {
   const normalizedGuidance = teacherGuidance?.trim();
   return {
@@ -196,6 +202,7 @@ export function buildRequest(
     submissionIds: [...submissionIds],
     requestId,
     gradingMode,
+    advancedReview,
     ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
     ...(modelProfile ? { modelProfile } : {}),
   };

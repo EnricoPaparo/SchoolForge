@@ -1,5 +1,14 @@
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
+  AiAdvancedReviewControl,
+  AiAdvancedReviewResult,
+  AiAdvancedReviewFailure,
+} from './AiAdvancedReviewControl.js';
+import {
+  reviewPoolCandidate,
+  type ArtifactReviewStatus,
+} from '../repository/pools/aiArtifactReview.js';
+import {
   DEFAULT_POOL_MODEL_PROFILE,
   type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
@@ -102,6 +111,11 @@ export function AiPoolGenerationDialog({
 
   const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
   const [phase, setPhase] = useState<Phase>('configure');
+  const [advancedReview, setAdvancedReview] = useState(true);
+  const [reviewStatus, setReviewStatus] = useState<ArtifactReviewStatus>('disabled');
+  const [reviewing, setReviewing] = useState(false);
+  const baseResultRef = useRef<AiPoolGenerateResult | null>(null);
+  const reviewRequestIdRef = useRef(newRequestId());
   const [level, setLevel] = useState<PoolLevel>(DEFAULT_POOL_LEVEL);
   const [counts, setCounts] = useState<CountsDraft>({
     aperta: String(DEFAULT_POOL_COUNTS.aperta),
@@ -166,6 +180,9 @@ export function AiPoolGenerationDialog({
     setError(null);
     generateStartedRef.current = false;
     requestIdRef.current = newRequestId();
+    reviewRequestIdRef.current = newRequestId();
+    baseResultRef.current = null;
+    setReviewStatus('disabled');
     setPhase('configure');
   }
 
@@ -194,6 +211,7 @@ export function AiPoolGenerationDialog({
       },
       lessonSource,
       existingPoolQuestionCount: existingCount,
+      existingQuestionStems: existingPool?.questions.map((question) => question.testo),
       teacherGuidance: guidance,
     });
   }
@@ -225,9 +243,29 @@ export function AiPoolGenerationDialog({
     setError(null);
     setPhase('generating');
     try {
-      const res = await callables.generate(previewRequest);
+      const base = baseResultRef.current ?? (await callables.generate(previewRequest));
+      baseResultRef.current = base;
+      let res = base;
+      if (advancedReview) {
+        setReviewing(true);
+        const reviewed = await reviewPoolCandidate(
+          callables,
+          previewRequest,
+          base,
+          reviewRequestIdRef.current,
+        );
+        res = { ...reviewed, kind: 'pool' };
+        setReviewStatus(reviewed.output.reviewOutcome);
+      }
       if (!mountedRef.current) return;
-      setResult(res);
+      setResult({
+        ...res,
+        replayed: base.replayed || res.replayed,
+        actualCostMicroUsd:
+          base.actualCostMicroUsd === null || (advancedReview && res.actualCostMicroUsd === null)
+            ? null
+            : base.actualCostMicroUsd + (advancedReview ? res.actualCostMicroUsd! : 0),
+      });
       setLocalQuestions(proposalToLocalQuestions(res.output));
       setApplyErrors(null);
       setPhase('review');
@@ -237,6 +275,8 @@ export function AiPoolGenerationDialog({
       setPhase('error');
       // Consenti un nuovo tentativo (stessa requestId → idempotente lato server).
       generateStartedRef.current = false;
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -344,6 +384,15 @@ export function AiPoolGenerationDialog({
               setModelProfile(value);
               invalidateEstimate();
             }}
+          />
+          <AiAdvancedReviewControl
+            id="ai-pool-review"
+            checked={advancedReview}
+            onChange={(checked) => {
+              setAdvancedReview(checked);
+              invalidateEstimate();
+            }}
+            description="Controlla duplicati, ambiguità, fondamento nella lezione e soluzioni. Il costo aggiuntivo viene stimato e prenotato dopo la bozza."
           />
           {/* Stile del pool */}
           <div className={styles.field}>
@@ -468,7 +517,11 @@ export function AiPoolGenerationDialog({
             <li>Aperte: {parsedCounts.aperta ?? 0}</li>
             <li>Risposta singola: {parsedCounts.chiusa_singola ?? 0}</li>
             <li>Risposta multipla: {parsedCounts.chiusa_multipla ?? 0}</li>
-            <li>Profilo: Quality</li>
+            <li>Profilo: {modelProfile === 'quality' ? 'Quality' : 'Economy'}</li>
+            <li>
+              Revisione avanzata:{' '}
+              {advancedReview ? 'attiva; stima separata dopo la bozza' : 'disattivata'}
+            </li>
             <li>Stile: {POOL_LEVEL_OPTIONS.find((o) => o.value === level)?.label}</li>
             <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
@@ -489,13 +542,18 @@ export function AiPoolGenerationDialog({
       {phase === 'generating' && (
         <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
           <span className="spinner" aria-hidden="true" />
-          <span>Generazione del pool in corso…</span>
+          <span>
+            {reviewing
+              ? 'Revisione delle domande e delle soluzioni…'
+              : 'Generazione del pool in corso…'}
+          </span>
         </div>
       )}
 
       {/* 5) REVISIONE PROPOSTA */}
       {phase === 'review' && result && (
         <>
+          <AiAdvancedReviewResult result={null} status={reviewStatus} />
           <p role="status">
             {result.replayed ? 'Proposta già generata: ripristinata.' : 'Proposta generata.'}{' '}
             {result.actualCostMicroUsd === null
@@ -576,10 +634,19 @@ export function AiPoolGenerationDialog({
       {/* ERRORE (stima/generazione) */}
       {phase === 'error' && (
         <>
+          {baseResultRef.current && advancedReview && <AiAdvancedReviewFailure />}
           <p role="alert" className="text-error">
             {error}
           </p>
           <div className="dialog-actions">
+            {baseResultRef.current && (
+              <button type="button" className="btn-primary" onClick={() => void confirmGenerate()}>
+                Riprova revisione
+              </button>
+            )}
+            <button type="button" onClick={invalidateEstimate}>
+              Modifica configurazione
+            </button>
             <button type="button" onClick={onClose}>
               Chiudi
             </button>

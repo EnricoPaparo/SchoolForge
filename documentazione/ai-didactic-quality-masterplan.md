@@ -1,6 +1,11 @@
 # SchoolForge — masterplan per la qualità didattica IA
 
-**Stato:** piano di prodotto e architettura approvato; implementazione non avviata
+**Stato:** piano approvato; lezioni e revisione già disponibili in DEV. Incremento
+pool/mappe/correzioni in implementazione e qualificazione (issue #518).
+
+Lo stato storico delle singole fasi sotto non costituisce una dichiarazione di
+rilascio. Per il contratto e le evidenze dell'incremento corrente vedere
+[`didactic-quality-dev-implementation.md`](didactic-quality-dev-implementation.md).
 
 **Data:** 4 ottobre 2026
 

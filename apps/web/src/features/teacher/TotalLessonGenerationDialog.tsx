@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react';
+import { reviewMapCandidate, reviewPoolCandidate } from '../repository/pools/aiArtifactReview.js';
 import { functions } from '../../lib/firebase.js';
 import {
   buildPoolContentRequest,
@@ -68,6 +69,8 @@ export function describeCompleteWorkflowError(cause: unknown): string {
     return 'Non è stato possibile salvare la lezione. Nessuna fase successiva è stata avviata.';
   }
   if (cause.stage === 'concept_map') {
+    if (code === 'source_issue')
+      return 'Il revisore della mappa ha rilevato un problema nella lezione sorgente. Controlla la lezione prima di continuare.';
     if (code === 'provider_invalid_output' || code === 'output_incomplete') {
       return 'La mappa prodotta non era valida. La lezione è salva: riprova dalla mappa.';
     }
@@ -120,8 +123,14 @@ export function TotalLessonGenerationDialog({
   const poolCompletedRef = useRef(restoredCheckpoint?.poolCompleted ?? false);
   const mapRequestIdRef = useRef(restoredCheckpoint?.mapRequestId ?? newRequestId());
   const poolRequestIdRef = useRef(restoredCheckpoint?.poolRequestId ?? newRequestId());
-  const mapCostRef = useRef<number | null>(restoredCheckpoint?.mapCostMicroUsd ?? 0);
-  const poolCostRef = useRef<number | null>(restoredCheckpoint?.poolCostMicroUsd ?? 0);
+  const mapReviewRequestIdRef = useRef(restoredCheckpoint?.mapReviewRequestId ?? newRequestId());
+  const poolReviewRequestIdRef = useRef(restoredCheckpoint?.poolReviewRequestId ?? newRequestId());
+  const mapCostRef = useRef<number | null>(
+    restoredCheckpoint ? restoredCheckpoint.mapCostMicroUsd : 0,
+  );
+  const poolCostRef = useRef<number | null>(
+    restoredCheckpoint ? restoredCheckpoint.poolCostMicroUsd : 0,
+  );
   const visualStateRef = useRef<CompleteLessonGenerationState | null>(
     restoredCheckpoint?.visual
       ? {
@@ -159,6 +168,8 @@ export function TotalLessonGenerationDialog({
         poolCompleted: poolCompletedRef.current,
         mapRequestId: mapRequestIdRef.current,
         poolRequestId: poolRequestIdRef.current,
+        mapReviewRequestId: mapReviewRequestIdRef.current,
+        poolReviewRequestId: poolReviewRequestIdRef.current,
         mapCostMicroUsd: mapCostRef.current,
         poolCostMicroUsd: poolCostRef.current,
         visual: visual
@@ -180,6 +191,8 @@ export function TotalLessonGenerationDialog({
     poolCompletedRef.current = false;
     mapRequestIdRef.current = newRequestId();
     poolRequestIdRef.current = newRequestId();
+    mapReviewRequestIdRef.current = newRequestId();
+    poolReviewRequestIdRef.current = newRequestId();
     mapCostRef.current = 0;
     poolCostRef.current = 0;
     visualStateRef.current = null;
@@ -235,10 +248,27 @@ export function TotalLessonGenerationDialog({
       try {
         await mapCallables.preview(request);
         const generated = await mapCallables.generate(request);
-        const validated = validateConceptMapResult(generated);
+        persistCheckpoint(body, options);
+        if (options.reviewStatus !== 'disabled')
+          onProgress({ stage: 'map', label: 'Revisione della mappa rispetto alla lezione…' });
+        const reviewed =
+          options.reviewStatus === 'disabled'
+            ? null
+            : await reviewMapCandidate(
+                mapCallables,
+                request,
+                generated,
+                mapReviewRequestIdRef.current,
+              );
+        const validated = validateConceptMapResult(
+          reviewed ? { ...reviewed, kind: 'concept_map' } : generated,
+        );
         if (!validated.ok) throw new Error(validated.error);
         await onSaveConceptMap(validated.conceptMapMarkdown);
-        mapCostRef.current = generated.actualCostMicroUsd;
+        mapCostRef.current =
+          generated.actualCostMicroUsd === null || reviewed?.actualCostMicroUsd === null
+            ? null
+            : generated.actualCostMicroUsd + (reviewed?.actualCostMicroUsd ?? 0);
         mapCompletedRef.current = true;
         persistCheckpoint(body, options);
       } catch (cause) {
@@ -261,10 +291,28 @@ export function TotalLessonGenerationDialog({
       try {
         await poolCallables.preview(request);
         const generated = await poolCallables.generate(request);
-        const mapped = buildPoolFromProposal(null, proposalToLocalQuestions(generated.output));
+        persistCheckpoint(body, options);
+        if (options.reviewStatus !== 'disabled')
+          onProgress({ stage: 'pool', label: 'Revisione delle domande e delle soluzioni…' });
+        const reviewed =
+          options.reviewStatus === 'disabled'
+            ? null
+            : await reviewPoolCandidate(
+                poolCallables,
+                request,
+                generated,
+                poolReviewRequestIdRef.current,
+              );
+        const mapped = buildPoolFromProposal(
+          null,
+          proposalToLocalQuestions(reviewed?.output ?? generated.output),
+        );
         if (!mapped.ok) throw new Error(mapped.errors.join(' '));
         await onSavePool(mapped.pool);
-        poolCostRef.current = generated.actualCostMicroUsd;
+        poolCostRef.current =
+          generated.actualCostMicroUsd === null || reviewed?.actualCostMicroUsd === null
+            ? null
+            : generated.actualCostMicroUsd + (reviewed?.actualCostMicroUsd ?? 0);
         poolCompletedRef.current = true;
         persistCheckpoint(body, options);
       } catch (cause) {

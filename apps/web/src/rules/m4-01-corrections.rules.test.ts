@@ -1546,3 +1546,16 @@ describe('Firestore rules — public correction status mirrors', () => {
     );
   });
 });
+
+it('pending IA drafts are server-only even for the teacher and never readable by students', async () => {
+  await seedBase();
+  const path = `corrections/${SUBMISSION_ID}/aiPendingDrafts/opaque-hash`;
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), path), {
+      primaryOutput: { results: [{ order: 0, points: 5 }] },
+    });
+  });
+  await assertFails(getDoc(doc(ownerDb(), path)));
+  await assertFails(getDoc(doc(studentDb(), path)));
+  await assertFails(setDoc(doc(ownerDb(), path), { primaryState: 'completed' }));
+});

@@ -1,0 +1,41 @@
+{
+  "scenario": "math",
+  "profile": "quality",
+  "reviews": [
+    [
+      0,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ],
+    [
+      1,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ],
+    [
+      2,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ],
+    [
+      3,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ],
+    [
+      4,
+      {
+        "status": "verified",
+        "reasons": []
+      }
+    ]
+  ]
+}

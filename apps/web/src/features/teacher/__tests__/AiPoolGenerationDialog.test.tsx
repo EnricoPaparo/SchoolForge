@@ -64,6 +64,13 @@ function makeCallables(over: Partial<AiContentCallables> = {}): {
   const previewReqs: AiPoolContentRequest[] = [];
   const generateReqs: AiPoolContentRequest[] = [];
   const callables: AiContentCallables = {
+    previewReview: async () => ({ ...previewResult(), kind: 'pool_review' }),
+    generateReview: async (req) => ({
+      ...generateResult(),
+      kind: 'pool_review',
+      actualCostMicroUsd: 100,
+      output: { questions: req.candidateQuestions, reviewOutcome: 'unchanged', issueCodes: [] },
+    }),
     preview: async (req) => {
       previewReqs.push(req);
       return previewResult();
@@ -97,6 +104,57 @@ async function goToReview(
 }
 
 describe('AiPoolGenerationDialog', () => {
+  it('defaults review ON and retries only the failed review with the same identity', async () => {
+    const { callables, generateReqs } = makeCallables();
+    const review = vi
+      .fn()
+      .mockRejectedValueOnce({ details: { code: 'provider_unavailable' } })
+      .mockImplementation(async (req) => ({
+        ...generateResult(),
+        kind: 'pool_review',
+        output: { questions: req.candidateQuestions, reviewOutcome: 'unchanged', issueCodes: [] },
+      }));
+    callables.generateReview = review;
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="La RAM è volatile."
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('switch', { name: 'Revisione avanzata' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Genera pool' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Riprova revisione' }));
+    await screen.findByRole('button', { name: 'Crea pool' });
+    expect(generateReqs).toHaveLength(1);
+    expect(review.mock.calls[0][0]).toEqual(review.mock.calls[1][0]);
+    expect(screen.getByText('✓ Revisione didattica completata')).toBeTruthy();
+  });
+  it('OFF uses only the base generator', async () => {
+    const { callables } = makeCallables();
+    const review = vi.fn();
+    callables.generateReview = review;
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('switch', { name: 'Revisione avanzata' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Crea pool' });
+    expect(review).not.toHaveBeenCalled();
+    expect(screen.getByText('Revisione non richiesta')).toBeTruthy();
+  });
   it('runs config → estimate → generate, reusing the same requestId and payload', async () => {
     const { callables, previewReqs, generateReqs } = makeCallables();
     await goToReview(callables);

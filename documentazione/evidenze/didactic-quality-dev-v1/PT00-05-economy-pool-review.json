@@ -1,0 +1,137 @@
+{
+  "id": "PT00-05-economy-pool-review",
+  "request": {
+    "kind": "pool_review",
+    "requestId": "48bda4d1-b7e2-4256-b6f1-1ce1fa0d6fa6",
+    "modelProfile": "economy",
+    "teacherGuidance": null,
+    "level": "balanced",
+    "counts": {
+      "aperta": 2,
+      "chiusa_singola": 1,
+      "chiusa_multipla": 1
+    },
+    "lessonSource": "## Perché una fonte non si legge come una semplice fotografia del passato\n\nUna fonte storica è una traccia del passato che può fornire informazioni su persone, eventi, istituzioni, idee e comportamenti. Per comprenderla, però, non basta leggere le parole che contiene: occorre chiedersi **chi le ha prodotte, per chi, in quale situazione e con quale scopo**.\n\nOgni fonte presenta infatti almeno due livelli:\n\n- ciò che **dice esplicitamente**, cioè le informazioni che possiamo osservare direttamente nel documento;\n- ciò che possiamo **inferire**, cioè le conclusioni ragionevoli ricavate collegando il contenuto della fonte al suo autore, al contesto e alla sua funzione.\n\nConfondere questi due livelli porta a trasformare un’interpretazione in un fatto certo.\n\n> [!DEFINITION]\n> **Osservazione**: descrizione di ciò che compare direttamente nella fonte, senza aggiungere spiegazioni non contenute nel documento.\n>\n> **Interpretazione**: spiegazione del significato della fonte, costruita attraverso osservazioni, conoscenze del contesto e inferenze motivate.\n\nPer esempio, se in una lettera una persona scrive «le strade del quartiere sono spesso buie», questa è un’osservazione sul contenuto della fonte. Dire invece che «l’intera città era priva di illuminazione» sarebbe un’interpretazione molto più ampia, che il documento da solo non consente necessariamente di sostenere.\n\n## Le domande fondamentali davanti a una fonte\n\nL’analisi può essere organizzata attraverso alcune domande. Non sono una formula meccanica: servono a evitare letture affrettate e a rendere esplicito il ragionamento.\n\n### 1. Che tipo di fonte è?\n\nUna **fonte primaria** è una testimonianza direttamente collegata al periodo o al fenomeno che si sta studiando: per esempio una lettera, una legge, un diario, un manifesto, un’iscrizione, una fotografia, un oggetto o una registrazione prodotta nel periodo considerato.\n\nIl termine “primaria” non significa automaticamente “vera” o “completa”. Una fonte primaria mostra il punto di vista e le condizioni di chi l’ha prodotta. Una lettera privata e un discorso ufficiale possono riferirsi allo stesso periodo, ma avere forme, destinatari e scopi molto diversi.\n\nQuando si analizza una fonte, è quindi utile precisare anche il suo **genere** o la sua funzione: è una testimonianza personale? Un atto amministrativo? Un testo propagandistico? Una cronaca? Un’immagine realizzata per documentare, convincere o celebrare?\n\n### 2. Chi è l’autore?\n\nL’autore è la persona, il gruppo o l’istituzione che ha prodotto la fonte. Identificarlo significa considerare:\n\n- il nome, quando è noto;\n- il ruolo sociale e professionale;\n- il rapporto con l’evento o il fenomeno descritto;\n- le conoscenze e gli interessi che poteva avere;\n- il possibile pubblico a cui intendeva rivolgersi.\n\nL’autore non è necessariamente un osservatore neutrale. Una persona coinvolta direttamente in un conflitto può conoscere bene alcuni aspetti, ma descriverli secondo la propria posizione. Al contrario, un funzionario distante dagli eventi può offrire informazioni amministrative utili, pur non conoscendo l’esperienza quotidiana delle persone coinvolte.\n\n### 3. Chi è il destinatario?\n\nIl **destinatario** è colui al quale la fonte è rivolta: una persona, un gruppo, un’autorità o un pubblico generico. Il destinatario condiziona il linguaggio e il contenuto.\n\nUna lettera privata può contenere emozioni e dettagli che non comparirebbero in un documento pubblico. Un discorso politico destinato a una folla può usare parole persuasive e semplificazioni. Una relazione indirizzata a un’autorità può selezionare le informazioni ritenute utili per ottenere una decisione.\n\nIl destinatario non determina da solo il significato della fonte, ma aiuta a capire perché alcune informazioni siano state incluse, omesse o presentate in un certo modo.\n\n### 4. Quando e dove è stata prodotta?\n\nIl **contesto** è l’insieme delle condizioni storiche, sociali, politiche, economiche e culturali che circondano la produzione della fonte. Comprende almeno:\n\n- la data e il luogo;\n- gli eventi contemporanei rilevanti;\n- le istituzioni e i rapporti di potere presenti;\n- le condizioni di vita e di comunicazione;\n- le parole e le categorie usate in quel periodo.\n\nIl contesto non deve essere aggiunto in modo generico. Deve servire a spiegare meglio un elemento concreto della fonte. Se un documento parla di razionamento, per esempio, è importante verificare se nel periodo considerato esistevano condizioni che potevano renderlo necessario. Tuttavia, la sola presenza di una parola non dimostra da sé l’esistenza di un’intera situazione storica: occorre distinguere ciò che il testo afferma da ciò che il contesto rende plausibile.\n\n### 5. Qual è l’intenzione?\n\nL’**intenzione** è lo scopo per cui la fonte è stata prodotta. Un autore può voler:\n\n- informare;\n- chiedere un intervento;\n- giustificare una decisione;\n- convincere qualcuno;\n- denunciare un problema;\n- ricordare un’esperienza;\n- celebrare una persona o un evento;\n- difendere la propria reputazione.\n\nIndividuare l’intenzione non significa attribuire all’autore pensieri che non possiamo dimostrare. L’intenzione deve essere ricostruita a partire da indizi come il destinatario, il genere del documento, il lessico, la struttura e le richieste esplicite.\n\nLa presenza di un’intenzione non rende automaticamente falsa una fonte. Anche un testo persuasivo può contenere informazioni attendibili; semplicemente, le presenta selezionandole e organizzandole in funzione di uno scopo.\n\n## Punto di vista e selezione delle informazioni\n\nIl **punto di vista** è la posizione da cui l’autore osserva e rappresenta la realtà. Dipende dalla sua esperienza, dal ruolo ricoperto, dagli interessi, dalle conoscenze e dalla situazione in cui scrive.\n\nUna fonte non registra tutto ciò che accade. Seleziona alcuni aspetti e ne lascia fuori altri. Questa selezione può essere intenzionale, ma può anche dipendere dai limiti dell’autore: una persona può non aver visto un evento, non conoscere una decisione o non avere accesso a determinate informazioni.\n\nPer questo è utile chiedersi:\n\n1. Quale parte della realtà l’autore poteva osservare direttamente?\n2. Quali aspetti descrive con maggiore attenzione?\n3. Quali aspetti non compaiono?\n4. Per quale motivo questa selezione potrebbe essere utile al suo scopo?\n\nL’assenza di un’informazione non dimostra necessariamente che quell’evento non sia accaduto. Dimostra soltanto che l’informazione non compare nella fonte, almeno nella forma che possiamo esaminare.\n\n## Attendibilità: non una scelta tra “vero” e “falso”\n\nValutare l’**attendibilità** di una fonte significa stabilire quanto essa sia utile e credibile rispetto a una domanda precisa. Non significa assegnarle un’etichetta assoluta.\n\nUna fonte può essere attendibile per una domanda e poco utile per un’altra. Un diario può essere molto utile per conoscere le paure e le percezioni del suo autore, ma non essere sufficiente per stabilire quante persone fossero presenti a un evento. Un manifesto può mostrare bene gli argomenti usati dalla propaganda, anche se non descrive in modo equilibrato la situazione reale.\n\nLa valutazione può considerare diversi elementi:\n\n- **vicinanza ai fatti**: l’autore era presente o riferisce informazioni ricevute da altri?\n- **competenza e accesso alle informazioni**: aveva la possibilità di conoscere ciò che descrive?\n- **intenzione**: aveva motivo di informare, persuadere, difendersi o ottenere qualcosa?\n- **genere della fonte**: si tratta di una testimonianza personale, di un atto ufficiale, di un testo polemico?\n- **specificità**: il documento fornisce date, luoghi e circostanze precise oppure usa affermazioni generiche?\n- **limiti del punto di vista**: quali aspetti potevano sfuggire all’autore?\n\nDire che una fonte è “parziale” non equivale a dire che è inutile. La parzialità indica che la fonte presenta una prospettiva situata. Proprio questa prospettiva può essere l’oggetto della ricerca: un manifesto, per esempio, è utile per studiare le idee e gli obiettivi di chi lo ha prodotto, anche se non può essere trattato come una descrizione neutrale della società.\n\n> [!IMPORTANT]\n> La domanda corretta non è soltanto «La fonte dice la verità?», ma «Per quale aspetto è informativa, quali limiti presenta e quali conclusioni consente davvero di sostenere?»\n\n## Dall’osservazione all’inferenza\n\nUn’inferenza è una conclusione ricavata da elementi disponibili, ma non espressa direttamente dalla fonte. Per essere valida deve rispettare ciò che il documento contiene e non andare oltre le sue possibilità informative.\n\nÈ utile distinguere tre livelli:\n\n1. **Dato testuale o visivo**: ciò che si può individuare direttamente nella fonte.\n2. **Inferenza plausibile**: una conclusione sostenuta da uno o più indizi, ma non formulata esplicitamente.\n3. **Conclusione non giustificata**: un’affermazione troppo ampia o priva di elementi sufficienti.\n\nEsempio:\n\n- La fonte è una lettera indirizzata al sindaco e contiene la richiesta di riparare una strada: questo è un dato osservabile.\n- L’autore considera importante ottenere un intervento dell’amministrazione: è un’inferenza plausibile, fondata sulla richiesta e sul destinatario.\n- Tutti gli abitanti della città erano contrari all’amministrazione: è una conclusione non giustificata, se la fonte è stata scritta da una sola persona.\n\nPer rendere chiaro il ragionamento, si possono usare formule come:\n\n- «La fonte afferma esplicitamente che…»\n- «Da questo elemento si può ipotizzare che…»\n- «Il documento non permette invece di stabilire se…»\n- «Questa conclusione è limitata al punto di vista dell’autore…»\n\n## Un esempio guidato di analisi\n\nIl seguente documento è **inventato a scopo esclusivamente didattico**. Non è una testimonianza storica reale e non può essere usato come prova di un fatto del passato.\n\n> [!EXAMPLE]\n> **Lettera immaginaria, 8 ottobre 1892**\n>\n> «Egregio sindaco, da tre settimane l’acqua arriva con difficoltà alle case della via del Mercato. I bambini devono essere mandati alla fontana della piazza e molte famiglie perdono ore di lavoro per procurarsi l’acqua. Vi chiedo di far controllare le tubature e di comunicare agli abitanti quando il servizio sarà ripristinato. Distinti saluti, Marta Rinaldi, proprietaria di una bottega nella via del Mercato.»\n\n### Osservare il contenuto\n\nLa fonte dichiara esplicitamente che:\n\n- è una lettera;\n- è datata 8 ottobre 1892;\n- è indirizzata al sindaco;\n- l’autrice si presenta come Marta Rinaldi, proprietaria di una bottega;\n- l’acqua arriva con difficoltà alle case della via del Mercato da tre settimane;\n- alcune persone devono recarsi alla fontana della piazza;\n- l’autrice chiede un controllo delle tubature e una comunicazione agli abitanti.\n\nQueste sono osservazioni fondate sul testo. Non richiedono ancora una spiegazione generale della situazione della città.\n\n### Ricostruire autore, destinatario e contesto\n\nL’autrice è una commerciante della via interessata dal problema. Il suo punto di vista è quindi quello di una persona che vive o lavora nella zona e che subisce direttamente le conseguenze della difficoltà di approvvigionamento.\n\nIl destinatario è il sindaco, cioè un’autorità alla quale l’autrice attribuisce la possibilità di intervenire o di coordinare un intervento. Il testo ha una funzione pratica: non si limita a raccontare un disagio, ma presenta una richiesta precisa.\n\nIl contesto immediato è una difficoltà nella distribuzione dell’acqua in una determinata via, protratta per tre settimane. Non possiamo però concludere, da questa sola lettera, che il problema riguardasse tutta la città, che fosse causato da un guasto specifico o che tutte le famiglie condividessero esattamente la stessa esperienza.\n\n### Individuare l’intenzione e il punto di vista\n\nL’intenzione principale è sollecitare l’amministrazione a controllare le tubature e a informare la popolazione. Il linguaggio rispettoso e la forma della lettera sono compatibili con una richiesta rivolta a un’autorità.\n\nIl punto di vista è quello di una persona direttamente coinvolta. La fonte può essere utile per studiare:\n\n- il disagio percepito dall’autrice;\n- il modo in cui una cittadina si rivolge all’amministrazione;\n- il tipo di intervento richiesto;\n- le conseguenze che l’autrice ritiene più importanti.\n\nLa fonte non basta invece per stabilire con certezza:\n\n- la causa tecnica del problema;\n- il numero complessivo delle persone coinvolte;\n- la situazione delle altre vie;\n- l’effettiva durata del disservizio, se non si conosce il momento in cui la lettera è stata ricevuta o se l’autrice ha riportato informazioni imprecise.\n\n### Valutare l’attendibilità rispetto a una domanda\n\nSe la domanda è «Come descrive il problema una commerciante della via del Mercato?», la fonte è direttamente pertinente: contiene la sua descrizione e la sua richiesta.\n\nSe la domanda è «Quale fu la causa del guasto idrico cittadino?», la fonte è insufficiente: parla di una difficoltà, ma non identifica la causa.\n\nLa fonte non deve quindi essere classificata semplicemente come vera o falsa. È una testimonianza utile per alcuni aspetti, ma limitata per altri. La valutazione dipende dal rapporto tra il contenuto del documento e la domanda che vogliamo affrontare.\n\n## Un metodo ordinato per analizzare una fonte\n\nQuando si dispone di una fonte, si può procedere in questo ordine:\n\n1. **Identificare il documento**: tipo di fonte, autore, data, luogo e destinatario, se disponibili.\n2. **Descrivere senza interpretare**: indicare che cosa il documento dice o mostra direttamente.\n3. **Ricostruire il contesto**: collegare il documento alle condizioni storiche pertinenti, senza aggiungere informazioni non necessarie o non sostenute.\n4. **Individuare intenzione e punto di vista**: chiedersi perché la fonte sia stata prodotta e quale posizione rappresenti.\n5. **Valutare l’attendibilità rispetto alla domanda**: stabilire che cosa la fonte permette di conoscere e quali limiti presenta.\n6. **Formulare inferenze prudenti**: distinguere le conclusioni sostenute dagli indizi dalle ipotesi che richiederebbero altre informazioni.\n\nQuesto metodo non elimina ogni incertezza. Il lavoro storico procede spesso attraverso informazioni parziali; il suo rigore consiste nel dichiarare il grado e i limiti di ciò che si può sostenere.\n\n## Autoverifica ragionata\n\n### 1. Una fonte privata è sempre più attendibile di una fonte ufficiale?\n\nNo. La distinzione tra privato e ufficiale non basta per stabilire l’attendibilità. Una fonte privata può descrivere con precisione l’esperienza dell’autore, ma avere un punto di vista limitato o contenere ricordi selettivi. Una fonte ufficiale può fornire dati amministrativi utili, ma può essere condizionata dallo scopo istituzionale per cui è stata prodotta.\n\nLa risposta corretta deve quindi riferirsi alla domanda: una fonte privata può essere particolarmente utile per studiare percezioni personali; una fonte ufficiale può essere più adatta per ricostruire una procedura amministrativa, senza per questo essere completa su ogni aspetto della realtà.\n\n### 2. Nell’esempio della lettera, si può dedurre che tutte le famiglie della città abbiano perso ore di lavoro per procurarsi l’acqua?\n\nNo. La lettera parla delle conseguenze osservate o riferite dall’autrice in relazione alla via del Mercato e menziona «molte famiglie», senza fornire un dato complessivo per tutta la città. Si può inferire che, secondo l’autrice, il problema coinvolgesse diverse famiglie della zona e comportasse una perdita di tempo significativa. Non si può estendere automaticamente questa conclusione a tutte le famiglie della città, perché la fonte non offre informazioni sufficienti su altri quartieri o sull’intera popolazione.\n",
+    "existingPoolQuestionCount": 0,
+    "candidateQuestions": [
+      {
+        "order": 0,
+        "tipo": "aperta",
+        "testo": "In una lettera si legge: «Le strade del quartiere sono spesso buie». Distingui l’osservazione dall’interpretazione e spiega perché da questa frase non si può concludere con certezza che l’intera città fosse priva di illuminazione.",
+        "difficolta": 2,
+        "soluzione": "L’osservazione è che la lettera afferma che le strade del quartiere sono spesso buie: descrive ciò che compare direttamente nella fonte. L’interpretazione è una conclusione ricavata dal contenuto, per esempio che l’intera città fosse priva di illuminazione. Questa conclusione non è giustificata dalla sola frase, perché riguarda un’area più ampia di quella menzionata e generalizza un’esperienza circoscritta. Per sostenerla servirebbero altre informazioni o fonti. È quindi importante distinguere ciò che il documento dice esplicitamente da ciò che si può inferire, dichiarando i limiti dell’inferenza."
+      },
+      {
+        "order": 1,
+        "tipo": "aperta",
+        "testo": "Una lettera immaginaria, datata 8 ottobre 1892 e indirizzata al sindaco, riferisce che da tre settimane l’acqua arriva con difficoltà alle case di una via e chiede di controllare le tubature. Se la domanda di ricerca è «Quale fu la causa tecnica del problema?», valuta quanto la lettera sia utile e indica che cosa permette e che cosa non permette di concludere.",
+        "difficolta": 3,
+        "soluzione": "La lettera è poco sufficiente per rispondere alla domanda sulla causa tecnica: riferisce una difficoltà nella distribuzione dell’acqua e chiede di controllare le tubature, ma non identifica la causa del problema. Permette di osservare che l’autrice segnala un disservizio in una via, ne indica una durata secondo il proprio resoconto e sollecita un intervento del sindaco. La richiesta di controllo può far ipotizzare che l’autrice sospetti un problema alle tubature, ma non dimostra che quello fosse il guasto effettivo. Per stabilire la causa servirebbero informazioni ulteriori, per esempio una relazione tecnica o altre fonti pertinenti. La lettera può essere attendibile e utile per ricostruire la segnalazione e il punto di vista dell’autrice, pur non bastando a rispondere a ogni domanda."
+      },
+      {
+        "order": 2,
+        "tipo": "chiusa_singola",
+        "testo": "Che cosa rende primaria una fonte storica?",
+        "difficolta": 1,
+        "opzioni": [
+          "È una testimonianza direttamente collegata al periodo o al fenomeno studiato.",
+          "È un documento che riporta sempre informazioni complete e neutrali.",
+          "È una fonte prodotta necessariamente da un’autorità pubblica.",
+          "È una testimonianza che non richiede di considerare autore e contesto."
+        ],
+        "soluzioneIndici": [
+          0
+        ]
+      },
+      {
+        "order": 3,
+        "tipo": "chiusa_multipla",
+        "testo": "Per valutare l’attendibilità di una fonte rispetto a una domanda precisa, quali elementi è utile considerare?",
+        "difficolta": 2,
+        "opzioni": [
+          "La vicinanza dell’autore ai fatti e il suo accesso alle informazioni.",
+          "L’intenzione per cui la fonte è stata prodotta e il suo genere.",
+          "La presenza di dettagli specifici e i limiti del punto di vista dell’autore.",
+          "Il fatto che la fonte sia privata, considerato da solo come garanzia di attendibilità.",
+          "La possibilità di trattare una fonte parziale come inutile per qualsiasi ricerca."
+        ],
+        "soluzioneIndici": [
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  "policy": {
+    "model": "gpt-5.6-luna",
+    "priceListVersion": "v8-2026-09-26-luna-cache-standard"
+  },
+  "rawOutput": {
+    "reviewOutcome": "unchanged",
+    "issueCodes": [],
+    "failedOrdinals": [],
+    "replacementQuestions": []
+  },
+  "usage": {
+    "inputTokens": 5296,
+    "outputTokens": 138,
+    "cachedInputTokens": 0,
+    "cacheWriteInputTokens": 5293
+  },
+  "actualCostMicroUsd": 1489,
+  "durationMs": 2628,
+  "output": {
+    "questions": [
+      {
+        "order": 0,
+        "tipo": "aperta",
+        "testo": "In una lettera si legge: «Le strade del quartiere sono spesso buie». Distingui l’osservazione dall’interpretazione e spiega perché da questa frase non si può concludere con certezza che l’intera città fosse priva di illuminazione.",
+        "difficolta": 2,
+        "soluzione": "L’osservazione è che la lettera afferma che le strade del quartiere sono spesso buie: descrive ciò che compare direttamente nella fonte. L’interpretazione è una conclusione ricavata dal contenuto, per esempio che l’intera città fosse priva di illuminazione. Questa conclusione non è giustificata dalla sola frase, perché riguarda un’area più ampia di quella menzionata e generalizza un’esperienza circoscritta. Per sostenerla servirebbero altre informazioni o fonti. È quindi importante distinguere ciò che il documento dice esplicitamente da ciò che si può inferire, dichiarando i limiti dell’inferenza."
+      },
+      {
+        "order": 1,
+        "tipo": "aperta",
+        "testo": "Una lettera immaginaria, datata 8 ottobre 1892 e indirizzata al sindaco, riferisce che da tre settimane l’acqua arriva con difficoltà alle case di una via e chiede di controllare le tubature. Se la domanda di ricerca è «Quale fu la causa tecnica del problema?», valuta quanto la lettera sia utile e indica che cosa permette e che cosa non permette di concludere.",
+        "difficolta": 3,
+        "soluzione": "La lettera è poco sufficiente per rispondere alla domanda sulla causa tecnica: riferisce una difficoltà nella distribuzione dell’acqua e chiede di controllare le tubature, ma non identifica la causa del problema. Permette di osservare che l’autrice segnala un disservizio in una via, ne indica una durata secondo il proprio resoconto e sollecita un intervento del sindaco. La richiesta di controllo può far ipotizzare che l’autrice sospetti un problema alle tubature, ma non dimostra che quello fosse il guasto effettivo. Per stabilire la causa servirebbero informazioni ulteriori, per esempio una relazione tecnica o altre fonti pertinenti. La lettera può essere attendibile e utile per ricostruire la segnalazione e il punto di vista dell’autrice, pur non bastando a rispondere a ogni domanda."
+      },
+      {
+        "order": 2,
+        "tipo": "chiusa_singola",
+        "testo": "Che cosa rende primaria una fonte storica?",
+        "difficolta": 1,
+        "opzioni": [
+          "È una testimonianza direttamente collegata al periodo o al fenomeno studiato.",
+          "È un documento che riporta sempre informazioni complete e neutrali.",
+          "È una fonte prodotta necessariamente da un’autorità pubblica.",
+          "È una testimonianza che non richiede di considerare autore e contesto."
+        ],
+        "soluzioneIndici": [
+          0
+        ]
+      },
+      {
+        "order": 3,
+        "tipo": "chiusa_multipla",
+        "testo": "Per valutare l’attendibilità di una fonte rispetto a una domanda precisa, quali elementi è utile considerare?",
+        "difficolta": 2,
+        "opzioni": [
+          "La vicinanza dell’autore ai fatti e il suo accesso alle informazioni.",
+          "L’intenzione per cui la fonte è stata prodotta e il suo genere.",
+          "La presenza di dettagli specifici e i limiti del punto di vista dell’autore.",
+          "Il fatto che la fonte sia privata, considerato da solo come garanzia di attendibilità.",
+          "La possibilità di trattare una fonte parziale come inutile per qualsiasi ricerca."
+        ],
+        "soluzioneIndici": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "reviewOutcome": "unchanged",
+    "issueCodes": []
+  }
+}

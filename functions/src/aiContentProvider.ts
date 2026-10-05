@@ -140,6 +140,33 @@ class MockContentProvider implements ContentProvider {
         priorBillingRisk: false,
       };
     }
+    if (request.kind === 'pool_review')
+      return {
+        status: 'ok',
+        output: {
+          reviewOutcome: 'unchanged',
+          issueCodes: [],
+          failedOrdinals: [],
+          replacementQuestions: [],
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
+    if (request.kind === 'concept_map_review')
+      return {
+        status: 'ok',
+        output: {
+          summaryMarkdown: 'La sintesi descrive i concetti della fonte.',
+          diagram: 'Concetto -> relazione -> concetto',
+          reviewOutcome: 'unchanged',
+          issueCodes: [],
+          sourceIssue: false,
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
     if (request.kind === 'lesson_review') {
       return {
         status: 'ok',

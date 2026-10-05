@@ -1,0 +1,123 @@
+{
+  "id": "PT00-06-economy-pool",
+  "request": {
+    "kind": "pool",
+    "requestId": "3fff83f8-4975-4b1b-801f-f35bcad35b42",
+    "modelProfile": "economy",
+    "teacherGuidance": null,
+    "level": "balanced",
+    "counts": {
+      "aperta": 2,
+      "chiusa_singola": 1,
+      "chiusa_multipla": 1
+    },
+    "lessonSource": "## Un’espressione comune da correggere\n\nNella vita quotidiana si dice spesso: «Peso 60 kg». L’espressione è comprensibile nel linguaggio comune, ma in fisica non è precisa: il **chilogrammo (kg)** è l’unità di misura della **massa**, non del peso.\n\nÈ quindi più corretto dire:\n\n- «La mia **massa** è 60 kg»;\n- «Sulla Terra la forza **peso** corrispondente è circa 588 N».\n\nQuesta correzione non cambia il significato pratico della frase quotidiana e non è un errore da giudicare severamente: serve a distinguere due grandezze fisiche diverse, che sono collegate ma non coincidono.\n\n## La massa\n\nLa **massa** indica quanta materia costituisce un corpo. In modo più generale, la massa misura anche quanto un corpo tende a opporsi ai cambiamenti del proprio stato di moto: a parità di condizioni, è più difficile modificare il moto di un corpo di grande massa rispetto a quello di un corpo di piccola massa.\n\nL’unità di misura della massa nel Sistema Internazionale è il **chilogrammo**, indicato con il simbolo **kg**.\n\nLa massa di un oggetto non dipende dal luogo in cui l’oggetto si trova. Per esempio, un oggetto con massa 2 kg ha massa 2 kg sulla Terra e sulla Luna, se non perde né acquista materia.\n\n## La forza peso\n\nLa **forza peso** è la forza con cui un corpo celeste, come la Terra, attira un corpo a causa della gravità. Sulla Terra è diretta approssimativamente verso il centro del pianeta.\n\nEssendo una forza, il peso si misura in **newton**, indicati con il simbolo **N**. Il newton non misura una quantità di materia: misura l’intensità di una forza.\n\nLa forza peso dipende da due fattori principali:\n\n1. dalla massa del corpo;\n2. dall’accelerazione di gravità del luogo in cui il corpo si trova.\n\nL’accelerazione di gravità si indica di solito con la lettera **g**. Vicino alla superficie terrestre si usa spesso il valore approssimato:\n\n```text\ng ≈ 9,8 N/kg\n```\n\nQuesto significa che, sulla Terra, a ogni chilogrammo di massa corrisponde una forza peso di circa 9,8 newton. Il valore è approssimato perché l’accelerazione di gravità può variare leggermente da un luogo all’altro; per i calcoli scolastici di base si usa normalmente 9,8 N/kg oppure, se indicato, 10 N/kg.\n\n> [!DEFINITION]\n> La massa è una proprietà del corpo e si misura in chilogrammi. La forza peso è una forza dovuta alla gravità e si misura in newton.\n\n## La relazione tra massa e forza peso\n\nLa relazione tra massa, accelerazione di gravità e forza peso è:\n\n```text\nP = m · g\n```\n\ndove:\n\n- **P** è la forza peso, misurata in newton (N);\n- **m** è la massa, misurata in chilogrammi (kg);\n- **g** è l’accelerazione di gravità, misurata in newton per chilogrammo (N/kg).\n\nLe unità confermano il significato della formula:\n\n```text\nkg · N/kg = N\n```\n\nQuindi il risultato è espresso correttamente in newton.\n\nLa formula mostra che, nello stesso luogo, una massa maggiore corrisponde a una forza peso maggiore. Mostra anche che lo stesso corpo può avere masse uguali ma forze peso diverse se si trova in luoghi con diversa accelerazione di gravità.\n\n### Esempio guidato sulla Terra\n\nConsideriamo, a scopo didattico, un corpo di massa 60 kg sulla Terra. Usiamo g = 9,8 N/kg.\n\n1. Scriviamo i dati:\n\n   ```text\n   m = 60 kg\n   g = 9,8 N/kg\n   ```\n\n2. Applichiamo la formula:\n\n   ```text\n   P = m · g\n   ```\n\n3. Sostituiamo i valori:\n\n   ```text\n   P = 60 kg · 9,8 N/kg\n   ```\n\n4. Calcoliamo:\n\n   ```text\n   P = 588 N\n   ```\n\nLa forza peso è quindi circa **588 N**. Il calcolo conferma perché l’espressione «peso 60 kg» confonde le due grandezze: 60 è il valore della massa in chilogrammi, mentre la forza peso corrispondente sulla Terra è circa 588 newton.\n\nSe si usa l’approssimazione g = 10 N/kg, il risultato diventa 600 N. Entrambi i valori dipendono dall’approssimazione scelta; non si devono però confondere le unità: la massa resta espressa in kg e la forza peso in N.\n\n## Terra e Luna: che cosa cambia?\n\nLa Luna esercita una forza gravitazionale più debole rispetto alla Terra. Di conseguenza, sulla Luna l’accelerazione di gravità è circa un sesto di quella terrestre.\n\nUn corpo che ha massa 60 kg sulla Terra conserva, in condizioni normali, la stessa massa anche sulla Luna: la quantità di materia non è cambiata. Cambia invece la sua forza peso, che sulla Luna è circa un sesto di quella che avrebbe sulla Terra.\n\nPerciò:\n\n- la **massa** del corpo resta 60 kg;\n- la **forza peso** diminuisce, perché diminuisce g;\n- il corpo non «perde materia»: viene semplicemente attirato dalla Luna con una forza minore.\n\nLa formula spiega direttamente questo risultato: se m rimane uguale e g diminuisce, anche P diminuisce.\n\n> [!IMPORTANT]\n> La massa dipende dal corpo; la forza peso dipende dal corpo e dal campo gravitazionale del luogo. Sulla Luna la massa resta la stessa, mentre la forza peso è minore rispetto alla Terra.\n\n## Come leggere correttamente gli strumenti\n\nUna bilancia domestica è spesso regolata per mostrare un valore in chilogrammi. In una situazione ordinaria, quando una persona è ferma sulla bilancia, lo strumento usa la forza esercitata sulla sua superficie e la converte in una stima della massa, assumendo condizioni gravitazionali terrestri.\n\nPer questo il display può indicare «60 kg», anche se la forza esercitata dalla persona è una forza e si misura in newton. In un contesto scolastico, la distinzione da ricordare è:\n\n- il valore in **kg** riguarda la massa;\n- il valore in **N** riguarda una forza, compresa la forza peso.\n\nUna bilancia portata sulla Luna non dovrebbe essere interpretata automaticamente nello stesso modo: il suo funzionamento e la sua taratura dipenderebbero dalle condizioni gravitazionali locali. La distinzione tra massa e peso rimane comunque valida.\n\n## Autoverifica ragionata\n\n### 1. Un oggetto ha massa 5 kg sulla Terra. Qual è la sua forza peso usando g = 9,8 N/kg?\n\nLa grandezza richiesta è una forza, quindi il risultato dovrà essere espresso in newton. Usiamo la relazione:\n\n```text\nP = m · g\n```\n\nSostituiamo i dati:\n\n```text\nP = 5 kg · 9,8 N/kg = 49 N\n```\n\nLa forza peso dell’oggetto è circa **49 N**. Non è corretto scrivere 49 kg, perché il chilogrammo è l’unità della massa, non della forza.\n\n### 2. Un astronauta ha massa 70 kg sulla Terra. Sulla Luna la sua massa e la sua forza peso sono uguali, maggiori o minori?\n\nLa massa resta **uguale**, perché l’astronauta non ha cambiato la quantità di materia. La forza peso diventa invece **minore**, perché sulla Luna l’accelerazione di gravità è circa un sesto di quella terrestre.\n\nNon è quindi corretto concludere che sulla Luna l’astronauta abbia massa pari a circa 12 kg: quel valore, se ottenuto dividendo 70 per 6, non rappresenterebbe la sua nuova massa. Rappresenterebbe soltanto, in modo approssimato e con le opportune condizioni, il confronto numerico tra la sua forza peso lunare e quella terrestre espresso come equivalente terrestre.\n",
+    "existingPoolQuestionCount": 0
+  },
+  "policy": {
+    "model": "gpt-6-luna",
+    "priceListVersion": "v10-2026-09-26-gpt6-luna-standard"
+  },
+  "rawOutput": {
+    "questions": [
+      {
+        "tipo": "aperta",
+        "testo": "Spiega perché massa e forza peso sono grandezze diverse. Nella risposta indica che cosa descrive ciascuna, le rispettive unità di misura e come si collegano attraverso la gravità.",
+        "difficolta": 2,
+        "soluzione": "La massa indica quanta materia costituisce un corpo e misura anche la sua tendenza a opporsi ai cambiamenti del moto; si misura in chilogrammi (kg). La forza peso è la forza con cui un corpo celeste attira un corpo a causa della gravità; essendo una forza, si misura in newton (N). Sono collegate dalla relazione P = m · g: la forza peso dipende sia dalla massa sia dall’accelerazione di gravità del luogo. Perciò massa e peso non coincidono e non si esprimono con la stessa unità."
+      },
+      {
+        "tipo": "aperta",
+        "testo": "Un corpo di massa 5 kg si trova sulla Terra, dove si usa g = 9,8 N/kg. Calcola la sua forza peso, mostrando i dati, la formula, la sostituzione, il risultato con l’unità corretta e un controllo delle unità.",
+        "difficolta": 2,
+        "soluzione": "Dati: m = 5 kg e g = 9,8 N/kg. La relazione è P = m · g. Sostituendo i valori: P = 5 kg · 9,8 N/kg = 49 N. La forza peso è quindi circa 49 N. Il controllo delle unità dà kg · N/kg = N, perciò il risultato è correttamente espresso in newton e non in chilogrammi."
+      },
+      {
+        "tipo": "chiusa_singola",
+        "testo": "Un oggetto mantiene la stessa massa di 2 kg, ma si trova in un luogo dove l’accelerazione di gravità è minore che sulla Terra. Che cosa accade alla sua forza peso?",
+        "difficolta": 2,
+        "opzioni": [
+          "Resta uguale, perché la massa non cambia.",
+          "Diminuisce, perché a massa invariata una gravità minore dà una forza peso minore.",
+          "Aumenta, perché la massa resta espressa in chilogrammi.",
+          "Diventa 2 kg, perché massa e forza peso coincidono."
+        ],
+        "soluzione": [
+          1
+        ]
+      },
+      {
+        "tipo": "chiusa_multipla",
+        "testo": "Una bilancia domestica ordinaria mostra «60 kg» per una persona ferma sulla Terra. Quali affermazioni sono coerenti con il significato della lettura e con la distinzione tra massa e forza?",
+        "difficolta": 3,
+        "opzioni": [
+          "Il valore in kg è una stima della massa, ottenuta assumendo condizioni gravitazionali terrestri.",
+          "La forza peso della persona è una forza e si misura in newton.",
+          "La lettura dimostra che il chilogrammo è un’unità di misura della forza peso.",
+          "Portando la bilancia sulla Luna, si può interpretare automaticamente la lettura nello stesso modo senza considerare taratura e gravità."
+        ],
+        "soluzione": [
+          0,
+          1
+        ]
+      }
+    ]
+  },
+  "usage": {
+    "inputTokens": 3572,
+    "outputTokens": 661,
+    "cachedInputTokens": 0,
+    "cacheWriteInputTokens": 3569
+  },
+  "actualCostMicroUsd": 777,
+  "durationMs": 6105,
+  "output": {
+    "questions": [
+      {
+        "order": 0,
+        "tipo": "aperta",
+        "testo": "Spiega perché massa e forza peso sono grandezze diverse. Nella risposta indica che cosa descrive ciascuna, le rispettive unità di misura e come si collegano attraverso la gravità.",
+        "difficolta": 2,
+        "soluzione": "La massa indica quanta materia costituisce un corpo e misura anche la sua tendenza a opporsi ai cambiamenti del moto; si misura in chilogrammi (kg). La forza peso è la forza con cui un corpo celeste attira un corpo a causa della gravità; essendo una forza, si misura in newton (N). Sono collegate dalla relazione P = m · g: la forza peso dipende sia dalla massa sia dall’accelerazione di gravità del luogo. Perciò massa e peso non coincidono e non si esprimono con la stessa unità."
+      },
+      {
+        "order": 1,
+        "tipo": "aperta",
+        "testo": "Un corpo di massa 5 kg si trova sulla Terra, dove si usa g = 9,8 N/kg. Calcola la sua forza peso, mostrando i dati, la formula, la sostituzione, il risultato con l’unità corretta e un controllo delle unità.",
+        "difficolta": 2,
+        "soluzione": "Dati: m = 5 kg e g = 9,8 N/kg. La relazione è P = m · g. Sostituendo i valori: P = 5 kg · 9,8 N/kg = 49 N. La forza peso è quindi circa 49 N. Il controllo delle unità dà kg · N/kg = N, perciò il risultato è correttamente espresso in newton e non in chilogrammi."
+      },
+      {
+        "order": 2,
+        "tipo": "chiusa_singola",
+        "testo": "Un oggetto mantiene la stessa massa di 2 kg, ma si trova in un luogo dove l’accelerazione di gravità è minore che sulla Terra. Che cosa accade alla sua forza peso?",
+        "difficolta": 2,
+        "opzioni": [
+          "Resta uguale, perché la massa non cambia.",
+          "Diminuisce, perché a massa invariata una gravità minore dà una forza peso minore.",
+          "Aumenta, perché la massa resta espressa in chilogrammi.",
+          "Diventa 2 kg, perché massa e forza peso coincidono."
+        ],
+        "soluzioneIndici": [
+          1
+        ]
+      },
+      {
+        "order": 3,
+        "tipo": "chiusa_multipla",
+        "testo": "Una bilancia domestica ordinaria mostra «60 kg» per una persona ferma sulla Terra. Quali affermazioni sono coerenti con il significato della lettura e con la distinzione tra massa e forza?",
+        "difficolta": 3,
+        "opzioni": [
+          "Il valore in kg è una stima della massa, ottenuta assumendo condizioni gravitazionali terrestri.",
+          "La forza peso della persona è una forza e si misura in newton.",
+          "La lettura dimostra che il chilogrammo è un’unità di misura della forza peso.",
+          "Portando la bilancia sulla Luna, si può interpretare automaticamente la lettura nello stesso modo senza considerare taratura e gravità."
+        ],
+        "soluzioneIndici": [
+          0,
+          1
+        ]
+      }
+    ]
+  }
+}

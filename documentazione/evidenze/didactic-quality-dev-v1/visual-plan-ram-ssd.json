@@ -1,0 +1,79 @@
+{
+  "id": "visual-plan-ram-ssd",
+  "request": {
+    "kind": "visual_plan_proposal",
+    "requestId": "9b2e6a2b-5bfa-45a7-81ff-697f27209abf",
+    "modelProfile": "quality",
+    "titolo": "RAM e SSD",
+    "sottotitolo": "Funzioni diverse",
+    "difficolta": "Base",
+    "concettiChiave": [
+      "RAM",
+      "SSD",
+      "volatilità"
+    ],
+    "obiettivi": [
+      "Distinguere memoria di lavoro e archiviazione"
+    ],
+    "udaTitle": "Computer",
+    "udaContext": {
+      "title": "Computer",
+      "descrizione": null,
+      "competenze": [],
+      "obiettivi": [],
+      "currentLessonPosition": 1,
+      "lessons": [
+        {
+          "position": 1,
+          "titolo": "RAM e SSD",
+          "sottotitolo": "Funzioni diverse"
+        }
+      ]
+    },
+    "lessonBody": "## Memoria di lavoro\n\nLa RAM mantiene i dati in uso dalla CPU e perde il contenuto senza alimentazione.\n\n## Archiviazione\n\nUn SSD conserva i file senza alimentazione. È un componente distinto dalla RAM.",
+    "quantity": {
+      "mode": "auto",
+      "requested": null,
+      "ceiling": 2
+    }
+  },
+  "policy": {
+    "model": "gpt-6.1-sol",
+    "priceListVersion": "v12-2026-09-29-gpt61-sol-standard"
+  },
+  "rawOutput": {
+    "decisions": [
+      {
+        "decision": "image",
+        "subject": "Griglia con due righe, «RAM» e «SSD», e due colonne, «Con alimentazione» e «Senza alimentazione». Nella riga RAM, un riquadro contiene simboli di dati nella prima colonna ed è vuoto nella seconda; nella riga SSD, due riquadri contengono gli stessi simboli di file in entrambe le colonne.",
+        "rationale": "Il confronto affiancato rende immediatamente visibile la differenza di volatilità: senza alimentazione il contenuto della RAM scompare, mentre i file nell’SSD restano. Un’unica griglia permette di confrontare i due componenti nella stessa condizione, senza richiedere due illustrazioni separate.",
+        "anchor": {
+          "anchorHeadingIndex": 1,
+          "anchorHeadingText": "Archiviazione"
+        },
+        "caption": "La RAM mantiene i dati in uso dalla CPU, ma li perde senza alimentazione. L’SSD è un componente distinto: conserva i file anche senza alimentazione.",
+        "altText": "Una griglia confronta RAM e SSD con e senza alimentazione. La riga RAM mostra dati presenti con alimentazione e un riquadro vuoto senza alimentazione: il contenuto viene perso. La riga SSD mostra gli stessi file in entrambe le condizioni: i file restano conservati anche quando manca l’alimentazione."
+      }
+    ]
+  },
+  "actualCostMicroUsd": 11659,
+  "usage": {
+    "inputTokens": 2444,
+    "outputTokens": 555,
+    "cachedInputTokens": 0,
+    "cacheWriteInputTokens": 2441
+  },
+  "output": [
+    {
+      "decision": "image",
+      "subject": "Griglia con due righe, «RAM» e «SSD», e due colonne, «Con alimentazione» e «Senza alimentazione». Nella riga RAM, un riquadro contiene simboli di dati nella prima colonna ed è vuoto nella seconda; nella riga SSD, due riquadri contengono gli stessi simboli di file in entrambe le colonne.",
+      "rationale": "Il confronto affiancato rende immediatamente visibile la differenza di volatilità: senza alimentazione il contenuto della RAM scompare, mentre i file nell’SSD restano. Un’unica griglia permette di confrontare i due componenti nella stessa condizione, senza richiedere due illustrazioni separate.",
+      "anchor": {
+        "anchorHeadingIndex": 1,
+        "anchorHeadingText": "Archiviazione"
+      },
+      "caption": "La RAM mantiene i dati in uso dalla CPU, ma li perde senza alimentazione. L’SSD è un componente distinto: conserva i file anche senza alimentazione.",
+      "altText": "Una griglia confronta RAM e SSD con e senza alimentazione. La riga RAM mostra dati presenti con alimentazione e un riquadro vuoto senza alimentazione: il contenuto viene perso. La riga SSD mostra gli stessi file in entrambe le condizioni: i file restano conservati anche quando manca l’alimentazione."
+    }
+  ]
+}

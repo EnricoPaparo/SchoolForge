@@ -99,6 +99,12 @@
       "collectionGroup": "publicLessons",
       "fieldPath": "content",
       "indexes": []
+    },
+    {
+      "collectionGroup": "aiPendingDrafts",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
     }
   ]
 }

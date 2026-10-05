@@ -59,6 +59,7 @@ export function AiBatchCorrectionDialog({
   defaults?: AiCorrectionSettingsValue;
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
+  const [advancedReview, setAdvancedReview] = useState(true);
   // Each new correction starts Economy even if an older preference saved Quality.
   // Other teacher criteria are preserved; local choices do not change preferences.
   const [settings, setSettings] = useState<AiCorrectionSettingsValue>(() => ({
@@ -115,6 +116,7 @@ export function AiBatchCorrectionDialog({
       settings.gradingMode,
       settings.teacherGuidance,
       settings.modelProfile,
+      advancedReview,
     );
     try {
       const res = await callables.preview(request);
@@ -184,6 +186,23 @@ export function AiBatchCorrectionDialog({
             idPrefix="ai-batch"
           />
 
+          <label>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={advancedReview}
+              disabled={busy}
+              onChange={(event) => {
+                setAdvancedReview(event.target.checked);
+                invalidatePreview();
+              }}
+            />
+            Revisione avanzata
+          </label>
+          <p>
+            Confronta due valutazioni indipendenti e segnala i disaccordi al docente. La verifica IA
+            aggiuntiva può aumentare il costo.
+          </p>
           {/* 4) Footer. */}
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
@@ -238,6 +257,18 @@ export function AiBatchCorrectionDialog({
             <li>Consegne con sole domande chiuse: {preview.counts.closedOnlySubmissions}</li>
             <li>Domande già valutate (ignorate): {preview.counts.alreadyGradedIgnored}</li>
             <li>Token stimati: {preview.tokensEstimated}</li>
+            <li>
+              Revisione avanzata:{' '}
+              {previewRequest?.advancedReview === false
+                ? 'disattivata'
+                : 'attiva (due valutazioni, senza arbitraggio)'}
+            </li>
+            {preview.maximumCostMicroUsd !== undefined && (
+              <li>
+                Costo massimo autorizzato, inclusi retry:{' '}
+                {(preview.maximumCostMicroUsd / 1000000).toFixed(6)} USD
+              </li>
+            )}
             <li>
               Costo stimato: {preview.costEstimated}
               {preview.mode === 'mock' ? ' (mock)' : ' USD'}
@@ -313,7 +344,16 @@ export function AiBatchCorrectionDialog({
               <p role="status">
                 {result.idempotentReplay
                   ? 'Operazione già eseguita: risultato ripristinato.'
-                  : 'Correzione completata.'}
+                  : result.counts.failed > 0
+                    ? 'Elaborazione terminata con consegne da riprendere.'
+                    : 'Correzione completata.'}
+              </p>
+              <p>
+                {previewRequest?.advancedReview === false
+                  ? 'Non revisionato'
+                  : result.counts.failed === 0
+                    ? 'Revisione avanzata completata: i disaccordi richiedono conferma docente nella correzione.'
+                    : 'Revisione non completata per le consegne fallite: nessun risultato parziale applicato.'}
               </p>
               <ul>
                 <li>Riuscite: {result.counts.succeeded}</li>
@@ -321,6 +361,12 @@ export function AiBatchCorrectionDialog({
                 <li>Escluse: {result.counts.excluded}</li>
                 <li>Fallite: {result.counts.failed}</li>
                 <li>Token stimati: {result.tokensEstimated}</li>
+                {result.costSettledMicroUsd !== undefined && (
+                  <li>
+                    Costo contabilizzato sul budget (incluse eventuali quote prudenziali):{' '}
+                    {(result.costSettledMicroUsd / 1000000).toFixed(6)} USD
+                  </li>
+                )}
                 <li>
                   Token reali: {result.tokensActual}
                   {result.mode === 'mock' ? ' (mock)' : ''}
@@ -345,6 +391,17 @@ export function AiBatchCorrectionDialog({
             </>
           )}
           <div className="dialog-actions">
+            {result.counts.failed > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  invalidatePreview();
+                  setPhase('configure');
+                }}
+              >
+                Riprendi le consegne non elaborate
+              </button>
+            )}
             <button type="button" className="btn-primary" onClick={onClose}>
               Chiudi
             </button>

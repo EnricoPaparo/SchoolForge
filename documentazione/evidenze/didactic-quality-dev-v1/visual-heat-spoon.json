@@ -1,0 +1,10 @@
+{
+  "id": "visual-heat-spoon",
+  "subject": "Una tazza di acqua calda con un cucchiaino metallico immerso e il manico che sporge: illustrazione didattica realistica che mostri il percorso continuo del metallo dal liquido al manico; nessuna fiamma, nessun testo o simbolo inventato. Il trasferimento lungo il cucchiaino è conduzione, non movimento del metallo.",
+  "usage": {
+    "inputTokens": 708,
+    "outputTokens": 196
+  },
+  "actualCostMicroUsd": 9420,
+  "image": "visual-heat-spoon.webp"
+}

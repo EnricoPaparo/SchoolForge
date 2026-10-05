@@ -1,0 +1,10 @@
+{
+  "id": "visual-ram-ssd",
+  "subject": "Confronto visivo didattico fra una scheda RAM con chip e un SSD, affiancati sullo stesso piano: componenti reali distinti, senza testi, frecce o analogie. La scheda RAM conserva dati temporanei in uso, l’SSD conserva file senza alimentazione; non rappresentare l’SSD come parte della RAM.",
+  "usage": {
+    "inputTokens": 703,
+    "outputTokens": 196
+  },
+  "actualCostMicroUsd": 9395,
+  "image": "visual-ram-ssd.webp"
+}

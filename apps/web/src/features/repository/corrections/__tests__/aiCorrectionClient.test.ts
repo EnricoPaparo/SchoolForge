@@ -19,12 +19,14 @@ describe('buildRequest', () => {
   it('emits exactly the closed IDs + gradingMode and nothing else', () => {
     const req = buildRequest('ver1', ['ver1_s1', 'ver1_s2'], 'req-1', 'balanced');
     expect(Object.keys(req).sort()).toEqual([
+      'advancedReview',
       'gradingMode',
       'requestId',
       'submissionIds',
       'verificationId',
     ]);
     expect(req).toEqual({
+      advancedReview: true,
       verificationId: 'ver1',
       submissionIds: ['ver1_s1', 'ver1_s2'],
       requestId: 'req-1',

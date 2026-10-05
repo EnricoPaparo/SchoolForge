@@ -1,0 +1,14 @@
+{
+  "subjects": [
+    {
+      "id": "visual-ram-ssd",
+      "subject": "Confronto visivo didattico fra una scheda RAM con chip e un SSD, affiancati sullo stesso piano: componenti reali distinti, senza testi, frecce o analogie. La scheda RAM conserva dati temporanei in uso, l’SSD conserva file senza alimentazione; non rappresentare l’SSD come parte della RAM."
+    },
+    {
+      "id": "visual-heat-spoon",
+      "subject": "Una tazza di acqua calda con un cucchiaino metallico immerso e il manico che sporge: illustrazione didattica realistica che mostri il percorso continuo del metallo dal liquido al manico; nessuna fiamma, nessun testo o simbolo inventato. Il trasferimento lungo il cucchiaino è conduzione, non movimento del metallo."
+    }
+  ],
+  "calls": 3,
+  "frozenBeforeCalls": true
+}

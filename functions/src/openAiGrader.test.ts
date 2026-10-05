@@ -53,8 +53,28 @@ function validOutput() {
   return JSON.stringify({
     requestId: input.requestId,
     results: [
-      { order: 2, points: 0, feedback: 'La risposta non spiega HTTPS.' },
-      { order: 5, points: 2, feedback: 'Risposta corretta e pertinente.' },
+      {
+        order: 2,
+        points: 0,
+        feedback: 'La risposta non spiega HTTPS.',
+        evidence: {
+          errorCodes: [],
+          ambiguity: false,
+          reviewRecommended: false,
+          alternativeValid: false,
+        },
+      },
+      {
+        order: 5,
+        points: 2,
+        feedback: 'Risposta corretta e pertinente.',
+        evidence: {
+          errorCodes: [],
+          ambiguity: false,
+          reviewRecommended: false,
+          alternativeValid: false,
+        },
+      },
     ],
     generalFeedback: 'Rivedi HTTPS; la risposta sulla RAM è corretta.',
   });
@@ -310,11 +330,27 @@ describe('OpenAiGrader payload and mapping', () => {
     const accepted = JSON.stringify({
       requestId: input.requestId,
       results: [
-        { order: 2, points: 1, feedback: complexFeedback },
+        {
+          order: 2,
+          points: 1,
+          feedback: complexFeedback,
+          evidence: {
+            errorCodes: [],
+            ambiguity: false,
+            reviewRecommended: false,
+            alternativeValid: false,
+          },
+        },
         {
           order: 5,
           points: 2,
           feedback: 'Corretta: descrivi con precisione la memoria di lavoro.',
+          evidence: {
+            errorCodes: [],
+            ambiguity: false,
+            reviewRecommended: false,
+            alternativeValid: false,
+          },
         },
       ],
       generalFeedback: 'Buona base; completa il ragionamento sulla sicurezza di HTTPS.',

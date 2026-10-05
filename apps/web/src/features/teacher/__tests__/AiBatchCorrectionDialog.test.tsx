@@ -141,6 +141,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(previewSpy).toHaveBeenCalledTimes(1);
     const payload = previewSpy.mock.calls[0][0];
     expect(Object.keys(payload).sort()).toEqual([
+      'advancedReview',
       'gradingMode',
       'modelProfile',
       'requestId',
@@ -707,4 +708,30 @@ describe('AiBatchCorrectionDialog — TWU-02 model profile + preferences prefill
     // A new requestId: same requestId with a different profile could never be reused.
     expect(secondPayload.requestId).not.toBe(firstRequestId);
   });
+});
+
+it('advanced review starts ON for each operation and switch changes create a fresh preview', async () => {
+  const { callables, previewSpy } = makeCallables(
+    () => Promise.resolve(makePreview()),
+    () => Promise.resolve(makeRun()),
+  );
+  render(
+    <AiBatchCorrectionDialog
+      verificationId={VERIFICATION_ID}
+      submissionIds={SUBMISSION_IDS}
+      callables={callables}
+      onClose={() => {}}
+      onApplied={() => {}}
+    />,
+  );
+  expect((screen.getByRole('switch') as HTMLInputElement).checked).toBe(true);
+  await calculatePreview();
+  const first = previewSpy.mock.calls[0][0];
+  expect(first.advancedReview).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
+  fireEvent.click(screen.getByRole('switch'));
+  await calculatePreview();
+  const second = previewSpy.mock.calls[1][0];
+  expect(second.advancedReview).toBe(false);
+  expect(second.requestId).not.toBe(first.requestId);
 });
