@@ -1,3 +1,14 @@
+import {
+  gradeWithIndependentReview,
+  reviewInputHash,
+  type CorrectionReview,
+  type ReviewCheckpointPorts,
+} from './aiCorrectionReview.js';
+import {
+  OPENAI_GRADING_CONTRACT_VERSION,
+  OPENAI_MAX_OUTPUT_TOKENS,
+  buildOpenAiGradingRequest,
+} from './openAiGrader.js';
 /**
  * M5-02 — motore server-side della correzione assistita da IA.
  *
@@ -102,7 +113,7 @@ export const RUN_FINALIZE_MARGIN_MS = 20_000;
  */
 export const RUN_LEASE_MS = AI_RUN_TIMEOUT_SECONDS * 1000;
 /** Contratto privacy-minimal dei nuovi `aiCorrectionRuns`. */
-export const AI_RUN_CONTRACT_VERSION = 2 as const;
+export const AI_RUN_CONTRACT_VERSION = 3 as const;
 /** Retention approvata da HG-M5-4; la policy TTL reale resta separata. */
 export const AI_RUN_RETENTION_DAYS = 30;
 export const RUN_RETENTION_MS = AI_RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -234,6 +245,7 @@ export interface SubmissionData {
 }
 
 export interface ExistingEvaluation {
+  aiReview?: CorrectionReview;
   order: number;
   points: number | null;
   maxPoints: number;
@@ -318,6 +330,8 @@ export interface CostActualFields {
 export interface AiCorrectionPreviewResponse extends CostEstimateFields {
   mode: AiEnabledFeatureMode;
   phase: 'preview';
+  maximumCostMicroUsd: number;
+  advancedReview: boolean;
   requestId: string;
   verificationId: string;
   counts: AiCorrectionCounts;
@@ -859,6 +873,7 @@ export function estimateGradingModeTokens(gradingMode: GradingMode): number {
 // ── Validazione output del grader ─────────────────────────────────────────────
 
 export interface ValidatedScore {
+  aiReview?: CorrectionReview;
   points: number;
   feedback?: string;
 }
@@ -920,6 +935,7 @@ export function computeSelectionHash(
   gradingMode: GradingMode,
   modelProfile: ModelProfile,
   teacherGuidance?: string,
+  advancedReview = false,
 ): string {
   const canonical = JSON.stringify([
     verificationId,
@@ -927,6 +943,8 @@ export function computeSelectionHash(
     gradingMode,
     modelProfile,
     teacherGuidance ?? '',
+    advancedReview,
+    OPENAI_GRADING_CONTRACT_VERSION,
   ]);
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
@@ -974,6 +992,9 @@ export interface CommitSubmissionInput {
    * valutata **e** il docente non ne ha già scritto uno (mai sovrascritto).
    */
   proposedGeneralFeedback: string | null;
+  reviewDraftKey?: string;
+  reviewRequired?: boolean;
+  reviewOperation?: { requestId: string; executionId: string };
 }
 
 export interface CommitSubmissionResult {
@@ -1018,6 +1039,7 @@ export interface PersistedRun {
 
 /** Metadata (solo) scritti alla creazione del run doc. */
 export interface BeginRunMeta {
+  advancedReview?: boolean;
   selectionHash: string;
   submissionCount: number;
   provider: string;
@@ -1052,6 +1074,11 @@ export type BeginRunResult =
   | { state: 'legacy' };
 
 export interface EngineWritePorts extends EngineReadPorts {
+  reviewCheckpoint?: (
+    submissionId: string,
+    requestId: string,
+    executionId: string,
+  ) => ReviewCheckpointPorts;
   /**
    * Acquisisce/riconosce `aiCorrectionRuns/{requestId}` in **una transazione**
    * atomica, applicando la semantica di lease descritta in `BeginRunResult`.
@@ -1381,14 +1408,16 @@ function computeReservationBoundMicroUsd(
       eligible.openOrders,
       byOrder,
       item.submission?.answers ?? {},
-      eligible.totalMaxPoints,
+      999999.75,
       eligible.totalMaxPoints,
       request.gradingMode,
       request.teacherGuidance,
     );
     const bound = perAttemptBoundTokens(grader, graderInput);
-    inputTokens += bound.inputTokens * maxAttemptsPerCall;
-    outputTokens += bound.outputTokens * maxAttemptsPerCall;
+    inputTokens +=
+      bound.inputTokens * maxAttemptsPerCall * (request.advancedReview === false ? 1 : 2);
+    outputTokens +=
+      bound.outputTokens * maxAttemptsPerCall * (request.advancedReview === false ? 1 : 2);
   }
   return (
     estimateCostBreakdown(
@@ -1466,11 +1495,55 @@ export async function runPreview(
   // prenotazione, nessuna chiamata provider). La preview **non** dichiara un costo
   // effettivo. A parità di selezione/profilo coincide col run: usa il modello e
   // listino del profilo risolto (TWU-02).
-  const cost = buildCostEstimateFields(effectiveConfig, preflight.estimate);
+  const passes = request.advancedReview === false ? 1 : 2;
+  const cost = buildCostEstimateFields(effectiveConfig, {
+    inputTokens: preflight.estimate.inputTokens * passes,
+    outputTokens: preflight.estimate.outputTokens * passes,
+  });
+  let maximumCostMicroUsd = 0;
+  if (effectiveConfig) {
+    const byOrder = new Map((preflight.teacherQuestions ?? []).map((q) => [q.order, q]));
+    for (const item of preflight.classifications) {
+      if (
+        item.classification.status !== 'eligible' ||
+        !item.classification.eligible.openOrders.length
+      )
+        continue;
+      const e = item.classification.eligible;
+      const input = buildGraderInput(
+        request.requestId,
+        e.openOrders,
+        byOrder,
+        item.submission?.answers ?? {},
+        999999.75,
+        e.totalMaxPoints,
+        request.gradingMode,
+        request.teacherGuidance,
+      );
+      const attempts = passes * (effectiveConfig.limits.maxApplicationRetries + 1);
+      maximumCostMicroUsd +=
+        estimateCostBreakdown(
+          Buffer.byteLength(
+            JSON.stringify(buildOpenAiGradingRequest(input, effectiveConfig.model)),
+            'utf8',
+          ) * attempts,
+          OPENAI_MAX_OUTPUT_TOKENS * attempts,
+          effectiveConfig.priceListVersion,
+          effectiveConfig.model,
+        )?.costMicroUsd ?? 0;
+    }
+  }
 
+  if (effectiveConfig && maximumCostMicroUsd > effectiveConfig.maxOperationCostMicroUsd)
+    throw new AiGatewayError(
+      'operation_budget_exceeded',
+      'La prenotazione prudenziale supera il limite di costo della singola operazione.',
+    );
   return {
     mode: deps.featureMode === 'openai' ? 'openai' : 'mock',
     phase: 'preview',
+    maximumCostMicroUsd,
+    advancedReview: request.advancedReview !== false,
     requestId: request.requestId,
     verificationId: request.verificationId,
     counts,
@@ -1684,6 +1757,7 @@ export async function runExecution(
     request.gradingMode,
     effectiveProfile,
     request.teacherGuidance,
+    request.advancedReview !== false,
   );
   const preflight =
     mode === 'openai' ? await buildOperationPreflight(request, ownerUid, deps.ports) : null;
@@ -1747,6 +1821,7 @@ export async function runExecution(
   // Idempotenza concorrente: acquisisci la lease sul run doc (transazione).
   const begin = await deps.ports.beginRun(request.requestId, {
     selectionHash,
+    advancedReview: request.advancedReview !== false,
     submissionCount: request.submissionIds.length,
     provider: grader.id,
     ...(grader.model ? { model: grader.model } : {}),
@@ -1902,6 +1977,8 @@ export async function runExecution(
         byOrder,
         grader,
         commit: deps.ports.commitSubmission,
+        checkpoint: deps.ports.reviewCheckpoint?.(submissionId, request.requestId, executionId),
+        executionId,
         deadlineMs: effectiveConfig ? runDeadlineMs : undefined,
         signal: deps.abortSignal,
       });
@@ -2175,6 +2252,8 @@ async function gradeEligible(
     byOrder: Map<number, TeacherQuestion>;
     grader: AiGrader;
     commit: EngineWritePorts['commitSubmission'];
+    checkpoint?: ReviewCheckpointPorts;
+    executionId?: string;
     deadlineMs?: number;
     signal?: AbortSignal;
   },
@@ -2207,6 +2286,10 @@ async function gradeEligible(
   };
   // Token REALI (0/0 col mock o senza usage). Aggiornati dall'usage del provider,
   // **anche** se l'output viene poi rifiutato (costo comunque contabilizzato).
+  if (ctx.request.advancedReview !== false) {
+    estimate.inputTokens *= 2;
+    estimate.outputTokens *= 2;
+  }
   let actualInput = 0;
   let actualOutput = 0;
   let actualCachedInput: number | undefined;
@@ -2282,10 +2365,23 @@ async function gradeEligible(
     };
     let validated = new Map<number, ValidatedScore>();
     try {
-      const output = await ctx.grader.grade(graderInput, {
+      const gradeContext = {
         ...(ctx.deadlineMs !== undefined ? { deadlineMs: ctx.deadlineMs } : {}),
         ...(ctx.signal ? { signal: ctx.signal } : {}),
-      });
+      };
+      const output =
+        ctx.request.advancedReview !== false || ctx.checkpoint
+          ? await gradeWithIndependentReview(
+              ctx.grader,
+              graderInput,
+              gradeContext,
+              ctx.checkpoint,
+              ctx.request.advancedReview !== false,
+            )
+          : await ctx.grader.grade(graderInput, {
+              ...(ctx.deadlineMs !== undefined ? { deadlineMs: ctx.deadlineMs } : {}),
+              ...(ctx.signal ? { signal: ctx.signal } : {}),
+            });
       applyAttempts(output.attempts);
       // Usage REALE del provider, se riportato e coerente (0/0 col mock).
       billUsage(output.usage);
@@ -2321,6 +2417,12 @@ async function gradeEligible(
         new Set(eligible.openOrders),
         new Map(eligible.openOrders.map((o) => [o, ctx.byOrder.get(o)!.maxPoints])),
       );
+      if ('reviews' in output) {
+        for (const [order, review] of output.reviews as Map<number, CorrectionReview>) {
+          const score = validated.get(order);
+          if (score) score.aiReview = review;
+        }
+      }
     } catch (error) {
       // Output invalido con usage **già fatturabile**: il costo va contabilizzato
       // anche se non salviamo punteggi/feedback. Un fallimento finale del provider
@@ -2376,6 +2478,25 @@ async function gradeEligible(
       skeleton: eligible.skeleton,
       proposed,
       proposedGeneralFeedback: generalFeedback,
+      ...(ctx.checkpoint && eligible.openOrders.length > 0
+        ? {
+            reviewOperation: { requestId: ctx.request.requestId, executionId: ctx.executionId! },
+            reviewRequired: ctx.request.advancedReview !== false,
+            reviewDraftKey: reviewInputHash(
+              buildGraderInput(
+                ctx.request.requestId,
+                eligible.openOrders,
+                ctx.byOrder,
+                ctx.submission.answers,
+                priorPoints,
+                eligible.totalMaxPoints,
+                ctx.request.gradingMode,
+                ctx.request.teacherGuidance,
+              ),
+              ctx.grader.model,
+            ),
+          }
+        : {}),
     });
   } catch {
     return {

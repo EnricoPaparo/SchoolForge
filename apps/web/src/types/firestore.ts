@@ -1255,6 +1255,7 @@ export type CorrectionStatus = 'in_progress' | 'completed' | 'returned';
  * workspace reads alongside (never through) this document.
  */
 export type QuestionEvaluation = {
+  aiReview?: { status: 'verified' | 'review_recommended' | 'teacher_reviewed'; reasons: string[] };
   order: number;
   /**
    * `null` = not yet evaluated. Distinguishing "not evaluated" from a

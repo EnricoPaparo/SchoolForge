@@ -1534,3 +1534,55 @@ describe('VEX-02B — assigned-variant correction', () => {
     expect(JSON.stringify(returnDoc)).not.toMatch(/labelId|labelName|differentiation/i);
   });
 });
+
+describe('independent grading review acknowledgement', () => {
+  const evaluations = {
+    '0': {
+      order: 0,
+      points: 5,
+      maxPoints: 10,
+      aiReview: { status: 'review_recommended' as const, reasons: ['score_disagreement'] },
+    },
+    '1': { order: 1, points: 5, maxPoints: 5 },
+  };
+  it('blocks completion until the teacher explicitly acknowledges disagreement', async () => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+    seedCorrection({ evaluations });
+    await expect(completeCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/revisione docente/);
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+  it('normal save preserves unresolved flags even when the teacher edits a score', async () => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+    seedCorrection({ evaluations });
+    const saved = await saveCorrection(
+      {
+        submissionId: SUBMISSION_ID,
+        evaluations: { '0': { points: 4 }, '1': { points: 5 } },
+        generalFeedback: null,
+      },
+      fakeDb,
+    );
+    expect(saved.evaluations['0']?.aiReview?.status).toBe('review_recommended');
+  });
+  it('explicit acknowledgement is persisted even with unchanged scores', async () => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+    seedCorrection({ evaluations });
+    const saved = await saveCorrection(
+      {
+        submissionId: SUBMISSION_ID,
+        evaluations: { '0': { points: 5 }, '1': { points: 5 } },
+        generalFeedback: null,
+        reviewAcknowledgedOrders: [0],
+      },
+      fakeDb,
+    );
+    expect(saved.evaluations['0']?.aiReview?.status).toBe('teacher_reviewed');
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+  });
+});

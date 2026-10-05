@@ -122,6 +122,7 @@ export interface AiCorrectionRequest {
    * model ID o un listino: la risoluzione profilo → modello/listino è server-side.
    */
   modelProfile?: ModelProfile;
+  advancedReview?: boolean;
 }
 
 // Le response di preview/run (contratto pieno M5-02) sono definite in
@@ -179,6 +180,7 @@ const ALLOWED_REQUEST_KEYS = [
   'gradingMode',
   'teacherGuidance',
   'modelProfile',
+  'advancedReview',
 ] as const;
 
 export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest {
@@ -233,6 +235,10 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
 
   // M5-QUALITY-01 — assente ⇒ balanced; presente ma non valido ⇒ invalid_input.
   const normalizedGradingMode = normalizeGradingMode(gradingMode);
+  const advancedReview = (input as Record<string, unknown>).advancedReview;
+  if (advancedReview !== undefined && typeof advancedReview !== 'boolean') {
+    throw new AiGatewayError('invalid_input', 'Revisione avanzata non valida.');
+  }
 
   // TWU-02 — assente ⇒ undefined (default legacy risolto server-side); presente
   // ma non valido (null/sconosciuto/non-stringa) ⇒ invalid_input. La validazione
@@ -257,6 +263,7 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
     submissionIds: [...submissionIds],
     requestId,
     gradingMode: normalizedGradingMode,
+    ...(advancedReview !== undefined ? { advancedReview } : {}),
     ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
     ...(normalizedProfile ? { modelProfile: normalizedProfile } : {}),
   };
@@ -331,7 +338,22 @@ export interface AiGraderInput {
 }
 
 /** Output strutturato e tipizzato per una singola domanda. */
+export const CORRECTION_ERROR_CODES = [
+  'missing_content',
+  'factual_error',
+  'off_topic',
+  'contradiction',
+  'invalid_method',
+] as const;
+export interface GradingEvidence {
+  errorCodes: (typeof CORRECTION_ERROR_CODES)[number][];
+  ambiguity: boolean;
+  reviewRecommended: boolean;
+  alternativeValid: boolean;
+}
+
 export interface AiGraderQuestionResult {
+  evidence?: GradingEvidence;
   order: number;
   points: number;
   feedback?: string;
@@ -578,6 +600,12 @@ export class MockAiGrader implements AiGrader {
         order: q.order,
         points: quarters / 4,
         feedback: '[mock] valutazione simulata deterministica (M5)',
+        evidence: {
+          errorCodes: [],
+          ambiguity: false,
+          reviewRecommended: false,
+          alternativeValid: false,
+        },
       };
     });
     // Feedback generale (M5-04B): totale finale = punti già fissati (chiuse +

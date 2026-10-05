@@ -395,6 +395,7 @@ export type SaveCorrectionQuestionInput = {
 };
 
 export type SaveCorrectionInput = {
+  reviewAcknowledgedOrders?: number[];
   submissionId: string;
   /** Keyed by `order.toString()` — must cover exactly the same question set already on the correction. */
   evaluations: Record<string, SaveCorrectionQuestionInput>;
@@ -475,6 +476,16 @@ export async function saveCorrection(
     }
     nextEvaluations[key] = {
       order: previous.order,
+      ...(previous.aiReview
+        ? {
+            aiReview:
+              input.reviewAcknowledgedOrders?.includes(previous.order) ||
+              (previous.aiReview.status !== 'review_recommended' &&
+                (previous.points !== points || previous.feedback !== next.feedback))
+                ? { status: 'teacher_reviewed' as const, reasons: previous.aiReview.reasons }
+                : previous.aiReview,
+          }
+        : {}),
       points,
       maxPoints: previous.maxPoints,
       ...(next.feedback !== undefined ? { feedback: next.feedback } : {}),
@@ -496,7 +507,12 @@ export async function saveCorrection(
     generalFeedback,
   );
 
-  if (questionDeltas.length === 0 && !generalFeedbackDelta) {
+  const reviewChanged = existingKeys.some(
+    (key) =>
+      JSON.stringify(correction.evaluations[key]?.aiReview) !==
+      JSON.stringify(nextEvaluations[key]?.aiReview),
+  );
+  if (questionDeltas.length === 0 && !generalFeedbackDelta && !reviewChanged) {
     // Nothing actually changed — no write at all. The already-persisted state
     // is exactly `result`, so the caller can still refresh its baseline.
     return result;
@@ -562,6 +578,11 @@ export async function completeCorrection(
   const correction = snap.data() as CorrectionDoc;
   await assertCorrectionMatchesAuthoritativeVariant(correction, db, 'completare', context);
   assertValidCorrectionStatusTransition(correction.status, 'completed');
+  if (
+    Object.values(correction.evaluations).some((e) => e.aiReview?.status === 'review_recommended')
+  ) {
+    throw new Error('Confermare la revisione docente dei disaccordi IA prima di completare.');
+  }
   if (!isCorrectionComplete(correction.evaluations)) {
     throw new Error('Impossibile completare: una o più domande non sono ancora state valutate.');
   }

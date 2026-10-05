@@ -383,6 +383,7 @@ class FakeStore implements EngineWritePorts {
         order: cur.order,
         maxPoints: cur.maxPoints,
         points: score.points,
+        ...(score.aiReview ? { aiReview: score.aiReview } : {}),
         ...(score.feedback !== undefined ? { feedback: score.feedback } : {}),
       };
       written.push(order);
@@ -443,7 +444,13 @@ function baseDeps(store: FakeStore, grader: AiGrader) {
 }
 
 function req(submissionIds: string[], overrides: Record<string, unknown> = {}) {
-  return { verificationId: VERIF, submissionIds, requestId: REQ, ...overrides };
+  return {
+    verificationId: VERIF,
+    submissionIds,
+    requestId: REQ,
+    advancedReview: false,
+    ...overrides,
+  };
 }
 
 let fetchSpy: ReturnType<typeof vi.fn>;
@@ -3318,4 +3325,89 @@ describe('TWU-02 — model profile server-side resolution', () => {
     ).rejects.toMatchObject({ code: 'invalid_input' });
     expect(store.reserveBudgetCalls).toBe(0);
   });
+});
+
+describe('advanced correction review integration', () => {
+  it('defaults to two independent calls and commits only after both outputs validate', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store);
+    const mock = new MockAiGrader();
+    const grade = vi.fn(mock.grade.bind(mock));
+    const request = { verificationId: VERIF, submissionIds: [sid('s1')], requestId: REQ };
+    const result = await runExecution(request, baseDeps(store, { id: 'mock', grade }));
+    expect(grade).toHaveBeenCalledTimes(2);
+    expect(store.commitCalls).toBe(1);
+    expect(result.counts.succeeded).toBe(1);
+    expect(
+      Object.values(store.corrections.get(sid('s1'))!.evaluations).some(
+        (e) => e.aiReview?.status === 'verified',
+      ),
+    ).toBe(true);
+  });
+  it('review failure applies neither closed nor open proposals and preserves billed usage', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store);
+    const mock = new MockAiGrader();
+    const grade = vi
+      .fn()
+      .mockImplementationOnce(async (input) => ({
+        ...(await mock.grade(input)),
+        usage: { inputTokens: 10, outputTokens: 5, tokens: 15 },
+      }))
+      .mockRejectedValueOnce(
+        new AiGraderFailure('timeout', {
+          reasonCode: 'timeout',
+          attempts: {
+            attemptsTotal: 1,
+            retriesTotal: 0,
+            retryReasonCodes: [],
+            retryDelayTotalMs: 0,
+            unknownBillingAttempts: 1,
+          },
+        }),
+      );
+    const result = await runExecution(
+      req([sid('s1')], { advancedReview: true }),
+      baseDeps(store, { id: 'mock', grade }),
+    );
+    expect(store.commitCalls).toBe(0);
+    expect(store.corrections.size).toBe(0);
+    expect(result.counts.failed).toBe(1);
+    expect(result.inputTokensActual).toBe(10);
+    expect(result.retry.unknownBillingAttempts).toBe(1);
+  });
+  it('closed-only delivery remains free and does not request any review checkpoint', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store);
+    store.verification!.teacherQuestions = store.verification!.teacherQuestions!.filter(
+      (q) => q.tipo !== 'aperta',
+    );
+    const grade = vi.fn();
+    const result = await runExecution(
+      req([sid('s1')], { advancedReview: true }),
+      baseDeps(store, { id: 'mock', grade }),
+    );
+    expect(grade).not.toHaveBeenCalled();
+    expect(result.costActual).toBe(0);
+    expect(result.counts.succeeded).toBe(1);
+  });
+});
+
+it('review choice changes idempotent identity and doubles normal preview workload', async () => {
+  const store = new FakeStore();
+  seedOneOpenOneClosed(store);
+  const base = await runPreview(
+    req([sid('s1')], { advancedReview: false }),
+    baseDeps(store, new MockAiGrader()),
+  );
+  const reviewed = await runPreview(
+    req([sid('s1')], { advancedReview: true }),
+    baseDeps(store, new MockAiGrader()),
+  );
+  expect(reviewed.inputTokensEstimated).toBe(2 * base.inputTokensEstimated);
+  expect(reviewed.outputTokensEstimated).toBe(2 * base.outputTokensEstimated);
+  expect(reviewed.advancedReview).toBe(true);
+  expect(computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy', undefined, true)).not.toBe(
+    computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy', undefined, false),
+  );
 });

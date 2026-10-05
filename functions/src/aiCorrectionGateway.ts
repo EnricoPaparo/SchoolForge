@@ -1,3 +1,7 @@
+import { normalizeUsageActual, actualCostMicroUsd } from './aiCorrectionCost.js';
+import { OPENAI_GRADING_CONTRACT_VERSION } from './openAiGrader.js';
+import { createHash } from 'node:crypto';
+import type { ReviewCheckpointPorts, ReviewCheckpoint } from './aiCorrectionReview.js';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
@@ -216,6 +220,7 @@ function applyProposed(
       order: current.order,
       maxPoints: current.maxPoints,
       points: score.points,
+      ...(score.aiReview ? { aiReview: score.aiReview } : {}),
       ...(score.feedback !== undefined ? { feedback: score.feedback } : {}),
     };
     written.push(order);
@@ -232,6 +237,28 @@ function commitSubmission(db: Firestore) {
     return db.runTransaction(async (tx: Transaction): Promise<CommitSubmissionResult> => {
       const snap = await tx.get(correctionRef);
       const now = FieldValue.serverTimestamp();
+      if (input.reviewDraftKey) {
+        const draft = await tx.get(
+          correctionRef.collection('aiPendingDrafts').doc(input.reviewDraftKey),
+        );
+        if (input.reviewOperation) {
+          const run = await tx.get(db.doc(`aiCorrectionRuns/${input.reviewOperation.requestId}`));
+          if (run.data()?.executionId !== input.reviewOperation.executionId)
+            return { result: 'changed', writtenOrders: [] };
+        }
+        const d = snap.data();
+        const current = createHash('sha256')
+          .update(
+            JSON.stringify(d ? [d.status, d.evaluations, d.generalFeedback, d.reopenCount] : null),
+          )
+          .digest('hex');
+        if (
+          draft.data()?.baseline !== current ||
+          draft.data()?.primaryState !== 'completed' ||
+          (input.reviewRequired && draft.data()?.secondaryState !== 'completed')
+        )
+          return { result: 'changed', writtenOrders: [] };
+      }
 
       if (!snap.exists) {
         // Crea in_progress con lo scheletro congelato, poi applica le proposte.
@@ -517,6 +544,8 @@ function beginRun(db: Firestore): EngineWritePorts['beginRun'] {
             ...(meta.configVersion ? { configVersion: meta.configVersion } : {}),
             ...(meta.priceListVersion ? { priceListVersion: meta.priceListVersion } : {}),
             selectionHash: meta.selectionHash,
+            advancedReview: meta.advancedReview !== false,
+            reviewPolicyVersion: 'blind-review-v1',
             submissionCount: meta.submissionCount,
             ...lease,
             createdAt: now,
@@ -775,6 +804,148 @@ function reconcileBudget(db: Firestore): NonNullable<EngineWritePorts['reconcile
   };
 }
 
+function reviewCheckpoint(
+  db: Firestore,
+  submissionId: string,
+  requestId: string,
+  executionId: string,
+): ReviewCheckpointPorts {
+  const correctionRef = db.doc(`corrections/${submissionId}`);
+  const runRef = db.doc(`aiCorrectionRuns/${requestId}`);
+  const baseline = async () => {
+    const snap = await correctionRef.get();
+    const d = snap.data();
+    return createHash('sha256')
+      .update(
+        JSON.stringify(d ? [d.status, d.evaluations, d.generalFeedback, d.reopenCount] : null),
+      )
+      .digest('hex');
+  };
+  let initialBaseline: string;
+  return {
+    recordReview: async (key, reviews) => {
+      await db.runTransaction(async (tx) => {
+        const run = await tx.get(runRef);
+        if (run.data()?.executionId !== executionId) throw new Error('Lost correction lease.');
+        tx.update(runRef, {
+          [`reviewAgreement.${key}`]: [...reviews].map(([order, review]) => ({
+            order,
+            status: review.status,
+            reasons: review.reasons,
+          })),
+        });
+      });
+    },
+    load: async (key) => {
+      initialBaseline = await baseline();
+      const snap = await correctionRef.collection('aiPendingDrafts').doc(key).get();
+      const data = snap.data();
+      if (!data || data.baseline !== initialBaseline) return {};
+      return {
+        ...(data.primaryOutput ? { primary: data.primaryOutput } : {}),
+        ...(data.secondaryOutput ? { secondary: data.secondaryOutput } : {}),
+      } as ReviewCheckpoint;
+    },
+    claim: async (key, stage) => {
+      const ref = correctionRef.collection('aiPendingDrafts').doc(key);
+      return db.runTransaction(async (tx) => {
+        const [run, draft, correction] = await Promise.all([
+          tx.get(runRef),
+          tx.get(ref),
+          tx.get(correctionRef),
+        ]);
+        const d = correction.data();
+        const current = createHash('sha256')
+          .update(
+            JSON.stringify(d ? [d.status, d.evaluations, d.generalFeedback, d.reopenCount] : null),
+          )
+          .digest('hex');
+        if (run.data()?.executionId !== executionId || current !== initialBaseline) return false;
+        const data = draft.data();
+        if (
+          data &&
+          data.baseline === initialBaseline &&
+          data[`${stage}State`] &&
+          data[`${stage}State`] !== 'retryable'
+        )
+          return false;
+        if (data?.baseline === initialBaseline)
+          tx.update(ref, {
+            [`${stage}State`]: 'invoked',
+            requestId,
+            executionId,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        else
+          tx.set(ref, {
+            baseline: initialBaseline,
+            [`${stage}State`]: 'invoked',
+            requestId,
+            executionId,
+            updatedAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromMillis(Date.now() + 30 * 86400000),
+          });
+        const meta = run.data()!;
+        tx.update(runRef, {
+          [`reviewStages.${key}.${stage}`]: {
+            stageRequestId: createHash('sha256')
+              .update(`${requestId}:${key}:${stage}`)
+              .digest('hex'),
+            inputHash: key,
+            promptHash: OPENAI_GRADING_CONTRACT_VERSION,
+            model: meta.model ?? 'mock',
+            priceListVersion: meta.priceListVersion ?? 'mock',
+            state: 'invoked',
+          },
+        });
+        return true;
+      });
+    },
+    finish: async (key, stage, output, retryable, failure) => {
+      const ref = correctionRef.collection('aiPendingDrafts').doc(key);
+      await db.runTransaction(async (tx) => {
+        const [run, draft] = await Promise.all([tx.get(runRef), tx.get(ref)]);
+        if (run.data()?.executionId !== executionId || draft.data()?.executionId !== executionId)
+          throw new Error('Lost correction lease.');
+        const state = output ? 'completed' : retryable ? 'retryable' : 'blocked';
+        tx.update(ref, {
+          [`${stage}State`]: state,
+          ...(output ? { [`${stage}Output`]: output } : {}),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        const meta = run.data()!;
+        const usage = normalizeUsageActual(output?.usage ?? failure?.usage);
+        tx.update(runRef, {
+          [`reviewStages.${key}.${stage}`]: {
+            stageRequestId: createHash('sha256')
+              .update(`${requestId}:${key}:${stage}`)
+              .digest('hex'),
+            inputHash: key,
+            promptHash: OPENAI_GRADING_CONTRACT_VERSION,
+            model: meta.model ?? 'mock',
+            priceListVersion: meta.priceListVersion ?? 'mock',
+            state,
+            ...(failure?.attempts ? { attempts: failure.attempts } : {}),
+            ...(usage
+              ? {
+                  usage,
+                  costMicroUsd:
+                    actualCostMicroUsd(
+                      usage.inputTokens,
+                      usage.outputTokens,
+                      meta.priceListVersion,
+                      meta.model,
+                      usage,
+                    ) ?? 0,
+                }
+              : {}),
+          },
+        });
+      });
+    },
+  };
+}
+
 function buildWritePorts(db: Firestore): EngineWritePorts {
   return {
     loadVerification: loadVerification(db),
@@ -783,6 +954,8 @@ function buildWritePorts(db: Firestore): EngineWritePorts {
     beginRun: beginRun(db),
     finishRun: finishRun(db),
     commitSubmission: commitSubmission(db),
+    reviewCheckpoint: (submissionId, requestId, executionId) =>
+      reviewCheckpoint(db, submissionId, requestId, executionId),
     reserveBudget: reserveBudget(db),
     markBudgetInvoked: markBudgetInvoked(db),
     reconcileBudget: reconcileBudget(db),
