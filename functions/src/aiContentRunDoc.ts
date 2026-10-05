@@ -1,3 +1,4 @@
+import { isValidStoredDidacticReview } from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — (de)serializzazione **rigorosa** del documento tecnico
  * `aiContentRuns/{opaqueRunId}`. Il core puro lavora in millisecondi; qui
@@ -20,6 +21,8 @@ import { validateLessonProposal, validateLessonReviewProposal } from './aiConten
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
 const RUN_KINDS = new Set([
+  'pool_review',
+  'concept_map_review',
   'pool',
   'lesson',
   'lesson_review',
@@ -33,6 +36,8 @@ const RUN_STATUSES = new Set(['running', 'completed', 'failed']);
 export function serializeRun(run: StoredAiContentRun): Record<string, unknown> {
   return {
     contractVersion: run.contractVersion,
+    ...(run.promptContractVersion ? { promptContractVersion: run.promptContractVersion } : {}),
+    ...(run.sourceBodyHash ? { sourceBodyHash: run.sourceBodyHash } : {}),
     kind: run.kind,
     status: run.status,
     inputHash: run.inputHash,
@@ -85,6 +90,8 @@ function isCoherentCompletedOutput(
 ): boolean {
   if (typeof output !== 'object' || output === null || Array.isArray(output)) return false;
   const o = output as Record<string, unknown>;
+  if (kind === 'pool_review' || kind === 'concept_map_review')
+    return isValidStoredDidacticReview(kind, output);
   if (kind === 'lesson' || kind === 'lesson_review') {
     try {
       if (kind === 'lesson_review') validateLessonReviewProposal(o);
@@ -122,6 +129,13 @@ function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null 
   if (d.contractVersion !== AI_CONTENT_CONTRACT_VERSION) return null;
   if (typeof d.kind !== 'string' || !RUN_KINDS.has(d.kind)) return null;
   if (typeof d.status !== 'string' || !RUN_STATUSES.has(d.status)) return null;
+  if (
+    (d.kind === 'pool_review' || d.kind === 'concept_map_review') &&
+    (d.promptContractVersion !== d.kind + '-v1' ||
+      typeof d.sourceBodyHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(d.sourceBodyHash))
+  )
+    return null;
   if (typeof d.inputHash !== 'string' || !/^[a-f0-9]{64}$/.test(d.inputHash)) return null;
   if (typeof d.modelProfile !== 'string' || d.modelProfile.length === 0) return null;
   if (typeof d.model !== 'string' || d.model.length === 0) return null;
@@ -165,6 +179,12 @@ function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null 
   }
   return {
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
+    ...(kind === 'pool_review' || kind === 'concept_map_review'
+      ? {
+          promptContractVersion: d.promptContractVersion as string,
+          sourceBodyHash: d.sourceBodyHash as string,
+        }
+      : {}),
     kind,
     status,
     inputHash: d.inputHash,

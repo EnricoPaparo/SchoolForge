@@ -1,3 +1,4 @@
+import { validatePoolReview, validateMapReview } from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — motore **puro** della generazione contenuti. Nessun Firestore/rete
  * qui: le operazioni con effetti sono **porte iniettate** (`AiContentPorts`), così
@@ -14,6 +15,7 @@ import {
   AI_CONTENT_RUN_TTL_MS,
   computeBudgetReservationKey,
   computeInputHash,
+  computeContentSourceBodyHash,
   computeOpaqueRunId,
   resolveContentModelForRequest,
   utf8ByteLength,
@@ -67,6 +69,8 @@ export const AI_CONTENT_LEASE_TTL_MS = computeContentLeaseTtlMs(DEFAULT_OPENAI_R
 /** Documento run **privacy-minimal** (nessun UID/testo/prompt/guidance/raw response). */
 export interface StoredAiContentRun {
   contractVersion: number;
+  promptContractVersion?: string;
+  sourceBodyHash?: string;
   kind: ContentKind;
   status: 'running' | 'completed' | 'failed';
   inputHash: string;
@@ -340,6 +344,14 @@ export async function generateContent(
 
   const runDoc: StoredAiContentRun = {
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
+    ...(request.kind === 'pool_review' || request.kind === 'concept_map_review'
+      ? {
+          promptContractVersion: request.kind + '-v1',
+          sourceBodyHash: computeContentSourceBodyHash(
+            request.kind === 'pool_review' ? request.lessonSource : request.lessonBody,
+          ),
+        }
+      : {}),
     kind: request.kind,
     status: 'running',
     inputHash,
@@ -508,60 +520,64 @@ export async function generateContent(
   let output: unknown;
   try {
     output =
-      request.kind === 'pool'
-        ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
-        : request.kind === 'concept_map'
-          ? // CONCEPT-MAP-01 — il run persiste il **Markdown canonico** già
-            // composto dal server, non i tre campi grezzi: è quello che verrà
-            // salvato e proiettato, quindi è quello che il replay deve
-            // restituire identico.
-            {
-              conceptMapMarkdown: validateAndComposeConceptMap(providerOutcome.output)
-                .conceptMapMarkdown,
-            }
-          : request.kind === 'visual_proposal'
-            ? /*
-               * VISUAL-ENRICHMENT-01 — due passaggi, in quest'ordine.
-               *
-               * 1. L'envelope `{ proposal }` richiesto dallo Structured Output
-               *    strict viene validato ed **estratto**: nel run finisce
-               *    l'unione pura, così il contratto persistito non eredita una
-               *    forma imposta dal trasporto.
-               * 2. Il controllo **relazionale** verifica che l'heading di
-               *    ancoraggio esista davvero nel corpo mandato in richiesta.
-               *    Vive qui, prima della prima persistenza, e non nel replay:
-               *    lì la richiesta non c'è più e il corpo potrebbe essere
-               *    cambiato.
-               */
-              assertVisualProposalMatchesRequest(
-                validateVisualProposalEnvelope(providerOutcome.output),
-                request.lessonBody,
-              )
-            : request.kind === 'visual_plan_proposal'
-              ? /*
-                 * MULTI-VISUAL-02 — stessi due passaggi della proposta
-                 * singola, generalizzati all'array: l'envelope `{ decisions }`
-                 * è validato/estratto (cardinalità ≤ `quantity.ceiling`), poi
-                 * il controllo relazionale verifica ogni ancora indice+testo
-                 * sul corpo della richiesta **e** il vincolo di diversità
-                 * fra tutti gli slot immagine — prima di qualunque
-                 * persistenza, mai nel replay. `output` resta avvolto in
-                 * `{ decisions }` anche nel run persistito (la guardia
-                 * generica del documento run rifiuta un array alla radice
-                 * per ogni kind, `aiContentRunDoc.ts`).
-                 */
+      request.kind === 'pool_review'
+        ? validatePoolReview(providerOutcome.output, request)
+        : request.kind === 'concept_map_review'
+          ? validateMapReview(providerOutcome.output, request)
+          : request.kind === 'pool'
+            ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
+            : request.kind === 'concept_map'
+              ? // CONCEPT-MAP-01 — il run persiste il **Markdown canonico** già
+                // composto dal server, non i tre campi grezzi: è quello che verrà
+                // salvato e proiettato, quindi è quello che il replay deve
+                // restituire identico.
                 {
-                  decisions: assertVisualPlanProposalMatchesRequest(
-                    validateVisualPlanProposalEnvelope(
-                      providerOutcome.output,
-                      request.quantity.ceiling,
-                    ),
-                    request.lessonBody,
-                  ),
+                  conceptMapMarkdown: validateAndComposeConceptMap(providerOutcome.output)
+                    .conceptMapMarkdown,
                 }
-              : request.kind === 'lesson_review'
-                ? validateLessonReviewProposal(providerOutcome.output)
-                : validateLessonProposal(providerOutcome.output);
+              : request.kind === 'visual_proposal'
+                ? /*
+                   * VISUAL-ENRICHMENT-01 — due passaggi, in quest'ordine.
+                   *
+                   * 1. L'envelope `{ proposal }` richiesto dallo Structured Output
+                   *    strict viene validato ed **estratto**: nel run finisce
+                   *    l'unione pura, così il contratto persistito non eredita una
+                   *    forma imposta dal trasporto.
+                   * 2. Il controllo **relazionale** verifica che l'heading di
+                   *    ancoraggio esista davvero nel corpo mandato in richiesta.
+                   *    Vive qui, prima della prima persistenza, e non nel replay:
+                   *    lì la richiesta non c'è più e il corpo potrebbe essere
+                   *    cambiato.
+                   */
+                  assertVisualProposalMatchesRequest(
+                    validateVisualProposalEnvelope(providerOutcome.output),
+                    request.lessonBody,
+                  )
+                : request.kind === 'visual_plan_proposal'
+                  ? /*
+                     * MULTI-VISUAL-02 — stessi due passaggi della proposta
+                     * singola, generalizzati all'array: l'envelope `{ decisions }`
+                     * è validato/estratto (cardinalità ≤ `quantity.ceiling`), poi
+                     * il controllo relazionale verifica ogni ancora indice+testo
+                     * sul corpo della richiesta **e** il vincolo di diversità
+                     * fra tutti gli slot immagine — prima di qualunque
+                     * persistenza, mai nel replay. `output` resta avvolto in
+                     * `{ decisions }` anche nel run persistito (la guardia
+                     * generica del documento run rifiuta un array alla radice
+                     * per ogni kind, `aiContentRunDoc.ts`).
+                     */
+                    {
+                      decisions: assertVisualPlanProposalMatchesRequest(
+                        validateVisualPlanProposalEnvelope(
+                          providerOutcome.output,
+                          request.quantity.ceiling,
+                        ),
+                        request.lessonBody,
+                      ),
+                    }
+                  : request.kind === 'lesson_review'
+                    ? validateLessonReviewProposal(providerOutcome.output)
+                    : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({
       opaqueRunId,
