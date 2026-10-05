@@ -69,6 +69,8 @@ export interface AiRuntimeLimits {
   attemptTimeoutMs: number;
   /** Lesson generation only; absent uses the bounded 180s lesson policy. */
   lessonAttemptTimeoutMs?: number;
+  /** Pool generation only; absent uses the bounded 180s pool policy. */
+  poolAttemptTimeoutMs?: number;
   maxApplicationRetries: number;
 }
 
@@ -131,6 +133,8 @@ function parseLimits(raw: unknown): AiRuntimeLimits | null {
   const attemptTimeoutMs = posInt(r.attemptTimeoutMs, 60_000);
   const lessonAttemptTimeoutMs =
     r.lessonAttemptTimeoutMs === undefined ? undefined : posInt(r.lessonAttemptTimeoutMs, 180_000);
+  const poolAttemptTimeoutMs =
+    r.poolAttemptTimeoutMs === undefined ? undefined : posInt(r.poolAttemptTimeoutMs, 180_000);
   // 0 retry è ammesso; 1 è l'hard ceiling DEV.
   const maxApplicationRetries =
     typeof r.maxApplicationRetries === 'number' &&
@@ -147,6 +151,7 @@ function parseLimits(raw: unknown): AiRuntimeLimits | null {
     maxProviderConcurrency === null ||
     attemptTimeoutMs === null ||
     lessonAttemptTimeoutMs === null ||
+    poolAttemptTimeoutMs === null ||
     maxApplicationRetries === null
   ) {
     return null;
@@ -159,6 +164,7 @@ function parseLimits(raw: unknown): AiRuntimeLimits | null {
     maxProviderConcurrency,
     attemptTimeoutMs,
     ...(lessonAttemptTimeoutMs === undefined ? {} : { lessonAttemptTimeoutMs }),
+    ...(poolAttemptTimeoutMs === undefined ? {} : { poolAttemptTimeoutMs }),
     maxApplicationRetries,
   };
 }

@@ -31,7 +31,7 @@ const RETRY_AFTER_SANITY_MAX_MS = 24 * 60 * 60 * 1000;
 export interface RetryPolicy {
   /** Numero massimo di retry applicativi (0 o 1; hard ceiling DEV = 1). */
   maxRetries: number;
-  /** Timeout per singolo tentativo (ms, ≤ 60_000, dalla config runtime). */
+  /** Timeout per singolo tentativo (ms), risolto dalla policy del tipo di contenuto. */
   attemptTimeoutMs: number;
   baseDelayMs: number;
   maxDelayMs: number;

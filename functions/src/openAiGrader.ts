@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import OpenAI from 'openai';
+import {
+  describeTransportFailure,
+  isProviderBillingFailure,
+} from './openAiTransportDiagnostics.js';
 import { reasoningEffortForModel, type OpenAiReasoningEffort } from './aiModelRequestPolicy.js';
 import {
   AiGraderFailure,
@@ -249,7 +253,7 @@ export function normalizeTransportError(error: unknown): OpenAiTransportError {
       Date.now(),
     );
     return new OpenAiTransportError('OpenAI request failed.', {
-      transient: isTransientStatus(error.status),
+      transient: !isProviderBillingFailure(error) && isTransientStatus(error.status),
       ...(error.status === undefined ? {} : { status: error.status }),
       ...(retryAfterMs === null ? {} : { retryAfterMs }),
       billingRisk: statusHasBillingRisk(error.status),
@@ -301,6 +305,7 @@ export class OpenAiSdkTransport implements OpenAiTransport {
           : {}),
       };
     } catch (error) {
+      console.warn('openai_transport_failure', describeTransportFailure(error));
       throw normalizeTransportError(error);
     }
   }

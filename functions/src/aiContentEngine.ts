@@ -54,7 +54,8 @@ export const AI_CONTENT_FINALIZATION_MARGIN_MS = 20_000;
 export function computeContentLeaseTtlMs(policy: RetryPolicy): number {
   const attempts = 1 + Math.max(0, policy.maxRetries);
   const perAttempt = policy.attemptTimeoutMs + ATTEMPT_HARD_ABORT_MARGIN_MS;
-  const backoffAllowance = Math.max(0, policy.maxRetries) * policy.maxDelayMs;
+  const backoffAllowance =
+    Math.max(0, policy.maxRetries) * Math.max(policy.maxDelayMs, policy.maxRetryAfterMs);
   const derived = attempts * perAttempt + backoffAllowance + AI_CONTENT_FINALIZATION_MARGIN_MS;
   // Tetto conservativo documentato: mai inferiore all'intera finestra provider.
   return Math.max(derived, 300_000);

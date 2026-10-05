@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { describeTransportFailure } from './openAiTransportDiagnostics.js';
 import sharp from 'sharp';
 import {
   AI_VISUAL_BACKGROUND,
@@ -132,6 +133,7 @@ export function createImageProvider(
             return { status: 'billed_unusable', usage, priorBillingRisk };
           }
         } catch (error) {
+          console.warn('openai_image_transport_failure', describeTransportFailure(error));
           const classified = normalizeTransportError(error);
           if (classified.billingRisk) priorBillingRisk = true;
           const decision = decideRetry({

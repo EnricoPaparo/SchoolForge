@@ -95,6 +95,10 @@ function activePlanRequestId(error: unknown): string | null {
 }
 export function describeMultiVisualError(error: unknown): string {
   const code = (error as { details?: { code?: unknown } })?.details?.code;
+  if (code === 'visual_promotion_anchor_stale')
+    return 'Il titolo a cui collegare l’immagine non è più valido. Ricarica la lezione e verifica la posizione dell’immagine prima di continuare.';
+  if (code === 'visual_plan_proposal_body_changed')
+    return 'Il contenuto della lezione è cambiato. Ricarica la lezione e verifica il piano immagini prima di continuare.';
   if (code === 'budget_unavailable' || code === 'operation_budget_exceeded')
     return 'Budget non disponibile: nessuna nuova spesa è stata autorizzata.';
   if (code === 'uncertain_state')

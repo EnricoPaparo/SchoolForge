@@ -5,7 +5,11 @@ const httpsCallable = vi.hoisted(() => vi.fn(() => callable));
 
 vi.mock('firebase/functions', () => ({ httpsCallable }));
 
-import { createMultiVisualClient, type MultiVisualPlanRequest } from '../multiVisualClient.js';
+import {
+  createMultiVisualClient,
+  describeMultiVisualError,
+  type MultiVisualPlanRequest,
+} from '../multiVisualClient.js';
 
 const requestId = '11111111-1111-4111-8111-111111111111';
 const resumedRequestId = '22222222-2222-4222-8222-222222222222';
@@ -33,6 +37,13 @@ const authorizeInput: MultiVisualPlanRequest = {
 };
 
 describe('multiVisualClient', () => {
+  it('explains stale anchors and body changes without suggesting a retry on the same plan', () => {
+    for (const code of ['visual_promotion_anchor_stale', 'visual_plan_proposal_body_changed']) {
+      const message = describeMultiVisualError({ details: { code } });
+      expect(message).toMatch(/Ricarica la lezione e verifica/);
+      expect(message).not.toMatch(/riprovare quelle mancanti/);
+    }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });

@@ -73,8 +73,8 @@ export async function loadRuntimeConfig(database: Firestore): Promise<AiRuntimeC
 }
 
 /**
- * Policy retry dalla config runtime validata (retry ≤ 1). Le lezioni hanno
- * un timeout dedicato di default 180 s, configurabile entro lo stesso tetto;
+ * Policy retry dalla config runtime validata (retry ≤ 1). Lezioni e pool hanno
+ * timeout dedicati di default 180 s, configurabili entro lo stesso tetto;
  * gli altri contenuti mantengono il limite di 60 s. Esportata per MULTI-VISUAL-03A: la lease TTL della chiamata
  * interna `generateContent` per `visual_plan_proposal` deve derivare dalla
  * stessa policy delle altre fasi testuali, non da un valore proprio.
@@ -83,13 +83,15 @@ export function retryPolicyFromConfig(config: AiRuntimeConfig | null, kind?: str
   const attemptTimeoutMs =
     kind === 'lesson'
       ? (config?.limits.lessonAttemptTimeoutMs ?? 180_000)
-      : Math.max(
-          1,
-          Math.min(
-            DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
-            config?.limits.attemptTimeoutMs ?? DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
-          ),
-        );
+      : kind === 'pool'
+        ? (config?.limits.poolAttemptTimeoutMs ?? 180_000)
+        : Math.max(
+            1,
+            Math.min(
+              DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
+              config?.limits.attemptTimeoutMs ?? DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs,
+            ),
+          );
   return {
     ...DEFAULT_OPENAI_RETRY_POLICY,
     maxRetries: Math.max(

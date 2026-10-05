@@ -119,6 +119,7 @@ const STOP_WORKFLOW_CODES = new Set([
   'uncertain_state',
   'visual_plan_external_mutation',
   'visual_plan_proposal_body_changed',
+  'visual_promotion_anchor_stale',
   'visual_plan_expired',
   'corrupted_state',
 ]);
