@@ -339,8 +339,8 @@ export const LESSON_DEPTH_OPTIONS: readonly {
 /** Payload chiuso `kind: 'lesson'` (stesso contratto congelato lato backend). */
 /**
  * AIGEN-CONTEXT-01 — voce dell'indice compatto dell'UDA inviata al server.
- * **Solo** posizione e titolazione: nessun `lessonId`/`udaId`/`filename`/
- * `storageRef`/`publicLessonId`, nessun corpo, pool, concetto o obiettivo delle
+ * Posizione, titolazione e metadati didattici facoltativi: nessun `lessonId`/`udaId`/`filename`/
+ * `storageRef`/`publicLessonId`, nessun corpo o pool delle
  * altre lezioni, nessun dato studente.
  */
 export interface LessonUdaOutlineItem {
@@ -348,6 +348,8 @@ export interface LessonUdaOutlineItem {
   position: number;
   titolo: string;
   sottotitolo: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
 }
 
 export interface LessonUdaContext {
@@ -566,11 +568,13 @@ export function buildLessonContentRequest(params: {
       competenze: uda.competenze,
       obiettivi: uda.obiettivi,
       currentLessonPosition: uda.currentLessonPosition,
-      // Solo posizione/titolo/sottotitolo: nessun campo tecnico trasferito.
+      // Solo indice e metadati didattici: nessun campo tecnico trasferito.
       lessons: uda.lessons.map((l) => ({
         position: l.position,
         titolo: l.titolo.trim(),
         sottotitolo: l.sottotitolo?.trim() ? l.sottotitolo.trim() : null,
+        ...(l.concettiChiave?.length ? { concettiChiave: l.concettiChiave } : {}),
+        ...(l.obiettivi?.length ? { obiettivi: l.obiettivi } : {}),
       })),
     },
     ...(guidance ? { teacherGuidance: guidance } : {}),

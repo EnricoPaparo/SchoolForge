@@ -1,7 +1,13 @@
 # SchoolForge — masterplan per la qualità didattica IA
 
-**Stato:** piano approvato; lezioni e revisione già disponibili in DEV. Incremento
-pool/mappe/correzioni in implementazione e qualificazione (issue #518).
+**Stato:** lezioni e revisione disponibili in DEV; incremento pool/mappe/correzioni
+rilasciato con PR #519 (issue #518). Il prossimo incremento approvato (issue #520)
+copre criteri di valutazione, coerenza UDA e controlli specialistici.
+
+**Decisione successiva del docente (5 ottobre 2026):** versionamento editoriale,
+confronti e ripristino delle revisioni sono tolti dal piano prioritario. Le
+proposte storiche di seguito che li richiedono non sono prerequisiti del nuovo
+rilascio. Restano i checkpoint tecnici per recuperare operazioni interrotte.
 
 Lo stato storico delle singole fasi sotto non costituisce una dichiarazione di
 rilascio. Per il contratto e le evidenze dell'incremento corrente vedere

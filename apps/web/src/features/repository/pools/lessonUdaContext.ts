@@ -6,9 +6,9 @@ import type { LessonUdaContext } from './aiContentClient.js';
  * `tree.lessons`): nessuna `getDoc`/`getDocs`, nessuna query, nessuna lettura
  * Storage, nessun listener, nessun polling. Costo passivo invariato.
  *
- * L'indice contiene **solo** posizione e titolazione: nessun `lessonId`,
+ * L'indice contiene posizione, titolazione e metadati didattici: nessun `lessonId`,
  * `udaId`, `filename`, `storageRef` o `publicLessonId`, nessun corpo Markdown,
- * pool, domanda, soluzione, concetto o obiettivo delle altre lezioni, nessun
+ * pool, domanda o soluzione delle altre lezioni, nessun
  * dato studente. Serve al modello per delimitare l'argomento, non per attingere
  * contenuto.
  *
@@ -37,6 +37,8 @@ export interface UdaOutlineSourceLesson {
   udaDir: string;
   titolo?: string | null;
   sottotitolo?: string | null;
+  concettiChiave?: string[] | null;
+  obiettivi?: string[] | null;
 }
 
 /**
@@ -80,7 +82,7 @@ export function buildLessonUdaContext(params: {
   const currentIndex = inUda.findIndex((l) => l.id === params.currentLessonId);
   if (currentIndex < 0) return null;
 
-  return {
+  const context: LessonUdaContext = {
     title,
     descrizione,
     competenze,
@@ -92,6 +94,25 @@ export function buildLessonUdaContext(params: {
       sottotitolo: l.sottotitolo?.trim() ? l.sottotitolo.trim() : null,
     })),
   };
+  // Metadata already loaded in memory, never inferred from a title. Preserve
+  // the existing byte cap and legacy shape; nearest lessons receive priority.
+  const encoder = new TextEncoder();
+  const positions = inUda
+    .map((_, index) => index)
+    .sort((a, b) => Math.abs(a - currentIndex) - Math.abs(b - currentIndex) || a - b);
+  for (const index of positions) {
+    for (const field of ['concettiChiave', 'obiettivi'] as const) {
+      const items = normalizeList(inUda[index][field]);
+      if (items === INVALID) continue;
+      const bounded = items.filter((item) => item.length <= 300).slice(0, 40);
+      if (!bounded.length) continue;
+      context.lessons[index][field] = bounded;
+      if (encoder.encode(JSON.stringify(context)).byteLength > 20_000) {
+        delete context.lessons[index][field];
+      }
+    }
+  }
+  return context;
 }
 
 /** Sentinella di «valore presente ma non utilizzabile»: mai un fallback. */
