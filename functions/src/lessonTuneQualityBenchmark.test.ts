@@ -95,7 +95,7 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // superiore a Economy, quindi si ancora il valore esatto del nuovo
     // listino invece di un confronto fra profili non più garantito. TUNING-1.1
     // include nel bound anche il contratto Approfondita più esplicito.
-    expect(quality.costUpperBoundMicroUsd).toBe(307_320);
+    expect(quality.costUpperBoundMicroUsd).toBe(308_626);
     expect(qualityHoldout.modelProfile).toBe('quality');
     expect(qualityHoldout.model).toBe('gpt-5.6-luna');
     expect(qualityHoldout.priceListVersion).toBe('v6-2026-09-12-luna-standard');
@@ -109,7 +109,7 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // gli scenari sono UDA legacy, prive dei tre campi nuovi.
     // TUNING-1.1: valore esatto ricalcolato sul prompt approfondito corrente e
     // sul listino v6; è un tetto offline, non una chiamata provider.
-    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(185_192);
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(185_846);
     expect(qualityHoldout.scenarios.map((scenario) => scenario.id)).toEqual([
       'LM02-05',
       'LM02-06',
@@ -121,8 +121,8 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // economico dell'output nano — Quality non implica più un costo
     // superiore a Economy, quindi si ancora il valore esatto del nuovo
     // listino invece di un confronto fra profili non più garantito.
-    expect(economyHoldout.costUpperBoundMicroUsd).toBe(192_008);
-    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(185_192);
+    expect(economyHoldout.costUpperBoundMicroUsd).toBe(192_662);
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(185_846);
   });
 
   it('costruisce richieste lezione chiuse con requestId stabile per scenario', async () => {

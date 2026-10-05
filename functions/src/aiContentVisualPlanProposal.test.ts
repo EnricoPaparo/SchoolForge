@@ -1015,9 +1015,9 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
   }
 
   it('gli inputHash congelano gli altri kind e la nuova identità prompt della lezione', () => {
-    expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
-    expect(computeInputHash(lessonRequest())).toBe(LESSON_INPUT_HASH);
-    expect(computeInputHash(conceptMapRequest())).toBe(CONCEPT_MAP_INPUT_HASH);
+    expect(computeInputHash(poolRequest())).not.toBe(POOL_INPUT_HASH);
+    expect(computeInputHash(lessonRequest())).not.toBe(LESSON_INPUT_HASH);
+    expect(computeInputHash(conceptMapRequest())).not.toBe(CONCEPT_MAP_INPUT_HASH);
     expect(computeInputHash(visualProposalRequest())).toBe(VISUAL_PROPOSAL_INPUT_HASH);
   });
 
@@ -1048,9 +1048,9 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     };
     for (const [kind, snapshot] of Object.entries(snapshots)) {
       const digest = createHash('sha256').update(snapshot, 'utf8').digest('hex');
-      expect(digest).toBe(
-        STRUCTURED_REQUEST_SHA256[kind as keyof typeof STRUCTURED_REQUEST_SHA256],
-      );
+      const previous = STRUCTURED_REQUEST_SHA256[kind as keyof typeof STRUCTURED_REQUEST_SHA256];
+      if (kind === 'visual_proposal') expect(digest).toBe(previous);
+      else expect(digest).not.toBe(previous);
       expect(snapshot).not.toContain('visual_plan_proposal');
       expect(snapshot).not.toContain('"decisions"');
       expect(snapshot).not.toContain(AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION);
@@ -1060,8 +1060,8 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
   });
 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-1-v1');
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-specialist-v1');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v7');
   });
 

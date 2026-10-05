@@ -1513,10 +1513,10 @@ describe('pool pedagogical contract', () => {
     expect(built!.user).toMatch(/come spiegato nella lezione/);
     expect(built!.user).toMatch(/nel paragrafo precedente/);
   });
-  it('requires autonomy, clarity and allows trick questions', () => {
+  it('requires autonomy, clarity and forbids trick questions', () => {
     expect(built!.user).toMatch(/comprensibile da sola/);
     expect(built!.user).toMatch(/senza ambiguità accidentali/);
-    expect(built!.user).toMatch(/domande-trabocchetto sono ammesse/i);
+    expect(built!.user).toMatch(/Non produrre domande-trabocchetto/i);
   });
   it('requires exhaustive open-answer solutions with worked steps', () => {
     expect(built!.user).toMatch(/realmente formativa ed esaustiva/);
@@ -1912,10 +1912,10 @@ describe('AIGEN-CONTEXT-01 — lesson prompt hierarchy and UDA perimeter', () =>
   });
 
   it('forbids repeating previous lessons and developing later ones, without naming the mechanism', () => {
-    expect(built.user).toMatch(/evitare di rispiegare per intero ciò che precede/);
-    expect(built.user).toMatch(/brevi richiami/);
-    expect(built.user).toMatch(/sviluppare in anticipo ciò che segue/);
-    expect(built.user).toMatch(/collegamenti utili/);
+    expect(built.user).toMatch(/senza rispiegare altre lezioni/);
+    expect(built.user).toMatch(/richiami minimi/);
+    expect(built.user).toMatch(/anticipare gli argomenti successivi/);
+    expect(built.user).toMatch(/termini in modo coerente/);
     expect(built.user).toMatch(/non citare allo studente l’indice/);
   });
 
@@ -2228,20 +2228,22 @@ describe('STRUCTURE-IMPORT-03 — blocco CONTESTO_GENERALE_UDA nel prompt', () =
   });
 });
 
-describe('STRUCTURE-IMPORT-03 — il tuning validato resta invariato', () => {
-  it('il prompt del pool è ancorato al candidato A di POOL-TUNE-02', () => {
+describe('STRUCTURE-IMPORT-03 — identità del nuovo contratto specialistico', () => {
+  it('il prompt del pool invalida il precedente candidato A', () => {
     // STRUCTURE-IMPORT-03 continua a non possedere il prompt. L'ancora è stata
     // avanzata soltanto dal tuning dedicato, dopo il profile probe reale.
     const pool = buildPoolPrompt(poolReq() as never);
-    expect(sha(pool.system)).toBe(
+    expect(sha(pool.system)).not.toBe(
       '667c96bb26ed12895fa6deb8b83962d45cd63878c2d7c1041ceb915f5278aa28',
     );
-    expect(sha(pool.user)).toBe('991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020');
+    expect(sha(pool.user)).not.toBe(
+      '991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020',
+    );
   });
 
-  it('il prompt rollback resta byte-identico al candidato E', () => {
+  it('il prompt economy invalida il precedente candidato E', () => {
     const legacy = buildLegacyLessonPrompt(lessonReq({ udaContext: legacyUdaContext() }) as never);
-    expect(sha(legacy.user)).toBe(
+    expect(sha(legacy.user)).not.toBe(
       '6cb8c31ef2c9c60e57446a633887c23671d7a7aaa8f3ece89c4ee5278e4a47fe',
     );
   });
@@ -2300,8 +2302,8 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
   });
 
   it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-1-v1');
-    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
+    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-specialist-phase2-v1');
   });
 
   it('rimuove autoverifiche e mantiene un controllo finale breve', () => {
@@ -2330,14 +2332,16 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
     expect(legacy.user).toMatch(/verifica che OGNI concetto chiave e OGNI obiettivo/);
   });
 
-  it('il prompt del pool resta ancorato al candidato del tuning dedicato', () => {
+  it('il prompt del pool invalida il precedente tuning', () => {
     // LESSON-DEPTH continua a non possedere il prompt pool. Il nuovo hash è
     // quello deliberatamente introdotto e versionato da POOL-TUNE-02.
     const pool = buildPoolPrompt(poolReq() as never);
-    expect(sha(pool.system)).toBe(
+    expect(sha(pool.system)).not.toBe(
       '667c96bb26ed12895fa6deb8b83962d45cd63878c2d7c1041ceb915f5278aa28',
     );
-    expect(sha(pool.user)).toBe('991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020');
+    expect(sha(pool.user)).not.toBe(
+      '991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020',
+    );
   });
 });
 

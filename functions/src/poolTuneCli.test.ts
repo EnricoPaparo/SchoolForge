@@ -58,7 +58,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
     const output = vi.mocked(options.log).mock.calls.flat().join('\n');
     expect(output).toContain('DRY-RUN');
     expect(output).toContain(AI_POOL_PROMPT_VERSION);
-    expect(output).not.toContain('lesson-depth-01-candidate-e-v1');
+    expect(output).not.toContain('lesson-depth-specialist-phase2-v1');
   });
 
   it('rifiuta flag sconosciuti prima di qualunque lettura', async () => {
