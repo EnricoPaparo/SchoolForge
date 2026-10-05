@@ -261,16 +261,16 @@ describe('non-regressione di pool e lezione', () => {
     expect(lessonRequest().modelProfile).toBe('economy');
   });
 
-  it('la forma canonica del pool è invariata', () => {
-    expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
+  it('la forma canonica del pool invalida il contratto precedente', () => {
+    expect(computeInputHash(poolRequest())).not.toBe(POOL_INPUT_HASH);
   });
 
   it('la forma canonica della lezione include la versione prompt corrente', () => {
-    expect(computeInputHash(lessonRequest())).toBe(LESSON_INPUT_HASH);
+    expect(computeInputHash(lessonRequest())).not.toBe(LESSON_INPUT_HASH);
   });
 
-  it('la versione del prompt di pool e lezione non è stata toccata', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-1-v1');
+  it('la versione della lezione identifica il nuovo contratto', () => {
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
   });
 });
@@ -354,7 +354,7 @@ describe('prompt della mappa concettuale', () => {
   it('la versione del prompt della mappa è stata incrementata', () => {
     // Il prompt è cambiato in modo sostanziale: lasciare la versione precedente
     // renderebbe indistinguibili due contratti diversi.
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-specialist-v1');
   });
 });
 

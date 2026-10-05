@@ -1,0 +1,28 @@
+{
+  "caseId": "ram-map-review",
+  "source": {
+    "kind": "concept_map_review",
+    "requestId": "54e65195-84c8-4257-821a-bbe0e00f41d7",
+    "modelProfile": "quality",
+    "lessonBody": "## RAM e SSD\n\nLa RAM conserva temporaneamente i dati e le istruzioni usati dalla CPU: senza alimentazione perde il contenuto. Un SSD conserva i file senza alimentazione. La maggiore capacità di un SSD non lo rende equivalente alla RAM: hanno funzioni diverse.",
+    "candidateMarkdown": "## Sintesi\n\nLa RAM mantiene temporaneamente dati e istruzioni in uso dalla CPU, ma perde il contenuto senza alimentazione. L’SSD conserva i file anche a computer spento. Capacità e funzione non sono equivalenti: una memoria più capiente non sostituisce automaticamente l’altra.\n\n## Diagramma\n\n```text\nRAM -> contiene -> dati in uso\nRAM -> senza alimentazione -> perde dati\nSSD -> senza alimentazione -> conserva file\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n"
+  },
+  "A": {
+    "conceptMapMarkdown": "## Sintesi\n\nLa RAM conserva temporaneamente i dati e le istruzioni usati dalla CPU, ma perde il proprio contenuto quando manca l’alimentazione. L’SSD conserva i file anche senza alimentazione. RAM e SSD hanno funzioni diverse: la maggiore capacità dell’SSD non lo rende equivalente alla RAM.\n\n## Diagramma\n\n```text\nRAM --conserva temporaneamente--> dati e istruzioni usati dalla CPU\nRAM --senza alimentazione perde--> il contenuto\nSSD --senza alimentazione conserva--> file\nRAM --ha funzione diversa da--> SSD\nmaggiore capacità dell’SSD --non rende equivalente--> SSD e RAM\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "misleading_simplification",
+      "missing_relation"
+    ],
+    "sourceIssue": false
+  },
+  "B": {
+    "conceptMapMarkdown": "## Sintesi\n\nLa RAM conserva temporaneamente dati e istruzioni usati dalla CPU e perde il proprio contenuto senza alimentazione. L’SSD conserva i file anche senza alimentazione. RAM e SSD svolgono quindi funzioni diverse: la maggiore capacità dell’SSD non lo rende equivalente alla RAM né implica che possa sostituirla.\n\n## Diagramma\n\n```text\nRAM --conserva temporaneamente--> dati e istruzioni usati dalla CPU\nRAM --senza alimentazione--> perde il contenuto\nSSD --conserva--> file\nSSD --senza alimentazione--> mantiene i file\nRAM e SSD --svolgono--> funzioni diverse\nSSD --maggiore capacità non implica--> equivalenza alla RAM\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "missing_relation",
+      "accessibility"
+    ],
+    "sourceIssue": false
+  }
+}

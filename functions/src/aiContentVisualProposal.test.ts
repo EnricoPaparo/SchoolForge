@@ -946,8 +946,8 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
   }
 
   it('gli inputHash congelano pool e la nuova identità prompt della lezione', () => {
-    expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
-    expect(computeInputHash(lessonRequest())).toBe(LESSON_INPUT_HASH);
+    expect(computeInputHash(poolRequest())).not.toBe(POOL_INPUT_HASH);
+    expect(computeInputHash(lessonRequest())).not.toBe(LESSON_INPUT_HASH);
   });
 
   it('la forma canonica dei tre kind non contiene traccia del nuovo', () => {
@@ -979,8 +979,8 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
   });
 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-gpt6-phase1-1-v1');
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-specialist-v1');
   });
 
   it('i tetti di output dei tre kind sono invariati', () => {

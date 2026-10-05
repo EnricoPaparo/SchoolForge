@@ -64,8 +64,8 @@ export class AiContentError extends Error {
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
-  pool_review: 'pool_review-v1',
-  concept_map_review: 'concept_map_review-v3',
+  pool_review: 'pool_review-v3',
+  concept_map_review: 'concept_map_review-v4',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_GUIDANCE_CHARS = 500;
@@ -105,7 +105,7 @@ export const MAX_TITLE_CHARS = 300;
 export const MAX_EXISTING_POOL_QUESTIONS = 1_000;
 /**
  * AIGEN-CONTEXT-01 — numero massimo di voci dell'indice UDA. Chiuso e validato:
- * l'indice resta compatto (solo titoli), quindi l'incremento di token è piccolo
+ * l'indice resta compatto (titoli e metadati facoltativi limitati), quindi l'incremento di token è piccolo
  * e limitato anche per un'UDA molto lunga.
  */
 export const MAX_UDA_OUTLINE_ITEMS = 60;
@@ -202,14 +202,16 @@ export interface PoolRequest {
 
 /**
  * AIGEN-CONTEXT-01 — voce dell'indice compatto dell'UDA. **Solo** posizione e
- * titolazione: nessun ID tecnico, nessun corpo/pool/concetto/obiettivo delle
- * altre lezioni, nessun dato studente.
+ * titolazione e concetti/obiettivi pianificati facoltativi: nessun ID tecnico,
+ * nessun corpo o pool delle altre lezioni, nessun dato studente.
  */
 export interface LessonUdaOutlineItem {
   /** Posizione deterministica 1-based nell'ordine canonico dell'UDA. */
   position: number;
   titolo: string;
   sottotitolo: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
 }
 
 /**
@@ -484,6 +486,22 @@ export function computeBudgetReservationKey(
  * guidance, materiale). Copre il contenuto ma non è testo in chiaro: pseudonimo.
  * Deterministico e stabile tra i retry dello stesso payload.
  */
+/** Empty optional metadata is omitted so legacy outline identity stays canonical. */
+function optionalOutlineMetadata(item: { concettiChiave?: string[]; obiettivi?: string[] }) {
+  return {
+    ...(item.concettiChiave?.length ? { concettiChiave: item.concettiChiave } : {}),
+    ...(item.obiettivi?.length ? { obiettivi: item.obiettivi } : {}),
+  };
+}
+function canonicalUdaContext(context: LessonUdaContext): LessonUdaContext {
+  return {
+    ...context,
+    lessons: context.lessons.map(({ concettiChiave, obiettivi, ...item }) => ({
+      ...item,
+      ...optionalOutlineMetadata({ concettiChiave, obiettivi }),
+    })),
+  };
+}
 export function canonicalRequest(request: AiContentRequest): string {
   if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
     const { requestId, ...payload } = request;
@@ -496,7 +514,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v1',
+      promptContractVersion: 'lesson-review-v3',
       kind: request.kind,
       modelProfile: request.modelProfile,
       teacherGuidance: request.teacherGuidance,
@@ -507,7 +525,7 @@ export function canonicalRequest(request: AiContentRequest): string {
       concettiChiave: request.concettiChiave,
       obiettivi: request.obiettivi,
       udaTitle: request.udaTitle,
-      udaContext: request.udaContext,
+      udaContext: canonicalUdaContext(request.udaContext),
       candidateBody: request.candidateBody,
     });
   }
@@ -517,6 +535,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   if (request.kind === 'concept_map') {
     return JSON.stringify({
       kind: 'concept_map',
+      promptContractVersion: 'concept-map-specialist-v1',
       modelProfile: request.modelProfile,
       lessonBody: request.lessonBody,
     });
@@ -541,6 +560,7 @@ export function canonicalRequest(request: AiContentRequest): string {
           position: l.position,
           titolo: l.titolo,
           sottotitolo: l.sottotitolo,
+          ...optionalOutlineMetadata(l),
         })),
       },
       concettiChiave: request.concettiChiave,
@@ -570,6 +590,7 @@ export function canonicalRequest(request: AiContentRequest): string {
           position: l.position,
           titolo: l.titolo,
           sottotitolo: l.sottotitolo,
+          ...optionalOutlineMetadata(l),
         })),
       },
       concettiChiave: request.concettiChiave,
@@ -586,6 +607,7 @@ export function canonicalRequest(request: AiContentRequest): string {
     request.kind === 'pool'
       ? {
           kind: 'pool',
+          promptContractVersion: 'pool-specialist-v2',
           modelProfile: request.modelProfile,
           level: request.level,
           counts: {
@@ -604,8 +626,8 @@ export function canonicalRequest(request: AiContentRequest): string {
           kind: 'lesson',
           promptContractVersion:
             request.modelProfile === 'economy'
-              ? 'lesson-depth-01-candidate-e-v1'
-              : 'lesson-gpt6-phase1-1-v1',
+              ? 'lesson-depth-specialist-phase2-v1'
+              : 'lesson-specialist-phase2-v1',
           modelProfile: request.modelProfile,
           depth: request.depth,
           titolo: request.titolo,
@@ -628,6 +650,7 @@ export function canonicalRequest(request: AiContentRequest): string {
               position: l.position,
               titolo: l.titolo,
               sottotitolo: l.sottotitolo,
+              ...optionalOutlineMetadata(l),
             })),
           },
           concettiChiave: request.concettiChiave,
@@ -794,7 +817,7 @@ function parseUdaContext(value: unknown): LessonUdaContext {
     if (!isPlainObject(raw)) {
       throw new AiContentError('invalid_input', "Una voce dell'indice UDA non è valida.");
     }
-    assertNoExtraKeys(raw, ['position', 'titolo', 'sottotitolo']);
+    assertNoExtraKeys(raw, ['position', 'titolo', 'sottotitolo', 'concettiChiave', 'obiettivi']);
     // Ordine canonico: posizioni 1-based consecutive nell'ordine di invio.
     if (raw.position !== index + 1) {
       throw new AiContentError('invalid_input', "L'indice dell'UDA non è ordinato correttamente.");
@@ -803,6 +826,10 @@ function parseUdaContext(value: unknown): LessonUdaContext {
       position: raw.position,
       titolo: parseRequiredText(raw.titolo, "Titolo di una lezione dell'indice", MAX_TITLE_CHARS),
       sottotitolo: parseTitle(raw.sottotitolo, 'Sottotitolo di una lezione'),
+      ...optionalOutlineMetadata({
+        concettiChiave: parseStringArray(raw.concettiChiave, 'Concetti della lezione nell’indice'),
+        obiettivi: parseStringArray(raw.obiettivi, 'Obiettivi della lezione nell’indice'),
+      }),
     };
   });
 

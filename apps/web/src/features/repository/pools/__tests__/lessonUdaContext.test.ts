@@ -25,6 +25,37 @@ function build(over: Partial<Parameters<typeof buildLessonUdaContext>[0]> = {}) 
 }
 
 describe('buildLessonUdaContext', () => {
+  it('carries only bounded didactic metadata already in memory, preserving whole items', () => {
+    const context = build({
+      lessons: TREE.map((lesson) => ({
+        ...lesson,
+        concettiChiave: ['  Client e server  ', 'x'.repeat(301)],
+        obiettivi: ['Confrontare i ruoli'],
+      })),
+    });
+    expect(context!.lessons[0].concettiChiave).toEqual(['Client e server']);
+    expect(context!.lessons[1].obiettivi).toEqual(['Confrontare i ruoli']);
+    expect(JSON.stringify(context)).not.toContain('uda-02');
+  });
+
+  it('keeps the full outline within its byte budget when metadata is extensive', () => {
+    const context = build({
+      currentLessonId: 'l30',
+      lessons: Array.from({ length: 60 }, (_, i) => ({
+        id: `l${i}`,
+        udaDir: 'uda-01',
+        titolo: `Lezione ${i}`,
+        concettiChiave: Array.from({ length: 40 }, (_, j) => `Concetto ${j} ${'à'.repeat(120)}`),
+        obiettivi: Array.from({ length: 40 }, (_, j) => `Obiettivo ${j} ${'è'.repeat(120)}`),
+      })),
+    });
+    expect(context!.lessons).toHaveLength(60);
+    expect(new TextEncoder().encode(JSON.stringify(context)).byteLength).toBeLessThanOrEqual(
+      20_000,
+    );
+    expect(context!.lessons[30].concettiChiave).toHaveLength(40);
+  });
+
   it('builds a deterministic 1-based outline limited to the current UDA', () => {
     const ctx = build();
     expect(ctx).not.toBeNull();

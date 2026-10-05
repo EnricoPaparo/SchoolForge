@@ -3,6 +3,7 @@ import {
   AI_POOL_GENERATION_PROFILE,
   POOL_MODEL_PROFILE_OPTIONS,
   buildLessonContentRequest,
+  buildLessonReviewRequest,
   buildPoolContentRequest,
   describeAiContentError,
   formatMicroUsd,
@@ -142,6 +143,31 @@ function fullContext(over: Partial<LessonAiContext> = {}): LessonAiContext {
 }
 
 describe('buildLessonContentRequest (AIGEN-03 / AIGEN-CONTEXT-01 closed lesson payload)', () => {
+  it('transports optional didactic outline metadata through generation and review base', () => {
+    const req = buildLessonContentRequest({
+      requestId: REQ,
+      modelProfile: 'quality',
+      depth: 'complete',
+      context: fullContext({
+        udaContext: {
+          ...UDA_CONTEXT,
+          lessons: UDA_CONTEXT.lessons.map((l) => ({
+            ...l,
+            concettiChiave: ['Client'],
+            obiettivi: ['Confrontare i ruoli'],
+          })),
+        },
+      }),
+    });
+    expect(req.udaContext.lessons[0].concettiChiave).toEqual(['Client']);
+    expect(req.udaContext.lessons[2].obiettivi).toEqual(['Confrontare i ruoli']);
+    const review = buildLessonReviewRequest({
+      requestId: REQ,
+      base: req,
+      candidateBody: '## Client\n\nUn client richiede un servizio.',
+    });
+    expect(review.udaContext).toEqual(req.udaContext);
+  });
   it('builds a closed lesson payload, derives hasCurrentContent, omits an empty sottotitolo', () => {
     const req = buildLessonContentRequest({
       requestId: REQ,
