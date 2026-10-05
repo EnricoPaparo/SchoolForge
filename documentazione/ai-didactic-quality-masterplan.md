@@ -11,7 +11,7 @@ rilascio. Restano i checkpoint tecnici per recuperare operazioni interrotte.
 
 Lo stato storico delle singole fasi sotto non costituisce una dichiarazione di
 rilascio. Per il contratto e le evidenze dell'incremento corrente vedere
-[`didactic-quality-dev-implementation.md`](didactic-quality-dev-implementation.md).
+[`didactic-specialist-dev-implementation.md`](didactic-specialist-dev-implementation.md).
 
 **Data:** 4 ottobre 2026
 

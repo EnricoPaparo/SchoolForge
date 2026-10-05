@@ -153,7 +153,7 @@ describe('planned UDA coverage metadata', () => {
     expect(review.user).toContain('Calcolo');
     expect(review.user).toContain('different');
     expect(review.user).toContain('non prova di studio');
-    expect(canonicalRequest(reviewed)).toContain('lesson-review-v2');
+    expect(canonicalRequest(reviewed)).toContain('lesson-review-v3');
   });
   it('pool blueprint is conditioned on source with plausible misconception distractors', () => {
     const request = validateAiContentRequest({
@@ -167,6 +167,6 @@ describe('planned UDA coverage metadata', () => {
     if (request.kind !== 'pool') throw new Error('request');
     expect(buildPoolPrompt(request).user).toContain('misconcezione plausibile');
     expect(buildPoolPrompt(request).user).toContain('Non produrre domande-trabocchetto');
-    expect(canonicalRequest(request)).toContain('pool-specialist-v1');
+    expect(canonicalRequest(request)).toContain('pool-specialist-v2');
   });
 });

@@ -52,14 +52,14 @@ import {
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
 export const AI_CONTENT_PROMPT_VERSION = 'lesson-specialist-phase2-v1' as const;
 export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-specialist-phase2-v1' as const;
-export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v2' as const;
+export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v3' as const;
 
 /**
  * Identità indipendente del prompt pool. POOL-TUNE-02 modifica esclusivamente
  * questo prompt sulla base del profile probe reale, senza attribuire il cambio
  * alle versioni di lezione o mappa concettuale.
  */
-export const AI_POOL_PROMPT_VERSION = 'pool-specialist-v1' as const;
+export const AI_POOL_PROMPT_VERSION = 'pool-specialist-v2' as const;
 
 /**
  * CONCEPT-MAP-01 — versione **separata** del prompt della mappa concettuale.
@@ -250,6 +250,10 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     '  passo e leggibile, non un blocco disordinato.',
     'La soluzione non deve essere una frase sintetica insufficiente; non aggiungere però testo',
     'inutilmente lungo: ogni passaggio deve avere valore didattico.',
+    'Concludi OGNI soluzione aperta con tre brevi indicazioni nello stesso campo soluzione:',
+    'Elementi essenziali: elenca soltanto quanto la domanda richiede per una risposta completa.',
+    'Credito parziale: descrivi qualitativamente quali parti corrette riconoscere e quali errori sono sostanziali, senza assegnare punti o pesi e senza penalizzare più volte lo stesso errore trascinato.',
+    'Alternative valide: indica metodi o formulazioni equivalenti quando pertinenti; altrimenti precisa che equivalenti corretti sono accettabili. Gli approfondimenti dello svolgimento non sono requisiti aggiuntivi.',
     '',
     'Domande a risposta singola: una sola opzione corretta; distrattori plausibili; opzioni',
     'semanticamente omogenee; nessun indizio grammaticale/formale che riveli la risposta; nessuna',
@@ -799,6 +803,7 @@ export function buildLessonReviewPrompt(request: LessonReviewRequest): BuiltProm
     'La priorità assoluta è aiutare lo studente a capire: correggi errori disciplinari, semplificazioni false, salti logici, prerequisiti mancanti, esempi deboli, misconcezioni, formule/unità/codice incoerenti e densità mal distribuita.',
     'Costruisci un modello mentale progressivo: spiega perché, condizioni e limiti; usa esempi solo se mostrano davvero un meccanismo; elimina riempitivi e ripetizioni.',
     'Non introdurre autoverifiche, batterie di domande, mappe, metadiscorso, HTML, front matter, Mermaid o nuove informazioni estranee al perimetro.',
+    'Scrivi formule ed equazioni in testo piano leggibile con simboli Unicode, per esempio ρ = m / V e 100 g / 20 cm³ = 5 g/cm³. Non usare LaTeX: niente delimitatori matematici $, $$, \\(, \\[ o comandi come \\frac, \\rho, \\text. Mantieni formule, passaggi e unità corretti senza eliminare dettagli.',
     'Rispetta il livello scolastico e la profondità richiesta. Conserva i passaggi validi della bozza quando sono già ottimali.',
     'reviewOutcome deve essere improved se hai corretto o migliorato il testo, unchanged solo se la bozza era già ottimale.',
     'issueCodes contiene soltanto codici fra: disciplinary_error, false_simplification, logical_gap, missing_prerequisite, weak_example, misconception_risk, structure, verbosity. Può essere vuoto.',

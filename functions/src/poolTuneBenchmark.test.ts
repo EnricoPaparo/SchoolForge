@@ -157,7 +157,7 @@ describe('POOL-TUNE-00 — disegno sperimentale', () => {
   it('congela il candidato A e include i vincoli derivati dal profile probe', async () => {
     const request = buildPoolTuneRequest((await loadPoolTuneDataset()).scenarios[0]!, 'quality');
     const prompt = buildPoolPrompt(request);
-    expect(AI_POOL_PROMPT_VERSION).toBe('pool-specialist-v1');
+    expect(AI_POOL_PROMPT_VERSION).toBe('pool-specialist-v2');
     expect(prompt.user).toContain('MATERIALE_LEZIONE');
     expect(prompt.user).toContain(request.lessonSource);
     expect(prompt.user).toContain('indici interi ZERO-BASED');

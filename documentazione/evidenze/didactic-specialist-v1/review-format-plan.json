@@ -1,0 +1,8 @@
+{
+  "reason": "Both initial lesson reviewers used unsupported LaTeX formatting.",
+  "additionalCalls": 1,
+  "maxCalls": 33,
+  "maxCostMicroUsd": 3000000,
+  "promptVersion": "lesson-review-v3",
+  "syntheticOnly": true
+}

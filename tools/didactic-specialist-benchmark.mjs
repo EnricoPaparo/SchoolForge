@@ -205,11 +205,53 @@ if (process.argv.includes('--freeze-baseline')) {
   process.exit(0);
 }
 const manifest = read(frozenPath);
+const refineRubric = process.argv.includes('--refine-pool-rubric');
+const refineFormat = process.argv.includes('--refine-review-format');
+const maxCalls = refineFormat ? 33 : refineRubric ? 32 : manifest.maxCalls;
+if (refineFormat) {
+  const planPath = resolve(dir, 'review-format-plan.json');
+  if (!existsSync(planPath))
+    writeFileSync(
+      planPath,
+      JSON.stringify(
+        {
+          reason: 'Both initial lesson reviewers used unsupported LaTeX formatting.',
+          additionalCalls: 1,
+          maxCalls,
+          maxCostMicroUsd: manifest.maxCostMicroUsd,
+          promptVersion: 'lesson-review-v3',
+          syntheticOnly: true,
+        },
+        null,
+        2,
+      ),
+    );
+}
+if (refineRubric) {
+  const planPath = resolve(dir, 'rubric-refinement-plan.json');
+  if (!existsSync(planPath))
+    writeFileSync(
+      planPath,
+      JSON.stringify(
+        {
+          reason:
+            'Initial comparison did not clearly separate essential elements and partial credit.',
+          additionalCalls: 4,
+          maxCalls,
+          maxCostMicroUsd: manifest.maxCostMicroUsd,
+          promptVersion: 'pool-specialist-v2',
+          syntheticOnly: true,
+        },
+        null,
+        2,
+      ),
+    );
+}
 if (
   !process.argv.includes('--execute-real-openai') ||
   !process.argv.includes('--i-understand-this-costs-money')
 ) {
-  console.log({ maxCalls: manifest.maxCalls, maxCostMicroUsd: manifest.maxCostMicroUsd });
+  console.log({ maxCalls, maxCostMicroUsd: manifest.maxCostMicroUsd });
   process.exit(0);
 }
 let key;
@@ -263,11 +305,7 @@ async function execute(c, variant) {
     c.policy.priceListVersion,
     c.policy.model,
   );
-  if (
-    !reserve ||
-    calls >= manifest.maxCalls ||
-    spent + reserve.costMicroUsd > manifest.maxCostMicroUsd
-  )
+  if (!reserve || calls >= maxCalls || spent + reserve.costMicroUsd > manifest.maxCostMicroUsd)
     throw Error('Qualification cap reached');
   writeFileSync(pending, JSON.stringify({ id, reservationCostMicroUsd: reserve.costMicroUsd }));
   calls++;
@@ -318,28 +356,37 @@ async function execute(c, variant) {
   console.log({ id, calls, actualCostMicroUsd: actual, totalMicroUsd: spent });
   return record;
 }
-for (const c of manifest.cases) for (const v of ['baseline', 'candidate']) await execute(c, v);
-for (const c of manifest.cases.filter((c) => c.request?.kind === 'pool')) {
-  const generated = read(resolve(dir, c.id + '-candidate.json'));
-  const questions = generated.output.questions;
-  const openIndex = questions.findIndex((q) => q.tipo === 'aperta');
-  if (openIndex < 0) throw Error('Fault fixture requires an open question');
-  const defective = questions.map((q, i) =>
-    i === openIndex
-      ? { ...q, soluzione: 'Qualunque risposta è corretta; non occorre motivare.' }
-      : q,
-  );
-  await execute(
-    {
-      id: c.id + '-fault-review',
-      request: {
-        ...c.request,
-        kind: 'pool_review',
-        requestId: randomUUID(),
-        candidateQuestions: defective,
+if (refineFormat) {
+  const c = manifest.cases.find((c) => c.id === 'uda-lesson-review');
+  if (!c) throw Error('Missing frozen lesson review');
+  await execute({ ...c, id: c.id + '-format-v3' }, 'candidate');
+} else if (refineRubric) {
+  for (const c of manifest.cases.filter((c) => c.request?.kind === 'pool'))
+    await execute({ ...c, id: c.id + '-rubric-v2' }, 'candidate');
+} else {
+  for (const c of manifest.cases) for (const v of ['baseline', 'candidate']) await execute(c, v);
+  for (const c of manifest.cases.filter((c) => c.request?.kind === 'pool')) {
+    const generated = read(resolve(dir, c.id + '-candidate.json'));
+    const questions = generated.output.questions;
+    const openIndex = questions.findIndex((q) => q.tipo === 'aperta');
+    if (openIndex < 0) throw Error('Fault fixture requires an open question');
+    const defective = questions.map((q, i) =>
+      i === openIndex
+        ? { ...q, soluzione: 'Qualunque risposta è corretta; non occorre motivare.' }
+        : q,
+    );
+    await execute(
+      {
+        id: c.id + '-fault-review',
+        request: {
+          ...c.request,
+          kind: 'pool_review',
+          requestId: randomUUID(),
+          candidateQuestions: defective,
+        },
+        policy: resolveContentModelForRequest({ ...c.request, kind: 'pool_review' }),
       },
-      policy: resolveContentModelForRequest({ ...c.request, kind: 'pool_review' }),
-    },
-    'candidate',
-  );
+      'candidate',
+    );
+  }
 }

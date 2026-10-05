@@ -1,0 +1,119 @@
+{
+  "caseId": "PT00-01-pool",
+  "source": {
+    "kind": "pool",
+    "requestId": "f177989c-2ac7-4864-aa44-f33028fb29a1",
+    "modelProfile": "quality",
+    "teacherGuidance": null,
+    "level": "balanced",
+    "counts": {
+      "aperta": 2,
+      "chiusa_singola": 1,
+      "chiusa_multipla": 1
+    },
+    "lessonSource": "## L’idea di rete informatica\n\nUna **rete informatica** è un insieme di dispositivi collegati tra loro secondo regole comuni, così da poter scambiare informazioni e, in alcuni casi, condividere risorse.\n\nPer esempio, nella rete di una scuola, alcuni computer possono comunicare con una stampante comune e accedere agli stessi file. La rete non è soltanto l’insieme dei dispositivi: comprende anche i collegamenti che li uniscono e le regole che permettono loro di comunicare correttamente.\n\n> [!DEFINITION]\n> Una rete informatica permette a più dispositivi di comunicare e di utilizzare, quando previsto, risorse condivise.\n\n## Gli elementi fondamentali\n\n### I nodi\n\nUn **nodo** è un dispositivo che partecipa alla rete: può inviare, ricevere o mettere a disposizione informazioni e servizi.\n\nSono esempi di nodi:\n\n- il computer di uno studente;\n- il tablet o lo smartphone di un insegnante;\n- una stampante collegata alla rete;\n- un dispositivo che conserva e distribuisce file, chiamato comunemente **server**.\n\nUn dispositivo è un nodo non perché sia semplicemente acceso, ma perché è collegato alla rete e può partecipare alla comunicazione.\n\n### I collegamenti\n\nIl **collegamento** è il mezzo attraverso cui i dati passano da un nodo a un altro. Può essere:\n\n- **via cavo**, per esempio tramite un cavo di rete;\n- **senza fili**, per esempio tramite una connessione Wi-Fi.\n\nIl collegamento non è un nodo: il computer e il cavo svolgono ruoli diversi. Il computer partecipa alla comunicazione, mentre il collegamento offre il percorso attraverso cui le informazioni possono viaggiare.\n\nLa presenza di un collegamento, da sola, non garantisce che la comunicazione riesca: devono funzionare anche i dispositivi e devono essere rispettate regole comuni.\n\n### I protocolli\n\nUn **protocollo** è un insieme di regole che stabilisce come i dispositivi devono comunicare. Le regole possono indicare, per esempio, come iniziare uno scambio, come identificare il destinatario e come interpretare le informazioni ricevute.\n\nIl protocollo svolge quindi un ruolo simile a quello di un linguaggio condiviso. Se due persone parlano lingue diverse e non hanno regole comuni per capirsi, la comunicazione è difficile; allo stesso modo, due dispositivi collegati non comunicano correttamente se non seguono protocolli compatibili.\n\nIl protocollo non è il collegamento: il collegamento trasporta i dati, mentre il protocollo stabilisce come interpretarli e scambiarli.\n\n> [!EXAMPLE]\n> In una classe, un computer invia un documento a una stampante di rete. Il computer e la stampante sono i **nodi**; il cavo o la connessione senza fili costituisce il **collegamento**; le regole usate per inviare e interpretare il documento sono il **protocollo**.\n\n## Le risorse condivise\n\nUna **risorsa condivisa** è una risorsa che più utenti o dispositivi possono utilizzare attraverso la rete, senza doverne avere necessariamente una copia o un esemplare personale.\n\nIn un ambiente scolastico possono essere condivisi:\n\n- una stampante, usata da più computer;\n- una cartella con materiali didattici, accessibile agli utenti autorizzati;\n- uno spazio per salvare file;\n- una connessione a Internet utilizzata da più dispositivi.\n\nLa condivisione non significa che chiunque possa usare la risorsa senza limiti. L’accesso può dipendere da autorizzazioni, credenziali o regole stabilite dalla scuola.\n\nÈ utile distinguere il dispositivo dalla risorsa che offre. Una stampante collegata alla rete è un **nodo**; la possibilità di stampare tramite quella stampante è una **risorsa condivisa**. Lo stesso elemento può quindi essere considerato sotto due aspetti diversi: come dispositivo che partecipa alla rete e come servizio che altri dispositivi utilizzano.\n\n## Come riconoscere una rete in una situazione concreta\n\nPer analizzare una situazione, si possono porre quattro domande:\n\n1. Quali dispositivi comunicano? Sono i **nodi**.\n2. Attraverso che cosa passano le informazioni? È il **collegamento**.\n3. Quali regole permettono ai dispositivi di capirsi? Sono i **protocolli**.\n4. Che cosa può essere utilizzato da più utenti o dispositivi? È la **risorsa condivisa**.\n\nConsideriamo una situazione costruita a scopo didattico: in una biblioteca scolastica tre computer usano la stessa stampante collegata senza fili. I tre computer e la stampante sono nodi; la connessione senza fili è il collegamento; le regole di comunicazione sono i protocolli; il servizio di stampa è la risorsa condivisa. Questa descrizione distingue gli elementi senza confonderli.\n\n## Attività di autoverifica\n\n### 1. Analisi di una situazione\n\nIn un’aula, un tablet invia un file a una stampante comune usando la rete della scuola. Individua nodo, collegamento, protocollo e risorsa condivisa.\n\n> [!SOLUTION]\n> Il tablet e la stampante sono i **nodi**, perché partecipano alla comunicazione. La connessione Wi-Fi o il cavo, a seconda del caso concreto, è il **collegamento**. Le regole che permettono di inviare e interpretare il file sono il **protocollo**. La risorsa condivisa è il servizio della stampante, utilizzabile da più dispositivi.\n\n### 2. Spiegazione con parole proprie\n\nPerché non basta collegare due computer con un cavo per essere certi che possano comunicare correttamente?\n\n> [!SOLUTION]\n> Il cavo fornisce un **collegamento**, ma la comunicazione richiede anche dispositivi funzionanti e **protocolli compatibili**, cioè regole comuni per scambiare e interpretare le informazioni. Perciò collegamento e protocollo sono elementi distinti e necessari in ruoli diversi.\n",
+    "existingPoolQuestionCount": 0
+  },
+  "A": {
+    "questions": [
+      {
+        "order": 0,
+        "tipo": "aperta",
+        "testo": "In un laboratorio scolastico, due computer accedono tramite Wi-Fi a una cartella di materiali didattici conservata su un server. I dispositivi seguono regole comuni per richiedere, inviare e interpretare i file; la cartella è accessibile soltanto agli utenti autorizzati. Individua i nodi, il collegamento, i protocolli e la risorsa condivisa, motivando ogni scelta. Spiega inoltre la differenza tra il server e la cartella che mette a disposizione.",
+        "difficolta": 3,
+        "soluzione": "I nodi sono i due computer e il server: sono dispositivi collegati alla rete che partecipano alla comunicazione. I computer richiedono e ricevono i file, mentre il server li conserva e li mette a disposizione. Il collegamento è la connessione Wi-Fi, cioè il mezzo senza fili attraverso cui passano i dati. I protocolli sono le regole comuni con cui i dispositivi richiedono, inviano e interpretano i file: non coincidono con il Wi-Fi, perché stabiliscono come comunicare, anziché fornire il percorso dei dati. La risorsa condivisa è la cartella con i materiali didattici, utilizzabile attraverso la rete dagli utenti autorizzati. Il server è dunque il dispositivo che partecipa alla rete, mentre la cartella è ciò che offre agli utenti. Essere condivisa non rende la cartella accessibile a chiunque: restano valide le autorizzazioni previste."
+      },
+      {
+        "order": 1,
+        "tipo": "aperta",
+        "testo": "Uno studente afferma: «Se due computer sono uniti da un cavo di rete, la loro comunicazione è sicuramente corretta». Spiega perché questa affermazione non è sufficiente a descrivere le condizioni necessarie per comunicare. Distingui il ruolo del cavo da quello dei protocolli e considera anche il funzionamento dei dispositivi.",
+        "difficolta": 2,
+        "soluzione": "L'affermazione è errata perché la presenza di un collegamento, da sola, non garantisce una comunicazione corretta. Il cavo costituisce il mezzo attraverso cui i dati possono passare da un computer all'altro, ma non stabilisce come scambiarli e interpretarli. Questo compito appartiene ai protocolli: i dispositivi devono seguire regole compatibili, per esempio per iniziare lo scambio, identificare il destinatario e interpretare le informazioni ricevute. Inoltre, devono funzionare correttamente anche i computer coinvolti. Occorre quindi distinguere tre aspetti: dispositivi funzionanti, collegamento e regole comuni di comunicazione. Il cavo svolge un ruolo necessario nello scenario descritto, ma non sostituisce gli altri due aspetti."
+      },
+      {
+        "order": 2,
+        "tipo": "chiusa_singola",
+        "testo": "Un insegnante ha uno smartphone acceso ma non collegato alla rete scolastica. Nella stessa aula, una stampante è collegata alla rete e può ricevere documenti dai computer. Quale affermazione identifica correttamente i nodi della rete scolastica tra questi due dispositivi?",
+        "difficolta": 2,
+        "opzioni": [
+          "Entrambi sono nodi, perché essere accesi è sufficiente per partecipare alla rete.",
+          "Soltanto lo smartphone è un nodo, perché una stampante offre un servizio e non può essere un nodo.",
+          "Soltanto la stampante è un nodo, perché è collegata alla rete e può partecipare alla comunicazione.",
+          "Nessuno dei due è un nodo, perché soltanto i computer possono essere nodi di una rete."
+        ],
+        "soluzioneIndici": [
+          2
+        ]
+      },
+      {
+        "order": 3,
+        "tipo": "chiusa_multipla",
+        "testo": "Una scuola mette a disposizione attraverso la propria rete una stampante utilizzabile da più computer, uno spazio per salvare file riservato agli utenti autorizzati e una connessione a Internet utilizzata da più dispositivi. Quali affermazioni sulle risorse condivise sono corrette? Seleziona tutte le risposte corrette.",
+        "difficolta": 2,
+        "opzioni": [
+          "Il servizio di stampa è una risorsa condivisa anche se ogni computer non possiede una stampante personale.",
+          "Lo spazio per salvare file è una risorsa condivisa anche se il suo utilizzo richiede un'autorizzazione.",
+          "La connessione a Internet può essere una risorsa condivisa quando viene utilizzata da più dispositivi.",
+          "Una risorsa è condivisa soltanto se ogni utente ne possiede una copia o un esemplare personale.",
+          "La condivisione di una risorsa elimina la possibilità di imporre credenziali o limiti di accesso."
+        ],
+        "soluzioneIndici": [
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  "B": {
+    "questions": [
+      {
+        "order": 0,
+        "tipo": "aperta",
+        "testo": "In un laboratorio scolastico, due computer sono collegati tramite cavi di rete a un server che conserva una cartella di materiali didattici. I dispositivi seguono regole comuni per scambiare e interpretare i dati. La cartella può essere utilizzata soltanto dagli utenti autorizzati. Individua i nodi, i collegamenti, i protocolli e la risorsa condivisa, motivando ogni scelta. Spiega inoltre perché il server e la cartella non svolgono lo stesso ruolo.",
+        "difficolta": 3,
+        "soluzione": "1. I nodi sono i due computer e il server: sono dispositivi collegati alla rete che partecipano alla comunicazione. I computer possono richiedere e ricevere i materiali; il server conserva e mette a disposizione i file.\n2. I collegamenti sono i cavi di rete, che offrono il percorso attraverso cui passano i dati. I cavi non sono nodi, perché svolgono il ruolo di mezzo di trasmissione, non di dispositivo che comunica.\n3. I protocolli sono le regole comuni seguite dai dispositivi per scambiare e interpretare i dati. Non coincidono con i cavi: i collegamenti trasportano le informazioni, mentre i protocolli stabiliscono come comunicarle e comprenderle.\n4. La risorsa condivisa è la cartella di materiali didattici, utilizzabile attraverso la rete dagli utenti autorizzati. Essere condivisa non significa essere accessibile a chiunque.\nIl server è dunque il dispositivo che partecipa alla rete; la cartella è la risorsa che quel dispositivo mette a disposizione. Distinguere questi ruoli permette di non confondere chi offre una risorsa con ciò che viene utilizzato."
+      },
+      {
+        "order": 1,
+        "tipo": "aperta",
+        "testo": "Due computer funzionanti sono uniti da un cavo di rete funzionante, ma seguono protocolli non compatibili. Uno studente sostiene: «Il cavo funziona, quindi i computer possono sicuramente comunicare correttamente». Valuta questa affermazione e spiega quale condizione manca e perché è necessaria.",
+        "difficolta": 2,
+        "soluzione": "L'affermazione non è corretta: un collegamento funzionante, da solo, non garantisce una comunicazione corretta.\nIl cavo fornisce il percorso attraverso cui possono passare i dati, ma non stabilisce le regole con cui i computer devono scambiarli e interpretarli. Questo compito appartiene ai protocolli.\nNella situazione descritta, i dispositivi e il collegamento funzionano; la condizione mancante è la compatibilità dei protocolli. I computer devono seguire regole comuni, per esempio per identificare il destinatario e interpretare le informazioni ricevute.\nPer consentire una comunicazione corretta, occorre quindi che i due computer utilizzino protocolli compatibili. La distinzione fondamentale è che il collegamento trasporta i dati, mentre il protocollo regola il loro scambio e la loro interpretazione."
+      },
+      {
+        "order": 2,
+        "tipo": "chiusa_singola",
+        "testo": "In un'aula si trovano quattro dispositivi. Quale può essere considerato un nodo della rete scolastica nella situazione descritta?",
+        "difficolta": 2,
+        "opzioni": [
+          "Un computer acceso, ma non collegato alla rete scolastica.",
+          "Un tablet collegato alla rete scolastica e capace di inviare e ricevere informazioni.",
+          "Una stampante accesa, ma non collegata alla rete scolastica.",
+          "Uno smartphone acceso, ma non collegato alla rete scolastica."
+        ],
+        "soluzioneIndici": [
+          1
+        ]
+      },
+      {
+        "order": 3,
+        "tipo": "chiusa_multipla",
+        "testo": "Una scuola mette a disposizione attraverso la propria rete una stampante, uno spazio per salvare file e una connessione a Internet. Quali affermazioni sulle risorse condivise sono corrette? Seleziona tutte le risposte corrette.",
+        "difficolta": 2,
+        "opzioni": [
+          "Lo spazio per salvare file può essere una risorsa condivisa utilizzata da più utenti.",
+          "Una risorsa condivisa deve essere accessibile a chiunque, senza autorizzazioni.",
+          "La stampante è un nodo, mentre la possibilità di stampare attraverso di essa è una risorsa condivisa.",
+          "La connessione a Internet può essere una risorsa condivisa utilizzata da più dispositivi.",
+          "Per usare una risorsa condivisa, ogni utente deve possederne una copia o un esemplare personale."
+        ],
+        "soluzioneIndici": [
+          0,
+          2,
+          3
+        ]
+      }
+    ]
+  }
+}

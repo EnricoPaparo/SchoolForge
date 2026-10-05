@@ -1,0 +1,75 @@
+{
+  "caseId": "uda-lesson",
+  "source": {
+    "kind": "lesson",
+    "requestId": "843da28b-e4ae-455b-8a22-818f6123b989",
+    "modelProfile": "quality",
+    "teacherGuidance": null,
+    "depth": "complete",
+    "titolo": "Densità",
+    "sottotitolo": null,
+    "difficolta": "Base",
+    "concettiChiave": [
+      "densità",
+      "massa",
+      "volume"
+    ],
+    "obiettivi": [
+      "Interpretare il rapporto massa volume"
+    ],
+    "udaTitle": "Misure e materiali",
+    "udaContext": {
+      "title": "Misure e materiali",
+      "descrizione": null,
+      "competenze": [],
+      "obiettivi": [
+        "Interpretare misure"
+      ],
+      "currentLessonPosition": 2,
+      "lessons": [
+        {
+          "position": 1,
+          "titolo": "Massa e volume",
+          "sottotitolo": null,
+          "concettiChiave": [
+            "massa",
+            "volume"
+          ],
+          "obiettivi": [
+            "Distinguere kg e cm³"
+          ]
+        },
+        {
+          "position": 2,
+          "titolo": "Densità",
+          "sottotitolo": null,
+          "concettiChiave": [
+            "densità"
+          ],
+          "obiettivi": [
+            "Calcolare il rapporto massa volume"
+          ]
+        },
+        {
+          "position": 3,
+          "titolo": "Galleggiamento",
+          "sottotitolo": null,
+          "concettiChiave": [
+            "spinta di Archimede"
+          ],
+          "obiettivi": [
+            "Confrontare le forze"
+          ]
+        }
+      ]
+    },
+    "currentBody": "",
+    "hasCurrentContent": false
+  },
+  "A": {
+    "body": "## La massa contenuta in un certo volume\n\nUn oggetto con massa maggiore non è necessariamente fatto di un materiale più denso: potrebbe essere semplicemente più grande. Per confrontare i materiali dobbiamo considerare **quanta massa corrisponde allo stesso volume**.\n\nLa **massa**, indicata con `m`, è una grandezza che si misura con una bilancia e si esprime, per esempio, in grammi (g) o kilogrammi (kg). Il **volume**, indicato con `V`, misura lo spazio occupato e si esprime, per esempio, in centimetri cubi (cm³) o metri cubi (m³).\n\nConsideriamo due campioni in un esempio ipotetico:\n\n| Campione | Massa | Volume |\n|---|---:|---:|\n| A | 60 g | 20 cm³ |\n| B | 40 g | 20 cm³ |\n\nI campioni occupano lo stesso spazio, ma A ha una massa maggiore. Dividendo ciascuna massa per il volume troviamo:\n\n- A: `60 g / 20 cm³ = 3 g/cm³`;\n- B: `40 g / 20 cm³ = 2 g/cm³`.\n\nIl confronto ora è riferito a un volume unitario: a ogni centimetro cubo di A corrispondono 3 g, mentre a ogni centimetro cubo di B corrispondono 2 g. **A è più denso di B.**\n\n## La densità come rapporto\n\n> [!DEFINITION]\n> La **densità** è il rapporto tra la massa di un corpo e il suo volume:\n> `ρ = m / V`\n> Il simbolo `ρ` si legge “rho”.\n\nDividere la massa per il volume significa stabilire la **massa per unità di volume**. Per questo il risultato deve contenere entrambe le unità: una densità di `3 g/cm³` non è una massa di 3 g, ma indica 3 g per ogni centimetro cubo.\n\nIl rapporto permette di confrontare anche campioni di dimensioni diverse. Immaginiamo due campioni compatti e omogenei dello stesso materiale, nelle stesse condizioni:\n\n| Campione | Massa | Volume | Densità |\n|---|---:|---:|---:|\n| Piccolo | 30 g | 10 cm³ | 3 g/cm³ |\n| Grande | 90 g | 30 cm³ | 3 g/cm³ |\n\nIl campione grande ha massa e volume tripli. Il rapporto, però, non cambia: `90 / 30 = 30 / 10 = 3`.\n\nPer un materiale omogeneo, cioè uniforme nella sua composizione, **massa e volume sono direttamente proporzionali**, purché le condizioni siano le stesse: raddoppiando il volume raddoppia la massa, mentre la densità resta invariata. La densità non misura quindi “quanto è grande” un corpo.\n\n## Calcolare e interpretare una densità\n\nSupponiamo di misurare un campione e ottenere una massa di 135 g e un volume di 50 cm³. La sua densità è:\n\n`ρ = m / V = 135 g / 50 cm³ = 2,7 g/cm³`\n\nIl risultato indica che ogni centimetro cubo del campione contiene, in media, 2,7 g di massa.\n\nPossiamo controllare il calcolo ricostruendo la massa:\n\n`2,7 g/cm³ × 50 cm³ = 135 g`\n\nLe unità di volume si semplificano e rimangono i grammi, come deve accadere per una massa.\n\n> [!WARNING]\n> Invertire il rapporto cambia la grandezza calcolata. `V / m` avrebbe unità cm³/g e indicherebbe il volume per unità di massa, non la densità.\n\nLe unità devono essere coerenti con il risultato richiesto:\n\n- massa in g e volume in cm³ danno una densità in g/cm³;\n- massa in kg e volume in m³ danno una densità in kg/m³, l’unità del Sistema Internazionale.\n\nLe due unità si possono convertire. Poiché `1 g = 0,001 kg` e `1 cm³ = 0,000001 m³`:\n\n`1 g/cm³ = 1 000 kg/m³`\n\nQuindi `2,7 g/cm³ = 2 700 kg/m³`: cambia il valore numerico, ma non la densità rappresentata.\n\n## Usare la densità per trovare massa o volume\n\nSe conosciamo la densità di un materiale, possiamo ricavare la massa corrispondente a un certo volume:\n\n`m = ρ × V`\n\nPer il materiale dell’esempio, un campione di 10 cm³ avrebbe massa:\n\n`m = 2,7 g/cm³ × 10 cm³ = 27 g`\n\nSe invece conosciamo la massa, possiamo ricavare il volume:\n\n`V = m / ρ`\n\nUn campione di 54 g dello stesso materiale avrebbe volume:\n\n`V = 54 g / 2,7 g/cm³ = 20 cm³`\n\nQueste relazioni chiariscono due confronti importanti: **a parità di volume, il materiale più denso ha massa maggiore; a parità di massa, il materiale più denso occupa meno volume**.\n\n## Quando il confronto è significativo\n\nLa densità può aiutare a caratterizzare un materiale, ma da sola non sempre basta a identificarlo: materiali diversi possono avere densità simili.\n\nInoltre, il confronto richiede condizioni comparabili. La temperatura può modificare il volume di un campione e quindi la sua densità; per i gas è importante anche la pressione.\n\nBisogna infine chiarire quale volume si sta misurando. Se un oggetto contiene cavità e nel volume includiamo anche quegli spazi vuoti, il rapporto tra massa e volume complessivo dà la **densità media dell’oggetto**, non necessariamente quella del materiale che lo costituisce. Un contenitore vuoto, per esempio, può avere una bassa densità media pur essendo costruito con un materiale molto denso."
+  },
+  "B": {
+    "body": "## La massa non basta per confrontare i materiali\n\nUn piccolo oggetto di acciaio può avere meno massa di un grande blocco di legno. Questo confronto, da solo, non indica quale materiale abbia più massa **a parità di volume**: gli oggetti hanno dimensioni diverse.\n\nPer confrontare i materiali bisogna mettere in relazione due grandezze:\n\n- la **massa**, misurata per esempio in grammi o kilogrammi;\n- il **volume**, cioè lo spazio occupato, misurato per esempio in centimetri cubi o metri cubi.\n\nLa grandezza che collega massa e volume è la **densità**. Il suo significato è concreto: indica quanta massa corrisponde a un’unità di volume.\n\n## Il rapporto tra massa e volume\n\n> [!DEFINITION]\n> La densità media di un corpo è il rapporto tra la sua massa e il suo volume:\n>\n> **ρ = m / V**\n>\n> Il simbolo ρ, che si legge «ro», indica la densità; m indica la massa e V il volume.\n\nConsideriamo un campione con massa di 54 g e volume di 20 cm³. La sua densità è:\n\n`ρ = 54 g / 20 cm³ = 2,7 g/cm³`\n\nIl risultato si legge «2,7 grammi per centimetro cubo»: ogni centimetro cubo di quel materiale ha una massa di 2,7 g, se il materiale è omogeneo, cioè ha le stesse caratteristiche in ogni sua parte.\n\nLa divisione permette quindi di riportare il confronto a **un solo centimetro cubo**, anche quando il campione misurato è più grande.\n\n### Che cosa cambia aumentando la quantità di materiale?\n\nImmaginiamo due campioni dello stesso materiale omogeneo, nelle stesse condizioni.\n\n| Campione | Massa | Volume | Densità |\n|---|---:|---:|---:|\n| A | 54 g | 20 cm³ | 2,7 g/cm³ |\n| B | 108 g | 40 cm³ | 2,7 g/cm³ |\n\nNel campione B la massa e il volume sono entrambi doppi. Il rapporto non cambia:\n\n`108 g / 40 cm³ = 2,7 g/cm³`\n\n**La densità non aumenta perché prendiamo più materiale.** Aumentano insieme massa e volume. Per uno stesso materiale omogeneo, nelle stesse condizioni, queste due grandezze sono direttamente proporzionali: se il volume triplica, anche la massa triplica.\n\n## Confrontare correttamente due corpi\n\nLa densità consente due confronti utili:\n\n- **A parità di volume**, il corpo più denso ha massa maggiore.\n- **A parità di massa**, il corpo più denso occupa un volume minore.\n\nConsideriamo un caso ipotetico:\n\n| Corpo | Massa | Volume | Densità |\n|---|---:|---:|---:|\n| P | 120 g | 60 cm³ | 2 g/cm³ |\n| Q | 90 g | 30 cm³ | 3 g/cm³ |\n\nP ha massa maggiore, ma Q è più denso. Infatti, ogni centimetro cubo di P corrisponde a 2 g, mentre ogni centimetro cubo di Q corrisponde a 3 g.\n\nQuesto esempio mostra perché **«ha più massa» e «è più denso» non significano la stessa cosa**. Per stabilire quale corpo sia più denso bisogna conoscere anche il volume.\n\n## Usare la densità per trovare massa o volume\n\nLa relazione tra le tre grandezze può essere scritta anche così:\n\n- per trovare la massa: **m = ρ × V**;\n- per trovare il volume: **V = m / ρ**.\n\nSupponiamo che un materiale omogeneo abbia densità di 2,7 g/cm³. Qual è la massa di un campione di volume 10 cm³?\n\n`m = 2,7 g/cm³ × 10 cm³ = 27 g`\n\nIl risultato è coerente: se un centimetro cubo ha massa di 2,7 g, dieci centimetri cubi hanno massa dieci volte maggiore.\n\nSe invece conosciamo la massa di un campione dello stesso materiale, pari a 81 g, possiamo ricavarne il volume:\n\n`V = 81 g / 2,7 g/cm³ = 30 cm³`\n\nIl controllo consiste nel ricostruire la massa:\n\n`2,7 g/cm³ × 30 cm³ = 81 g`\n\n### Le unità devono essere coerenti\n\nNel Sistema Internazionale la densità si esprime in **kg/m³**. Per piccoli campioni si usa spesso **g/cm³**; per i liquidi è comune anche **g/mL**, equivalente perché 1 mL = 1 cm³.\n\nPer convertire g/cm³ in kg/m³ occorre convertire sia la massa sia il volume:\n\n`1 g = 0,001 kg`\n\n`1 cm³ = 0,000001 m³`\n\nQuindi:\n\n`1 g/cm³ = 1000 kg/m³`\n\nPer esempio, 2,7 g/cm³ corrispondono a 2700 kg/m³. Il numero cambia, ma la densità rappresentata è la stessa.\n\n## Che cosa descrive una misura di densità\n\nPer determinare la densità di un campione si misurano la sua massa e il suo volume, poi si calcola il rapporto. Il risultato dipende dall’accuratezza di entrambe le misure: un errore nel volume modifica anche la densità calcolata.\n\nLa densità è utile per caratterizzare un materiale, ma **un solo valore non basta sempre a identificarlo**: materiali diversi possono avere densità simili.\n\nInoltre, il confronto richiede condizioni comparabili. La temperatura può modificare il volume e quindi la densità, anche senza cambiare la massa.\n\nPer un oggetto cavo o poroso bisogna chiarire quale volume si sta considerando. Se il volume misurato comprende anche cavità o pori, il rapporto massa/volume descrive la densità media dell’oggetto, non necessariamente quella del materiale compatto di cui è fatto."
+  }
+}

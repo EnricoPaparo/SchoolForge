@@ -70,8 +70,22 @@ chiamate di revisione rispetto ai percorsi ON/OFF già esistenti.
 Baseline dei payload congelata prima dell'integrazione. Stessi materiali
 sintetici per vecchi e nuovi prompt: pool e correzioni in quattro discipline,
 generazione e revisione della densità nel contesto UDA, due mappe sane e quattro
-soluzioni intenzionalmente difettose. Massimo 28 chiamate reali, retry zero,
-tetto 3 USD; nessun dato studente o PROD.
+soluzioni intenzionalmente difettose. Le 28 chiamate iniziali sono state seguite
+da quattro affinamenti dei criteri dei pool e una revisione del formato delle
+formule: 33 chiamate complessive, retry zero, costo effettivo 0,437424 USD entro
+il tetto di 3 USD; nessun dato studente o PROD.
+
+La revisione indipendente approva il campione: tutte le otto soluzioni aperte
+finali esplicitano elementi essenziali, credito parziale e alternative valide.
+Le quattro riparazioni cambiano soltanto la domanda difettosa; le lezioni
+mantengono il perimetro UDA e la revisione finale usa formule leggibili senza
+LaTeX. Molti confronti sono equivalenti: non si sostiene un miglioramento
+uniforme di ogni contenuto. Nei quattro pool finali il costo aumenta del 20,7%,
+circa 0,005 USD per pool; nelle quattro correzioni dello stesso campione aumenta
+dello 0,74%. Sono misure del campione, non un preventivo universale.
+
+Payload, risultati e riepilogo sono in
+[`evidenze/didactic-specialist-v1/results-summary.json`](evidenze/didactic-specialist-v1/results-summary.json).
 
 Il confronto combina validatori deterministici e revisione didattica
 indipendente. Il metodo segue il confronto su criteri specifici illustrato nella
@@ -79,6 +93,12 @@ indipendente. Il metodo segue il confronto su criteri specifici illustrato nella
 Il campione non dimostra accuratezza universale, stabilità statistica o efficacia
 nell'apprendimento. Risultati e limiti effettivi vengono registrati nell'issue
 prima del rilascio; questo documento non costituisce prova del deploy.
+
+Deploy DEV mirato: Hosting, `aiContentPreview`, `aiContentGenerate`,
+`aiContentPromptExport`, `aiCorrectionPreview`, `aiCorrectionRun` e
+`aiVisualPlanAuthorize`. Quest'ultima deve accettare i nuovi metadati UDA nella
+generazione completa; un test copre questa compatibilità. Nessuna modifica a
+Rules o indici. Il verbale del deploy e dello smoke viene registrato nell'issue #520.
 
 ## Collaudo docente
 

@@ -143,6 +143,26 @@ function envelope(decisions: unknown[]): Record<string, unknown> {
 // ─── Payload chiuso ─────────────────────────────────────────────────────────
 
 describe('payload della proposta coordinata', () => {
+  it('accetta i metadati UDA trasportati dalla generazione completa', () => {
+    const udaContext = {
+      title: 'Idrosfera',
+      descrizione: null,
+      competenze: [],
+      obiettivi: [],
+      currentLessonPosition: 1,
+      lessons: [
+        {
+          position: 1,
+          titolo: 'Il ciclo dell’acqua',
+          sottotitolo: null,
+          concettiChiave: ['evaporazione'],
+          obiettivi: ['Descrivere il ciclo'],
+        },
+      ],
+    };
+    expect(planRequest({ udaContext }).udaContext).toEqual(udaContext);
+  });
+
   it('accetta un payload valido con quantity auto', () => {
     const request = planRequest();
     expect(request.kind).toBe('visual_plan_proposal');

@@ -1,0 +1,20 @@
+{
+  "calls": 33,
+  "actualCostMicroUsd": 437424,
+  "retries": 0,
+  "maxCalls": 33,
+  "maxCostMicroUsd": 3000000,
+  "syntheticOnly": true,
+  "poolBaselineMicroUsd": 96358,
+  "poolFinalMicroUsd": 116337,
+  "correctionBaselineMicroUsd": 35568,
+  "correctionCandidateMicroUsd": 35832,
+  "initialCandidateSha": "378ff0e",
+  "finalPromptVersions": {
+    "pool": "pool-specialist-v2",
+    "pool_review": "pool_review-v3",
+    "lesson_review": "lesson-review-v3",
+    "concept_map_review": "concept_map_review-v4"
+  },
+  "independentReview": "PASS with documented limits"
+}

@@ -1,0 +1,8 @@
+{
+  "reason": "Initial comparison did not clearly separate essential elements and partial credit.",
+  "additionalCalls": 4,
+  "maxCalls": 32,
+  "maxCostMicroUsd": 3000000,
+  "promptVersion": "pool-specialist-v2",
+  "syntheticOnly": true
+}

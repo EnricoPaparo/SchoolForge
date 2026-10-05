@@ -64,7 +64,7 @@ export class AiContentError extends Error {
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
-  pool_review: 'pool_review-v2',
+  pool_review: 'pool_review-v3',
   concept_map_review: 'concept_map_review-v4',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -514,7 +514,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v2',
+      promptContractVersion: 'lesson-review-v3',
       kind: request.kind,
       modelProfile: request.modelProfile,
       teacherGuidance: request.teacherGuidance,
@@ -607,7 +607,7 @@ export function canonicalRequest(request: AiContentRequest): string {
     request.kind === 'pool'
       ? {
           kind: 'pool',
-          promptContractVersion: 'pool-specialist-v1',
+          promptContractVersion: 'pool-specialist-v2',
           modelProfile: request.modelProfile,
           level: request.level,
           counts: {

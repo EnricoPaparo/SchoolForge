@@ -1,0 +1,29 @@
+{
+  "caseId": "density-map-review",
+  "source": {
+    "kind": "concept_map_review",
+    "requestId": "ce2a2ba6-f8aa-4a3f-a256-a4105651c343",
+    "modelProfile": "quality",
+    "lessonBody": "## Densità\n\nLa densità è il rapporto fra massa e volume: ρ=m/V. Per m=100 g e V=20 cm³, ρ=5 g/cm³. Per un materiale omogeneo, alla stessa temperatura e pressione, la densità non dipende dalla quantità. Aumentare soltanto la massa senza specificare il volume non basta per dedurre una variazione di densità.",
+    "candidateMarkdown": "## Sintesi\n\nLa densità collega massa e volume tramite ρ=m/V: 100 g distribuiti in 20 cm³ corrispondono a 5 g/cm³. Per un materiale omogeneo alle stesse condizioni di temperatura e pressione, resta indipendente dalla quantità. La massa da sola non permette di dedurne una variazione, perché occorre conoscere anche il volume.\n\n## Diagramma\n\n```text\nMassa e volume -> rapporto m/V -> densità\n100 g / 20 cm³ -> uguale a -> 5 g/cm³\nDensità -> dipende da -> materiale e condizioni\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n"
+  },
+  "A": {
+    "conceptMapMarkdown": "## Sintesi\n\nLa densità è il rapporto tra massa e volume, espresso dalla formula ρ=m/V; per 100 g distribuiti in 20 cm³ si ottengono 5 g/cm³. Per un materiale omogeneo, mantenendo uguali temperatura e pressione, la densità non dipende dalla quantità di materiale. Perciò la sola massa, senza conoscere anche il volume, non permette di dedurre una variazione della densità.\n\n## Diagramma\n\n```text\nMassa + volume -- rapporto ρ=m/V --> densità\n100 g + 20 cm³ -- calcolo --> 5 g/cm³\nMateriale omogeneo + stessa temperatura e pressione\n  -- implica --> densità indipendente dalla quantità\nMassa senza volume -- non consente di dedurre --> variazione della densità\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "unsupported_content",
+      "misleading_simplification",
+      "accessibility"
+    ],
+    "sourceIssue": false
+  },
+  "B": {
+    "conceptMapMarkdown": "## Sintesi\n\nLa densità collega massa e volume attraverso la formula ρ=m/V: 100 g distribuiti in 20 cm³ corrispondono a 5 g/cm³. Per un materiale omogeneo, mantenendo la stessa temperatura e pressione, la densità non dipende dalla quantità. Aumentare soltanto la massa non basta per dedurre una variazione di densità, perché occorre conoscere anche il volume.\n\n## Diagramma\n\n```text\nmassa + volume -> rapporto ρ=m/V -> densità\n100 g / 20 cm³ -> corrispondono a -> 5 g/cm³\nmateriale omogeneo + stessa temperatura e pressione\n-> densità indipendente dalla quantità\nmassa aumentata senza volume specificato -> non permette di dedurre\nuna variazione di densità\nmassa + volume -> permettono di calcolare -> densità\n```\n\n> [!IMPORTANT]\n> Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.\n",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "unsupported_content",
+      "accessibility"
+    ],
+    "sourceIssue": false
+  }
+}

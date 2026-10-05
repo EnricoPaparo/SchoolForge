@@ -1,0 +1,89 @@
+{
+  "caseId": "uda-lesson-review",
+  "source": {
+    "kind": "lesson_review",
+    "requestId": "294b55ee-8db0-44ef-83d5-fa20675ed01a",
+    "modelProfile": "quality",
+    "teacherGuidance": null,
+    "depth": "complete",
+    "titolo": "Densità",
+    "sottotitolo": null,
+    "difficolta": "Base",
+    "concettiChiave": [
+      "densità",
+      "massa",
+      "volume"
+    ],
+    "obiettivi": [
+      "Interpretare il rapporto massa volume"
+    ],
+    "udaTitle": "Misure e materiali",
+    "udaContext": {
+      "title": "Misure e materiali",
+      "descrizione": null,
+      "competenze": [],
+      "obiettivi": [
+        "Interpretare misure"
+      ],
+      "currentLessonPosition": 2,
+      "lessons": [
+        {
+          "position": 1,
+          "titolo": "Massa e volume",
+          "sottotitolo": null,
+          "concettiChiave": [
+            "massa",
+            "volume"
+          ],
+          "obiettivi": [
+            "Distinguere kg e cm³"
+          ]
+        },
+        {
+          "position": 2,
+          "titolo": "Densità",
+          "sottotitolo": null,
+          "concettiChiave": [
+            "densità"
+          ],
+          "obiettivi": [
+            "Calcolare il rapporto massa volume"
+          ]
+        },
+        {
+          "position": 3,
+          "titolo": "Galleggiamento",
+          "sottotitolo": null,
+          "concettiChiave": [
+            "spinta di Archimede"
+          ],
+          "obiettivi": [
+            "Confrontare le forze"
+          ]
+        }
+      ]
+    },
+    "candidateBody": "## Densità\n\nLa densità è massa divisa per volume. La massa è in kg, il volume misura lo spazio occupato.\n\n100 / 20 = 8\n\nUn campione di 100 g in 20 cm³ ha densità 8 g/cm³. Se aumenta la massa aumenta sempre la densità. La spinta di Archimede richiede qui una dimostrazione completa."
+  },
+  "A": {
+    "body": "## Densità\n\nLa densità descrive quanta massa è contenuta in una certa quantità di volume. Si calcola con il rapporto tra massa e volume:\n\n\\[\n\\rho = \\frac{m}{V}\n\\]\n\nDove:\n- \\(\\rho\\) è la densità;\n- \\(m\\) è la massa;\n- \\(V\\) è il volume.\n\nLe unità di misura devono essere coerenti. Per esempio, se la massa è espressa in grammi e il volume in centimetri cubi, la densità si misura in \\(\\text{g/cm}^3\\). Se si usano chilogrammi e metri cubi, si ottiene \\(\\text{kg/m}^3\\).\n\n### Esempio\n\nUn campione ha massa \\(100\\ \\text{g}\\) e volume \\(20\\ \\text{cm}^3\\). La sua densità è:\n\n\\[\n\\rho = \\frac{100\\ \\text{g}}{20\\ \\text{cm}^3} = 5\\ \\text{g/cm}^3\n\\]\n\nQuindi ogni centimetro cubo del campione corrisponde, in media, a una massa di \\(5\\ \\text{g}\\).\n\nPer uno stesso materiale, in condizioni uguali, la densità è caratteristica del materiale: se si prende una quantità maggiore dello stesso materiale, aumentano sia la massa sia il volume nella stessa proporzione e il loro rapporto rimane uguale. Per questo non è corretto dire che aumentando la massa aumenta sempre la densità. La densità cambia, per esempio, se cambia il materiale o se cambiano le condizioni che ne modificano il volume, come la temperatura.",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "disciplinary_error",
+      "false_simplification",
+      "logical_gap",
+      "misconception_risk",
+      "structure"
+    ]
+  },
+  "B": {
+    "body": "## Densità\n\nLa densità indica quanta massa è contenuta in una certa quantità di volume. Si calcola con il rapporto\n\n\\[\n\\rho = \\frac{m}{V}\n\\]\n\ndove \\(\\rho\\) è la densità, \\(m\\) la massa e \\(V\\) il volume. La massa può essere espressa in grammi (g) o chilogrammi (kg); il volume in centimetri cubi (cm³) o metri cubi (m³). L’unità della densità dipende dalle unità utilizzate: per esempio, g/cm³ oppure kg/m³.\n\nPer un campione con massa di 100 g e volume di 20 cm³:\n\n\\[\n\\rho = \\frac{100\\ \\text{g}}{20\\ \\text{cm}^3} = 5\\ \\text{g/cm}^3\n\\]\n\nIl risultato non è 8: infatti 100 diviso 20 è 5.\n\nLa densità non dipende dalla massa considerata in modo isolato, ma dal rapporto tra massa e volume. Se si prende una quantità doppia dello stesso materiale, in condizioni uguali, raddoppiano sia la massa sia il volume e il loro rapporto resta uguale. Se invece aumenta la massa senza aumentare il volume nella stessa proporzione, la densità cambia. Per interpretare una misura di densità occorre quindi considerare sempre insieme massa, volume e relative unità.",
+    "reviewOutcome": "improved",
+    "issueCodes": [
+      "disciplinary_error",
+      "false_simplification",
+      "misconception_risk",
+      "structure"
+    ]
+  }
+}
