@@ -336,6 +336,7 @@ describe('completeLessonGeneration', () => {
     ['uncertain_state', false],
     ['visual_plan_external_mutation', false],
     ['visual_plan_proposal_body_changed', false],
+    ['visual_promotion_anchor_stale', false],
     ['visual_plan_expired', false],
     ['corrupted_state', false],
   ] as const)('%s ferma subito gli slot successivi (retryable=%s)', async (code, retryable) => {

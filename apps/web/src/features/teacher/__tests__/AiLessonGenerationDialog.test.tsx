@@ -173,25 +173,45 @@ describe('AiLessonGenerationDialog', () => {
     expect(callables.generateReview).toHaveBeenCalledTimes(1);
   });
 
-  it('distingue una revisione eseguita senza modifiche da una revisione saltata', async () => {
-    const unchanged = reviewGenerateResult();
-    unchanged.output = {
-      ...unchanged.output,
-      body: generateResult().output.body,
-      reviewOutcome: 'unchanged',
-      issueCodes: [],
-    };
-    const { callables } = makeCallables({
-      generateReview: vi.fn(async () => unchanged),
-    });
-    await goToReview(callables);
-    expect(
-      screen.getByText(
-        'Il revisore ha controllato il contenuto e non ha rilevato modifiche necessarie.',
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByText('Revisione non richiesta')).toBeNull();
-  });
+  it.each([false, true])(
+    'preserva il testo base con unchanged divergente (retry=%s)',
+    async (retry) => {
+      const unchanged = reviewGenerateResult();
+      unchanged.output = {
+        ...unchanged.output,
+        body: '## Testo divergente\n\nNon deve sostituire la bozza.',
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+      };
+      let attempts = 0;
+      const { callables, generateReqs } = makeCallables({
+        generateReview: vi.fn(async () => {
+          if (retry && attempts++ === 0) throw new Error('review failed');
+          return unchanged;
+        }),
+      });
+      const onUseDraft = vi.fn();
+      if (retry) {
+        renderDialog(callables, onUseDraft);
+        fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+        await screen.findByRole('button', { name: 'Genera bozza' });
+        fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Riprova solo revisione' }));
+        await screen.findByRole('button', { name: 'Usa questa bozza' });
+      } else {
+        await goToReview(callables, onUseDraft);
+      }
+      expect(
+        screen.getByText(
+          'Il revisore ha controllato il contenuto e non ha rilevato modifiche necessarie.',
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText('Revisione non richiesta')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Usa questa bozza' }));
+      expect(onUseDraft).toHaveBeenCalledWith(generateResult().output.body);
+      expect(generateReqs).toHaveLength(1);
+    },
+  );
 
   it('in caso di errore ritenta soltanto la revisione senza rigenerare la bozza', async () => {
     let reviewCalls = 0;

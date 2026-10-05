@@ -210,7 +210,9 @@ export function AiLessonGenerationDialog({
         const validatedReview = validateLessonDraftResult(reviewed, 'bozza revisionata');
         if (!validatedReview.ok) throw new Error(validatedReview.error);
         setReviewResult(reviewed);
-        setDraftBody(validatedReview.body);
+        setDraftBody(
+          reviewed.output.reviewOutcome === 'unchanged' ? validated.body : validatedReview.body,
+        );
       } else {
         setReviewResult(null);
         setDraftBody(validated.body);
@@ -243,7 +245,7 @@ export function AiLessonGenerationDialog({
       const validatedReview = validateLessonDraftResult(reviewed, 'bozza revisionata');
       if (!validatedReview.ok) throw new Error(validatedReview.error);
       setReviewResult(reviewed);
-      setDraftBody(validatedReview.body);
+      setDraftBody(reviewed.output.reviewOutcome === 'unchanged' ? baseBody : validatedReview.body);
       setPhase('review');
     } catch (err) {
       setError(describeAiContentError(err));
