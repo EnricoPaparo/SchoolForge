@@ -463,6 +463,9 @@ export async function clearLessonContentState(params: {
     if (publicSnap.exists()) {
       tx.update(publicRef, {
         content: '',
+        // Clearing also unmarks the lesson: keep both completion flags in the
+        // same transaction or visual generation and cleanup reject the pair.
+        completed: false,
         conceptMapMarkdown: deleteField(),
         visual: deleteField(),
         visuals: deleteField(),

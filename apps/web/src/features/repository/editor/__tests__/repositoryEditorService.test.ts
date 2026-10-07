@@ -12,6 +12,7 @@ const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
 const mockWhere = vi.fn((...args: unknown[]) => ({ __where: args }));
+const mockRunTransaction = vi.fn();
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 
 function isCollectionRef(value: unknown): value is { __path: string } {
@@ -37,6 +38,8 @@ vi.mock('firebase/firestore', () => ({
   increment: (n: number) => ({ __increment: n }),
   writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
   serverTimestamp: () => mockServerTimestamp(),
+  deleteField: () => ({ __deleteField: true }),
+  runTransaction: (...args: unknown[]) => mockRunTransaction(...args),
 }));
 
 /**
@@ -63,6 +66,7 @@ vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
 }));
 
 import {
+  clearLessonContentState,
   createLesson,
   createUda,
   deleteLesson,
@@ -118,6 +122,75 @@ beforeEach(() => {
     set: mockBatchSet,
     delete: mockBatchDelete,
     commit: mockBatchCommit,
+  });
+});
+
+describe('clearLessonContentState — completion consistency', () => {
+  const params = {
+    programId: 'prog-1',
+    importId: 'imp-1',
+    lessonId: 'lesson-1',
+    ownerUid: OWNER_UID,
+    db: fakeDb,
+  };
+  const technical = {
+    ownerUid: OWNER_UID,
+    importId: 'imp-1',
+    publicLessonId: 'imp-1_lesson-1',
+    completed: true,
+    titolo: 'Titolo da conservare',
+  };
+  function transaction(projectionExists = true, lesson = technical) {
+    const updates = vi.fn();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ exists: () => true, data: () => lesson })
+      .mockResolvedValueOnce({ exists: () => projectionExists });
+    mockRunTransaction.mockImplementation(async (_db, callback) => {
+      await callback({ get, update: updates, set: vi.fn() });
+    });
+    return { get, updates };
+  }
+
+  it('unmarks both documents in one transaction, preserving metadata', async () => {
+    const { updates } = transaction();
+    await clearLessonContentState(params);
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(updates.mock.calls).toEqual([
+      [
+        { __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1' },
+        {
+          completed: false,
+          completedAt: { __deleteField: true },
+          conceptMapMarkdown: { __deleteField: true },
+          visual: { __deleteField: true },
+          visuals: { __deleteField: true },
+        },
+      ],
+      [
+        { __path: 'publicLessons/imp-1_lesson-1' },
+        {
+          content: '',
+          completed: false,
+          conceptMapMarkdown: { __deleteField: true },
+          visual: { __deleteField: true },
+          visuals: { __deleteField: true },
+        },
+      ],
+    ]);
+  });
+
+  it('does not create a missing legacy projection', async () => {
+    const { updates } = transaction(false);
+    await clearLessonContentState(params);
+    expect(updates).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects another owner before touching the projection or writing', async () => {
+    const { get, updates } = transaction(true, { ...technical, ownerUid: 'other' });
+    await expect(clearLessonContentState(params)).rejects.toThrow('Lezione non autorizzata.');
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(updates).not.toHaveBeenCalled();
   });
 });
 
