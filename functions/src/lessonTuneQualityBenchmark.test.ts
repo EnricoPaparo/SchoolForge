@@ -121,7 +121,7 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     // economico dell'output nano — Quality non implica più un costo
     // superiore a Economy, quindi si ancora il valore esatto del nuovo
     // listino invece di un confronto fra profili non più garantito.
-    expect(economyHoldout.costUpperBoundMicroUsd).toBe(192_662);
+    expect(economyHoldout.costUpperBoundMicroUsd).toBe(191_798);
     expect(qualityHoldout.costUpperBoundMicroUsd).toBe(184_976);
   });
 
