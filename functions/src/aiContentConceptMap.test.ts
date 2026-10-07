@@ -270,7 +270,7 @@ describe('non-regressione di pool e lezione', () => {
   });
 
   it('la versione della lezione identifica il nuovo contratto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v1');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
   });
 });
@@ -354,7 +354,7 @@ describe('prompt della mappa concettuale', () => {
   it('la versione del prompt della mappa è stata incrementata', () => {
     // Il prompt è cambiato in modo sostanziale: lasciare la versione precedente
     // renderebbe indistinguibili due contratti diversi.
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-specialist-v1');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-relations-v1');
   });
 });
 

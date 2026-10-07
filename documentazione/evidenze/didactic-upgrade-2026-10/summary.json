@@ -1,0 +1,9 @@
+{
+  "baseSha": "31c826d114e313dd7976ebb51053272bafd4910c",
+  "candidateSha": "f0dcc3d0c03bdc5ef6ba9dd24585b71909a315ca",
+  "calls": 24,
+  "validatedPairs": 12,
+  "totalCostMicroUsd": 397688,
+  "maxCostMicroUsd": 3000000,
+  "retries": 0
+}

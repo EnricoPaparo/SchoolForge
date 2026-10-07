@@ -289,7 +289,7 @@ describe('integrazione del kind nel core', () => {
 
 describe('prompt della proposta visuale', () => {
   it('ha una versione propria, distinta dalle altre', () => {
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v7');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v8');
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
     expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).not.toBe(AI_CONCEPT_MAP_PROMPT_VERSION);
   });
@@ -375,7 +375,7 @@ describe('prompt della proposta visuale', () => {
 
   it('chiede caption e alt text sostanziali e distinti', () => {
     const { user } = buildVisualProposalPrompt(visualRequest());
-    expect(user).toMatch(/aggiungere informazione, non ripetere/);
+    expect(user).toMatch(/indica cosa osservare nella figura/);
     expect(user).toMatch(/non è una\s+ripetizione della didascalia/);
   });
 
@@ -979,8 +979,8 @@ describe('l’aggiunta del quarto kind non sposta un byte degli altri tre', () =
   });
 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-specialist-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v1');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-relations-v1');
   });
 
   it('i tetti di output dei tre kind sono invariati', () => {

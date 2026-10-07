@@ -133,7 +133,8 @@ describe('current prompt export and immutable visual presets', () => {
     const exported = exportCurrentContentPrompt(input, 'gpt56').prompt;
 
     expect(exported).toContain(legacy.user.slice(legacy.user.indexOf('<<<')));
-    expect(exported).toContain('un testo che sostiene un’ora di lezione');
+    expect(exported).not.toContain('un’ora di lezione');
+    expect(exported).toContain('Esempi ragionati integrati nella spiegazione:');
     expect(exported).not.toContain('Risultato didattico:');
   });
   it('fails closed when the trusted material boundary is missing', () => {

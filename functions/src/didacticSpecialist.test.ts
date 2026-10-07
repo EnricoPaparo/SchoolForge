@@ -153,7 +153,7 @@ describe('planned UDA coverage metadata', () => {
     expect(review.user).toContain('Calcolo');
     expect(review.user).toContain('different');
     expect(review.user).toContain('non prova di studio');
-    expect(canonicalRequest(reviewed)).toContain('lesson-review-v3');
+    expect(canonicalRequest(reviewed)).toContain('lesson-review-v4');
   });
   it('pool blueprint is conditioned on source with plausible misconception distractors', () => {
     const request = validateAiContentRequest({

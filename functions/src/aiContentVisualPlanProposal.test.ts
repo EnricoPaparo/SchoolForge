@@ -1038,7 +1038,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     expect(computeInputHash(poolRequest())).not.toBe(POOL_INPUT_HASH);
     expect(computeInputHash(lessonRequest())).not.toBe(LESSON_INPUT_HASH);
     expect(computeInputHash(conceptMapRequest())).not.toBe(CONCEPT_MAP_INPUT_HASH);
-    expect(computeInputHash(visualProposalRequest())).toBe(VISUAL_PROPOSAL_INPUT_HASH);
+    expect(computeInputHash(visualProposalRequest())).not.toBe(VISUAL_PROPOSAL_INPUT_HASH);
   });
 
   it('la forma canonica dei quattro kind non contiene traccia del nuovo', () => {
@@ -1052,6 +1052,23 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
       expect(canonical).not.toContain('visual_plan_proposal');
       expect(canonical).not.toContain('"quantity"');
       expect(canonical).toContain(`"kind":"${request.kind}"`);
+    }
+  });
+
+  it('invalida i run visuali precedenti anche a parità di lezione e quantità', () => {
+    for (const request of [visualProposalRequest(), validateAiContentRequest(planPayload())]) {
+      const current = JSON.parse(canonicalRequest(request)) as Record<string, unknown>;
+      const expectedVersion =
+        request.kind === 'visual_proposal'
+          ? AI_VISUAL_PROPOSAL_PROMPT_VERSION
+          : AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION;
+      expect(current.promptContractVersion).toBe(expectedVersion);
+      const previous = { ...current };
+      delete previous.promptContractVersion;
+      const previousHash = createHash('sha256')
+        .update(JSON.stringify(previous), 'utf8')
+        .digest('hex');
+      expect(computeInputHash(request)).not.toBe(previousHash);
     }
   });
 
@@ -1069,8 +1086,7 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
     for (const [kind, snapshot] of Object.entries(snapshots)) {
       const digest = createHash('sha256').update(snapshot, 'utf8').digest('hex');
       const previous = STRUCTURED_REQUEST_SHA256[kind as keyof typeof STRUCTURED_REQUEST_SHA256];
-      if (kind === 'visual_proposal') expect(digest).toBe(previous);
-      else expect(digest).not.toBe(previous);
+      expect(digest).not.toBe(previous);
       expect(snapshot).not.toContain('visual_plan_proposal');
       expect(snapshot).not.toContain('"decisions"');
       expect(snapshot).not.toContain(AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION);
@@ -1080,9 +1096,9 @@ describe('l’aggiunta del quinto kind non sposta un byte degli altri quattro', 
   });
 
   it('le versioni di prompt degli altri kind non sono state toccate', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-specialist-v1');
-    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v7');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v1');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-relations-v1');
+    expect(AI_VISUAL_PROPOSAL_PROMPT_VERSION).toBe('visual-proposal-01-v8');
   });
 
   it('i tetti di output dei quattro kind sono invariati', () => {

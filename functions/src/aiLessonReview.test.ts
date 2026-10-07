@@ -34,7 +34,7 @@ describe('lesson advanced review', () => {
   it('has a closed request and dedicated prompt identity', () => {
     const request = validateAiContentRequest(raw);
     expect(request.kind).toBe('lesson_review');
-    expect(canonicalRequest(request)).toContain('lesson-review-v3');
+    expect(canonicalRequest(request)).toContain('lesson-review-v4');
     const resolved = resolveContentModelForRequest(request);
     expect(resolved.model).toBe('gpt-5.6-luna');
     const payload = buildContentStructuredRequest(request, resolved.model);

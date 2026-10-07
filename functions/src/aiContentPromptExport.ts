@@ -54,8 +54,8 @@ export function exportCurrentContentPrompt(
       instructions = instructions.replace('Scrivi il corpo Markdown', 'Scrivi il corpo');
       move(/Struttura editoriale e compatibilità SchoolForge:[\s\S]*?(?=Prima di rispondere)/);
       move(
-        /6\) verifica numero e collocazione[\s\S]*?(?=7\))/,
-        '6) verifica numero e collocazione delle attività;\n',
+        /6\) verifica pertinenza degli esempi[\s\S]*?(?=7\))/,
+        '6) verifica pertinenza degli esempi;\n',
       );
       move(/Restituisci soltanto il Markdown finale corretto\./);
       move(
