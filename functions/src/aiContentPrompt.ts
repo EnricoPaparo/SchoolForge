@@ -84,9 +84,8 @@ export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-relations-v1' as const
  * MULTI-VISUAL-02 — versione **dedicata** del prompt della proposta
  * coordinata, distinta da quelle di pool, lezione, mappa e proposta visuale
  * singola: modificarla non deve invalidare il replay degli altri quattro
- * kind. Non partecipa a `canonicalRequest`/`inputHash` (nessuno dei prompt
- * version lo fa, §2 della ricerca AIGEN-01). La versione prompt partecipa
- * anche alla forma canonica per invalidare replay con istruzioni obsolete.
+ * kind. La versione partecipa a `canonicalRequest`/`inputHash` per invalidare
+ * replay con istruzioni obsolete.
  */
 export const AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION = 'visual-plan-proposal-02-v3' as const;
 

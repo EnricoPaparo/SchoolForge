@@ -48,6 +48,35 @@ I controlli sui prompt non dimostrano da soli maggiore qualità didattica. Il co
 reale e il collaudo umano devono verificare assenza di impoverimento e correttezza.
 Nessun controllo visivo dell’immagine prodotta viene introdotto in questo incremento.
 
+## Confronto reale e revisione indipendente
+
+Baseline congelata su `31c826d`, candidato compilato `f0dcc3d`. Dodici coppie con
+gli stessi input e modelli: densità Completa/Approfondita, informatica Approfondita,
+storia Economy Sintetica, revisione densità, correzioni matematica/scienze/informatica,
+generazione e revisione mappa, piano immagini RAM e sezioni con titoli ripetuti.
+Ventiquattro chiamate validate, nessun retry o errore; costo totale 0,397688 USD
+entro il limite di 3 USD. Nessun dato studente o chiamata PROD.
+
+Il revisore indipendente ha letto soltanto coppie A/B anonime prima di conoscere
+il mapping. Preferenze: candidato in sette casi, baseline nella revisione densità,
+quattro equivalenze; nessuna regressione materiale bloccante dimostrata.
+Il candidato migliora interpretazione degli esempi, feedback sulle lacune e
+didascalie; entrambi i piani con titoli ripetuti scelgono ancore corrette.
+La preferenza per la revisione baseline riguarda soprattutto il richiamo alla
+lezione successiva, senza una perdita sostanziale dei concetti nel candidato.
+
+Limiti: campione piccolo, senza stabilità statistica o prova di apprendimento.
+La bozza revisionata è breve e contiene errori: non dimostra la conservazione
+di ogni dettaglio in un testo ricco già valido. Manca un holdout esplicito con
+nuovo errore indipendente dopo errore trascinato e un batch interamente corretto
+per il feedback generale. Non sono state generate né ispezionate immagini raster:
+il confronto riguarda proposte, ancore, didascalie ed etichette.
+
+Payload, output validati, costi e coppie sono in
+[`evidenze/didactic-upgrade-2026-10/summary.json`](evidenze/didactic-upgrade-2026-10/summary.json).
+Il metodo di confronto segue criteri specifici e revisione indipendente descritti
+nella [documentazione ufficiale OpenAI](https://developers.openai.com/api/docs/guides/evaluation-best-practices).
+
 ## Deploy mirato e rollback
 
 Functions DEV: `aiContentPreview`, `aiContentGenerate`, `aiContentPromptExport`,

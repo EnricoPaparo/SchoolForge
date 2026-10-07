@@ -1,0 +1,62 @@
+[
+  {
+    "caseId": "density-complete",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "density-deep",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "it-deep",
+    "A": "baseline",
+    "B": "candidate"
+  },
+  {
+    "caseId": "history-economy",
+    "A": "baseline",
+    "B": "candidate"
+  },
+  {
+    "caseId": "density-review",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "math-correction",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "science-correction",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "it-correction",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "density-map-generate",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "density-map-review",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "ram-visual",
+    "A": "baseline",
+    "B": "candidate"
+  },
+  {
+    "caseId": "repeated-heading-visual",
+    "A": "baseline",
+    "B": "candidate"
+  }
+]
