@@ -1554,7 +1554,7 @@ describe('lesson pedagogical contract', () => {
     expect(built.user).toMatch(
       /esempi, casi o confronti quando rendono concreto un passaggio reale/,
     );
-    expect(built.user).toMatch(/coerenti e verificabili dati, calcoli e condizioni/);
+    expect(built.user).toMatch(/coerenti e verificabili dati e calcoli/);
   });
   it('removes activity quotas and adapts the explanation to the discipline', () => {
     expect(built.user).toMatch(/Adattamento disciplinare/);
@@ -2296,18 +2296,18 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
       /modo autosufficiente/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
-      /condizioni, limiti ed errori concettuali plausibili/,
+      /condizioni e limiti quando pertinenti/,
     );
     expect(built.user).not.toMatch(/un’ora di lezione|al massimo (UNA|DUE)|quattro domande/i);
   });
 
   it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-specialist-phase2-v1');
-    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-specialist-phase2-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v1');
+    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-explanations-v1');
   });
 
   it('rimuove autoverifiche e mantiene un controllo finale breve', () => {
-    expect(built.user).toMatch(/non includere autoverifiche/);
+    expect(built.user).toMatch(/non includere esercizi da svolgere, autoverifiche/);
     expect(built.user).not.toMatch(/domande risolte|attività\/autoverifica/);
     expect(built.user).toMatch(/verifica silenziosamente correttezza disciplinare/);
   });
@@ -2325,10 +2325,10 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
     expect(complete).not.toMatch(/Criterio di completezza per la modalità Approfondita/);
   });
 
-  it('conserva integralmente il prompt precedente per il rollback', () => {
+  it('mantiene un rollback con gli stessi confini didattici approvati', () => {
     const legacy = buildLegacyLessonPrompt(lessonReq() as never);
-    expect(legacy.user).toMatch(/un testo che sostiene un’ora di lezione/);
-    expect(legacy.user).toMatch(/attività\/autoverifica/);
+    expect(legacy.user).not.toMatch(/un’ora di lezione/);
+    expect(legacy.user).not.toMatch(/attività\/autoverifica/);
     expect(legacy.user).toMatch(/verifica che OGNI concetto chiave e OGNI obiettivo/);
   });
 

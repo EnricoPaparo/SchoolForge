@@ -50,9 +50,9 @@ import {
 } from './aiContentVisualProposal.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-specialist-phase2-v1' as const;
-export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-specialist-phase2-v1' as const;
-export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v3' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-explanations-v1' as const;
+export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-explanations-v1' as const;
+export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v4' as const;
 
 /**
  * Identità indipendente del prompt pool. POOL-TUNE-02 modifica esclusivamente
@@ -76,19 +76,19 @@ export const AI_POOL_PROMPT_VERSION = 'pool-specialist-v2' as const;
  * visuale, distinta da quelle di pool, lezione e mappa: modificarla non deve
  * invalidare il replay degli altri tre.
  */
-export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v7' as const;
+export const AI_VISUAL_PROPOSAL_PROMPT_VERSION = 'visual-proposal-01-v8' as const;
 
-export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-specialist-v1' as const;
+export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-relations-v1' as const;
 
 /**
  * MULTI-VISUAL-02 — versione **dedicata** del prompt della proposta
  * coordinata, distinta da quelle di pool, lezione, mappa e proposta visuale
  * singola: modificarla non deve invalidare il replay degli altri quattro
  * kind. Non partecipa a `canonicalRequest`/`inputHash` (nessuno dei prompt
- * version lo fa, §2 della ricerca AIGEN-01): è bookkeeping dei benchmark, non
- * un campo del contratto persistito.
+ * version lo fa, §2 della ricerca AIGEN-01). La versione prompt partecipa
+ * anche alla forma canonica per invalidare replay con istruzioni obsolete.
  */
-export const AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION = 'visual-plan-proposal-02-v2' as const;
+export const AI_VISUAL_PLAN_PROPOSAL_PROMPT_VERSION = 'visual-plan-proposal-02-v3' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -342,7 +342,7 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '- deve poter essere letta da sola: chi ha già studiato la lezione ritrova il suo',
     '  modello mentale e il ragionamento essenziale, non l’intero svolgimento;',
     '- seleziona e gerarchizza i pochi nuclei concettuali necessari a capire il tema',
-    '  centrale; accorpa formulazioni equivalenti e ometti i dettagli subordinati;',
+    '  centrale; accorpa soltanto nodi realmente equivalenti per significato e ruolo, conservando condizioni e distinzioni essenziali; termini simili non provano equivalenza;',
     '- rendi esplicite le relazioni logiche: cause, conseguenze, dipendenze, condizioni,',
     '  passaggi intermedi. Dire CHE due concetti sono collegati non basta: dì COME;',
     '- spiega brevemente i termini indispensabili alla comprensione, la prima volta che',
@@ -396,7 +396,7 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '2) verifica che la sintesi sia sostanzialmente più breve del CORPO_LEZIONE senza',
     '   perdere le relazioni indispensabili;',
     '3) elimina ripetizioni fra sintesi e diagramma: devono completarsi, non duplicarsi;',
-    '4) verifica che ogni freccia descriva una relazione precisa; non presentare come',
+    '4) leggi ogni percorso come soggetto → relazione → oggetto: verifica direzione e significato rispetto alla fonte; preferisci un legame preciso a «è collegato a» quando sostenuto dalla fonte, senza inferire causalità da associazioni; non presentare come',
     '   universale una relazione che nel corpo dipende da condizioni o alternative;',
     '5) verifica che il diagramma mostri la gerarchia concettuale, non tutti i dettagli.',
   ].join('\n');
@@ -420,9 +420,9 @@ const DEPTH_SEMANTICS: Readonly<Record<LessonRequest['depth'], string>> = {
   synthetic:
     'sintetica: OGNI concetto chiave riceve comunque una spiegazione motivata e comprensibile; si riduce l’ampiezza di esempi e applicazioni, mai la spiegazione',
   complete:
-    'completa: OGNI concetto chiave riceve una spiegazione motivata, almeno un esempio concreto svolto e il perché del suo funzionamento; i concetti vengono collegati fra loro quando il collegamento chiarisce',
+    'completa: OGNI concetto chiave riceve una spiegazione motivata, esempi concreti ragionati quando utili e il perché del loro funzionamento; i concetti vengono collegati fra loro quando il collegamento chiarisce',
   in_depth:
-    'approfondita: OGNI concetto chiave riceve spiegazione motivata, più esempi o casi, applicazioni, condizioni di validità ed errori tipici; motivazioni profonde e limiti vengono esplicitati, non sottintesi',
+    'approfondita: OGNI concetto chiave riceve spiegazione motivata, esempi o casi pertinenti, applicazioni, condizioni di validità; motivazioni profonde e limiti vengono esplicitati, non sottintesi',
 };
 
 /** Contratto pedagogico della lezione (livello 2). */
@@ -483,10 +483,8 @@ export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
     'Ampiezza e profondità — regola fondamentale, prevale in caso di dubbio:',
     '- i CONCETTI CHIAVE dicono CHE COSA va trattato, non QUANTO scrivere: una lezione con due',
     '  concetti chiave non è mezza lezione, è una lezione che tratta due concetti in profondità;',
-    '- l’unità di misura è la LEZIONE SCOLASTICA completa — un testo che sostiene un’ora di lezione',
-    '  in classe — qualunque sia il numero di voci ricevute nei metadati;',
     '- MENO concetti chiave ricevi, PIÙ a fondo vanno trattati: cresci in esempi, casi, motivazioni,',
-    '  applicazioni, errori tipici e condizioni di validità, non in numero di argomenti;',
+    '  applicazioni e condizioni di validità, non in numero di argomenti;',
     '- individua e introduci tu i CONCETTI DI SUPPORTO necessari a una progressione comprensibile —',
     '  prerequisiti, definizioni intermedie, motivazioni, conseguenze, applicazioni: è compito tuo,',
     '  non del docente, che ha dichiarato la meta e non ogni passo per arrivarci;',
@@ -503,16 +501,10 @@ export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- fissa adeguatamente concetti chiave e obiettivi forniti;',
     '- applica concretamente tutte le INDICAZIONI_DOCENTE compatibili.',
     '',
-    'Attività ed esercizi devono sostenere la spiegazione, non sostituirla né accorciarla:',
-    '- se il contenuto è operativo, procedurale, tecnico o di calcolo, inserisci pochi esempi o',
-    '  esercizi realmente utili; svolgili integralmente passo passo, motivando metodo, passaggi,',
-    '  risultato, controllo ed errori tipici pertinenti;',
-    request.depth === 'in_depth'
-      ? '- se il contenuto è prevalentemente teorico, puoi creare al massimo DUE sezioni di attività/autoverifica, con non più di quattro domande risolte in totale, che richiedano comprensione, collegamento o ragionamento, non semplice memoria; non distribuire altre attività altrove;'
-      : '- se il contenuto è prevalentemente teorico, puoi creare al massimo UNA sola sezione di attività/autoverifica, contenente non più di due domande risolte che richiedano comprensione, collegamento o ragionamento, non semplice memoria; non distribuire altre attività altrove;',
-    '- se un’attività non aggiunge valore didattico, omettila; non creare raccolte ripetitive e non',
-    '  lasciare esercizi senza soluzione nel corpo della lezione;',
-    '- non comprimere definizioni, spiegazioni o nessi causali per fare spazio agli esercizi.',
+    'Esempi ragionati integrati nella spiegazione:',
+    '- scegli esempi pertinenti alla disciplina senza quote o sezioni obbligatorie; chiarisci la situazione, perché scegli quel metodo o confronto, i passaggi significativi e cosa mostra il risultato;',
+    '- conserva spiegazioni, dettagli, condizioni e nessi necessari: gli esempi devono svilupparli, mai sostituirli o comprimere la lezione;',
+    '- non introdurre esercizi da svolgere, attività, autoverifiche o sezioni sugli errori comuni: la pratica viene gestita separatamente.',
     '',
     'Rigorosità disciplinare ed epistemica:',
     '- non presentare come fatti dati, misure, studi, testimonianze o osservazioni inventati;',
@@ -597,7 +589,7 @@ export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
     '   completa; se un concetto è solo accennato o la trattazione è più povera di quanto la',
     '   profondità richiesta esige, ESPANDILA prima di rispondere: è l’unico punto di questo',
     '   controllo che può farti aggiungere testo, e viene prima degli altri proprio per questo;',
-    '2) ricalcola da zero ogni esercizio usando i dati originali e verifica ogni soluzione;',
+    '2) ricalcola da zero ogni esempio quantitativo usando i dati originali e verifica ogni soluzione;',
     '3) confronta ogni esempio e conclusione con definizioni, formule, condizioni e fatti già',
     '   dichiarati; verifica che diagnosi e nessi causali non dicano più di quanto provano i dati;',
     '4) verifica da zero che tutte le premesse di ogni caso possano coesistere e che esempi,',
@@ -605,7 +597,7 @@ export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
     '   incoerente, correggilo o sostituiscilo prima di produrre l’output;',
     '5) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
     '   studiato in seguito;',
-    '6) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
+    '6) verifica pertinenza degli esempi, sintassi Markdown e assenza di LaTeX,',
     '   Mermaid, HTML, front matter e separatori orizzontali;',
     '7) correggi ortografia, parole spezzate, etichette residue, terminologia italiana, nomi delle',
     '   variabili, simboli, unità, calcoli, soluzioni e coerenza interna.',
@@ -644,7 +636,7 @@ const GPT6_DEPTH_SEMANTICS: Readonly<Record<LessonRequest['depth'], string>> = {
   complete:
     'Completa: sviluppa l’argomento in modo autosufficiente, costruendo il modello mentale, i collegamenti e gli esempi necessari.',
   in_depth:
-    'Approfondita: costruisci una comprensione profonda dei nuclei didatticamente decisivi, rendendone espliciti motivazioni o meccanismi, passaggi intermedi, collegamenti, applicazioni, condizioni, limiti ed errori concettuali plausibili quando pertinenti.',
+    'Approfondita: costruisci una comprensione profonda dei nuclei didatticamente decisivi, rendendone espliciti motivazioni o meccanismi, passaggi intermedi, collegamenti, applicazioni, condizioni e limiti quando pertinenti.',
 };
 
 /**
@@ -707,7 +699,8 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- usa titolo, difficoltà, concetti, obiettivi, indicazioni del docente e contesto UDA per individuare argomento, livello e confini;',
     '- gerarchizza e integra concetti e obiettivi: se si sovrappongono, trattali insieme; non trasformarli in una checklist e non citarli meccanicamente;',
     '- introduci ogni passaggio quando lo studente possiede già le informazioni necessarie per capirlo; spiega i termini prima di usarli e motiva i passaggi importanti;',
-    '- usa esempi, casi o confronti quando rendono concreto un passaggio reale e spiega che cosa mostrano; rendi coerenti e verificabili dati, calcoli e condizioni.',
+    '- usa esempi, casi o confronti quando rendono concreto un passaggio reale: chiarisci perché scegli quel metodo o confronto, i passaggi significativi, cosa mostra il risultato e le condizioni in cui vale; rendi coerenti e verificabili dati e calcoli.',
+    '- integra gli esempi nella spiegazione senza quote, sequenze o sezioni obbligatorie: adatta la forma alla materia. Preserva spiegazioni, dettagli, nessi e condizioni necessari alla profondità richiesta; non comprimerli per fare spazio agli esempi.',
     '',
     ...(request.depth === 'in_depth'
       ? [
@@ -715,7 +708,7 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
           '- non fermarti a definizioni, classificazioni o descrizioni: sviluppa i nessi che spiegano perché, come e in quali condizioni i nuclei centrali funzionano o assumono significato;',
           '- non dare per impliciti i passaggi che uno studente delle superiori deve comprendere per seguire il ragionamento; introduci i concetti di supporto realmente necessari senza allargare l’argomento;',
           '- rendi osservabili le idee astratte attraverso esempi, casi, confronti, procedimenti o applicazioni coerenti con la disciplina e spiega che cosa mostrano;',
-          '- considera conclusa la lezione soltanto quando lo studente dispone degli elementi per spiegare i nessi essenziali, usare o interpretare quanto appreso in un caso pertinente e riconoscere gli errori concettuali più plausibili;',
+          '- considera conclusa la lezione soltanto quando lo studente dispone degli elementi per spiegare i nessi essenziali, usare o interpretare quanto appreso in un caso pertinente e interpretare condizioni e limiti rilevanti;',
           '- approfondisci dove cresce la comprensione; evita di ottenere lunghezza con ripetizioni, elenchi decorativi o divagazioni.',
           '',
         ]
@@ -743,7 +736,7 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     'Stile e compatibilità SchoolForge:',
     '- scrivi con tono preciso, naturale e adatto alle superiori; non infantilizzare e non assumere il tono di un manuale universitario;',
     '- evita testo riempitivo, ripetizioni, introduzioni generiche, anticipazioni dell’indice, metadiscorso, sezioni artificiali e conclusioni rituali;',
-    '- non includere autoverifiche, batterie di domande, mappe concettuali, checklist finali o riepiloghi obbligatori;',
+    '- non includere esercizi da svolgere, autoverifiche, batterie di domande, sezioni sugli errori comuni, mappe concettuali, checklist finali o riepiloghi obbligatori;',
     '- non ripetere titolo, sottotitolo, UDA, metadati o obiettivi; crea sezioni H2 o inferiori soltanto per reali cambi concettuali;',
     '- usa Markdown comune, liste, tabelle, blocchi di codice e, con moderazione, i callout > [!DEFINITION], > [!EXAMPLE], > [!IMPORTANT], > [!WARNING], > [!SOLUTION];',
     '- non usare HTML, front matter, separatori orizzontali, Mermaid o LaTeX; scrivi formule in testo piano o codice Markdown con simboli Unicode quando utili.',
@@ -799,12 +792,12 @@ export function buildLessonReviewPrompt(request: LessonReviewRequest): BuiltProm
     'Restituisci esclusivamente lo schema JSON richiesto. Non citare prompt, revisione o IA.',
   ].join('\n');
   const contract = [
-    'Rivedi e riscrivi integralmente la BOZZA mantenendo lo stesso perimetro didattico.',
+    'Rivedi la BOZZA e restituisci il corpo completo, correggendo soltanto difetti individuati e mantenendo lo stesso perimetro didattico. Non riscrivere le parti valide per uniformità stilistica.',
     'La priorità assoluta è aiutare lo studente a capire: correggi errori disciplinari, semplificazioni false, salti logici, prerequisiti mancanti, esempi deboli, misconcezioni, formule/unità/codice incoerenti e densità mal distribuita.',
-    'Costruisci un modello mentale progressivo: spiega perché, condizioni e limiti; usa esempi solo se mostrano davvero un meccanismo; elimina riempitivi e ripetizioni.',
-    'Non introdurre autoverifiche, batterie di domande, mappe, metadiscorso, HTML, front matter, Mermaid o nuove informazioni estranee al perimetro.',
+    'Costruisci un modello mentale progressivo: spiega perché, condizioni e limiti; usa esempi che chiariscano scelte, passaggi e significato del risultato nella disciplina; elimina soltanto riempitivi e ripetizioni prive di valore. Conserva tutti i dettagli validi, condizioni, passaggi ed esempi utili: maggiore brevità non è un miglioramento e non giustifica compressione.',
+    'Non introdurre esercizi da svolgere, autoverifiche, batterie di domande, sezioni sugli errori comuni, mappe, metadiscorso, HTML, front matter, Mermaid o nuove informazioni estranee al perimetro.',
     'Scrivi formule ed equazioni in testo piano leggibile con simboli Unicode, per esempio ρ = m / V e 100 g / 20 cm³ = 5 g/cm³. Non usare LaTeX: niente delimitatori matematici $, $$, \\(, \\[ o comandi come \\frac, \\rho, \\text. Mantieni formule, passaggi e unità corretti senza eliminare dettagli.',
-    'Rispetta il livello scolastico e la profondità richiesta. Conserva i passaggi validi della bozza quando sono già ottimali.',
+    'Rispetta il livello scolastico e la profondità richiesta. Conserva i passaggi validi della bozza anche se migliorabili nello stile; integra soltanto spiegazioni necessarie a risolvere un difetto didattico concreto, senza quote editoriali.',
     'reviewOutcome deve essere improved se hai corretto o migliorato il testo, unchanged solo se la bozza era già ottimale.',
     'issueCodes contiene soltanto codici fra: disciplinary_error, false_simplification, logical_gap, missing_prerequisite, weak_example, misconception_risk, structure, verbosity. Può essere vuoto.',
   ].join('\n\n');
@@ -950,7 +943,8 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '  CORPO_LEZIONE, dopo il quale l’immagine va collocata. Sceglilo esclusivamente',
     '  fra i valori ammessi dallo schema e copialo senza marcatori Markdown (`#`);',
     `  non inventarne uno nuovo e non riformularlo. Massimo ${MAX_VISUAL_ANCHOR_HEADING_CHARS} caratteri.`,
-    '- `caption` — la didascalia visibile. Deve aggiungere informazione, non ripetere',
+    '- scegli la sezione che spiega davvero il soggetto e la relazione visualizzata, leggendo il testo sotto il titolo: una parola in comune nel titolo non basta a giustificare l’ancoraggio.',
+    '- `caption` — indica cosa osservare nella figura e come chiarisce il concetto della sezione; resta fedele al subject, senza attribuire dettagli visivi non richiesti. Non ripetere',
     `  il titolo della sezione. Massimo ${MAX_VISUAL_CAPTION_CHARS} caratteri.`,
     '- `altText` — la descrizione per chi non vede l’immagine. Deve permettere di',
     '  ricavare la STESSA informazione didattica guardando solo il testo: non è una',
@@ -960,6 +954,7 @@ export function buildVisualProposalPrompt(request: VisualProposalRequest): Built
     '',
     'Vincoli sul contenuto dell’immagine proposta:',
     '- una sola immagine, mai una serie;',
+    '- preferisci spostare spiegazioni e frasi lunghe nella didascalia; usa dentro l’immagine solo etichette autorizzate indispensabili a distinguere gli elementi.',
     '- il TESTO dentro l’immagine va ridotto al minimo indispensabile: poche',
     '  etichette brevi, e ognuna deve corrispondere a qualcosa che sta nella lezione;',
     '- NESSUN concetto assente dalla lezione, nemmeno se corretto in astratto:',
@@ -1139,13 +1134,15 @@ export function buildVisualPlanProposalPrompt(request: VisualPlanProposalRequest
     '  riformularlo. L’elenco NON è deduplicato: due voci con lo stesso testo sono due',
     '  sezioni distinte e devi scegliere l’indice di quella corretta per il contesto',
     '  che stai illustrando.',
-    '- `caption` — la didascalia visibile. Deve aggiungere informazione, non ripetere',
+    '- scegli la sezione che spiega davvero il soggetto e la relazione visualizzata, leggendo il testo sotto il titolo: una parola in comune nel titolo non basta a giustificare l’ancoraggio.',
+    '- `caption` — indica cosa osservare nella figura e come chiarisce il concetto della sezione; resta fedele al subject, senza attribuire dettagli visivi non richiesti. Non ripetere',
     `  il titolo della sezione. Massimo ${MAX_VISUAL_CAPTION_CHARS} caratteri.`,
     '- `altText` — la descrizione per chi non vede l’immagine. Deve permettere di',
     '  ricavare la STESSA informazione didattica guardando solo il testo: non è una',
     `  ripetizione della didascalia. Massimo ${MAX_VISUAL_ALT_TEXT_CHARS} caratteri.`,
     '',
     'Vincoli sul contenuto di ogni immagine proposta:',
+    '- preferisci spostare spiegazioni e frasi lunghe nella didascalia; usa dentro l’immagine solo etichette autorizzate indispensabili a distinguere gli elementi.',
     '- il TESTO dentro l’immagine va ridotto al minimo indispensabile: poche',
     '  etichette brevi, e ognuna deve corrispondere a qualcosa che sta nella lezione;',
     '- NESSUN concetto assente dalla lezione, nemmeno se corretto in astratto;',

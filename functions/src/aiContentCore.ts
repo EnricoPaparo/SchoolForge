@@ -65,7 +65,7 @@ export class AiContentError extends Error {
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
   pool_review: 'pool_review-v3',
-  concept_map_review: 'concept_map_review-v4',
+  concept_map_review: 'concept_map_review-v5',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_GUIDANCE_CHARS = 500;
@@ -514,7 +514,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v3',
+      promptContractVersion: 'lesson-review-v4',
       kind: request.kind,
       modelProfile: request.modelProfile,
       teacherGuidance: request.teacherGuidance,
@@ -535,7 +535,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   if (request.kind === 'concept_map') {
     return JSON.stringify({
       kind: 'concept_map',
-      promptContractVersion: 'concept-map-specialist-v1',
+      promptContractVersion: 'concept-map-relations-v1',
       modelProfile: request.modelProfile,
       lessonBody: request.lessonBody,
     });
@@ -545,6 +545,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   if (request.kind === 'visual_proposal') {
     return JSON.stringify({
       kind: 'visual_proposal',
+      promptContractVersion: 'visual-proposal-01-v8',
       modelProfile: request.modelProfile,
       titolo: request.titolo,
       sottotitolo: request.sottotitolo,
@@ -575,6 +576,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   if (request.kind === 'visual_plan_proposal') {
     return JSON.stringify({
       kind: 'visual_plan_proposal',
+      promptContractVersion: 'visual-plan-proposal-02-v3',
       modelProfile: request.modelProfile,
       titolo: request.titolo,
       sottotitolo: request.sottotitolo,
@@ -626,8 +628,8 @@ export function canonicalRequest(request: AiContentRequest): string {
           kind: 'lesson',
           promptContractVersion:
             request.modelProfile === 'economy'
-              ? 'lesson-depth-specialist-phase2-v1'
-              : 'lesson-specialist-phase2-v1',
+              ? 'lesson-depth-explanations-v1'
+              : 'lesson-explanations-v1',
           modelProfile: request.modelProfile,
           depth: request.depth,
           titolo: request.titolo,
