@@ -17,6 +17,10 @@ import type { Functions } from 'firebase/functions';
 
 /** Profilo astratto condiviso dalle UI di lezione e mappa concettuale. */
 export type PoolModelProfile = 'economy' | 'quality';
+/** Only in-memory callable metadata; never saved with lesson/pool content. */
+export interface AiReviewFeedback {
+  changes: string[];
+}
 
 export const DEFAULT_POOL_MODEL_PROFILE: PoolModelProfile = 'economy';
 
@@ -125,6 +129,7 @@ export interface AiPoolReviewRequest extends Omit<AiPoolContentRequest, 'kind'> 
 }
 export interface AiPoolReviewResult extends Omit<AiPoolGenerateResult, 'kind' | 'output'> {
   kind: 'pool_review';
+  reviewFeedback?: AiReviewFeedback;
   output: AiPoolProposalOutput & {
     reviewOutcome: 'improved' | 'unchanged';
     issueCodes: string[];
@@ -440,6 +445,7 @@ export interface AiLessonReviewGenerateResult extends Omit<
   'kind' | 'output'
 > {
   kind: 'lesson_review';
+  reviewFeedback?: AiReviewFeedback;
   output: { body: string; reviewOutcome: 'improved' | 'unchanged'; issueCodes: string[] };
 }
 

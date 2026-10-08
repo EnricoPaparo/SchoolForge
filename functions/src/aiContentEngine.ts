@@ -1,3 +1,4 @@
+import { splitReviewFeedback, type AiReviewFeedback } from './aiReviewFeedback.js';
 import { validatePoolReview, validateMapReview } from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — motore **puro** della generazione contenuti. Nessun Firestore/rete
@@ -200,6 +201,8 @@ export interface AiContentPreviewResult {
 }
 
 export interface AiContentGenerateResult {
+  /** Ephemeral only: excluded from stored output and replay. */
+  reviewFeedback?: AiReviewFeedback;
   status: 'completed';
   kind: ContentKind;
   modelProfile: string;
@@ -519,12 +522,17 @@ export async function generateContent(
   // 12. validazione output (fail-closed, rifiuto integrale). Costo già fatturato →
   // contabilizzato (conservativo se priorBillingRisk), nessun output completed.
   let output: unknown;
+  const isReview = ['lesson_review', 'pool_review', 'concept_map_review'].includes(request.kind);
+  const extracted = isReview
+    ? splitReviewFeedback(providerOutcome.output)
+    : { output: providerOutcome.output };
+  const providerOutput = extracted.output;
   try {
     output =
       request.kind === 'pool_review'
-        ? validatePoolReview(providerOutcome.output, request)
+        ? validatePoolReview(providerOutput, request)
         : request.kind === 'concept_map_review'
-          ? validateMapReview(providerOutcome.output, request)
+          ? validateMapReview(providerOutput, request)
           : request.kind === 'pool'
             ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
             : request.kind === 'concept_map'
@@ -577,7 +585,7 @@ export async function generateContent(
                       ),
                     }
                   : request.kind === 'lesson_review'
-                    ? validateLessonReviewProposal(providerOutcome.output)
+                    ? validateLessonReviewProposal(providerOutput)
                     : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({
@@ -641,5 +649,16 @@ export async function generateContent(
     output,
     actualCostMicroUsd: actualCost,
     replayed: false,
+    ...(extracted.feedback
+      ? {
+          reviewFeedback: {
+            changes:
+              (output as { reviewOutcome?: string; sourceIssue?: boolean }).reviewOutcome ===
+                'unchanged' || (output as { sourceIssue?: boolean }).sourceIssue
+                ? []
+                : extracted.feedback.changes,
+          },
+        }
+      : {}),
   };
 }

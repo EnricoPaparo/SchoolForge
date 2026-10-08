@@ -1,3 +1,4 @@
+import { REVIEW_CHANGES_SCHEMA } from './aiReviewFeedback.js';
 import {
   buildDidacticReviewPrompt,
   POOL_REVIEW_ISSUE_CODES,
@@ -348,9 +349,10 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
 export const LESSON_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['body', 'reviewOutcome', 'issueCodes'],
+  required: ['body', 'reviewOutcome', 'issueCodes', 'reviewChanges'],
   properties: {
     body: { type: 'string' },
+    reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: { type: 'string', enum: ['improved', 'unchanged'] },
     issueCodes: {
       type: 'array',
@@ -706,8 +708,15 @@ const reviewCodesSchema = (allowed: readonly string[]) => ({
 export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['reviewOutcome', 'issueCodes', 'failedOrdinals', 'replacementQuestions'],
+  required: [
+    'reviewOutcome',
+    'issueCodes',
+    'failedOrdinals',
+    'replacementQuestions',
+    'reviewChanges',
+  ],
   properties: {
+    reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: reviewOutcomeSchema,
     issueCodes: reviewCodesSchema(POOL_REVIEW_ISSUE_CODES),
     failedOrdinals: {
@@ -721,9 +730,17 @@ export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
 export const MAP_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['summaryMarkdown', 'diagram', 'reviewOutcome', 'issueCodes', 'sourceIssue'],
+  required: [
+    'summaryMarkdown',
+    'diagram',
+    'reviewOutcome',
+    'issueCodes',
+    'sourceIssue',
+    'reviewChanges',
+  ],
   properties: {
     ...(CONCEPT_MAP_OUTPUT_SCHEMA.properties as Record<string, unknown>),
+    reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: reviewOutcomeSchema,
     issueCodes: reviewCodesSchema(MAP_REVIEW_ISSUE_CODES),
     sourceIssue: { type: 'boolean' },

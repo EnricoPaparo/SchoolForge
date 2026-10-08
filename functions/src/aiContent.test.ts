@@ -63,6 +63,7 @@ import {
 } from './aiCorrectionCost.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import type { OpenAiStructuredRequest, OpenAiTransport } from './openAiGrader.js';
+import { composeConceptMapMarkdown } from './aiContentConceptMap.js';
 
 const REQ = '11111111-2222-3333-4444-555555555555';
 
@@ -926,6 +927,89 @@ describe('previewContent (§3 no secret/provider/reserve/write)', () => {
 });
 
 describe('lesson reviewer policy and accounting', () => {
+  it.each(['pool_review', 'concept_map_review'] as const)(
+    'strips feedback for %s before closed validation and storage',
+    async (kind) => {
+      const request = validateAiContentRequest(
+        kind === 'pool_review'
+          ? {
+              ...poolPayload(),
+              kind,
+              candidateQuestions: [
+                { order: 0, tipo: 'aperta', testo: 'Spiega TCP', difficolta: 3, soluzione: 'ok' },
+                {
+                  order: 1,
+                  tipo: 'chiusa_singola',
+                  testo: 'Quale?',
+                  difficolta: 2,
+                  opzioni: ['TCP', 'UDP'],
+                  soluzioneIndici: [0],
+                },
+              ],
+            }
+          : {
+              kind,
+              requestId: REQ,
+              modelProfile: 'quality',
+              lessonBody: 'TCP trasporta byte.',
+              candidateMarkdown: composeConceptMapMarkdown({
+                summaryMarkdown: 'TCP trasporta byte.',
+                diagram: 'TCP -> trasporta -> byte',
+              }),
+            },
+      );
+      const output =
+        kind === 'pool_review'
+          ? {
+              reviewOutcome: 'unchanged',
+              issueCodes: [],
+              failedOrdinals: [],
+              replacementQuestions: [],
+            }
+          : {
+              reviewOutcome: 'unchanged',
+              issueCodes: [],
+              sourceIssue: false,
+              summaryMarkdown: 'TCP trasporta byte.',
+              diagram: 'TCP -> trasporta -> byte',
+            };
+      const finalizeRun = vi.fn(
+        async (_params: Parameters<AiContentPorts['finalizeRun']>[0]) => 'finalized' as const,
+      );
+      const callProvider = vi.fn(async () => ({
+        ...okOutcome,
+        output: { ...output, reviewChanges: ['Modifica inventata'] },
+      }));
+      const result = await generateContent(
+        request,
+        ctx,
+        makePorts({
+          callProvider,
+          finalizeRun,
+          loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
+        }),
+      );
+      expect(result.reviewFeedback).toEqual({ changes: [] });
+      expect(JSON.stringify(finalizeRun.mock.calls)).not.toContain('reviewChanges');
+      expect(JSON.stringify(finalizeRun.mock.calls)).not.toContain('reviewFeedback');
+      const saved = {
+        ...SAMPLE_RUN,
+        status: 'completed',
+        output: result.output,
+        actualCostMicroUsd: 42,
+      } as StoredAiContentRun;
+      const replay = await generateContent(
+        request,
+        ctx,
+        makePorts({
+          reserveRunAndBudget: async () => ({ kind: 'replay_completed', run: saved }),
+          callProvider,
+        }),
+      );
+      expect(replay.reviewFeedback).toBeUndefined();
+      expect(callProvider).toHaveBeenCalledOnce();
+    },
+  );
   function reviewRequest(profile: 'economy' | 'quality') {
     const raw = {
       ...lessonPayload(),
@@ -937,6 +1021,41 @@ describe('lesson reviewer policy and accounting', () => {
     delete (raw as Record<string, unknown>).hasCurrentContent;
     return validateAiContentRequest(raw);
   }
+  it.each([['Corretto il risultato.'], null, ['x'.repeat(241)]])(
+    'returns accessory metadata once without persisting it: %s',
+    async (reviewChanges) => {
+      const finalizeRun = vi.fn(
+        async (_params: Parameters<AiContentPorts['finalizeRun']>[0]) => 'finalized' as const,
+      );
+      const callProvider = vi.fn(async () => ({
+        ...okOutcome,
+        output: {
+          body: '## TCP\n\nTCP trasporta un flusso ordinato di byte.',
+          reviewOutcome: 'improved',
+          issueCodes: ['disciplinary_error'],
+          reviewChanges,
+        },
+      }));
+      const result = await generateContent(
+        reviewRequest('quality'),
+        ctx,
+        makePorts({
+          loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
+          callProvider,
+          finalizeRun,
+        }),
+      );
+      expect(callProvider).toHaveBeenCalledOnce();
+      expect(finalizeRun.mock.calls[0]?.[0]).not.toHaveProperty('reviewFeedback');
+      expect(JSON.stringify(finalizeRun.mock.calls)).not.toContain('reviewChanges');
+      expect(result.output).not.toHaveProperty('reviewChanges');
+      expect(result.reviewFeedback).toEqual(
+        Array.isArray(reviewChanges) && reviewChanges[0]!.length <= 240
+          ? { changes: reviewChanges }
+          : undefined,
+      );
+    },
+  );
   it('preview and reservation use Sol prices while preserving the selected profile', async () => {
     for (const profile of ['economy', 'quality'] as const) {
       const request = reviewRequest(profile);

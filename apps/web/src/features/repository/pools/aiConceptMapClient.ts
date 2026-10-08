@@ -1,7 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
 import { isValidConceptMap } from '../programs/conceptMapContract.js';
-import type { PoolModelProfile } from './aiContentClient.js';
+import type { PoolModelProfile, AiReviewFeedback } from './aiContentClient.js';
 
 /**
  * CONCEPT-MAP-03 — client tipizzato delle **stesse** callable
@@ -38,6 +38,7 @@ export interface AiConceptMapReviewResult extends Omit<
   'kind' | 'output'
 > {
   kind: 'concept_map_review';
+  reviewFeedback?: AiReviewFeedback;
   output: AiConceptMapOutput & {
     reviewOutcome: 'improved' | 'unchanged';
     issueCodes: string[];

@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { validateLessonReviewProposal } from './aiContentValidation.js';
+import { splitReviewFeedback } from './aiReviewFeedback.js';
 import {
   buildLessonReviewPlan,
   LESSON_REVIEW_PROFILES,
@@ -135,7 +136,7 @@ export async function executeLessonReviewPlan(
         `${sample.id}: chiamata fallita (phase=${outcome.phase}, reason=${reason ?? 'none'}).`,
       );
     }
-    const reviewed = validateLessonReviewProposal(outcome.output);
+    const reviewed = validateLessonReviewProposal(splitReviewFeedback(outcome.output).output);
     const record = {
       id: sample.id,
       manifestHash: plan.manifestHash,

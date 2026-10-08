@@ -39,6 +39,16 @@ function checkpoint(nowMs = 1_000) {
 
 describe('complete lesson session checkpoint', () => {
   beforeEach(() => window.sessionStorage.clear());
+  it('whitelists checkpoint fields so transient summaries cannot reach browser storage', () => {
+    const value = { ...checkpoint(Date.now()), reviewReports: { map: 'PRIVATE REPORT' } };
+    Object.assign(value.options, { reviewFeedback: { changes: ['PRIVATE REPORT'] } });
+    writeCompleteLessonCheckpoint(value);
+    const raw = window.sessionStorage.getItem(completeLessonCheckpointKey(identity));
+    expect(raw).not.toContain('PRIVATE REPORT');
+    expect(raw).not.toContain('reviewFeedback');
+    expect(raw).not.toContain('reviewReports');
+    expect(readCompleteLessonCheckpoint(identity, body)).not.toBeNull();
+  });
 
   it('ripristina soltanto la stessa lezione e lo stesso corpo entro il TTL', () => {
     const value = checkpoint();

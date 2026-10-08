@@ -1,3 +1,4 @@
+import type { CompleteReviewReport } from './AiCompleteLessonGenerationDialog.js';
 import { useMemo, useRef } from 'react';
 import { reviewMapCandidate, reviewPoolCandidate } from '../repository/pools/aiArtifactReview.js';
 import { functions } from '../../lib/firebase.js';
@@ -119,6 +120,10 @@ export function TotalLessonGenerationDialog({
 
   const clearedRef = useRef(Boolean(restoredCheckpoint));
   const bodyPersistedRef = useRef(Boolean(restoredCheckpoint));
+  const reviewReportsRef = useRef<Partial<Record<'map' | 'pool', CompleteReviewReport>>>({
+    ...(restoredCheckpoint?.mapCompleted ? { map: { status: 'restored' as const } } : {}),
+    ...(restoredCheckpoint?.poolCompleted ? { pool: { status: 'restored' as const } } : {}),
+  });
   const mapCompletedRef = useRef(restoredCheckpoint?.mapCompleted ?? false);
   const poolCompletedRef = useRef(restoredCheckpoint?.poolCompleted ?? false);
   const mapRequestIdRef = useRef(restoredCheckpoint?.mapRequestId ?? newRequestId());
@@ -191,6 +196,7 @@ export function TotalLessonGenerationDialog({
     poolCompletedRef.current = false;
     mapRequestIdRef.current = newRequestId();
     poolRequestIdRef.current = newRequestId();
+    reviewReportsRef.current = {};
     mapReviewRequestIdRef.current = newRequestId();
     poolReviewRequestIdRef.current = newRequestId();
     mapCostRef.current = 0;
@@ -260,6 +266,15 @@ export function TotalLessonGenerationDialog({
                 generated,
                 mapReviewRequestIdRef.current,
               );
+        const reviewReport = reviewed
+          ? {
+              status: reviewed.output.reviewOutcome,
+              feedback: reviewed.reviewFeedback,
+              replayed: reviewed.replayed,
+            }
+          : { status: 'disabled' as const };
+        reviewReportsRef.current.map = reviewReport;
+        onProgress({ stage: 'map', review: reviewReport });
         const validated = validateConceptMapResult(
           reviewed ? { ...reviewed, kind: 'concept_map' } : generated,
         );
@@ -303,6 +318,15 @@ export function TotalLessonGenerationDialog({
                 generated,
                 poolReviewRequestIdRef.current,
               );
+        const reviewReport = reviewed
+          ? {
+              status: reviewed.output.reviewOutcome,
+              feedback: reviewed.reviewFeedback,
+              replayed: reviewed.replayed,
+            }
+          : { status: 'disabled' as const };
+        reviewReportsRef.current.pool = reviewReport;
+        onProgress({ stage: 'pool', review: reviewReport });
         const mapped = buildPoolFromProposal(
           null,
           proposalToLocalQuestions(reviewed?.output ?? generated.output),
@@ -420,6 +444,7 @@ export function TotalLessonGenerationDialog({
     if (visualResult.ok) clearCompleteLessonCheckpoint(identity);
 
     return {
+      reviewReports: reviewReportsRef.current,
       mapGenerated: mapCompletedRef.current,
       questionsGenerated:
         options.counts.aperta + options.counts.chiusa_singola + options.counts.chiusa_multipla,
