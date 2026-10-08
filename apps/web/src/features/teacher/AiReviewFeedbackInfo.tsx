@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import styles from './AiAdvancedReviewControl.module.css';
 
@@ -13,6 +13,11 @@ export function AiReviewFeedbackInfo({
   replayed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  function close() {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
   const id = useId();
   const changes = Array.isArray(feedback?.changes)
     ? feedback.changes
@@ -28,11 +33,12 @@ export function AiReviewFeedbackInfo({
       onKeyDown={(event) => {
         if (event.key === 'Escape' && open) {
           event.stopPropagation();
-          setOpen(false);
+          close();
         }
       }}
     >
       <button
+        ref={triggerRef}
         type="button"
         className={styles.infoButton}
         aria-label="Resoconto del revisore"
@@ -61,7 +67,7 @@ export function AiReviewFeedbackInfo({
             </p>
           )}
           <p className={styles.description}>Disponibile finché questa finestra resta aperta.</p>
-          <button type="button" onClick={() => setOpen(false)}>
+          <button type="button" onClick={close}>
             Chiudi resoconto
           </button>
         </div>

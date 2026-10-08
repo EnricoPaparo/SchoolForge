@@ -15,13 +15,21 @@ describe('transient reviewer information', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resoconto del revisore' }));
     expect(screen.getByText('Corretto <script> il risultato.')).toBeTruthy();
     expect(view.container.querySelector('script')).toBeNull();
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Resoconto del revisore' }), {
+    const trigger = screen.getByRole('button', { name: 'Resoconto del revisore' });
+    const closeButton = screen.getByRole('button', { name: 'Chiudi resoconto' });
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(closeButton, {
       key: 'Escape',
     });
     expect(screen.queryByRole('note')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
     fireEvent.click(screen.getByRole('button', { name: 'Resoconto del revisore' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Chiudi resoconto' }));
+    const reopenedClose = screen.getByRole('button', { name: 'Chiudi resoconto' });
+    reopenedClose.focus();
+    fireEvent.click(reopenedClose);
     expect(screen.queryByRole('note')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
     view.unmount();
     render(<AiReviewFeedbackInfo status="improved" />);
     fireEvent.click(screen.getByRole('button', { name: 'Resoconto del revisore' }));
