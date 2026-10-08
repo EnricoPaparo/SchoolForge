@@ -925,6 +925,103 @@ describe('previewContent (§3 no secret/provider/reserve/write)', () => {
   });
 });
 
+describe('lesson reviewer policy and accounting', () => {
+  function reviewRequest(profile: 'economy' | 'quality') {
+    const raw = {
+      ...lessonPayload(),
+      kind: 'lesson_review',
+      modelProfile: profile,
+      candidateBody: '## TCP\n\nTCP trasporta un flusso ordinato di byte.',
+    };
+    delete (raw as Record<string, unknown>).currentBody;
+    delete (raw as Record<string, unknown>).hasCurrentContent;
+    return validateAiContentRequest(raw);
+  }
+  it('preview and reservation use Sol prices while preserving the selected profile', async () => {
+    for (const profile of ['economy', 'quality'] as const) {
+      const request = reviewRequest(profile);
+      const config = { ...CONFIG, maxOperationCostMicroUsd: 2_000_000 };
+      let reserved: Parameters<AiContentPorts['reserveRunAndBudget']>[0] | undefined;
+      const callProvider = vi.fn(async () => ({
+        ...okOutcome,
+        output: {
+          body: '## TCP\n\nTCP trasporta un flusso ordinato di byte.',
+          reviewOutcome: 'unchanged',
+          issueCodes: [],
+        },
+      }));
+      const ports = makePorts({
+        loadRuntimeConfig: async () => config,
+        callProvider,
+        reserveRunAndBudget: async (params) => {
+          reserved = params;
+          return { kind: 'reserved', reservedMicroUsd: params.reserveMicroUsd };
+        },
+      });
+      const preview = await previewContent(request, ctx, ports);
+      const generated = await generateContent(request, ctx, ports);
+      expect(preview.modelProfile).toBe(profile);
+      expect(generated.modelProfile).toBe(profile);
+      expect(reserved!.run).toMatchObject({
+        modelProfile: profile,
+        model: 'gpt-6.1-sol',
+        priceListVersion: 'v12-2026-09-29-gpt61-sol-standard',
+      });
+      expect(reserved!.reserveMicroUsd).toBe(preview.reservationCostMicroUsd);
+      expect(reserved!.reserveMicroUsd).toBe(
+        estimateContentCost(request, reserved!.run.model, reserved!.run.priceListVersion, 2)
+          .reservationCostMicroUsd,
+      );
+      expect(callProvider).toHaveBeenCalledWith({ request, model: 'gpt-6.1-sol' });
+    }
+  });
+  it('fails before the provider if the stronger review exceeds the operation budget', async () => {
+    const callProvider = vi.fn();
+    const reserveRunAndBudget = vi.fn();
+    const ports = makePorts({
+      callProvider: callProvider as never,
+      reserveRunAndBudget: reserveRunAndBudget as never,
+      loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 1 }),
+    });
+    await expect(previewContent(reviewRequest('economy'), ctx, ports)).rejects.toMatchObject({
+      code: 'operation_budget_exceeded',
+    });
+    await expect(generateContent(reviewRequest('economy'), ctx, ports)).rejects.toMatchObject({
+      code: 'operation_budget_exceeded',
+    });
+    expect(callProvider).not.toHaveBeenCalled();
+    expect(reserveRunAndBudget).not.toHaveBeenCalled();
+  });
+  it('sends the new policy hash to idempotency and fails closed on an old run conflict', async () => {
+    const request = reviewRequest('economy');
+    const previous = JSON.parse(canonicalRequest(request));
+    delete previous.reviewPolicy;
+    const previousHash = createHash('sha256').update(JSON.stringify(previous)).digest('hex');
+    const callProvider = vi.fn();
+    const reserveRunAndBudget = vi.fn(
+      async (
+        params: Parameters<AiContentPorts['reserveRunAndBudget']>[0],
+      ): Promise<ReserveOutcome> => {
+        expect(params.inputHash).not.toBe(previousHash);
+        return { kind: 'conflict' };
+      },
+    );
+    await expect(
+      generateContent(
+        request,
+        ctx,
+        makePorts({
+          loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
+          callProvider: callProvider as never,
+          reserveRunAndBudget,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'run_conflict' });
+    expect(callProvider).not.toHaveBeenCalled();
+    expect(reserveRunAndBudget).toHaveBeenCalledOnce();
+  });
+});
+
 describe('generateContent', () => {
   it('happy path order: reserve → markPending → provider → finalize', async () => {
     const calls: string[] = [];
@@ -1570,7 +1667,7 @@ describe('lesson pedagogical contract', () => {
     expect(built.user).toMatch(/caso è ipotetico/);
     expect(built.user).toMatch(/dipende da condizioni o ammette eccezioni/);
     expect(built.user).toMatch(/non deve insegnare un meccanismo falso/);
-    expect(built.user).toMatch(/reciprocamente coerenti/);
+    expect(built.user).toMatch(/premesse, meccanismo e conclusione/);
   });
   it('produces a proportional lesson body compatible with the current renderer', () => {
     expect(built.user).toMatch(/Restituisci soltanto il corpo Markdown finale/);
@@ -2302,8 +2399,8 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
   });
 
   it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v1');
-    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-explanations-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v2');
+    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-explanations-v2');
   });
 
   it('rimuove autoverifiche e mantiene un controllo finale breve', () => {

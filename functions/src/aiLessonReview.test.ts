@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   canonicalRequest,
+  computeInputHash,
   resolveContentModelForRequest,
   validateAiContentRequest,
 } from './aiContentCore.js';
@@ -34,16 +36,16 @@ describe('lesson advanced review', () => {
   it('has a closed request and dedicated prompt identity', () => {
     const request = validateAiContentRequest(raw);
     expect(request.kind).toBe('lesson_review');
-    expect(canonicalRequest(request)).toContain('lesson-review-v4');
+    expect(canonicalRequest(request)).toContain('lesson-review-v5');
     const resolved = resolveContentModelForRequest(request);
-    expect(resolved.model).toBe('gpt-5.6-luna');
+    expect(resolved.model).toBe('gpt-6.1-sol');
     const payload = buildContentStructuredRequest(request, resolved.model);
-    expect(payload.reasoning).toBeUndefined();
-    expect(payload.text.verbosity).toBeUndefined();
+    expect(payload.reasoning).toEqual({ effort: 'high' });
+    expect(payload.text.verbosity).toBe('high');
     expect(JSON.stringify(payload.text.format.schema)).toContain('reviewOutcome');
   });
 
-  it('keeps Quality lesson generation on 6.1 Sol but pins both reviewers to 5.6 Luna', () => {
+  it('keeps Quality lesson generation on 6.1 Sol but uses 6.1 Sol for both reviewers', () => {
     const lessonInput: Record<string, unknown> = {
       ...raw,
       kind: 'lesson',
@@ -63,8 +65,8 @@ describe('lesson advanced review', () => {
       resolveContentModelForRequest(economyReview),
     );
     expect(resolveContentModelForRequest(qualityReview)).toEqual({
-      model: 'gpt-5.6-luna',
-      priceListVersion: 'v8-2026-09-26-luna-cache-standard',
+      model: 'gpt-6.1-sol',
+      priceListVersion: 'v12-2026-09-29-gpt61-sol-standard',
     });
     expect(canonicalRequest(qualityReview)).not.toBe(canonicalRequest(economyReview));
   });
@@ -80,6 +82,51 @@ describe('lesson advanced review', () => {
     expect(buildContentStructuredRequest(qualityReview, model)).toEqual(
       buildContentStructuredRequest(economyReview, model),
     );
+  });
+
+  it('keeps depth caps and uses native Sol reasoning independently of profile', () => {
+    for (const profile of ['economy', 'quality']) {
+      for (const [depth, cap, effort, verbosity] of [
+        ['synthetic', 8_000, 'medium', 'low'],
+        ['complete', 14_000, 'medium', 'medium'],
+        ['in_depth', 18_000, 'high', 'high'],
+      ] as const) {
+        const request = validateAiContentRequest({ ...raw, modelProfile: profile, depth });
+        const payload = buildContentStructuredRequest(
+          request,
+          resolveContentModelForRequest(request).model,
+        );
+        expect(payload.max_output_tokens).toBe(cap);
+        expect(payload.reasoning).toEqual({ effort });
+        expect(payload.text.verbosity).toBe(verbosity);
+      }
+    }
+  });
+
+  it('separates defective examples from preservation of a valid draft in the real payload', () => {
+    const request = validateAiContentRequest(raw);
+    const payload = buildContentStructuredRequest(
+      request,
+      resolveContentModelForRequest(request).model,
+    );
+    const serialized = JSON.stringify(payload);
+    expect(serialized).toContain(
+      'rispetto ai principi della disciplina, non soltanto al resto della bozza',
+    );
+    expect(serialized).toContain('body identico alla BOZZA');
+    expect(serialized).toContain('mai per una preferenza stilistica');
+    expect(serialized).not.toContain('unchanged solo se la bozza era già ottimale');
+    expect(serialized).toContain(raw.candidateBody.replace(/\n/g, '\\n'));
+  });
+
+  it('hashes resolved review policy so a previous Luna run cannot replay under Sol', () => {
+    const request = validateAiContentRequest(raw);
+    const current = JSON.parse(canonicalRequest(request));
+    expect(current.reviewPolicy).toEqual(resolveContentModelForRequest(request));
+    const previous = { ...current };
+    delete previous.reviewPolicy;
+    const previousHash = createHash('sha256').update(JSON.stringify(previous)).digest('hex');
+    expect(computeInputHash(request)).not.toBe(previousHash);
   });
 
   it('validates the revised body and closed issue codes', () => {

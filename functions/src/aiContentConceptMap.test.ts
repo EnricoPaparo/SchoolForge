@@ -270,7 +270,7 @@ describe('non-regressione di pool e lezione', () => {
   });
 
   it('la versione della lezione identifica il nuovo contratto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v2');
     expect(AI_CONCEPT_MAP_PROMPT_VERSION).not.toBe(AI_CONTENT_PROMPT_VERSION);
   });
 });
