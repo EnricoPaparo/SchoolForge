@@ -514,7 +514,8 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v4',
+      promptContractVersion: 'lesson-review-v5',
+      reviewPolicy: resolveContentModelForRequest(request),
       kind: request.kind,
       modelProfile: request.modelProfile,
       teacherGuidance: request.teacherGuidance,
@@ -628,8 +629,8 @@ export function canonicalRequest(request: AiContentRequest): string {
           kind: 'lesson',
           promptContractVersion:
             request.modelProfile === 'economy'
-              ? 'lesson-depth-explanations-v1'
-              : 'lesson-explanations-v1',
+              ? 'lesson-depth-explanations-v2'
+              : 'lesson-explanations-v2',
           modelProfile: request.modelProfile,
           depth: request.depth,
           titolo: request.titolo,
@@ -1246,11 +1247,10 @@ export function resolveContentModelForRequest(request: AiContentRequest): {
   model: string;
   priceListVersion: string;
 } {
-  if (
-    request.kind === 'lesson_review' ||
-    request.kind === 'pool_review' ||
-    request.kind === 'concept_map_review'
-  ) {
+  // Il revisore lezione usa Sol anche per una bozza Economy: audit disciplinare
+  // indipendente dal costo del generatore. Il profilo richiesto resta nel run.
+  if (request.kind === 'lesson_review') return GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
+  if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
     return GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy;
   }
   if (request.kind === 'lesson') {

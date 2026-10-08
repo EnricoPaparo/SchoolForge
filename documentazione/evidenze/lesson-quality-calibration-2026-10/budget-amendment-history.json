@@ -1,0 +1,7 @@
+{
+  "reason": "Root authorizes one concrete history timeline actual reviewer check before downstream",
+  "maxCalls": 25,
+  "maxCostMicroUsd": 3000000,
+  "retries": 0,
+  "amendedAt": "2026-10-08T13:57:32.4641922Z"
+}

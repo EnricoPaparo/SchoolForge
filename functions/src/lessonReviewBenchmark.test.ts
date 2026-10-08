@@ -32,8 +32,8 @@ describe('lesson review frozen benchmark', () => {
     expect(batches.every((batch) => batch.maximumProviderAttempts === 1)).toBe(true);
     expect(batches.every((batch) => batch.costUpperBoundMicroUsd > 0)).toBe(true);
     expect(batches.map((batch) => batch.interSampleDelayMs)).toEqual([0, 0, 25_000, 25_000]);
-    expect(batches[0]?.samples.every((sample) => sample.model === 'gpt-5.6-luna')).toBe(true);
-    expect(batches[2]?.samples.every((sample) => sample.model === 'gpt-5.6-luna')).toBe(true);
+    expect(batches[0]?.samples.every((sample) => sample.model === 'gpt-6.1-sol')).toBe(true);
+    expect(batches[2]?.samples.every((sample) => sample.model === 'gpt-6.1-sol')).toBe(true);
     expect(batches[0]?.manifestHash).toMatch(/^[a-f0-9]{64}$/);
     expect(batches[0]?.samples[0]?.inputHash).toMatch(/^[a-f0-9]{64}$/);
     const tuning = manifest.samples.filter((sample) => sample.split === 'tuning');

@@ -1,0 +1,100 @@
+{
+  "baseGitSha": "240703454a06624a592301eb146cf579232e5f1c",
+  "candidateSourceCode": {
+    "baseGitSha": "240703454a06624a592301eb146cf579232e5f1c",
+    "promptSourceSha256": "18357d7d77b1f1a9718b939a12c956ee88e62d76f454e0d04f5b6bc577643aa1",
+    "coreSourceSha256": "9ab4dae9d60b902017bd6f348eee0094f55b78f4e4347463b05ad1224c649c79",
+    "compiledPromptSha256": "b1d936ed758f1af789230eaaac27cecb7719417bf229bfc95abc6f76c439079a",
+    "compiledCoreSha256": "1f0d525878a38fe7b3997e4cc5517deabc782b47352e8bd2faedd7070994b2ae"
+  },
+  "finalPromptVersions": {
+    "lesson": "lesson-explanations-v2",
+    "rollback": "lesson-depth-explanations-v2",
+    "review": "lesson-review-v5"
+  },
+  "nativeFinalLessonReviewPolicy": {
+    "model": "gpt-6.1-sol",
+    "priceListVersion": "v12-2026-09-29-gpt61-sol-standard",
+    "allProfiles": true
+  },
+  "calls": 25,
+  "maxCalls": 25,
+  "actualCostMicroUsd": 776280,
+  "maxCostMicroUsd": 3000000,
+  "retries": 0,
+  "timeoutMs": 180000,
+  "unknownBillingAttempts": 0,
+  "providerOrStructuralFailures": 0,
+  "supersededSemanticFindings": "Old and prompt-only reviewer left charge defect; explicit Quality probes and final native policy corrected it.",
+  "phaseTotals": {
+    "currentReviewer2": {
+      "calls": 2,
+      "actualCostMicroUsd": 12073
+    },
+    "failedCandidatePromptReviewer2": {
+      "calls": 2,
+      "actualCostMicroUsd": 11830
+    },
+    "qualityModelProbes2": {
+      "calls": 2,
+      "actualCostMicroUsd": 81756
+    },
+    "pairedGeneration12": {
+      "calls": 12,
+      "actualCostMicroUsd": 352239
+    },
+    "validRich2": {
+      "calls": 2,
+      "actualCostMicroUsd": 96960
+    },
+    "actualChain3": {
+      "calls": 3,
+      "actualCostMicroUsd": 195388
+    },
+    "downstream2": {
+      "calls": 2,
+      "actualCostMicroUsd": 26034
+    }
+  },
+  "sourceBodies": [
+    {
+      "id": "biology-enzymes-revised-downstream-pool-candidate",
+      "sourceResultFile": "biology-enzymes-sample1-chain-review-candidate.json",
+      "sourceBodySha256": "9f0492efec91a6ef7808fabfd858b076d114d9e776a76c17e4bd7f44c9821e07"
+    },
+    {
+      "id": "biology-enzymes-sample1-chain-review-candidate",
+      "sourceResultFile": "biology-enzymes-sample1-candidate.json",
+      "sourceBodySha256": "434c35775043e6a8ae218836ad4b9b88ed916c007e63925cf5b6ca6e055ccf82"
+    },
+    {
+      "id": "history-ww1-sample1-chain-review-candidate",
+      "sourceResultFile": "history-ww1-sample1-candidate.json",
+      "sourceBodySha256": "b341f87cb64cf75d13489bf350b5ad15141db3b3f23205ca741e1f5bdeafd31b"
+    },
+    {
+      "id": "math-discriminant-revised-downstream-concept_map-candidate",
+      "sourceResultFile": "math-discriminant-sample1-chain-review-candidate.json",
+      "sourceBodySha256": "da5dc474dd2b93f5bd14fab153bd57436bfeec253f38105b57a22d93d3a85793"
+    },
+    {
+      "id": "math-discriminant-sample1-chain-review-candidate",
+      "sourceResultFile": "math-discriminant-sample1-candidate.json",
+      "sourceBodySha256": "da5dc474dd2b93f5bd14fab153bd57436bfeec253f38105b57a22d93d3a85793"
+    }
+  ],
+  "validRichRetention": [
+    {
+      "id": "review-rich-density-candidate",
+      "byteIdentical": true,
+      "outcome": "unchanged"
+    },
+    {
+      "id": "review-rich-it-candidate",
+      "byteIdentical": true,
+      "outcome": "unchanged"
+    }
+  ],
+  "syntheticOnly": true,
+  "lengthIsNotQualityScore": true
+}

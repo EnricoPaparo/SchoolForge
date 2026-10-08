@@ -50,9 +50,9 @@ import {
 } from './aiContentVisualProposal.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-explanations-v1' as const;
-export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-explanations-v1' as const;
-export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v4' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-explanations-v2' as const;
+export const AI_CONTENT_ROLLBACK_PROMPT_VERSION = 'lesson-depth-explanations-v2' as const;
+export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v5' as const;
 
 /**
  * Identità indipendente del prompt pool. POOL-TUNE-02 modifica esclusivamente
@@ -588,9 +588,8 @@ export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
     '   completa; se un concetto è solo accennato o la trattazione è più povera di quanto la',
     '   profondità richiesta esige, ESPANDILA prima di rispondere: è l’unico punto di questo',
     '   controllo che può farti aggiungere testo, e viene prima degli altri proprio per questo;',
-    '2) ricalcola da zero ogni esempio quantitativo usando i dati originali e verifica ogni soluzione;',
-    '3) confronta ogni esempio e conclusione con definizioni, formule, condizioni e fatti già',
-    '   dichiarati; verifica che diagnosi e nessi causali non dicano più di quanto provano i dati;',
+    '2) ricalcola da zero ogni esempio quantitativo usando i dati originali e verifica ogni soluzione nell’enunciato iniziale; distingui i risultati algebrici da quelli ammissibili nel contesto, quando pertinente;',
+    '3) controlla premesse, meccanismo e conclusione di ogni esempio rispetto ai principi della disciplina, non soltanto al testo già scritto; una sola proprietà non dimostra compatibilità o incompatibilità senza verificarne il ruolo nel meccanismo; correggi o sostituisci i casi non sostenibili, preservando la spiegazione;',
     '4) verifica da zero che tutte le premesse di ogni caso possano coesistere e che esempi,',
     '   termini tecnici ed etichette appartengano davvero alle categorie dichiarate; se il caso è',
     '   incoerente, correggilo o sostituiscilo prima di produrre l’output;',
@@ -714,7 +713,7 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
       : []),
     'Adattamento disciplinare:',
     '- scegli esempi, rappresentazioni, argomentazioni e applicazioni coerenti con il tipo di conoscenza trattato;',
-    '- nei contenuti quantitativi mostra i passaggi significativi e controlla i risultati;',
+    '- nei contenuti quantitativi motiva la scelta del metodo, mostra i passaggi significativi e verifica il risultato usando i dati o l’enunciato iniziale; quando pertinente distingui soluzioni algebriche e soluzioni ammissibili nel contesto, esplicitando vincoli e unità;',
     '- nei contenuti storici e sociali distingui fatti, cause, conseguenze e interpretazioni;',
     '- nei contenuti scientifici distingui fenomeni, modelli, evidenze e limiti;',
     '- nei contenuti linguistici e letterari lavora, quando pertinente, su esempi testuali concreti;',
@@ -724,7 +723,7 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- non inventare fatti, fonti, studi, misure o testimonianze; dichiara quando un caso è ipotetico;',
     '- non presentare come assoluto ciò che dipende da condizioni o ammette eccezioni rilevanti;',
     '- una semplificazione didattica non deve insegnare un meccanismo falso; chiariscine il limite quando serve a prevenire una misconcezione;',
-    '- definizioni, esempi, formule, unità, passaggi e conclusioni devono essere reciprocamente coerenti.',
+    '- per ogni esempio verifica che premesse, meccanismo e conclusione siano coerenti con i principi della disciplina: un dettaglio plausibile non prova il nesso proposto. Non dedurre compatibilità o incompatibilità da una sola proprietà senza verificare il suo ruolo nel meccanismo; se il caso non è sostenibile, correggilo o scegli un esempio più solido, senza impoverire la spiegazione.',
     '',
     'Perimetro UDA:',
     '- i METADATI_DIDATTICI definiscono il centro e il livello della lezione; il CONTESTO_GENERALE_UDA orienta taglio ed esempi senza estendere il perimetro;',
@@ -792,12 +791,12 @@ export function buildLessonReviewPrompt(request: LessonReviewRequest): BuiltProm
   ].join('\n');
   const contract = [
     'Rivedi la BOZZA e restituisci il corpo completo, correggendo soltanto difetti individuati e mantenendo lo stesso perimetro didattico. Non riscrivere le parti valide per uniformità stilistica.',
-    'La priorità assoluta è aiutare lo studente a capire: correggi errori disciplinari, semplificazioni false, salti logici, prerequisiti mancanti, esempi deboli, misconcezioni, formule/unità/codice incoerenti e densità mal distribuita.',
+    'La priorità assoluta è aiutare lo studente a capire: correggi errori disciplinari, semplificazioni false, salti logici, prerequisiti mancanti, esempi deboli, misconcezioni, formule/unità/codice incoerenti e densità mal distribuita. Verifica premesse, meccanismo e conclusione degli esempi rispetto ai principi della disciplina, non soltanto al resto della bozza; una proprietà plausibile non prova da sola compatibilità o incompatibilità senza verificarne il ruolo nel meccanismo. Nei casi quantitativi controlla il risultato nell’enunciato iniziale e le condizioni di ammissibilità; integra la motivazione del metodo solo se manca un passaggio necessario alla comprensione.',
     'Costruisci un modello mentale progressivo: spiega perché, condizioni e limiti; usa esempi che chiariscano scelte, passaggi e significato del risultato nella disciplina; elimina soltanto riempitivi e ripetizioni prive di valore. Conserva tutti i dettagli validi, condizioni, passaggi ed esempi utili: maggiore brevità non è un miglioramento e non giustifica compressione.',
     'Non introdurre esercizi da svolgere, autoverifiche, batterie di domande, sezioni sugli errori comuni, mappe, metadiscorso, HTML, front matter, Mermaid o nuove informazioni estranee al perimetro.',
     'Scrivi formule ed equazioni in testo piano leggibile con simboli Unicode, per esempio ρ = m / V e 100 g / 20 cm³ = 5 g/cm³. Non usare LaTeX: niente delimitatori matematici $, $$, \\(, \\[ o comandi come \\frac, \\rho, \\text. Mantieni formule, passaggi e unità corretti senza eliminare dettagli.',
     'Rispetta il livello scolastico e la profondità richiesta. Conserva i passaggi validi della bozza anche se migliorabili nello stile; integra soltanto spiegazioni necessarie a risolvere un difetto didattico concreto, senza quote editoriali.',
-    'reviewOutcome deve essere improved se hai corretto o migliorato il testo, unchanged solo se la bozza era già ottimale.',
+    'reviewOutcome deve essere unchanged e body identico alla BOZZA quando non trovi un difetto concreto che richieda riparazione; improved soltanto per correzioni o integrazioni didattiche dimostrabili, mai per una preferenza stilistica.',
     'issueCodes contiene soltanto codici fra: disciplinary_error, false_simplification, logical_gap, missing_prerequisite, weak_example, misconception_risk, structure, verbosity. Può essere vuoto.',
   ].join('\n\n');
   const user = [
