@@ -64,8 +64,8 @@ export class AiContentError extends Error {
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
-  pool_review: 'pool_review-v3',
-  concept_map_review: 'concept_map_review-v5',
+  pool_review: 'pool_review-v4',
+  concept_map_review: 'concept_map_review-v6',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_GUIDANCE_CHARS = 500;
@@ -514,7 +514,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v5',
+      promptContractVersion: 'lesson-review-v6',
       reviewPolicy: resolveContentModelForRequest(request),
       kind: request.kind,
       modelProfile: request.modelProfile,

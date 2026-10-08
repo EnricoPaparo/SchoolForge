@@ -1,3 +1,4 @@
+import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { useEffect, useRef, useState } from 'react';
 import {
   AiAdvancedReviewControl,
@@ -55,6 +56,8 @@ export function AiConceptMapGenerationDialog({
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
   const [advancedReview, setAdvancedReview] = useState(true);
+  const [reviewFeedback, setReviewFeedback] = useState<AiReviewFeedback | undefined>();
+  const [reviewReplayed, setReviewReplayed] = useState(false);
   const [reviewStatus, setReviewStatus] = useState<ArtifactReviewStatus>('disabled');
   const [reviewing, setReviewing] = useState(false);
   const baseResultRef = useRef<AiConceptMapGenerateResult | null>(null);
@@ -91,6 +94,8 @@ export function AiConceptMapGenerationDialog({
     reviewRequestIdRef.current = newRequestId();
     baseResultRef.current = null;
     setReviewStatus('disabled');
+    setReviewFeedback(undefined);
+    setReviewReplayed(false);
     setPhase('configure');
   }
 
@@ -148,6 +153,8 @@ export function AiConceptMapGenerationDialog({
         );
         response = { ...reviewed, kind: 'concept_map' };
         setReviewStatus(reviewed.output.reviewOutcome);
+        setReviewFeedback(reviewed.reviewFeedback);
+        setReviewReplayed(reviewed.replayed);
       }
       if (!mountedRef.current) return;
       const validated = validateConceptMapResult(response);
@@ -309,7 +316,12 @@ export function AiConceptMapGenerationDialog({
 
       {phase === 'review' && result && (
         <>
-          <AiAdvancedReviewResult result={null} status={reviewStatus} />
+          <AiAdvancedReviewResult
+            result={null}
+            status={reviewStatus}
+            feedback={reviewFeedback}
+            replayed={reviewReplayed}
+          />
           <p role="status">
             {result.replayed ? 'Bozza già generata: ripristinata.' : 'Bozza generata.'} Profilo:{' '}
             {result.modelProfile}.{' '}

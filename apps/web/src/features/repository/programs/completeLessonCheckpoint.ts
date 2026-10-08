@@ -182,7 +182,28 @@ export function writeCompleteLessonCheckpoint(checkpoint: CompleteLessonCheckpoi
   try {
     window.sessionStorage.setItem(
       completeLessonCheckpointKey(checkpoint.identity),
-      JSON.stringify(checkpoint),
+      JSON.stringify({
+        version: checkpoint.version,
+        identity: checkpoint.identity,
+        expiresAtMs: checkpoint.expiresAtMs,
+        bodyFingerprint: checkpoint.bodyFingerprint,
+        options: {
+          level: checkpoint.options.level,
+          counts: checkpoint.options.counts,
+          modelProfile: checkpoint.options.modelProfile,
+          reviewStatus: checkpoint.options.reviewStatus,
+        },
+        bodyPersisted: checkpoint.bodyPersisted,
+        mapCompleted: checkpoint.mapCompleted,
+        poolCompleted: checkpoint.poolCompleted,
+        mapRequestId: checkpoint.mapRequestId,
+        poolRequestId: checkpoint.poolRequestId,
+        mapReviewRequestId: checkpoint.mapReviewRequestId,
+        poolReviewRequestId: checkpoint.poolReviewRequestId,
+        mapCostMicroUsd: checkpoint.mapCostMicroUsd,
+        poolCostMicroUsd: checkpoint.poolCostMicroUsd,
+        visual: checkpoint.visual,
+      }),
     );
   } catch {
     // Storage disabilitato o pieno: il workflow in memoria continua normalmente.

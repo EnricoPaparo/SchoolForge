@@ -134,6 +134,32 @@ async function goToReview(
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
+  it('keeps completed stage reports across an image failure and retry without extra review calls', async () => {
+    const { callables } = makeCallables();
+    let attempts = 0;
+    renderDialog(callables, async (_body, progress) => {
+      attempts += 1;
+      if (attempts === 1) {
+        progress({
+          stage: 'map',
+          review: { status: 'improved', feedback: { changes: ['Precisato il collegamento.'] } },
+        });
+        progress({ stage: 'pool', review: { status: 'unchanged' } });
+        throw new Error('Immagini interrotte');
+      }
+      return { imagesApplied: 0, imagesSkipped: 0, imagesFailed: 0 };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+    await screen.findByRole('button', { name: 'Riprova completamento' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Resoconto del revisore' })[1]!);
+    expect(screen.getByText('Precisato il collegamento.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi resoconto' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova completamento' }));
+    await screen.findByText('Lezione completata');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Resoconto del revisore' })[1]!);
+    expect(screen.getByText('Precisato il collegamento.')).toBeTruthy();
+    expect(callables.generateReview).toHaveBeenCalledOnce();
+  });
   it.each(['improved', 'disabled'] as const)(
     'riprende un completamento con revisione %s senza nuove chiamate',
     async (reviewStatus) => {
@@ -165,15 +191,10 @@ describe('AiCompleteLessonGenerationDialog', () => {
       expect(screen.getByText('Riprendi dalla mappa.')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Riprova completamento' }));
       await screen.findByText('Il modello non ha individuato immagini didatticamente necessarie.');
-      if (reviewStatus === 'improved') {
-        expect(screen.getByText('✓ Revisione didattica completata')).toBeTruthy();
-        expect(
-          screen.getByText('Il revisore ha controllato e migliorato il contenuto.'),
-        ).toBeTruthy();
-      } else {
-        expect(screen.getByText('Revisione non richiesta')).toBeTruthy();
-        expect(screen.queryByText('✓ Revisione didattica completata')).toBeNull();
-      }
+      expect(
+        screen.getByText('Contenuto già salvato: resoconto della revisione non disponibile.'),
+      ).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Resoconto del revisore' })).toBeNull();
       expect(callables.preview).not.toHaveBeenCalled();
       expect(callables.generate).not.toHaveBeenCalled();
       expect(callables.previewReview).not.toHaveBeenCalled();
@@ -401,7 +422,9 @@ describe('AiCompleteLessonGenerationDialog', () => {
     await goToReview(callables, onCompleteDraft);
 
     await screen.findByText('Generazione immagine 2 di 3…');
-    expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
+    expect(
+      screen.getAllByRole('status').some((status) => status.getAttribute('aria-busy') === 'true'),
+    ).toBe(true);
     expect(onCompleteDraft).toHaveBeenCalledWith(
       '## Reti\n\nContenuto revisionato.',
       expect.any(Function),

@@ -1,3 +1,4 @@
+import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
   DEFAULT_POOL_MODEL_PROFILE,
@@ -40,10 +41,16 @@ import {
 } from './AiAdvancedReviewControl.js';
 import styles from './AiCompleteLessonGenerationDialog.module.css';
 
+export interface CompleteReviewReport {
+  status: 'disabled' | 'improved' | 'unchanged' | 'restored';
+  feedback?: AiReviewFeedback;
+  replayed?: boolean;
+}
+
 export type CompleteLessonProgress =
   | { stage: 'content'; label?: string }
-  | { stage: 'map'; label?: string }
-  | { stage: 'pool'; label?: string }
+  | { stage: 'map'; label?: string; review?: CompleteReviewReport }
+  | { stage: 'pool'; label?: string; review?: CompleteReviewReport }
   | { stage: 'analysis'; label?: string }
   | { stage: 'images'; current: number; total: number; label?: string }
   | { stage: 'finalizing'; label?: string };
@@ -53,6 +60,8 @@ export type CompleteLessonRetry = (
 ) => Promise<CompleteLessonCompletionSummary>;
 
 export interface CompleteLessonCompletionSummary {
+  /** Ephemeral, never checkpointed. */
+  reviewReports?: Partial<Record<'map' | 'pool', CompleteReviewReport>>;
   mapGenerated?: boolean;
   questionsGenerated?: number;
   imagesApplied: number;
@@ -155,6 +164,9 @@ export function AiCompleteLessonGenerationDialog({
   const [reviewStatus, setReviewStatus] = useState<CompleteLessonOptions['reviewStatus']>(
     resumeDraft?.options.reviewStatus ?? 'disabled',
   );
+  const [stageReviewReports, setStageReviewReports] = useState<
+    Partial<Record<'map' | 'pool', CompleteReviewReport>>
+  >({});
   const [progress, setProgress] = useState<CompleteLessonProgress | null>(null);
   const [summary, setSummary] = useState<CompleteLessonCompletionSummary | null>(null);
   const [error, setError] = useState<string | null>(resumeDraft?.message ?? null);
@@ -226,6 +238,7 @@ export function AiCompleteLessonGenerationDialog({
     setBaseBody('');
     setReviewResult(null);
     setReviewStatus('disabled');
+    setStageReviewReports({});
     setSummary(null);
     setProgress(null);
     setError(null);
@@ -320,6 +333,7 @@ export function AiCompleteLessonGenerationDialog({
     } else {
       setReviewResult(null);
       setReviewStatus('disabled');
+      setStageReviewReports({});
     }
     setDraftBody(finalBody);
     setErrorStage('complete');
@@ -348,7 +362,12 @@ export function AiCompleteLessonGenerationDialog({
   }
 
   function updateProgress(next: CompleteLessonProgress) {
-    if (mountedRef.current) setProgress(next);
+    if (mountedRef.current) {
+      setProgress(next);
+      if ((next.stage === 'map' || next.stage === 'pool') && next.review) {
+        setStageReviewReports((previous) => ({ ...previous, [next.stage]: next.review }));
+      }
+    }
   }
 
   async function completeDraft() {
@@ -734,13 +753,43 @@ export function AiCompleteLessonGenerationDialog({
         </>
       )}
 
+      {draftBody && ['review', 'completing', 'summary', 'error'].includes(phase) && (
+        <section aria-label="Resoconti delle revisioni">
+          <h4>Lezione</h4>
+          {resumeAvailable && !reviewResult ? (
+            <p>Contenuto già salvato: resoconto della revisione non disponibile.</p>
+          ) : reviewResult || (reviewStatus === 'disabled' && errorStage !== 'review') ? (
+            <AiAdvancedReviewResult result={reviewResult} status={reviewStatus} />
+          ) : null}
+          {(['map', 'pool'] as const).map((stage) => {
+            const report = summary?.reviewReports?.[stage] ?? stageReviewReports[stage];
+            if (!report) return null;
+            return (
+              <div key={stage}>
+                <h4>{stage === 'map' ? 'Mappa' : 'Domande'}</h4>
+                {report.status === 'restored' ? (
+                  <p>Fase già salvata: resoconto della revisione non disponibile.</p>
+                ) : (
+                  <AiAdvancedReviewResult
+                    result={null}
+                    status={report.status}
+                    feedback={report.feedback}
+                    replayed={report.replayed}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       {phase === 'completing' && progress && <BusyStatus label={progressLabel(progress)} />}
 
       {phase === 'summary' && summary && (
         <>
           <section className={styles.summary} aria-labelledby="ai-complete-summary-title">
             <h4 id="ai-complete-summary-title">Lezione completata</h4>
-            <AiAdvancedReviewResult result={reviewResult} status={reviewStatus} />
+
             {summary.mapGenerated && <p>Mappa concettuale generata e applicata.</p>}
             {summary.questionsGenerated !== undefined && (
               <p>{summary.questionsGenerated} domande generate e applicate.</p>

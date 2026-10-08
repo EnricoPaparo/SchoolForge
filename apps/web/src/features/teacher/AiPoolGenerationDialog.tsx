@@ -1,3 +1,4 @@
+import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
   AiAdvancedReviewControl,
@@ -112,6 +113,8 @@ export function AiPoolGenerationDialog({
   const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
   const [phase, setPhase] = useState<Phase>('configure');
   const [advancedReview, setAdvancedReview] = useState(true);
+  const [reviewFeedback, setReviewFeedback] = useState<AiReviewFeedback | undefined>();
+  const [reviewReplayed, setReviewReplayed] = useState(false);
   const [reviewStatus, setReviewStatus] = useState<ArtifactReviewStatus>('disabled');
   const [reviewing, setReviewing] = useState(false);
   const baseResultRef = useRef<AiPoolGenerateResult | null>(null);
@@ -183,6 +186,8 @@ export function AiPoolGenerationDialog({
     reviewRequestIdRef.current = newRequestId();
     baseResultRef.current = null;
     setReviewStatus('disabled');
+    setReviewFeedback(undefined);
+    setReviewReplayed(false);
     setPhase('configure');
   }
 
@@ -256,6 +261,8 @@ export function AiPoolGenerationDialog({
         );
         res = { ...reviewed, kind: 'pool' };
         setReviewStatus(reviewed.output.reviewOutcome);
+        setReviewFeedback(reviewed.reviewFeedback);
+        setReviewReplayed(reviewed.replayed);
       }
       if (!mountedRef.current) return;
       setResult({
@@ -553,7 +560,12 @@ export function AiPoolGenerationDialog({
       {/* 5) REVISIONE PROPOSTA */}
       {phase === 'review' && result && (
         <>
-          <AiAdvancedReviewResult result={null} status={reviewStatus} />
+          <AiAdvancedReviewResult
+            result={null}
+            status={reviewStatus}
+            feedback={reviewFeedback}
+            replayed={reviewReplayed}
+          />
           <p role="status">
             {result.replayed ? 'Proposta già generata: ripristinata.' : 'Proposta generata.'}{' '}
             {result.actualCostMicroUsd === null

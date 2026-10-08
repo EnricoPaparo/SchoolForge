@@ -1,3 +1,4 @@
+import { REVIEW_CHANGES_INSTRUCTIONS } from './aiReviewFeedback.js';
 import { DISCIPLINARY_CHECKLIST, numericDiagnosticsBlock } from './didacticSpecialist.js';
 import {
   AiContentError,
@@ -288,6 +289,8 @@ export function buildDidacticReviewPrompt(request: PoolReviewRequest | ConceptMa
     system,
     user:
       contract +
+      '\n' +
+      REVIEW_CHANGES_INSTRUCTIONS +
       '\n' +
       DISCIPLINARY_CHECKLIST +
       '\n' +

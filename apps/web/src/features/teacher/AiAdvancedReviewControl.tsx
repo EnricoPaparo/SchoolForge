@@ -1,3 +1,5 @@
+import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
+import { AiReviewFeedbackInfo } from './AiReviewFeedbackInfo.js';
 import type { AiLessonReviewGenerateResult } from '../repository/pools/aiContentClient.js';
 import styles from './AiAdvancedReviewControl.module.css';
 
@@ -46,7 +48,11 @@ export function AiAdvancedReviewControl({
 export function AiAdvancedReviewResult({
   result,
   status,
+  feedback,
+  replayed,
 }: {
+  feedback?: AiReviewFeedback;
+  replayed?: boolean;
   result: AiLessonReviewGenerateResult | null;
   status?: 'disabled' | 'improved' | 'unchanged';
 }) {
@@ -71,7 +77,19 @@ export function AiAdvancedReviewResult({
       role="status"
       aria-label="Stato revisione didattica"
     >
-      <span className={styles.resultBadge}>✓ Revisione didattica completata</span>
+      <div className={styles.header}>
+        <span className={styles.resultBadge}>✓ Revisione didattica completata</span>
+        <AiReviewFeedbackInfo
+          key={JSON.stringify([
+            resolvedStatus,
+            feedback ?? result?.reviewFeedback,
+            replayed ?? result?.replayed,
+          ])}
+          status={resolvedStatus}
+          feedback={feedback ?? result?.reviewFeedback}
+          replayed={replayed ?? result?.replayed}
+        />
+      </div>
       <span>
         {improved
           ? 'Il revisore ha controllato e migliorato il contenuto.'
