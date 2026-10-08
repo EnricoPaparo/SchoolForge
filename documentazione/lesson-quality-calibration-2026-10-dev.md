@@ -3,7 +3,7 @@
 ## Contratto e motivazione
 
 Base `240703454a06624a592301eb146cf579232e5f1c`. Autorizzato sviluppo e DEV,
-PROD escluso. Generatore, schemi, limiti, interfaccia e contabilizzazione
+PROD escluso. Modelli del generatore, schemi, limiti, interfaccia e contabilizzazione
 rimangono invariati; pool, mappe, immagini ed esercizi svolti non sono in scope.
 
 Il confronto holdout precedente è misto: 3 preferenze per il candidato DEV,
@@ -72,5 +72,57 @@ Hosting, Rules, indici e dati invariati. Rollback dei tre componenti alla base
 5. Salva e riapri; generazione completa usa il corpo revisionato senza regressioni
    nelle fasi successive. Eventuale retry non rigenera le fasi già salvate.
 
-Esiti reali, SHA, costi, gate, deploy e smoke verranno registrati dall’orchestratore
-prima della chiusura del task.
+## Prove reali e valutazione indipendente
+
+L’8 ottobre 2026 sono state eseguite 25 chiamate reali su dati sintetici,
+senza retry, errori provider o errori di validazione, per 0,776280 USD.
+Payload effettivi, risposte e provenienza sono conservati in
+[`evidenze/lesson-quality-calibration-2026-10/final-summary.json`](evidenze/lesson-quality-calibration-2026-10/final-summary.json).
+Gli hash dei sorgenti e dei moduli compilati identificano il candidato congelato;
+le modifiche successive a test e documentazione non cambiano quei payload.
+
+Sei confronti fra DEV precedente e candidato, a parità di input, modello e
+impostazioni: due ripetizioni di matematica e biologia, una di fisica e storia.
+Le coppie anonime sono state valutate prima di rivelare le identità, secondo
+criteri di correttezza, spiegazione dei metodi, condizioni e mantenimento dei
+dettagli necessari. La lunghezza non attribuisce punteggio.
+
+| Caso | Preferenza | Evidenza |
+| --- | --- | --- |
+| Matematica, campioni 1 e 2 | Candidato | Progressione concreta, controllo nell’equazione originale e vincoli del problema. |
+| Biologia, campioni 1 e 2 | Candidato | Esempi meccanistici più concreti e specificità ben spiegata; entrambe le varianti corrette. |
+| Fisica | Candidato, lieve | Interpretazione del risultato, incertezza sperimentale e limiti del generatore reale. |
+| Storia | Baseline | Il candidato comprime impropriamente dichiarazione di guerra e bombardamento nella stessa data. |
+
+Il nuovo revisore ha corretto l’esempio biologico problematico in due prove
+sullo stesso testo, mentre Luna lo lasciava intatto anche dopo il primo tuning.
+Ha conservato byte per byte le due lezioni ricche già valide di densità e informatica.
+Nelle tre catene effettive generazione → revisione, matematica resta identica,
+biologia riceve una sola precisazione sul bilancio energetico e storia corregge
+la cronologia e altri passaggi circoscritti, preservando il materiale valido.
+La review indipendente ha confermato questi esiti senza nuovi errori materiali.
+
+Il difetto storico è verificato anche sul resoconto di Rauchensteiner,
+[*The First World War*, p. 143](https://austria-forum.org/web-books/firstworldwar01en2014isds/000145):
+la dichiarazione è del 28 luglio, il bombardamento avviene nella notte fra 28 e 29.
+Questo caso mostra perché la sola generazione non basta a validare il materiale.
+
+Le ultime due chiamate producono mappa di matematica e tre domande di biologia
+dagli esatti corpi revisionati, con provenienza verificata mediante hash.
+Validazione strutturale e review didattica indipendente entrambe PASS:
+relazioni e formule della mappa coerenti; domande, soluzioni e credito parziale
+aderenti alla lezione. Il rendering della mappa non è stato esaminato.
+Non è una prova reale dell’intera UI, delle immagini raster o delle correzioni:
+quei componenti non sono stati modificati. Il campione non dimostra qualità
+universale, frequenza degli errori o apprendimento effettivo degli studenti.
+
+Il maggior costo del revisore è reale: nei due casi biologici confrontabili
+0,035470–0,046286 USD contro 0,005455 USD di Luna. Il costo varia con testo,
+profondità, ragionamento e cache. La UI segnala già che la revisione ha un costo
+separato: la stima iniziale riguarda il generatore, non un totale anticipato.
+
+CI completa verde su `b129322`, inclusi i test Rules con Java 21. Gate locali
+format, lint, typecheck, test, build e diff verdi; Rules locale non eseguibile
+con la versione Java presente. La CI sul commit finale e la review indipendente
+precedono merge e deploy. SHA distribuito, target e smoke vengono registrati
+nella issue #526 dopo il rilascio.

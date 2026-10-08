@@ -1,0 +1,32 @@
+[
+  {
+    "caseId": "math-discriminant-sample1",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "math-discriminant-sample2",
+    "A": "baseline",
+    "B": "candidate"
+  },
+  {
+    "caseId": "biology-enzymes-sample1",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "biology-enzymes-sample2",
+    "A": "candidate",
+    "B": "baseline"
+  },
+  {
+    "caseId": "physics-ohm-sample1",
+    "A": "baseline",
+    "B": "candidate"
+  },
+  {
+    "caseId": "history-ww1-sample1",
+    "A": "baseline",
+    "B": "candidate"
+  }
+]

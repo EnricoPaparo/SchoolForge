@@ -1,0 +1,20 @@
+[
+  {
+    "label": "A",
+    "id": "biology-quality-review-probe1-candidate",
+    "model": "gpt-6.1-sol",
+    "actualCostMicroUsd": 46286
+  },
+  {
+    "label": "B",
+    "id": "biology-quality-review-probe2-candidate",
+    "model": "gpt-6.1-sol",
+    "actualCostMicroUsd": 35470
+  },
+  {
+    "label": "C",
+    "id": "biology-enzymes-current-review-candidate",
+    "model": "gpt-5.6-luna",
+    "actualCostMicroUsd": 5455
+  }
+]
