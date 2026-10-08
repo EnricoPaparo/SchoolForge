@@ -457,8 +457,15 @@ verificati in `functions/src/index.ts`. Dopo il deploy eseguire uno smoke con:
 4. controllo dei due run e delle due riconciliazioni di costo.
 
 Nel controllo dei run verificare la policy per kind: `lesson` deve risolvere
-Economy in `gpt-5.6-luna` e Quality in `gpt-6.1-sol`; `lesson_review` deve
-risolvere `gpt-5.6-luna` per entrambi i profili, conservando il `modelProfile`
-richiesto e un accounting indipendente.
+Economy in `gpt-5.6-luna` e Quality in `gpt-6.1-sol`. Per il rollout DEV della
+[calibrazione issue #526](lesson-quality-calibration-2026-10-dev.md), `lesson_review`
+risolve `gpt-6.1-sol` per entrambi i profili, conservando il `modelProfile`
+richiesto e un accounting indipendente; pool e mappe restano revisionati da
+`gpt-5.6-luna`. Preview e prenotazione della revisione devono usare il listino
+Sol accoppiato e i parametri nativi, senza modificare i limiti di budget.
+Questa calibrazione è autorizzata solo DEV: PROD mantiene il revisore precedente
+`gpt-5.6-luna` fino a una nuova autorizzazione e a un rollout verificato.
+Per il solo affinamento backend distribuire `aiContentPreview`,
+`aiContentGenerate` e `aiContentPromptExport`; hosting solo se modificato.
 
 Il rollback dell'interfaccia non richiede la cancellazione dei run tecnici.
