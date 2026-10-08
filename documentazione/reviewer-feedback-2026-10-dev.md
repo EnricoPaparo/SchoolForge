@@ -45,7 +45,11 @@ controllo di qualità.
 ## Verifica docente in DEV
 
 1. Generare una lezione con revisore attivo: aprire «i», leggere il resoconto,
-   chiuderlo con pulsante o Escape. Il contenuto resta modificabile normalmente.
+   chiuderlo cliccando fuori, premendo nuovamente «i» oppure Escape.
+   Il clic esterno viene consumato: chiude solo il resoconto, senza attivare
+   il comando sottostante o chiudere la generazione. Il pannello esce dai
+   confini del dialogo, resta nel viewport e scorre internamente se necessario.
+   Il contenuto resta modificabile normalmente.
 2. Ripetere con pool e mappa; verificare interventi pertinenti al contenuto
    oppure indicazione di nessuna modifica necessaria.
 3. Disattivare revisione: nessun pulsante «i» per quella fase.

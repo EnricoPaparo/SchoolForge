@@ -153,7 +153,7 @@ describe('AiCompleteLessonGenerationDialog', () => {
     await screen.findByRole('button', { name: 'Riprova completamento' });
     fireEvent.click(screen.getAllByRole('button', { name: 'Resoconto del revisore' })[1]!);
     expect(screen.getByText('Precisato il collegamento.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Chiudi resoconto' }));
+    fireEvent.keyDown(screen.getByRole('note'), { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'Riprova completamento' }));
     await screen.findByText('Lezione completata');
     fireEvent.click(screen.getAllByRole('button', { name: 'Resoconto del revisore' })[1]!);
