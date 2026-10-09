@@ -53,7 +53,10 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 - Il PDF cartaceo e il PDF studente di M3-lite sono scaricati direttamente nel browser, senza persistenza.
 - PDF, export e programma svolto sono generati on-demand nel browser e non conservati dal sistema.
 - Il ruolo utente è risolto confrontando `uid` con `ownerUid`: docente se coincide, studente in sola lettura altrimenti. Nessun accesso anonimo in M3-lite.
-- M3-lite non usa Cloud Functions: legge solo proiezioni pubbliche read-only entro Security Rules. M3-full (verifiche online) usa scritture client dirette con Security Rules; non introduce Cloud Functions.
+- Nelle fasi originarie M3-lite legge proiezioni pubbliche read-only e M3-full
+  usa scritture client protette da Security Rules. Le evoluzioni successive
+  includono Functions per chiusura programmata, correzioni e contenuti IA:
+  «nessuna Cloud Function» non è un vincolo dell'applicazione corrente.
 - L’IA è opzionale e genera lezioni, pool di domande e mappe; assiste la
   correzione lasciando al docente controllo e restituzione. Non aggiunge fonti
   web automaticamente al materiale.
