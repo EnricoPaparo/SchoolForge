@@ -1,5 +1,10 @@
 # Calibrazione didattica delle lezioni — issue #526
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 ## Contratto e motivazione
 
 Base `240703454a06624a592301eb146cf579232e5f1c`. Autorizzato sviluppo e DEV,

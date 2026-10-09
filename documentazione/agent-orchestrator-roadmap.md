@@ -1,5 +1,15 @@
 # SchoolForge — Agent Orchestrator
 
+> **Flusso corrente, 9 ottobre 2026:** Codex orchestratore con supporto Codex
+> o agenti delegati, un solo writer per branch/worktree e review indipendente.
+> Il docente ha segnalato che l'account Claude non è più disponibile per lo
+> sviluppo. L'adapter e le prove di login/preflight descritti sotto sono storici:
+> non attestano autenticazione corrente e non sono un prerequisito dei task.
+> Nessuna verifica di credenziali è stata eseguita nell'allineamento documentale.
+> Autorità e gate correnti: `AGENTS.md`, [handoff](agent-account-handoff.md),
+> [stato-release-2026-10.md](stato-release-2026-10.md). I nomi Claude nei manifest
+> e nelle simulazioni di seguito identificano il protocollo originario.
+
 ## 1. Obiettivo
 
 `AGENT-ORCHESTRATOR` rende ripetibile il flusso usato nello sviluppo di

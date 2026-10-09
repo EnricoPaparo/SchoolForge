@@ -1,5 +1,10 @@
 # Incremento qualità didattica — DEV
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 Data: 5 ottobre 2026. Issue: #518. Base: `ef588b5`. Ambito autorizzato: pool,
 mappe, correzioni e coerenza del percorso, fino a DEV. Nessun rilascio PROD.
 

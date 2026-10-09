@@ -1,5 +1,13 @@
 # SchoolForge — Roadmap evoluzioni apprendimento e varianti
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+> La dicitura originaria «implementazione non avviata» non descrive più
+> tutti i pacchetti: consultare gli stati specifici e INDEX; questa roadmap
+> resta il registro delle decisioni iniziali, non una nuova coda autorizzata.
+
 **Stato:** decisioni UX/prodotto approvate; implementazione non avviata.  
 **Data baseline:** 18 luglio 2026.  
 **Dipendenze:** UI-POLISH-01 completato; M5 operativo su DEV e **Gate G7 PASS**.

@@ -1,5 +1,8 @@
 # Runbook operativo V1 — SchoolForge
 
+**Allineamento operativo:** 9 ottobre 2026; [release DEV/PROD](stato-release-2026-10.md).
+Le sezioni di rollout originario conservano evidenze e listini storici.
+
 **Versione:** 1.1 · **Data:** 21 agosto 2026 · **Ambito:** HARD-01A (finding HARD-F01).
 **Natura:** procedure operative per il **singolo docente**. Documento di sola operatività: non modifica codice, Rules o configurazione. Le azioni su Firebase Console / Google Cloud Billing sono **manuali** e vanno eseguite dal docente — questo runbook le descrive, non le esegue.
 
@@ -444,7 +447,7 @@ proiezione, mai un nuovo claim dal browser. Le Rules legacy consentono ancora
 la prima creazione autenticata quando il canonico è assente: non esporre un
 nuovo progetto prima del provisioning. Nessuna modifica ai dati cloud è stata
 eseguita per introdurre questa procedura; PROD richiede autorizzazione esplicita.
-# Addendum: revisione avanzata lezioni in DEV
+# Addendum: revisione avanzata lezioni — DEV e PROD
 
 Per il rollout della pipeline `lesson_review` distribuire soltanto le Functions
 di generazione contenuti coinvolte e l'hosting DEV, seguendo i nomi esportati
@@ -463,8 +466,10 @@ risolve `gpt-6.1-sol` per entrambi i profili, conservando il `modelProfile`
 richiesto e un accounting indipendente; pool e mappe restano revisionati da
 `gpt-5.6-luna`. Preview e prenotazione della revisione devono usare il listino
 Sol accoppiato e i parametri nativi, senza modificare i limiti di budget.
-Questa calibrazione è autorizzata solo DEV: PROD mantiene il revisore precedente
-`gpt-5.6-luna` fino a una nuova autorizzazione e a un rollout verificato.
+**Rollout completato l’8 ottobre 2026:** la calibrazione e i resoconti sono
+in DEV e PROD su `c8b36d5`; [stato corrente e prova del rollout](stato-release-2026-10.md).
+Il revisore PROD è quindi Sol per entrambe le opzioni, non più Luna. Questo
+rilascio concluso non autorizza nuovi deploy PROD nel task successivo.
 Per il solo affinamento backend distribuire `aiContentPreview`,
 `aiContentGenerate` e `aiContentPromptExport`; hosting solo se modificato.
 

@@ -1,5 +1,10 @@
 # M5 — Correzione assistita da IA · Roadmap e contratto (M5-00)
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 **Data:** 17 luglio 2026 · **Fase:** M5-00→M5-04C implementati; **M5-05A/B preparati**; **M5-05C**, **M5-05D1**, **M5-05D2A**, **M5-05D2B-1**, **M5-05D2B-2** e **M5-05E-1** implementati; provider reale ancora disabilitato.
 **Natura:** roadmap incrementale evidence-based. M5-01→M5-04C hanno costruito e integrato il flusso mock; M5-05A/B hanno preparato decisione e dataset; M5-05C aggiunge adapter e harness senza attivare il provider. **Nessuna API key, chiamata reale, costo o deploy; M5 e G7 non sono completati.**
 **Codice ispezionato (sola lettura):** `types/firestore.ts` (`SubmissionDoc`, `CorrectionDoc`, `QuestionEvaluation`, `CorrectionEventDoc`, `CorrectionReturnDoc`), `features/repository/corrections/*` (`correctionContract.ts`, `correctionsService.ts`, `correctionWorkspaceLoader.ts`, `correctionRegisterExport.ts`), `features/repository/verifications/submissionsMonitorService.ts`, `features/teacher/VerificationsView.tsx` (tabella «Consegne online» + apertura `CorrectionWorkspace`), `firestore.rules` (matrice `corrections`/`correctionEvents`/`correctionReturns`).

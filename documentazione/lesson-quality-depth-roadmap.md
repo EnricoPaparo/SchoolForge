@@ -1,5 +1,10 @@
 # SchoolForge — Roadmap qualità e profondità delle lezioni generate
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 **Stato finale:** candidato E misurato e in produzione; tuning, caso povero,
 dataset isovariante e holdout completati. Limiti di spesa e UI sono allineati
 alle misure. **Gate GLESSON PASS — 15 agosto 2026**, evidenza in

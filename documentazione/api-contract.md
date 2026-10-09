@@ -1,5 +1,12 @@
 # SchoolForge — Contratto API
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+> Documento di baseline: le evoluzioni IA/M5 successive non sono escluse dal
+> runtime solo perché erano fuori scope della versione originaria.
+
 **Versione:** 3.2
 **Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00→M4-04 implementati, incluso workspace, restituzione studente, Registro Correzioni, export CSV ed export PDF (Markdown rinviato); **Gate G6 superato** (vedi `evidenze/g6-m4-checklist-finale.md`); M5 resta fuori scope V1
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
