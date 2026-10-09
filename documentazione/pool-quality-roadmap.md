@@ -1,5 +1,10 @@
 # Qualità dei pool generati — roadmap POOL-TUNE
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 Stato: **POOL-TUNE-00 → POOL-TUNE-03 completati. Il candidato A supera tuning
 e holdout sul profilo Quality; Gate GPOOL-QUALITY PASS per Quality. Economy
 resta non qualificato e non è autorizzato da questo Gate.**

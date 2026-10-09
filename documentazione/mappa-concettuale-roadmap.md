@@ -1,5 +1,10 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 **Stato:** **CONCEPT-MAP-01→07 implementati** (core e backend IA;
 persistenza, proiezione condizionale e Rules; interfaccia docente e studente;
 mappa come scheda strutturale della lezione; artefatto v2 Sintesi + Diagramma;

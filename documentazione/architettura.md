@@ -1,5 +1,12 @@
 # SchoolForge — Architettura di sistema
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+> Documento di baseline: le evoluzioni IA/M5 successive non sono escluse dal
+> runtime solo perché erano fuori scope della versione originaria.
+
 **Versione:** 5.0
 **Data:** 8 luglio 2026
 **Stato:** architettura target, pronta per il piano esecutivo

@@ -1,5 +1,10 @@
 # Upgrade didattico: lezioni, correzioni, mappe e immagini
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 ## Scope approvato — issue #524
 
 Base: `31c826d114e313dd7976ebb51053272bafd4910c`. Rilascio autorizzato solo DEV.

@@ -1,5 +1,10 @@
 # AIGEN — Generazione IA di pool e lezioni (contratto e roadmap)
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 > Stato corrente: **AIGEN implementato e distribuito su DEV e PROD; Gate GAIGEN PASS
 > (15 agosto 2026)**. La riga storica AIGEN-00 descriveva soltanto la prima
 > progettazione. TTL, runtime OpenAI, smoke autenticati e conferma docente sono

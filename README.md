@@ -4,7 +4,15 @@ Repository didattico personale Markdown-first per un solo docente. Le lezioni e 
 
 ## Stato
 
-**MVP docente cartaceo + Portale studente M3-lite + Repository Editor — implementati, funzionanti sia in locale con emulatori Firebase sia su Firebase DEV (https://schoolforge-dev.web.app).**
+**Allineamento 9 ottobre 2026:** DEV e PROD servono la versione applicativa
+`c8b36d5` (rilascio PROD 8 ottobre, 18:44 Europe/Rome), incluse generazione e
+revisione lezioni/pool/mappe, correzioni e resoconti transienti. Modelli effettivi,
+target, prove, limiti del collaudo e prossime proposte in
+[stato operativo corrente](documentazione/stato-release-2026-10.md).
+Le checklist e descrizioni delle fasi originarie sotto restano riferimenti
+storici: una vecchia dicitura «solo DEV» non descrive il rollout corrente.
+
+**MVP docente cartaceo + Portale studente M3-lite + Repository Editor — implementati, funzionanti sia in locale con emulatori Firebase sia su Firebase DEV e PROD.**
 
 Il flusso completo è operativo e testato (suite automatica estesa + smoke test manuale + checklist DEV):
 
@@ -45,14 +53,20 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 - Il PDF cartaceo e il PDF studente di M3-lite sono scaricati direttamente nel browser, senza persistenza.
 - PDF, export e programma svolto sono generati on-demand nel browser e non conservati dal sistema.
 - Il ruolo utente è risolto confrontando `uid` con `ownerUid`: docente se coincide, studente in sola lettura altrimenti. Nessun accesso anonimo in M3-lite.
-- M3-lite non usa Cloud Functions: legge solo proiezioni pubbliche read-only entro Security Rules. M3-full (verifiche online) usa scritture client dirette con Security Rules; non introduce Cloud Functions.
-- L'AI (V2) è opzionale, non genera domande e non usa fonti web.
+- Nelle fasi originarie M3-lite legge proiezioni pubbliche read-only e M3-full
+  usa scritture client protette da Security Rules. Le evoluzioni successive
+  includono Functions per chiusura programmata, correzioni e contenuti IA:
+  «nessuna Cloud Function» non è un vincolo dell'applicazione corrente.
+- L’IA è opzionale e genera lezioni, pool di domande e mappe; assiste la
+  correzione lasciando al docente controllo e restituzione. Non aggiunge fonti
+  web automaticamente al materiale.
 - Firebase è la piattaforma; costi e componenti restano minimi, con scale-to-zero e avvisi budget.
 
 ## Percorso documentale
 
 | Documento | Funzione |
 |---|---|
+| [Stato corrente](documentazione/stato-release-2026-10.md) | Rilascio DEV/PROD, modelli, costo e limiti delle prove. |
 | [Indice](documentazione/INDEX.md) | Punto di ingresso e ordine di lettura della documentazione. |
 | [Guida operativa MVP](documentazione/mvp-docente-cartaceo.md) | Come avviare e usare l'MVP in locale. |
 | [Smoke test MVP](documentazione/evidenze/smoke-mvp-docente-cartaceo.md) | Checklist smoke test ripetibile. |

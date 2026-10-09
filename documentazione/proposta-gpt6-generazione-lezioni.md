@@ -1,5 +1,10 @@
 # SchoolForge — proposta GPT-6 per la generazione delle lezioni
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 **Stato:** fase 1 distribuita in DEV; tuning 1.1 della modalità Approfondita approvato; fasi 2–3 ancora proposte
 **Data:** 3 ottobre 2026
 **Ambito previsto:** configurazione dei modelli IA, progettazione didattica condivisa fra lezioni, pool e mappe, accounting dei costi e rollback

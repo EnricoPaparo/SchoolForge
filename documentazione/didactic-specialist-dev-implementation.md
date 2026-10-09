@@ -1,5 +1,10 @@
 # Qualità didattica — UDA e controlli specialistici
 
+> **Allineamento 9 ottobre 2026:** stato applicativo, modelli e rilascio DEV/PROD
+> in [stato-release-2026-10.md](stato-release-2026-10.md). Le date, i gate,
+> prezzi e limiti di autorizzazione delle fasi riportate sotto sono storici;
+> non sostituiscono la policy corrente e non autorizzano nuovi sviluppi/deploy.
+
 Task approvato il 5 ottobre 2026, issue #520. Baseline DEV `0dca4c8`, PR #519.
 Rilascio esclusivamente DEV; niente versionamento editoriale, nuove dipendenze,
 cambi di modello o riscrittura automatica di lezioni esistenti.

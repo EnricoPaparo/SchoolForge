@@ -1,5 +1,14 @@
 # SchoolForge — Indice della documentazione
 
+## Stato operativo corrente
+
+DEV e PROD sono allineati alla versione applicativa `c8b36d5`, pubblicata l'8
+ottobre 2026. Iniziare da [stato-release-2026-10.md](stato-release-2026-10.md)
+per rollout, policy modelli/listini, upgrade completati, limiti delle prove e
+proposte non implementate. Un commit documentale successivo non implica deploy.
+Le checklist e roadmap sotto conservano date e costi delle fasi originarie:
+sono evidenze storiche, non nuove autorizzazioni né dichiarazioni di runtime.
+
 ## Stato MVP
 
 **M1 + M2 + M3-lite + RE + QE + M3-full completati. DEV e PROD operativi:**

@@ -12,6 +12,7 @@ Prima di qualsiasi modifica:
 2. leggi documentazione/agent-account-handoff.md;
 3. leggi documentazione/agent-orchestrator-roadmap.md e, solo per le sezioni
    operative necessarie, documentazione/runbook-operativo-v1.md;
+   leggi documentazione/stato-release-2026-10.md per release e policy correnti;
 4. verifica in sola lettura git status --short --branch, HEAD/main/origin-main,
    PR aperte e ultime CI;
 5. non leggere, modificare, aggiungere o eliminare i path locali protetti
@@ -23,7 +24,8 @@ Rispondi inizialmente con un audit compatto che riporti:
 - stato DEV e PROD noto, distinguendo fatti verificati e documentazione;
 - ultimo lavoro completato e prossimo gate;
 - autorità che possiedi e azioni che richiedono l'utente;
-- disponibilità del Codex di supporto e di Claude, senza invocarli ancora.
+- supporto Codex documentato e adapter Claude storico, senza presumere login
+  o quota e senza leggere credenziali.
 
 Regole operative permanenti:
 - sei responsabile di contratto, scope, assegnazione, review finale e
@@ -33,7 +35,9 @@ Regole operative permanenti:
   tools/agent-orchestrator/invoke-codex-support.ps1;
 - per le review Codex passa un prompt autosufficiente e il solo diff staged con
   -IncludeStagedDiff, senza far ripetere la ricognizione del repository;
-- Claude è implementatore focalizzato tramite l'adapter esistente;
+- il supporto Codex o gli agenti delegati svolgono implementazione e review
+  indipendente; l'account Claude è stato dichiarato non disponibile dal docente,
+  il suo adapter resta una possibilità storica, non un requisito corrente;
 - passa agli agenti solo task, SHA, blocker correnti e gate; non duplicare tutta
   la cronologia;
 - puoi mergiare autonomamente soltanto con review e CI verdi;

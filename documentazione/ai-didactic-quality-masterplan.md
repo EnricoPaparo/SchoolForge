@@ -1,17 +1,15 @@
 # SchoolForge — masterplan per la qualità didattica IA
 
-**Stato:** lezioni e revisione disponibili in DEV; incremento pool/mappe/correzioni
-rilasciato con PR #519 (issue #518). Il prossimo incremento approvato (issue #520)
-copre criteri di valutazione, coerenza UDA e controlli specialistici.
+**Stato corrente, 9 ottobre 2026:** i tre blocchi approvati e la calibrazione
+lezioni/revisore sono completati e rilasciati in DEV e PROD. Riferimento canonico:
+[stato-release-2026-10.md](stato-release-2026-10.md).
 
-**Decisione successiva del docente (5 ottobre 2026):** versionamento editoriale,
-confronti e ripristino delle revisioni sono tolti dal piano prioritario. Le
-proposte storiche di seguito che li richiedono non sono prerequisiti del nuovo
-rilascio. Restano i checkpoint tecnici per recuperare operazioni interrotte.
-
-Lo stato storico delle singole fasi sotto non costituisce una dichiarazione di
-rilascio. Per il contratto e le evidenze dell'incremento corrente vedere
-[`didactic-specialist-dev-implementation.md`](didactic-specialist-dev-implementation.md).
+Questo masterplan distingue obiettivi progettuali e runtime. Le descrizioni
+storiche di impronta comune, soglie di qualità e ciclo editoriale non provano
+implementazione e non costituiscono un nuovo incarico. Versionamento editoriale,
+confronti e ripristino revisioni sono esclusi dal piano prioritario per decisione
+del docente; restano checkpoint tecnici e replay delle operazioni interrotte.
+Esercizi svolti: proposta separata non implementata, esclusa dal completamento.
 
 **Data:** 4 ottobre 2026
 
@@ -66,23 +64,15 @@ Il costo viene dopo correttezza, efficacia didattica, coerenza e affidabilità.
 Diventa discriminante fra configurazioni didatticamente equivalenti o quando
 una soluzione non è economicamente sostenibile.
 
-### 3.2 Immutabilità dopo l'approvazione
+### 3.2 Nessuna modifica automatica dopo le verifiche
 
-La revisione automatica è ammessa soltanto mentre il contenuto è una bozza.
-Dopo l'approvazione del docente, la lezione pubblicata resta immutata e
-versionata. Risultati di verifiche, correzioni o osservazioni sugli studenti non
-la modificano automaticamente.
+Risultati di verifiche e correzioni non riscrivono la lezione. Il docente
+mantiene il controllo delle modifiche e del salvataggio del materiale.
 
-Un miglioramento successivo deve creare una nuova bozza, su azione esplicita
-del docente, conservando la versione studiata e i riferimenti degli artefatti
-già prodotti.
-
-Per «approvazione» si intende la pubblicazione esplicita della revisione da
-parte del docente, non il semplice inserimento della proposta IA nell'editor e
-non il salvataggio automatico di stato locale. Il docente può continuare a
-modificare liberamente una bozza. Se modifica una lezione già pubblicata, il
-sistema prepara una nuova revisione e la versione precedente resta disponibile
-finché è referenziata da materiali o attività esistenti.
+La precedente proposta di lezione pubblicata immutabile/versionata, nuova bozza
+per ogni modifica e conservazione di tutte le revisioni è stata esclusa dal
+piano prioritario. Non descrive il runtime e non è un prerequisito dei tre
+upgrade rilasciati. Eventuali sviluppi futuri richiedono un contratto separato.
 
 ### 3.3 Indipendenza dai dati delle verifiche
 
@@ -113,6 +103,9 @@ permanente invisibile.
 
 ## 4. Architettura didattica comune
 
+**Architettura obiettivo non implementata:** questa sezione conserva la
+proposta di impronta condivisa, distinta dai prompt e controlli già rilasciati.
+
 Lezione, mappa, pool e correzione devono derivare da una stessa impronta
 didattica strutturata. Prima di produrre il testo, SchoolForge identifica:
 
@@ -129,13 +122,13 @@ didattica strutturata. Prima di produrre il testo, SchoolForge identifica:
 Questa impronta è interna. Non impone una struttura rigida visibile allo
 studente e non deve trasformare ogni lezione in una checklist.
 
-L'impronta è valida soltanto per l'esatto corpo da cui deriva. Deve quindi
-conservare `lessonRevisionId` e hash del corpo canonico. Qualunque modifica del
-docente invalida l'impronta precedente. Mappa, pool e contratto di valutazione
-possono riutilizzarla solo quando versione e hash coincidono; in caso contrario
-devono fermarsi prima della chiamata oppure rigenerarla dal corpo aggiornato,
-mai usare silenziosamente dati obsoleti. Il corpo approvato resta la fonte
-canonica.
+**Proposta non implementata:** un'eventuale impronta comune dovrebbe restare
+legata all'esatto corpo sorgente e non riutilizzare dati obsoleti. La precedente
+richiesta di `lessonRevisionId`, versioni e hash editoriali appartiene alla
+proposta di versionamento esclusa dal piano prioritario; non è presente come
+contratto obbligatorio del materiale attuale. Il corpo corrente resta la fonte
+usata dalla generazione degli artefatti. Il diagramma seguente rappresenta una
+proposta storica, non l'architettura rilasciata.
 
 ```mermaid
 flowchart TD
@@ -566,9 +559,11 @@ spese contenute: il benchmark finale delle lezioni del 3 ottobre 2026 ha usato
 **Gate:** test locali verdi, nessun cambiamento di output o chiamata provider,
 review indipendente e CI completa.
 
-### Fase 0B — Ciclo di vita delle lezioni
+### Fase 0B — Ciclo di vita delle lezioni (proposta esclusa dal piano prioritario)
 
-Prima di collegare l'impronta agli altri artefatti, definire e implementare:
+La lista seguente conserva la proposta storica di versionamento. Non va
+eseguita come requisito del rilascio corrente né ripristinata senza un nuovo
+contratto approvato:
 
 1. distinzione fra bozza modificabile e revisione pubblicata;
 2. `lessonRevisionId` e hash del corpo approvato;
@@ -689,12 +684,13 @@ didattiche visibili. Deve produrre:
 6. compatibilità dei run legacy e prova di assenza di doppie chiamate;
 7. rollback per singola operazione documentato.
 
-Subito dopo vengono **Fase 0B — ciclo di vita delle lezioni** e **Fase 0C —
-orchestrazione della revisione avanzata**. Soltanto quando versione, hash,
-checkpoint e accounting sono affidabili si implementa **Fase 1A — impronta
-didattica delle lezioni** e il relativo revisore. Il confronto
-base/revisionato serve a qualificarlo; dopo la promozione, lo switch è attivo
-per impostazione predefinita e ogni stima ne include il costo.
+**Aggiornamento operativo:** la sequenza storica sopra è superata per i tre
+blocchi già rilasciati. Fase 0B/versionamento è esclusa dal piano prioritario;
+impronta comune e soglie esperte restano idee da valutare. La revisione corrente
+è disponibile con switch attivo di default e stima/prenotazione separata dopo
+la bozza; non richiede uno storico editoriale o una stima aggregata preventiva.
+Qualunque passo futuro deve partire dal runtime e dalle evidenze correnti,
+con approvazione dello scope, non dall'esecuzione automatica di tutta la roadmap.
 
 ## 11. Migliorie candidate oltre la revisione
 

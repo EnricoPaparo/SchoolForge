@@ -1,51 +1,34 @@
 # SchoolForge — handoff tra account Codex
 
-**Snapshot verificato:** 1 settembre 2026
+**Snapshot aggiornato:** 9 ottobre 2026. Stato applicativo del rollout dell'8 ottobre.
 
-**Scopo:** trasferire il ruolo di orchestratore a un altro account Codex senza
-trasferire credenziali o dipendere dalla memoria di una conversazione.
+**Scopo:** riprendere il lavoro senza trasferire credenziali o dipendere dalla
+memoria di una conversazione. Git e GitHub prevalgono sempre su questo snapshot.
 
 ## 1. Fonte di verità e stato corrente
 
-- Repository: `EnricoPaparo/SchoolForge`.
-- Branch autorevole: `main`.
-- Baseline applicativa verificata prima della PR di handoff:
-  `6af0e56f6484f94fff158b733347f49300218cb2`, merge della PR `#447`
-  (`fix/complete-lesson-visual-proposal-recovery`).
-- PR aperte al momento dello snapshot: nessuna.
-- Ultima CI su `main`: verde (`Format · Lint · Typecheck · Test · Build`).
-- DEV: `https://schoolforge-dev.web.app`, operativo. Hosting e la callable
-  `aiVisualPlanAuthorize` della PR #447 sono stati distribuiti in DEV.
-- PROD: `https://schoolforge-prod.web.app`, operativo e separato da DEV. Le
-  correzioni #445–#447 non risultano distribuite in PROD in questo snapshot.
-- I due ambienti Firebase sono `schoolforge-dev` e `schoolforge-prod`; regioni,
-  comandi e limiti sono nel runbook operativo.
-
-Prima di agire, l'orchestratore deve riverificare questi dati: lo snapshot non
-sostituisce Git, GitHub o lo stato Firebase corrente.
+- Repository `EnricoPaparo/SchoolForge`, branch autorevole `main`.
+- Versione applicativa DEV e PROD: `c8b36d5447fdd2e4ce15d61ade846cf44efacc87`.
+- Rilascio consolidato PROD: 8 ottobre 2026, 18:44 Europe/Rome; DEV allineato
+  allo stesso codice applicativo, con build e dati separati per ambiente.
+- PR #525/#527/#529/#531 rilasciate; CI main 37807117941 verde.
+- Dettaglio di target, modelli/listini, limiti dello smoke e prove:
+  [stato-release-2026-10.md](stato-release-2026-10.md).
+- Nessuna PR aperta alla ricognizione iniziale del task documentale.
+  Verificare nuovamente status, HEAD e PR a ogni ripresa.
 
 ## 2. Ultimo lavoro e prossimo gate
 
-La generazione completa della lezione orchestra contenuto, mappa concettuale,
-pool di domande e immagini in profilo Quality, preservando i metadati.
+Completati i tre upgrade approvati: spiegazioni/esempi delle lezioni,
+correzioni e affinamenti leggeri di mappe/immagini. Il revisore lezione usa
+GPT-6.1 Sol per entrambi i profili; pool e mappa usano GPT-5.6 Luna.
+Resoconti del revisore transienti con «i», anche nel completamento; portal
+contenuto nel viewport e chiusura esterna senza azioni sottostanti.
 
-Ultime tre correzioni:
-
-1. PR #445: memoria della Function di generazione slot visuale portata a
-   512 MiB, concorrenza 1 e timeout 120 secondi per evitare OOM.
-2. PR #446: eliminata la race React che ripristinava una mappa concettuale
-   precedente dopo il salvataggio del pool.
-3. PR #447: un output visuale con soggetto lievemente troppo lungo viene
-   compattato al confine provider; un run fallito non viene più presentato come
-   una decisione valida «nessuna immagine»; il retry usa una nuova identità del
-   piano senza rigenerare contenuto, mappa o pool.
-
-**Prossimo gate consigliato:** smoke umano su DEV della generazione completa.
-Verificare che una lezione nuova produca e conservi contenuto, mappa, pool e
-immagini; in caso di errore visuale, verificare che il messaggio sia corretto e
-che il retry completi soltanto gli elementi mancanti. Dopo il PASS umano si può
-decidere un eventuale rollout PROD, che richiede una nuova autorizzazione
-esplicita.
+Nessun deploy residuo per questo blocco. Prossimo controllo: collaudo docente
+nell'uso reale dopo F5 e osservazione di errori riproducibili. Lo smoke pubblico
+PROD non prova tutti i flussi autenticati. Gli esercizi svolti restano una
+proposta separata non implementata, esclusa dalla generazione completa.
 
 ## 3. Autorità già stabilita
 
@@ -56,8 +39,9 @@ esplicita.
 - Non può distribuire PROD, eseguire provider reali, spendere budget, leggere
   secret o compiere migrazioni distruttive senza autorizzazione esplicita nel
   task corrente.
-- Una richiesta di diagnosi non autorizza automaticamente un fix; una richiesta
-  di implementazione include invece le normali modifiche e verifiche necessarie.
+- Lo scope richiesto guida l'autonomia: una richiesta di implementazione include
+  le modifiche reversibili e le verifiche necessarie. Chiarire soltanto decisioni
+  materialmente fuori scope o autorizzazioni riservate all'utente.
 
 ## 4. Ruoli dopo lo switch
 
@@ -65,11 +49,13 @@ esplicita.
 |---|---|---|
 | Orchestratore principale | altro account, Desktop app; profilo CLI esistente `C:\Users\Erry\.codex-account-2` | contratto, pianificazione, assegnazione, review finale, merge e DEV |
 | Codex di supporto | account precedentemente usato nella Desktop app; profilo dedicato `C:\Users\Erry\.codex-schoolforge-support` | review indipendente o implementazione focalizzata su worktree separato |
-| Claude Code | autenticazione `claude.ai` già gestita dall'adapter in `tools/agent-orchestrator/` | implementazione focalizzata e correzioni sul branch assegnato |
+| Claude Code | adapter storico in `tools/agent-orchestrator/`; account non disponibile nel flusso attuale secondo il docente | non richiesto per sviluppo o review correnti |
 | Utente | gate umano | decisioni di prodotto, UI, costi reali e PROD |
 
-I nomi dei profili non provano l'identità dell'account. Ogni profilo deve essere
-autenticato separatamente e verificato prima dello switch. Non copiare mai
+Il supporto Codex e gli agenti delegati coprono implementazione e review
+indipendente: un solo writer per branch/worktree. I percorsi dei profili sono
+riferimenti locali, non prova di autenticazione o quota. Questo allineamento
+non ha controllato login, credenziali o disponibilità degli account. Non copiare mai
 `auth.json`, token o altre credenziali fra directory `CODEX_HOME`.
 
 ## 5. Regola di efficienza
@@ -84,8 +70,10 @@ Per ogni task:
 6. massimo quattro cicli di review;
 7. quote esplicite producono checkpoint e attesa, non polling o ricostruzione.
 
-Usare Luna per controlli meccanici e circoscritti; usare un modello più capace
-solo per architettura, race, sicurezza, accounting o review ad alto rischio.
+Proporzionare il lavoro delegato al rischio e al contratto. Non presumere
+disponibilità, autenticazione o quota di uno specifico modello/account; seguire
+le istruzioni della sessione per le scelte di modello e mantenere indipendente
+la review di architettura, race, sicurezza e accounting.
 
 ## 6. Invocare il Codex di supporto
 
@@ -154,7 +142,7 @@ Lo switch è riuscito soltanto se il nuovo orchestratore:
 1. legge `AGENTS.md` e questo handoff;
 2. riferisce correttamente HEAD, PR, CI, DEV/PROD e prossimo gate senza scrivere;
 3. invoca il Codex di supporto in read-only e riceve una review coerente;
-4. esegue il preflight Claude senza chiamare il modello;
+4. distingue l’adapter Claude storico dal supporto Codex corrente;
 5. distingue chiaramente merge autonomo, deploy DEV e autorizzazione PROD;
 6. conserva intatti i path protetti.
 
