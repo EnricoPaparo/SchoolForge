@@ -66,19 +66,23 @@ function checkpoint(): ReviewCheckpointPorts & {
   };
 }
 describe('independent correction review', () => {
-  it('passes immutable evidence twice without first score or feedback and preserves valid alternative', async () => {
-    const grade = vi.fn(async () => output());
+  it('audits the first proposal against immutable evidence and preserves valid alternative', async () => {
+    const grade = vi.fn(async (_input: AiGraderInput) => output());
     const result = await gradeWithIndependentReview({ id: 'mock', grade }, input, {});
     expect(grade).toHaveBeenCalledTimes(2);
-    expect(grade.mock.calls[0]).toEqual(grade.mock.calls[1]);
+    expect(grade.mock.calls[0]?.[0]).not.toHaveProperty('reviewProposal');
+    expect((grade.mock.calls[1] as unknown[])[0]).toMatchObject({
+      ...input,
+      reviewProposal: { results: output().results, generalFeedback: output().generalFeedback },
+    });
     expect(result.reviews.get(0)).toEqual({ status: 'verified', reasons: [] });
     expect(result.usage?.inputTokens).toBe(20);
   });
-  it('keeps primary provisional on any score disagreement, without averaging', async () => {
+  it('applies the validated audit score and feedback even for a quarter-point correction', async () => {
     const grade = vi.fn().mockResolvedValueOnce(output(5)).mockResolvedValueOnce(output(4.75));
     const result = await gradeWithIndependentReview({ id: 'mock', grade }, input, {});
-    expect(result.results[0]?.points).toBe(5);
-    expect(result.reviews.get(0)?.reasons).toContain('score_disagreement');
+    expect(result.results[0]?.points).toBe(4.75);
+    expect(result.reviews.get(0)).toEqual({ status: 'verified', reasons: [] });
   });
   it.each(['ambiguity', 'reviewRecommended', 'alternativeValid'] as const)(
     'does not compare textual feedback; flags closed evidence %s',
@@ -94,7 +98,9 @@ describe('independent correction review', () => {
         input,
         {},
       );
-      expect(result.reviews.get(0)?.status).toBe('review_recommended');
+      expect(result.reviews.get(0)?.status).toBe(
+        flag === 'alternativeValid' ? 'verified' : 'review_recommended',
+      );
     },
   );
   it('accepts equal closed evidence despite differently worded feedback', async () => {

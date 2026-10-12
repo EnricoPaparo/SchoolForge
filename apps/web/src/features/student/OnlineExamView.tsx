@@ -1,3 +1,4 @@
+import { useServerExamClock } from './serverExamClock.js';
 import { useEffect, useRef, useState } from 'react';
 import { db } from '../../lib/firebase.js';
 import type {
@@ -142,6 +143,7 @@ export function OnlineExamView({
   const [forceClose, setForceClose] = useState<ForceCloseRequest | null>(null);
   /** La scadenza è passata: i controlli sono bloccati in attesa della ricevuta. */
   const [forceCloseExpired, setForceCloseExpired] = useState(false);
+  const serverClock = useServerExamClock(!sessionEnded);
   /**
    * I tentativi di leggere la ricevuta si sono esauriti senza trovarla: lo
    * studente deve vedere un errore esplicito e poter riprovare, non restare su
@@ -431,7 +433,7 @@ export function OnlineExamView({
             invalidateReceiptProbes();
             seenForceCloseRef.current = request.requestId;
             setReceiptError(false);
-            setForceCloseExpired(remainingSeconds(request.deadlineMs, Date.now()) <= 0);
+            setForceCloseExpired(false);
             if (dirtyRef.current) void persistDraft();
           }
         },
@@ -460,12 +462,14 @@ export function OnlineExamView({
     if (forceClose === null) return;
     const tick = () => {
       if (!mountedRef.current) return;
-      if (remainingSeconds(forceClose.deadlineMs, Date.now()) <= 0) setForceCloseExpired(true);
+      const now = serverClock.now();
+      if (now !== null && remainingSeconds(forceClose.deadlineMs, now) <= 0)
+        setForceCloseExpired(true);
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [forceClose]);
+  }, [forceClose, serverClock.now, serverClock.revision]);
 
   // Autosave: only when dirty, at most once every 120s — never on every
   // keystroke. A single interval set up once; refs keep it reading current
@@ -638,6 +642,7 @@ export function OnlineExamView({
       {forceClose !== null && !sessionEnded && (
         <ForceCloseBanner
           deadlineMs={forceClose.deadlineMs}
+          nowMs={serverClock.now}
           lastSavedLabel={lastSavedLabel}
           saving={saving}
           onSaveNow={() => void persistDraft()}

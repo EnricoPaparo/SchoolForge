@@ -1,3 +1,4 @@
+import { buildMaximumAuditInput, estimateAuditProposalTokens } from './openAiGrader.js';
 import {
   gradeWithIndependentReview,
   reviewInputHash,
@@ -1415,7 +1416,11 @@ function computeReservationBoundMicroUsd(
     );
     const bound = perAttemptBoundTokens(grader, graderInput);
     inputTokens +=
-      bound.inputTokens * maxAttemptsPerCall * (request.advancedReview === false ? 1 : 2);
+      (bound.inputTokens +
+        (request.advancedReview === false
+          ? 0
+          : perAttemptBoundTokens(grader, buildMaximumAuditInput(graderInput)).inputTokens)) *
+      maxAttemptsPerCall;
     outputTokens +=
       bound.outputTokens * maxAttemptsPerCall * (request.advancedReview === false ? 1 : 2);
   }
@@ -1497,7 +1502,18 @@ export async function runPreview(
   // listino del profilo risolto (TWU-02).
   const passes = request.advancedReview === false ? 1 : 2;
   const cost = buildCostEstimateFields(effectiveConfig, {
-    inputTokens: preflight.estimate.inputTokens * passes,
+    inputTokens:
+      preflight.estimate.inputTokens * passes +
+      (passes === 2
+        ? preflight.classifications.reduce(
+            (sum, item) =>
+              item.classification.status === 'eligible' &&
+              item.classification.eligible.openOrders.length > 0
+                ? sum + estimateAuditProposalTokens(item.classification.eligible.openOrders.length)
+                : sum,
+            0,
+          )
+        : 0),
     outputTokens: preflight.estimate.outputTokens * passes,
   });
   let maximumCostMicroUsd = 0;
@@ -1520,14 +1536,23 @@ export async function runPreview(
         request.gradingMode,
         request.teacherGuidance,
       );
-      const attempts = passes * (effectiveConfig.limits.maxApplicationRetries + 1);
+      const attempts = effectiveConfig.limits.maxApplicationRetries + 1;
       maximumCostMicroUsd +=
         estimateCostBreakdown(
-          Buffer.byteLength(
+          (Buffer.byteLength(
             JSON.stringify(buildOpenAiGradingRequest(input, effectiveConfig.model)),
             'utf8',
-          ) * attempts,
-          OPENAI_MAX_OUTPUT_TOKENS * attempts,
+          ) +
+            (passes === 2
+              ? Buffer.byteLength(
+                  JSON.stringify(
+                    buildOpenAiGradingRequest(buildMaximumAuditInput(input), effectiveConfig.model),
+                  ),
+                  'utf8',
+                )
+              : 0)) *
+            attempts,
+          OPENAI_MAX_OUTPUT_TOKENS * attempts * passes,
           effectiveConfig.priceListVersion,
           effectiveConfig.model,
         )?.costMicroUsd ?? 0;
@@ -2287,7 +2312,11 @@ async function gradeEligible(
   // Token REALI (0/0 col mock o senza usage). Aggiornati dall'usage del provider,
   // **anche** se l'output viene poi rifiutato (costo comunque contabilizzato).
   if (ctx.request.advancedReview !== false) {
-    estimate.inputTokens *= 2;
+    estimate.inputTokens =
+      estimate.inputTokens * 2 +
+      (eligible.openOrders.length > 0
+        ? estimateAuditProposalTokens(eligible.openOrders.length)
+        : 0);
     estimate.outputTokens *= 2;
   }
   let actualInput = 0;
@@ -2355,7 +2384,18 @@ async function gradeEligible(
     );
     // Tetto **per tentativo** (input upper bound + max output) di questa consegna:
     // base per contabilizzare in modo prudente i tentativi dal costo incerto.
-    const attemptBound = perAttemptBoundTokens(ctx.grader, graderInput);
+    const primaryAttemptBound = perAttemptBoundTokens(ctx.grader, graderInput);
+    const auditAttemptBound =
+      ctx.request.advancedReview === false
+        ? primaryAttemptBound
+        : perAttemptBoundTokens(ctx.grader, buildMaximumAuditInput(graderInput));
+    // Aggregated attempt stats do not identify which stage lost its billing
+    // outcome. Cover the larger stage for every uncertain attempt; settlement
+    // remains capped by the reservation for all permitted attempts.
+    const attemptBound = {
+      inputTokens: Math.max(primaryAttemptBound.inputTokens, auditAttemptBound.inputTokens),
+      outputTokens: Math.max(primaryAttemptBound.outputTokens, auditAttemptBound.outputTokens),
+    };
     const applyAttempts = (stats: AiGraderAttemptStats | undefined): void => {
       attempts = stats ?? SINGLE_ATTEMPT_STATS;
       settledBound = {

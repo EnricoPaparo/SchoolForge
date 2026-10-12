@@ -148,3 +148,14 @@ Lo switch è riuscito soltanto se il nuovo orchestratore:
 
 In caso di fallimento, effettuare nuovamente il login Desktop con l'account
 precedente: repository e profili CLI restano indipendenti dal logout dell'app.
+
+## Task corrente — 12 ottobre 2026: chiusura e revisore verifiche
+
+Implementazione su `fix/exam-close-review-order` dalla base `35076fc`.
+Contratto, evidenze, target mirati e rollback:
+[exam-close-review-order-2026-10.md](exam-close-review-order-2026-10.md).
+Il task corrente autorizza DEV, PROD e smoke IA; review indipendente e CI verde
+precedono merge/deploy gestiti dall'orchestratore. Alla stesura di questo
+addendum l'implementatore non ha distribuito né modificato dati cloud. Le
+quattro correzioni legacy con punteggi esistenti saranno completabili senza
+ricalcolo dopo il rilascio; non è una migrazione delle bozze IA incomplete.

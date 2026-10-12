@@ -3441,25 +3441,25 @@ describe('VerificationsView — sort order', () => {
       .map((button) => button.getAttribute('aria-label')?.replace('Apri dettaglio verifica ', ''));
   }
 
-  it('orders active verifications by activatedAt descending (most recent first)', async () => {
+  it('orders by teaching date even when activation order differs', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([
       makeDraftVer({
         id: 'ver-older',
         status: 'active',
-        activatedAt: { seconds: 1000, nanoseconds: 0 },
-        config: { ...makeDraftVer().config, title: 'Verifica Vecchia' },
+        activatedAt: { seconds: 3000, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'AAA Vecchia', verificationDate: '2026-01-01' },
       }),
       makeDraftVer({
         id: 'ver-newer',
         status: 'active',
         activatedAt: { seconds: 2000, nanoseconds: 0 },
-        config: { ...makeDraftVer().config, title: 'Verifica Recente' },
+        config: { ...makeDraftVer().config, title: 'Zeta Recente', verificationDate: '2026-03-01' },
       }),
     ]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByText('Verifica Recente'));
-    expect(titlesInOrder()).toEqual(['Verifica Recente', 'Verifica Vecchia']);
+    await waitFor(() => screen.getByText('Zeta Recente'));
+    expect(titlesInOrder()).toEqual(['Zeta Recente', 'AAA Vecchia']);
   });
 
   it('puts drafts without any relevant date at the bottom', async () => {
@@ -3473,7 +3473,11 @@ describe('VerificationsView — sort order', () => {
         id: 'ver-active',
         status: 'active',
         activatedAt: { seconds: 1000, nanoseconds: 0 },
-        config: { ...makeDraftVer().config, title: 'Verifica Attiva' },
+        config: {
+          ...makeDraftVer().config,
+          title: 'Verifica Attiva',
+          verificationDate: '2026-01-01',
+        },
       }),
     ]);
     render(<VerificationsView />);
@@ -3481,7 +3485,7 @@ describe('VerificationsView — sort order', () => {
     expect(titlesInOrder()).toEqual(['Verifica Attiva', 'Verifica Bozza']);
   });
 
-  it('falls back to closedAt, then updatedAt, when activatedAt is missing', async () => {
+  it('sorts undated cards by Italian title and ignores operational timestamps', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([
       makeDraftVer({

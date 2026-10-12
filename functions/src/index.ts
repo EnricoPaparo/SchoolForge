@@ -73,3 +73,5 @@ export {
 // `runScheduledForceClose` esegue alla scadenza (task queue Cloud Tasks).
 // Vedi documentazione/api-contract.md.
 export { scheduleForceCloseSubmissions, runScheduledForceClose } from './forceCloseGateway.js';
+
+export { examServerTime } from './examServerTime.js';

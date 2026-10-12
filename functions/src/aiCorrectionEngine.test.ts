@@ -11,6 +11,7 @@ import {
 } from './aiCorrectionGatewayCore.js';
 import {
   USD_MICRO,
+  estimateCostBreakdown,
   OPENAI_RUNTIME_GPT6_LUNA_MODEL,
   OPENAI_RUNTIME_GPT6_LUNA_PRICE_LIST_VERSION,
   OPENAI_RUNTIME_GPT61_SOL_MODEL,
@@ -3393,7 +3394,7 @@ describe('advanced correction review integration', () => {
   });
 });
 
-it('review choice changes idempotent identity and doubles normal preview workload', async () => {
+it('review choice changes identity and estimates both calls plus the audit proposal', async () => {
   const store = new FakeStore();
   seedOneOpenOneClosed(store);
   const base = await runPreview(
@@ -3404,10 +3405,60 @@ it('review choice changes idempotent identity and doubles normal preview workloa
     req([sid('s1')], { advancedReview: true }),
     baseDeps(store, new MockAiGrader()),
   );
-  expect(reviewed.inputTokensEstimated).toBe(2 * base.inputTokensEstimated);
+  expect(reviewed.inputTokensEstimated).toBeGreaterThan(2 * base.inputTokensEstimated);
   expect(reviewed.outputTokensEstimated).toBe(2 * base.outputTokensEstimated);
   expect(reviewed.advancedReview).toBe(true);
   expect(computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy', undefined, true)).not.toBe(
     computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy', undefined, false),
   );
 });
+
+it.each([true, false])(
+  'settles uncertain audit billing using its larger input bound; advancedReview=%s',
+  async (advancedReview) => {
+    const now = Date.UTC(2026, 6, 17, 12, 0, 0);
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store);
+    const mock = new MockAiGrader();
+    const failure = new AiGraderFailure('Unknown transport outcome', {
+      reasonCode: 'timeout',
+      attempts: attemptStats({ unknownBillingAttempts: 1 }),
+    });
+    const grade = vi.fn<AiGrader['grade']>();
+    if (advancedReview)
+      grade.mockImplementationOnce(async (input) => ({
+        ...(await mock.grade(input)),
+        usage: { inputTokens: 10, outputTokens: 5, tokens: 15 },
+        attempts: attemptStats(),
+      }));
+    grade.mockRejectedValueOnce(failure);
+    const primaryBound = 9421;
+    const auditBound = 25838;
+    const grader: AiGrader = {
+      ...realGrader(grade),
+      reservationInputTokenUpperBound: (input) =>
+        input.reviewProposal ? auditBound : primaryBound,
+    };
+    const result = await runExecution(
+      req([sid('s1')], { advancedReview }),
+      openaiDeps(store, grader, now),
+    );
+    const unknownBound = estimateCostBreakdown(
+      advancedReview ? auditBound : primaryBound,
+      TEST_MAX_OUTPUT_TOKENS,
+      ENABLED_RUNTIME_CONFIG.priceListVersion,
+      ENABLED_RUNTIME_CONFIG.model,
+    )!.costMicroUsd;
+    expect(grade).toHaveBeenCalledTimes(advancedReview ? 2 : 1);
+    expect(store.commitCalls).toBe(0);
+    expect(store.corrections.size).toBe(0);
+    expect(result.counts.failed).toBe(1);
+    expect(result.inputTokensActual).toBe(advancedReview ? 10 : 0);
+    expect(result.outputTokensActual).toBe(advancedReview ? 5 : 0);
+    expect(result.retry.unknownBillingAttempts).toBe(1);
+    expect(result.costSettledMicroUsd).toBe(result.costActualMicroUsd + unknownBound);
+    expect(result.costSettledMicroUsd).toBeLessThanOrEqual(result.costReservationMicroUsd);
+    expect(store.ledgers.get(monthKeyFromMs(now))!.spentMicroUsd).toBe(result.costSettledMicroUsd);
+    expect(store.runs.get(REQ)!.costSettledMicroUsd).toBe(result.costSettledMicroUsd);
+  },
+);

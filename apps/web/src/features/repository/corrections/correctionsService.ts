@@ -62,7 +62,8 @@ function mirrorCorrectionProgress(
     submissionUpdate.correctionSummary = options.summary;
     submissionUpdate.correctionSummaryUpdatedAt = updatedAt;
   }
-  batch.update(doc(db, 'submissions', submissionId), submissionUpdate);
+  if (Object.keys(submissionUpdate).length > 0)
+    batch.update(doc(db, 'submissions', submissionId), submissionUpdate);
   if (options.status) {
     batch.update(doc(db, 'submissionReceipts', submissionId), {
       correctionStatus: options.status,
@@ -535,9 +536,13 @@ export async function saveCorrection(
   batch.update(ref, update);
   mirrorCorrectionProgress(batch, submissionId, db, {
     ...(publicStatusChanged ? { status: nextPublicStatus } : {}),
-    summary: correctionSummary(totals),
+    ...(correction.totalPoints !== totals.totalPoints ||
+    correction.maxPoints !== totals.maxPoints ||
+    correction.percentage !== totals.percentage
+      ? { summary: correctionSummary(totals) }
+      : {}),
   });
-  if (isReopenedCorrection(correction)) {
+  if (isReopenedCorrection(correction) && (questionDeltas.length > 0 || generalFeedbackDelta)) {
     const event: CorrectionEventDoc = {
       correctionId: submissionId,
       ownerUid: correction.ownerUid,
@@ -578,11 +583,6 @@ export async function completeCorrection(
   const correction = snap.data() as CorrectionDoc;
   await assertCorrectionMatchesAuthoritativeVariant(correction, db, 'completare', context);
   assertValidCorrectionStatusTransition(correction.status, 'completed');
-  if (
-    Object.values(correction.evaluations).some((e) => e.aiReview?.status === 'review_recommended')
-  ) {
-    throw new Error('Confermare la revisione docente dei disaccordi IA prima di completare.');
-  }
   if (!isCorrectionComplete(correction.evaluations)) {
     throw new Error('Impossibile completare: una o più domande non sono ancora state valutate.');
   }

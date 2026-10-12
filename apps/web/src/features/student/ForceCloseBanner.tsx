@@ -20,7 +20,7 @@ export interface ForceCloseBannerProps {
   saving: boolean;
   onSaveNow: () => void;
   /** Orologio iniettabile: i test non dipendono dal tempo reale. */
-  nowMs?: () => number;
+  nowMs?: () => number | null;
 }
 
 export function ForceCloseBanner({
@@ -28,9 +28,13 @@ export function ForceCloseBanner({
   lastSavedLabel,
   saving,
   onSaveNow,
-  nowMs = () => Date.now(),
+  nowMs = () => null,
 }: ForceCloseBannerProps) {
-  const [remaining, setRemaining] = useState(() => remainingSeconds(deadlineMs, nowMs()));
+  const secondsRemaining = () => {
+    const now = nowMs();
+    return now === null ? null : remainingSeconds(deadlineMs, now);
+  };
+  const [remaining, setRemaining] = useState(() => secondsRemaining());
 
   /*
    * Il countdown è **ricalcolato** dalla deadline a ogni tick, mai decrementato:
@@ -38,14 +42,14 @@ export function ForceCloseBanner({
    * resta davvero — e quel tempo è una promessa fatta allo studente.
    */
   useEffect(() => {
-    setRemaining(remainingSeconds(deadlineMs, nowMs()));
+    setRemaining(secondsRemaining());
     const id = setInterval(() => {
-      setRemaining(remainingSeconds(deadlineMs, nowMs()));
+      setRemaining(secondsRemaining());
     }, 1000);
     return () => clearInterval(id);
   }, [deadlineMs, nowMs]);
 
-  const expired = remaining <= 0;
+  const expired = remaining !== null && remaining <= 0;
 
   return (
     <>
@@ -61,7 +65,9 @@ export function ForceCloseBanner({
             <span>Chiusura verifica in corso…</span>
           </p>
           <p className={styles.deadline}>
-            {expired ? (
+            {remaining === null ? (
+              'Sincronizzazione della scadenza…'
+            ) : expired ? (
               'Chiusura in corso…'
             ) : (
               <>
