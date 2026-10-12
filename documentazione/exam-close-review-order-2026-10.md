@@ -1,6 +1,7 @@
 # EXAM-CLOSE-REVIEW-ORDER — contratto ed evidenze (12 ottobre 2026)
 
 Issue: [#534](https://github.com/EnricoPaparo/SchoolForge/issues/534).
+PR draft: [#535](https://github.com/EnricoPaparo/SchoolForge/pull/535).
 Base: `35076fc45515481463607444d45643963baab777`; branch
 `fix/exam-close-review-order`. Un solo writer; orchestratore responsabile di
 review indipendente, merge e rollout. L'utente ha autorizzato implementazione,
@@ -77,11 +78,15 @@ provider, accessi ai secret o scritture cloud applicative.
 
 ## Rollout e rollback
 
-Dopo review e CI verde, orchestratore: deploy DEV mirato e smoke autenticato,
-poi PROD autorizzato nel task corrente con il runbook. Target nuovi/modificati:
+Dopo review e CI verde, orchestratore: deploy DEV mirato e smoke pubblico,
+poi PROD autorizzato nel task corrente con il runbook. I flussi autenticati sono
+coperti da test UI e Rules emulator CI; la sessione browser disponibile è al
+login e non consente di dichiarare uno smoke autenticato cloud. Dopo deploy
+verificare pagina pubblica, bundle e rifiuto 401 anonimo delle callable. Target nuovi/modificati:
 `functions:examServerTime`, `functions:aiCorrectionPreview`,
 `functions:aiCorrectionRun`, hosting. Non occorre deploy Rules. Verificare clock
-PC ±120 s, sessione riaperta e chiusura dopo la deadline originale, salvataggio
-feedback-only, complete delle quattro vecchie correzioni senza modifica dei
-punteggi, nuove correzioni ON/OFF. Rollback applicativo al commit base, senza
+PC ±120 s, sessione riaperta e deadline originale, feedback-only e nuove
+correzioni ON/OFF nei test. Dopo F5 l’utente potrà completare le quattro
+correzioni legacy nell’applicazione, mantenendo i punteggi: nessun completamento
+automatico né scrittura applicativa cloud sono inclusi nel rollout. Rollback applicativo al commit base, senza
 cancellazione di dati/manuali/checkpoint; kill switch IA resta disponibile.
