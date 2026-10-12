@@ -2384,7 +2384,18 @@ async function gradeEligible(
     );
     // Tetto **per tentativo** (input upper bound + max output) di questa consegna:
     // base per contabilizzare in modo prudente i tentativi dal costo incerto.
-    const attemptBound = perAttemptBoundTokens(ctx.grader, graderInput);
+    const primaryAttemptBound = perAttemptBoundTokens(ctx.grader, graderInput);
+    const auditAttemptBound =
+      ctx.request.advancedReview === false
+        ? primaryAttemptBound
+        : perAttemptBoundTokens(ctx.grader, buildMaximumAuditInput(graderInput));
+    // Aggregated attempt stats do not identify which stage lost its billing
+    // outcome. Cover the larger stage for every uncertain attempt; settlement
+    // remains capped by the reservation for all permitted attempts.
+    const attemptBound = {
+      inputTokens: Math.max(primaryAttemptBound.inputTokens, auditAttemptBound.inputTokens),
+      outputTokens: Math.max(primaryAttemptBound.outputTokens, auditAttemptBound.outputTokens),
+    };
     const applyAttempts = (stats: AiGraderAttemptStats | undefined): void => {
       attempts = stats ?? SINGLE_ATTEMPT_STATS;
       settledBound = {

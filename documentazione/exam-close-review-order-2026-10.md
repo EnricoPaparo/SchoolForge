@@ -90,3 +90,13 @@ correzioni ON/OFF nei test. Dopo F5 l’utente potrà completare le quattro
 correzioni legacy nell’applicazione, mantenendo i punteggi: nessun completamento
 automatico né scrittura applicativa cloud sono inclusi nel rollout. Rollback applicativo al commit base, senza
 cancellazione di dati/manuali/checkpoint; kill switch IA resta disponibile.
+
+## Review ciclo 1 — riconciliazione costo incerto
+
+Rilievo P1 corretto: le statistiche aggregate dei tentativi non identificano
+lo stage del timeout; la riconciliazione usa ora il bound maggiore tra primary
+e audit per ciascun tentativo incerto con revisione ON. OFF usa il solo bound
+primary. Il ledger conserva il costo noto della prima passata e copre l’input
+aggiuntivo dell’audit, senza commit parziali; il cap alla prenotazione resta
+invariato. Regressione con bound distinti 9421/25838 token, primary success e
+audit timeout non fatturabile con certezza, più variante OFF.
