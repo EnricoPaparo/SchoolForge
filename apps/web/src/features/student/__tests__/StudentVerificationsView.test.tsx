@@ -964,3 +964,30 @@ describe('StudentVerificationsView — correzioni restituite autosufficienti (UI
     expect(screen.getByRole('button', { name: /Argomenti non disponibili/ })).toBeTruthy();
   });
 });
+
+it('shows cards by newest teaching date then Italian title, regardless of activation order', async () => {
+  mockLoadStudentVerifications.mockResolvedValue({
+    status: 'ok',
+    verifications: [
+      { ...VERIFICATION_A, id: 'undated', title: 'AAA legacy', verificationDate: null },
+      {
+        ...VERIFICATION_A,
+        id: 'old',
+        title: 'AAA old',
+        verificationDate: '2026-01-01',
+        activatedAt: { seconds: 99999 },
+      },
+      { ...VERIFICATION_A, id: 'new-z', title: 'Zebra', verificationDate: '2026-10-12' },
+      { ...VERIFICATION_A, id: 'new-a', title: 'Àlgebra', verificationDate: '2026-10-12' },
+    ],
+  });
+  render(<StudentVerificationsView />);
+  await waitFor(() => screen.getByText('Àlgebra'));
+  const nodes = ['Àlgebra', 'Zebra', 'AAA old', 'AAA legacy'].map((title) =>
+    screen.getByText(title),
+  );
+  for (let i = 1; i < nodes.length; i++)
+    expect(
+      nodes[i - 1]!.compareDocumentPosition(nodes[i]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+});

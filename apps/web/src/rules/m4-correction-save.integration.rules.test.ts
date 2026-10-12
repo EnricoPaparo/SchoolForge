@@ -8,6 +8,7 @@ import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   completeCorrection,
+  reopenCorrection,
   openOrLoadCorrection,
   returnCorrection,
   saveCorrection,
@@ -209,3 +210,113 @@ describe('M4 correction save — real service against the emulator', () => {
     ]);
   });
 });
+
+describe('legacy audit recommendations and unchanged submission summaries', () => {
+  it.each([false, true])(
+    'saves feedback-only with identical scores after reopen=%s',
+    async (reopened) => {
+      await seedBase();
+      const db = ownerDb();
+      await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, db);
+      const input = {
+        submissionId: SUBMISSION_ID,
+        evaluations: { '0': { points: 4.5, feedback: 'Buono' }, '1': { points: 2 } },
+        generalFeedback: 'Nel complesso ok',
+      };
+      await saveCorrection(input, db);
+      if (reopened) {
+        await completeCorrection(SUBMISSION_ID, db);
+        await reopenCorrection(SUBMISSION_ID, db);
+      }
+      const before = (await getDoc(doc(db, 'submissions', SUBMISSION_ID))).data()!;
+      await saveCorrection(
+        {
+          ...input,
+          evaluations: {
+            ...input.evaluations,
+            '0': { points: 4.5, feedback: 'Feedback aggiornato' },
+          },
+          generalFeedback: 'Solo feedback aggiornato',
+        },
+        db,
+      );
+      const after = (await getDoc(doc(db, 'submissions', SUBMISSION_ID))).data()!;
+      expect(after.correctionSummary).toEqual(before.correctionSummary);
+      expect(after.correctionSummaryUpdatedAt).toEqual(before.correctionSummaryUpdatedAt);
+      expect(
+        (await getDoc(doc(db, 'corrections', SUBMISSION_ID))).data()?.evaluations['0'].feedback,
+      ).toBe('Feedback aggiornato');
+    },
+  );
+  it('saves legacy acknowledgement alone and completes recommendations without forcing it', async () => {
+    await seedBase();
+    const db = ownerDb();
+    await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, db);
+    const input = {
+      submissionId: SUBMISSION_ID,
+      evaluations: { '0': { points: 4.5 }, '1': { points: 2 } },
+      generalFeedback: 'Feedback manuale',
+    };
+    await saveCorrection(input, db);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const ref = doc(ctx.firestore(), 'corrections', SUBMISSION_ID);
+      const data = (await getDoc(ref)).data()!;
+      data.evaluations['0'].aiReview = {
+        status: 'review_recommended',
+        reasons: ['score_disagreement'],
+      };
+      data.evaluations['1'].aiReview = {
+        status: 'review_recommended',
+        reasons: ['evidence_disagreement'],
+      };
+      await setDoc(ref, data);
+    });
+    const before = (await getDoc(doc(db, 'submissions', SUBMISSION_ID))).data()!;
+    await saveCorrection({ ...input, reviewAcknowledgedOrders: [0] }, db);
+    expect(
+      (await getDoc(doc(db, 'submissions', SUBMISSION_ID))).data()?.correctionSummaryUpdatedAt,
+    ).toEqual(before.correctionSummaryUpdatedAt);
+    await completeCorrection(SUBMISSION_ID, db);
+    const final = (await getDoc(doc(db, 'corrections', SUBMISSION_ID))).data()!;
+    expect(final.status).toBe('completed');
+    expect(final.evaluations['0'].points).toBe(4.5);
+    expect(final.evaluations['1'].points).toBe(2);
+    expect(final.evaluations['1'].aiReview.status).toBe('review_recommended');
+    expect(final.generalFeedback).toBe('Feedback manuale');
+  });
+});
+
+it.each([4.5, 4.25, 3.75, 2.5])(
+  'completes an old pending recommendation preserving manual score %s',
+  async (manualScore) => {
+    await seedBase();
+    const db = ownerDb();
+    await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, db);
+    await saveCorrection(
+      {
+        submissionId: SUBMISSION_ID,
+        evaluations: {
+          '0': { points: manualScore, feedback: 'Feedback manuale da preservare' },
+          '1': { points: 2 },
+        },
+        generalFeedback: 'Giudizio manuale',
+      },
+      db,
+    );
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const ref = doc(ctx.firestore(), 'corrections', SUBMISSION_ID);
+      const data = (await getDoc(ref)).data()!;
+      data.evaluations['0'].aiReview = {
+        status: 'review_recommended',
+        reasons: ['score_disagreement'],
+      };
+      await setDoc(ref, data);
+    });
+    const before = (await getDoc(doc(db, 'corrections', SUBMISSION_ID))).data()!;
+    await completeCorrection(SUBMISSION_ID, db);
+    const after = (await getDoc(doc(db, 'corrections', SUBMISSION_ID))).data()!;
+    expect(after.status).toBe('completed');
+    expect(after.evaluations).toEqual(before.evaluations);
+    expect(after.generalFeedback).toEqual(before.generalFeedback);
+  },
+);

@@ -1545,13 +1545,18 @@ describe('independent grading review acknowledgement', () => {
     },
     '1': { order: 1, points: 5, maxPoints: 5 },
   };
-  it('blocks completion until the teacher explicitly acknowledges disagreement', async () => {
+  it('completes legacy recommendations without changing manual scores or inventing acknowledgement', async () => {
     seedSubmittedSubmission();
     seedVerification();
     seedPublishedProjection();
     seedCorrection({ evaluations });
-    await expect(completeCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/revisione docente/);
-    expect(mockBatchCommit).not.toHaveBeenCalled();
+    await completeCorrection(SUBMISSION_ID, fakeDb);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(
+      mockBatchUpdate.mock.calls.find(
+        (call) => call[0].__path === `corrections/${SUBMISSION_ID}`,
+      )?.[1],
+    ).not.toHaveProperty('evaluations');
   });
   it('normal save preserves unresolved flags even when the teacher edits a score', async () => {
     seedSubmittedSubmission();

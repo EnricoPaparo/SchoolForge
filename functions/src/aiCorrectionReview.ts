@@ -47,7 +47,12 @@ export function reviewInputHash(input: AiGraderInput, model: string | undefined)
   };
   return createHash('sha256')
     .update(
-      JSON.stringify([data, model ?? 'mock', OPENAI_GRADING_CONTRACT_VERSION, 'blind-review-v1']),
+      JSON.stringify([
+        data,
+        model ?? 'mock',
+        OPENAI_GRADING_CONTRACT_VERSION,
+        'actionable-audit-v2',
+      ]),
     )
     .digest('hex');
 }
@@ -96,32 +101,26 @@ function assertOutput(output: AiGraderOutput, input: AiGraderInput): void {
   }
 }
 export function reconcileIndependentGrades(
-  primary: AiGraderOutput,
-  secondary: AiGraderOutput,
+  _primary: AiGraderOutput,
+  final: AiGraderOutput,
 ): Map<number, CorrectionReview> {
-  const reviews = new Map<number, CorrectionReview>();
-  for (const result of primary.results) {
-    const other = secondary.results.find((r) => r.order === result.order)!;
-    const a = result.evidence!;
-    const b = other.evidence!;
-    const reasons: string[] = [];
-    if (result.points !== other.points) reasons.push('score_disagreement');
-    if (
-      JSON.stringify([...new Set(a.errorCodes)].sort()) !==
-      JSON.stringify([...new Set(b.errorCodes)].sort())
-    )
-      reasons.push('evidence_disagreement');
-    if (a.alternativeValid !== b.alternativeValid) reasons.push('alternative_disagreement');
-    if (a.ambiguity || b.ambiguity) reasons.push('ambiguous_reference');
-    if (a.reviewRecommended || b.reviewRecommended) reasons.push('evaluator_uncertain');
-    reviews.set(result.order, {
-      status: reasons.length ? 'review_recommended' : 'verified',
-      reasons,
-    });
-  }
-  return reviews;
+  return new Map(
+    final.results.map((result) => [
+      result.order,
+      {
+        status:
+          result.evidence?.ambiguity || result.evidence?.reviewRecommended
+            ? ('review_recommended' as const)
+            : ('verified' as const),
+        reasons: [
+          ...(result.evidence?.ambiguity ? ['ambiguous_reference'] : []),
+          ...(result.evidence?.reviewRecommended ? ['evaluator_uncertain'] : []),
+        ],
+      },
+    ]),
+  );
 }
-/** Independent calls share only immutable evidence, never the first score or feedback. */
+/** The second pass audits the bounded first proposal and returns validated final scores. */
 export async function gradeWithIndependentReview(
   grader: AiGrader,
   input: AiGraderInput,
@@ -163,7 +162,10 @@ export async function gradeWithIndependentReview(
     ...(cachedDetailsKnown ? { cachedInputTokens } : {}),
     ...(cacheWriteDetailsKnown ? { cacheWriteInputTokens } : {}),
   });
-  const stage = async (name: 'primary' | 'secondary'): Promise<AiGraderOutput> => {
+  const stage = async (
+    name: 'primary' | 'secondary',
+    stageInput: AiGraderInput = input,
+  ): Promise<AiGraderOutput> => {
     const stored = saved[name];
     if (stored) {
       const replay = { ...stored, requestId: input.requestId };
@@ -178,7 +180,7 @@ export async function gradeWithIndependentReview(
       });
     let output: AiGraderOutput;
     try {
-      output = await grader.grade(input, ctx);
+      output = await grader.grade(stageInput, ctx);
       assertOutput(output, input);
     } catch (error) {
       if (error instanceof AiGraderFailure || error instanceof AiGraderInvalidOutputError) {
@@ -230,7 +232,18 @@ export async function gradeWithIndependentReview(
   };
   const primary = await stage('primary');
   if (!advancedReview) return { ...primary, usage: usage(), attempts: stats, reviews: new Map() };
-  const secondary = await stage('secondary');
+  const secondary = await stage('secondary', {
+    ...input,
+    reviewProposal: {
+      results: primary.results.map((r) => ({
+        order: r.order,
+        points: r.points,
+        feedback: r.feedback,
+        evidence: { ...r.evidence!, errorCodes: [...new Set(r.evidence!.errorCodes)] },
+      })),
+      generalFeedback: primary.generalFeedback,
+    },
+  });
   const reviews = reconcileIndependentGrades(primary, secondary);
   try {
     await checkpoint?.recordReview?.(key, reviews);
@@ -241,5 +254,5 @@ export async function gradeWithIndependentReview(
       reasonCode: 'provider_unavailable',
     });
   }
-  return { ...primary, usage: usage(), attempts: stats, reviews };
+  return { ...secondary, usage: usage(), attempts: stats, reviews };
 }

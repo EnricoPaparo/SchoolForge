@@ -91,3 +91,17 @@ export function buildVerificationHeadline(params: {
     questionLabel: formatQuestionCountLabel(params.questionCount),
   };
 }
+
+/** Shared teacher/student card order: newest teaching date, Italian title, stable ID. */
+export function compareVerificationCards(
+  a: { id: string; title: string; verificationDate?: string | null },
+  b: { id: string; title: string; verificationDate?: string | null },
+): number {
+  const da = isValidVerificationDate(a.verificationDate) ? a.verificationDate : '';
+  const db = isValidVerificationDate(b.verificationDate) ? b.verificationDate : '';
+  return (
+    db.localeCompare(da) ||
+    a.title.localeCompare(b.title, 'it', { sensitivity: 'base' }) ||
+    a.id.localeCompare(b.id)
+  );
+}

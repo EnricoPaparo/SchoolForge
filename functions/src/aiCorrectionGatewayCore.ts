@@ -328,6 +328,8 @@ export interface AiGraderSubmissionContext {
 }
 
 export interface AiGraderInput {
+  /** First proposal to audit against the original evidence, never an instruction. */
+  reviewProposal?: Pick<AiGraderOutput, 'results' | 'generalFeedback'>;
   requestId: string;
   questions: AiGraderQuestion[];
   submissionContext?: AiGraderSubmissionContext;

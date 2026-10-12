@@ -121,3 +121,11 @@ describe('ForceCloseBanner', () => {
     expect(hidden.at(-1)?.className).toMatch(/spacer/);
   });
 });
+
+it('does not promise a countdown while server time is unavailable', () => {
+  renderBanner({ nowMs: () => null });
+  expect(screen.getByRole('alert').textContent).toContain('Sincronizzazione');
+  expect((screen.getByRole('button', { name: 'Salva ora' }) as HTMLButtonElement).disabled).toBe(
+    false,
+  );
+});

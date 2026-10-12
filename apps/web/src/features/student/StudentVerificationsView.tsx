@@ -1,3 +1,4 @@
+import { compareVerificationCards } from '../repository/verifications/verificationDate.js';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { db, functions } from '../../lib/firebase.js';
@@ -527,7 +528,7 @@ export function StudentVerificationsView({
     );
   }
 
-  const verifications = state.verifications;
+  const verifications = [...state.verifications].sort(compareVerificationCards);
 
   /**
    * "Correzioni restituite" is built directly from `correctionReturns` —
@@ -540,7 +541,12 @@ export function StudentVerificationsView({
    * "Consegne effettuate"/"Verifiche disponibili" so a verification never
    * appears twice.
    */
-  const returnedItems = Object.values(correctionReturns);
+  const returnedItems = Object.values(correctionReturns).sort((a, b) =>
+    compareVerificationCards(
+      { ...a, id: a.submissionId, title: a.verificationTitle },
+      { ...b, id: b.submissionId, title: b.verificationTitle },
+    ),
+  );
   const returnedSubmissionIds = new Set(returnedItems.map((item) => item.submissionId));
 
   const availableItems: StudentVerificationItem[] = [];

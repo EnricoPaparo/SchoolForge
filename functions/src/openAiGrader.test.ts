@@ -1,3 +1,5 @@
+import { MAX_GENERAL_FEEDBACK_CHARS } from './aiCorrectionGatewayCore.js';
+import { buildMaximumAuditInput, OPENAI_AUDIT_INSTRUCTIONS } from './openAiGrader.js';
 import OpenAI from 'openai';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -870,4 +872,49 @@ describe('DEFAULT_OPENAI_RETRY_POLICY', () => {
     expect(DEFAULT_OPENAI_RETRY_POLICY.maxRetries).toBe(1);
     expect(DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs).toBe(OPENAI_ATTEMPT_TIMEOUT_MS);
   });
+});
+
+it('audits a bounded first proposal and reserves enough UTF-8 bytes for quarter scores and escaped feedback', () => {
+  const input: AiGraderInput = {
+    requestId: 'audit-test',
+    gradingMode: 'balanced',
+    questions: [
+      {
+        order: 0,
+        difficulty: 5,
+        maxPoints: 5,
+        questionText: 'Domanda',
+        referenceSolution: 'Rubrica',
+        studentAnswer: 'Risposta',
+      },
+    ],
+  };
+  const audit = {
+    ...input,
+    reviewProposal: {
+      results: [
+        {
+          order: 0,
+          points: 4.75,
+          feedback: '\u0000'.repeat(MAX_QUESTION_FEEDBACK_CHARS),
+          evidence: {
+            errorCodes: [],
+            ambiguity: false,
+            reviewRecommended: false,
+            alternativeValid: true,
+          },
+        },
+      ],
+      generalFeedback: '\u0000'.repeat(MAX_GENERAL_FEEDBACK_CHARS),
+    },
+  };
+  const payload = buildOpenAiGradingRequest(audit, 'gpt-6.1-sol');
+  expect(payload.input[0]?.content).toContain(OPENAI_AUDIT_INSTRUCTIONS);
+  expect(JSON.parse(payload.input[1]!.content).reviewProposal.results[0].points).toBe(4.75);
+  expect(
+    Buffer.byteLength(
+      JSON.stringify(buildOpenAiGradingRequest(buildMaximumAuditInput(input), 'gpt-6.1-sol')),
+      'utf8',
+    ),
+  ).toBeGreaterThanOrEqual(Buffer.byteLength(JSON.stringify(payload), 'utf8'));
 });

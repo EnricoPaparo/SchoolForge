@@ -1,3 +1,4 @@
+import { compareVerificationCards } from '../repository/verifications/verificationDate.js';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   commitVerificationActivation,
@@ -250,25 +251,24 @@ function distinctYears(list: VerificationItem[], annoByKey: Map<string, string |
 }
 
 /**
- * Most-recent-activation-first ordering: activatedAt, falling back to
- * closedAt, then updatedAt, when a verification lacks the primary date.
- * Drafts with no relevant date at all sink to the bottom.
+ * Newest teaching date first, shared with student cards.
+ * Missing dates sort last; equal dates use Italian title and stable ID.
  */
-function verificationSortKey(v: VerificationItem): number | null {
-  return (
-    timestampSeconds(v.activatedAt) ?? timestampSeconds(v.closedAt) ?? timestampSeconds(v.updatedAt)
+function sortVerificationsByTeachingDate(list: VerificationItem[]): VerificationItem[] {
+  return [...list].sort((a, b) =>
+    compareVerificationCards(
+      {
+        id: a.id,
+        title: a.teacherSnapshot?.title ?? a.config.title,
+        verificationDate: a.teacherSnapshot?.verificationDate ?? a.config.verificationDate,
+      },
+      {
+        id: b.id,
+        title: b.teacherSnapshot?.title ?? b.config.title,
+        verificationDate: b.teacherSnapshot?.verificationDate ?? b.config.verificationDate,
+      },
+    ),
   );
-}
-
-function sortVerificationsByActivation(list: VerificationItem[]): VerificationItem[] {
-  return [...list].sort((a, b) => {
-    const keyA = verificationSortKey(a);
-    const keyB = verificationSortKey(b);
-    if (keyA === null && keyB === null) return 0;
-    if (keyA === null) return 1;
-    if (keyB === null) return -1;
-    return keyB - keyA;
-  });
 }
 
 /**
@@ -2148,7 +2148,7 @@ export function VerificationsView() {
       }
       return true;
     });
-    return sortVerificationsByActivation(list);
+    return sortVerificationsByTeachingDate(list);
   }, [verList, annoByKey, yearFilter, classFilter, search, programTitleById, classNameById]);
 
   function resetFilters() {

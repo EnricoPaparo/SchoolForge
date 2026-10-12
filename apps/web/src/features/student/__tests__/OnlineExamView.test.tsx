@@ -8,6 +8,10 @@ import type * as ForceCloseWatchModule from '../forceCloseWatch.js';
 import { RECEIPT_RETRY_DELAYS_MS } from '../forceCloseWatch.js';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
+// Screen behavior uses the calibrated clock port; calibration has its own tests.
+vi.mock('../serverExamClock.js', () => ({
+  useServerExamClock: () => ({ now: () => Date.now(), revision: 0 }),
+}));
 
 const mockSaveDraft = vi.fn();
 const mockSubmitSubmission = vi.fn();

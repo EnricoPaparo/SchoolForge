@@ -5,7 +5,7 @@ import type {
   PublishedProjectionDoc,
   VerificationTopicUda,
 } from '../../../types/firestore.js';
-import { isValidVerificationDate } from './verificationDate.js';
+import { compareVerificationCards, isValidVerificationDate } from './verificationDate.js';
 import { readTopicOutline } from './topicOutline.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
@@ -57,12 +57,6 @@ export type StudentVerificationItem = {
 export type StudentVerificationsResult =
   | { status: 'no-class' }
   | { status: 'ok'; verifications: StudentVerificationItem[] };
-
-/** Epoch seconds from a Firestore Timestamp-like value, or null if absent. */
-function timestampSeconds(ts: unknown): number | null {
-  if (!ts || typeof ts !== 'object' || !('seconds' in ts)) return null;
-  return (ts as { seconds: number }).seconds;
-}
 
 /**
  * Reads only what an approved student is allowed to see (Security Rules
@@ -124,14 +118,7 @@ export async function loadStudentVerifications(
       };
     })
     .filter((item): item is StudentVerificationItem => item !== null)
-    .sort((a, b) => {
-      const secondsA = timestampSeconds(a.activatedAt);
-      const secondsB = timestampSeconds(b.activatedAt);
-      if (secondsA != null && secondsB != null) return secondsB - secondsA;
-      if (secondsA != null) return -1;
-      if (secondsB != null) return 1;
-      return a.title.localeCompare(b.title);
-    });
+    .sort(compareVerificationCards);
 
   return { status: 'ok', verifications };
 }

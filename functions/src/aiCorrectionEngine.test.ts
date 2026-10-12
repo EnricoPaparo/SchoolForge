@@ -3393,7 +3393,7 @@ describe('advanced correction review integration', () => {
   });
 });
 
-it('review choice changes idempotent identity and doubles normal preview workload', async () => {
+it('review choice changes identity and estimates both calls plus the audit proposal', async () => {
   const store = new FakeStore();
   seedOneOpenOneClosed(store);
   const base = await runPreview(
@@ -3404,7 +3404,7 @@ it('review choice changes idempotent identity and doubles normal preview workloa
     req([sid('s1')], { advancedReview: true }),
     baseDeps(store, new MockAiGrader()),
   );
-  expect(reviewed.inputTokensEstimated).toBe(2 * base.inputTokensEstimated);
+  expect(reviewed.inputTokensEstimated).toBeGreaterThan(2 * base.inputTokensEstimated);
   expect(reviewed.outputTokensEstimated).toBe(2 * base.outputTokensEstimated);
   expect(reviewed.advancedReview).toBe(true);
   expect(computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy', undefined, true)).not.toBe(
