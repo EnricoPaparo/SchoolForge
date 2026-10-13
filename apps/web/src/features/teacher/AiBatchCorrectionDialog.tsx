@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
+import { AiAdvancedReviewControl } from './AiAdvancedReviewControl.js';
 import styles from './AiBatchCorrectionDialog.module.css';
 import {
   AiCorrectionSettingsFields,
@@ -186,23 +187,16 @@ export function AiBatchCorrectionDialog({
             idPrefix="ai-batch"
           />
 
-          <label>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={advancedReview}
-              disabled={busy}
-              onChange={(event) => {
-                setAdvancedReview(event.target.checked);
-                invalidatePreview();
-              }}
-            />
-            Revisione avanzata
-          </label>
-          <p>
-            Confronta due valutazioni indipendenti e segnala i disaccordi al docente. La verifica IA
-            aggiuntiva può aumentare il costo.
-          </p>
+          <AiAdvancedReviewControl
+            id="ai-batch-advanced-review"
+            checked={advancedReview}
+            disabled={busy}
+            onChange={(checked) => {
+              setAdvancedReview(checked);
+              invalidatePreview();
+            }}
+            description="Il revisore controlla la prima valutazione e applica punteggi e feedback finali. La revisione IA aggiuntiva può aumentare il costo."
+          />
           {/* 4) Footer. */}
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
@@ -352,7 +346,7 @@ export function AiBatchCorrectionDialog({
                 {previewRequest?.advancedReview === false
                   ? 'Non revisionato'
                   : result.counts.failed === 0
-                    ? 'Revisione avanzata completata: i disaccordi richiedono conferma docente nella correzione.'
+                    ? 'Revisione avanzata completata: punteggi e feedback finali applicati.'
                     : 'Revisione non completata per le consegne fallite: nessun risultato parziale applicato.'}
               </p>
               <ul>

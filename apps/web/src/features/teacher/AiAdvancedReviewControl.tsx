@@ -8,11 +8,13 @@ export function AiAdvancedReviewControl({
   checked,
   onChange,
   description,
+  disabled = false,
 }: {
   id: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   description: string;
+  disabled?: boolean;
 }) {
   const descriptionId = `${id}-description`;
 
@@ -27,6 +29,7 @@ export function AiAdvancedReviewControl({
           <button
             id={id}
             type="button"
+            disabled={disabled}
             role="switch"
             aria-checked={checked}
             aria-label="Revisione avanzata"
