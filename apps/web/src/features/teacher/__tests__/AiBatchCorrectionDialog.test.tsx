@@ -724,12 +724,15 @@ it('advanced review starts ON for each operation and switch changes create a fre
       onApplied={() => {}}
     />,
   );
-  expect((screen.getByRole('switch') as HTMLInputElement).checked).toBe(true);
+  expect(
+    screen.getByRole('switch', { name: 'Revisione avanzata' }).getAttribute('aria-checked'),
+  ).toBe('true');
   await calculatePreview();
   const first = previewSpy.mock.calls[0][0];
   expect(first.advancedReview).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
   fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
   await calculatePreview();
   const second = previewSpy.mock.calls[1][0];
   expect(second.advancedReview).toBe(false);
