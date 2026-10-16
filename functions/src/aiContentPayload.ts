@@ -1,3 +1,4 @@
+import { STUDY_PLAN_SCHEMA } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_SCHEMA } from './aiReviewFeedback.js';
 import {
   buildDidacticReviewPrompt,
@@ -133,7 +134,7 @@ export const VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT = VISUAL_PROPOSAL_OUTPU
 export function resolveMaxOutputTokens(request: AiContentRequest): number {
   if (request.kind === 'pool') {
     return (
-      POOL_OUTPUT_BASE_TOKENS +
+      (request.purpose === 'practice' ? 6500 : POOL_OUTPUT_BASE_TOKENS) +
       request.counts.aperta * OPEN_QUESTION_OUTPUT_TOKENS +
       (request.counts.chiusa_singola + request.counts.chiusa_multipla) *
         CLOSED_QUESTION_OUTPUT_TOKENS
@@ -314,8 +315,9 @@ export function buildPoolOutputSchema(request: Extract<AiContentRequest, { kind:
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['questions'],
+    required: request.purpose === 'practice' ? ['questions', 'studyPlan'] : ['questions'],
     properties: {
+      ...(request.purpose === 'practice' ? { studyPlan: STUDY_PLAN_SCHEMA } : {}),
       questions: {
         type: 'array',
         minItems: total,

@@ -33,3 +33,5 @@ export {
   nextLessonHeadingSlug,
   type LessonHeadingRef,
 } from './headingSlug.js';
+
+export * from './study.js';

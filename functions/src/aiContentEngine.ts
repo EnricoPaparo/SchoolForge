@@ -30,6 +30,7 @@ import {
   validateLessonProposal,
   validateLessonReviewProposal,
   validatePoolProposal,
+  validateStudyPoolProposal,
 } from './aiContentValidation.js';
 import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
 import {
@@ -534,7 +535,15 @@ export async function generateContent(
         : request.kind === 'concept_map_review'
           ? validateMapReview(providerOutput, request)
           : request.kind === 'pool'
-            ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
+            ? request.purpose === 'practice'
+              ? validateStudyPoolProposal(
+                  providerOutcome.output,
+                  request.counts,
+                  request.level,
+                  request.lessonSource,
+                  request.plannedObjectives,
+                )
+              : validatePoolProposal(providerOutcome.output, request.counts, request.level)
             : request.kind === 'concept_map'
               ? // CONCEPT-MAP-01 — il run persiste il **Markdown canonico** già
                 // composto dal server, non i tre campi grezzi: è quello che verrà

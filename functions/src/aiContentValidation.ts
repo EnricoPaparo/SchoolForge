@@ -7,6 +7,7 @@
  * dal modello (mai autorevoli).
  */
 
+import { validateStudyPlan, type StudyPlan } from '@schoolforge/lesson-contract';
 import {
   AiContentError,
   AI_CONTENT_LIMITS,
@@ -39,6 +40,7 @@ export type ValidatedProposalQuestion =
 
 export interface ValidatedPoolProposal {
   questions: ValidatedProposalQuestion[];
+  studyPlan?: StudyPlan;
 }
 
 /**
@@ -309,4 +311,36 @@ export function validateLessonReviewProposal(output: unknown): ValidatedLessonRe
     throw new AiContentError('provider_invalid_output', 'Codici della revisione duplicati.');
   }
   return { body, reviewOutcome: root.reviewOutcome, issueCodes };
+}
+
+export function validateStudyPoolProposal(
+  output: unknown,
+  counts: PoolCounts,
+  level: PoolLevel,
+  source: string,
+  plannedObjectives: string[] = [],
+): ValidatedPoolProposal {
+  const result = validatePoolProposal(output, counts, level);
+  try {
+    const studyPlan = validateStudyPlan(
+      asObject(output).studyPlan,
+      source,
+      result.questions.length,
+      plannedObjectives,
+    );
+    if (
+      studyPlan.steps.some(
+        (s) => s.stage === 'esempio' && result.questions[s.questionOrder]?.tipo !== 'aperta',
+      )
+    )
+      throw new Error('Esempio svolto senza spiegazione.');
+    if (utf8ByteLength(JSON.stringify({ ...result, studyPlan })) > 100000)
+      throw new Error('Pratica troppo grande.');
+    return { ...result, studyPlan };
+  } catch {
+    throw new AiContentError(
+      'provider_invalid_output',
+      'Esercitazione o riferimenti alla lezione non validi.',
+    );
+  }
 }

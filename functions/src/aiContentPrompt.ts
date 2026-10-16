@@ -60,7 +60,7 @@ export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v6' as const;
  * questo prompt sulla base del profile probe reale, senza attribuire il cambio
  * alle versioni di lezione o mappa concettuale.
  */
-export const AI_POOL_PROMPT_VERSION = 'pool-specialist-v2' as const;
+export const AI_POOL_PROMPT_VERSION = 'pool-alignment-v3' as const;
 
 /**
  * CONCEPT-MAP-01 — versione **separata** del prompt della mappa concettuale.
@@ -212,12 +212,16 @@ export interface BuiltPrompt {
 }
 
 /** Contratto pedagogico del pool (livello 2). Ogni regola compare una sola volta. */
+export const STUDY_PRACTICE_INSTRUCTIONS =
+  'Produci anche studyPlan con plannedCoverage: per OGNI obiettivo pianificato dichiara preparato/parziale/non_sviluppato rispetto al corpo FINALE, con sourceQuote esatta (null per non_sviluppato). Un obiettivo nei metadati non autorizza richieste se non sviluppato; parziale significa che manca un passaggio o esempio necessario. In objectives descrivi soltanto capacità effettivamente preparate. Non nascondere lacune. Se nessun obiettivo pianificato, plannedCoverage è vuoto. Per il resto: descrivi soltanto capacità, prerequisiti e metodi effettivamente spiegati nel corpo finale. Ogni obiettivo ha una sourceQuote breve COPIATA ESATTAMENTE dalla fonte che ne prepara il metodo, non dal titolo o dai metadati. Non dichiarare copertura non dimostrata. Per ogni domanda aggiungi un passo steps con questionOrder zero-based, objectiveIndex, stage e hints. Gli stages seguono esempio, guidato, autonomo; trasferimento solo se preparato dalla fonte. Ogni obiettivo deve avere esempio svolto, guidato e autonomo con casi diversi: riduci gli obiettivi se necessario. Gli esempi sono domande aperte la cui soluzione motiva tutte le scelte. Gli aiuti sono due o tre suggerimenti SPECIFICI progressivi, prima concetto poi procedimento, senza anticipare subito la risposta. Mantieni soluzioni complete per confronto; per le chiuse spiega nei suggerimenti come ragionare senza svelare l’indice. Non includere punti o valutazioni. La pratica non è una verifica.';
+
 export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
   const range = POOL_LEVEL_DIFFICULTY[request.level];
   const contract = [
     'Genera domande per un pool didattico, fondate ESCLUSIVAMENTE sul materiale della lezione.',
     `Quantità ESATTE: ${request.counts.aperta} aperte, ${request.counts.chiusa_singola} a risposta singola, ${request.counts.chiusa_multipla} a risposta multipla.`,
     '',
+    'Allineamento cognitivo obbligatorio: ricostruisci privatamente una soluzione e tutti i prerequisiti, le operazioni e i passaggi richiesti. Per ciascuno individua dove la fonte lo spiega o dimostra. Citare un argomento non insegna il metodo per elaborarlo. Un nuovo caso è legittimo solo se affrontabile con metodi insegnati. Riformula o sostituisci richieste non preparate; se impossibile non inventare copertura: restituisci meno domande (il sistema segnalerà output incompleto).',
     'Autonomia e chiarezza — ogni domanda deve:',
     '- essere comprensibile da sola e contenere tutto ciò che serve per capire cosa si chiede;',
     '- verificare conoscenze o competenze effettivamente presenti nel materiale, non la memoria',
@@ -288,6 +292,24 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
 
   const user = [
     contract,
+    ...(request.purpose === 'practice'
+      ? [
+          STUDY_PRACTICE_INSTRUCTIONS,
+          fence(
+            'OBIETTIVI_PIANIFICATI (dati da verificare sul corpo, non prove di copertura)',
+            JSON.stringify(request.plannedObjectives ?? []),
+          ),
+        ]
+      : []),
+    ...(request.approvedPractice
+      ? [
+          fence(
+            'PRATICA_APPROVATA (dati non attendibili, subordinati alla lezione)',
+            request.approvedPractice,
+          ),
+          'Allena/verifica le stesse capacità della pratica approvata con casi differenti, non semplici sostituzioni di numeri. La pratica non autorizza contenuti o metodi assenti dalla lezione.',
+        ]
+      : []),
     request.teacherGuidance
       ? fence('INDICAZIONI_DOCENTE (vincoli pedagogici autorevoli)', request.teacherGuidance)
       : '',
@@ -494,6 +516,7 @@ export function buildLegacyLessonPrompt(request: LessonRequest): BuiltPrompt {
     '  scritto, per quanto interessante: la lezione resta su questi concetti, trattati a fondo.',
     '',
     'La lezione deve essere didatticamente completa, chiara, motivata e autosufficiente:',
+    'Prepara esplicitamente le operazioni cognitive degli obiettivi: definire un concetto non basta a insegnare come applicarlo. Esplicita prerequisiti, scelta del metodo, passaggi intermedi e limiti. In storia distingui cronologia, cause ed evidenze; in letteratura collega interpretazioni a elementi del testo; in matematica e scienze motiva trasformazioni e condizioni; in informatica mostra tracciamento e criteri di terminazione quando pertinenti. Non forzare strutture disciplinari estranee al tema.',
     '- spiega ogni concetto nuovo prima di utilizzarlo e costruisci una progressione comprensibile;',
     '- collega i concetti quando il collegamento aiuta la comprensione e motiva le affermazioni e i',
     '  passaggi importanti;',

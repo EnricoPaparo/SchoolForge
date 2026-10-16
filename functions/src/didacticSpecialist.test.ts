@@ -167,6 +167,6 @@ describe('planned UDA coverage metadata', () => {
     if (request.kind !== 'pool') throw new Error('request');
     expect(buildPoolPrompt(request).user).toContain('misconcezione plausibile');
     expect(buildPoolPrompt(request).user).toContain('Non produrre domande-trabocchetto');
-    expect(canonicalRequest(request)).toContain('pool-specialist-v2');
+    expect(canonicalRequest(request)).toContain('pool-alignment-v3');
   });
 });

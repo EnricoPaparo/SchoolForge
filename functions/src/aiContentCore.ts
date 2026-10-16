@@ -64,7 +64,7 @@ export class AiContentError extends Error {
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
-  pool_review: 'pool_review-v4',
+  pool_review: 'pool_review-v5',
   concept_map_review: 'concept_map_review-v6',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -188,6 +188,9 @@ export interface PoolCounts {
 
 export interface PoolRequest {
   kind: 'pool';
+  purpose?: 'practice';
+  plannedObjectives?: string[];
+  approvedPractice?: string;
   requestId: string;
   modelProfile: ModelProfile;
   teacherGuidance: string | null;
@@ -610,7 +613,10 @@ export function canonicalRequest(request: AiContentRequest): string {
     request.kind === 'pool'
       ? {
           kind: 'pool',
-          promptContractVersion: 'pool-specialist-v2',
+          promptContractVersion: 'pool-alignment-v3',
+          ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
+          ...(request.purpose ? { purpose: request.purpose } : {}),
+          ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
           modelProfile: request.modelProfile,
           level: request.level,
           counts: {
@@ -1107,7 +1113,17 @@ function validateAiContentRequestWithPolicy(
       'lessonSource',
       'existingPoolQuestionCount',
       'existingQuestionStems',
+      'purpose',
+      'plannedObjectives',
+      'approvedPractice',
     ]);
+    if (input.purpose !== undefined && input.purpose !== 'practice')
+      throw new AiContentError('invalid_input', 'Scopo non valido.');
+    if (
+      input.approvedPractice !== undefined &&
+      (typeof input.approvedPractice !== 'string' || utf8ByteLength(input.approvedPractice) > 50000)
+    )
+      throw new AiContentError('invalid_input', 'Pratica non valida.');
     if (input.level !== 'base' && input.level !== 'balanced' && input.level !== 'advanced') {
       throw new AiContentError('invalid_input', 'Livello del pool non valido.');
     }
@@ -1142,6 +1158,18 @@ function validateAiContentRequestWithPolicy(
     }
     return enforceTotalRequestSize({
       kind: 'pool',
+      ...(input.plannedObjectives !== undefined
+        ? {
+            plannedObjectives: parseRequiredStringArray(
+              input.plannedObjectives,
+              'Obiettivi pianificati',
+            ),
+          }
+        : {}),
+      ...(input.purpose === 'practice' ? { purpose: 'practice' as const } : {}),
+      ...(typeof input.approvedPractice === 'string'
+        ? { approvedPractice: input.approvedPractice }
+        : {}),
       requestId,
       modelProfile,
       teacherGuidance,

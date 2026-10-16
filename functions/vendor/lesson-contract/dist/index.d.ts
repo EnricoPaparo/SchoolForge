@@ -8,4 +8,5 @@ export { DEFAULT_MAX_CHARACTERS, MIN_MAX_CHARACTERS, MAX_MAX_CHARACTERS, normali
  * renderer web e le Functions. Una sola implementazione: vedi `headingSlug.ts`.
  */
 export { assignLessonHeadingSlugs, canonicalLessonHeadingText, lessonHeadingSlug, nextLessonHeadingSlug, type LessonHeadingRef, } from './headingSlug.js';
+export * from './study.js';
 //# sourceMappingURL=index.d.ts.map
