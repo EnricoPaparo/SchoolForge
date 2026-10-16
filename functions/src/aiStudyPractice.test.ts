@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AiContentError,
   canonicalRequest,
   computeInputHash,
   validateAiContentRequest,
   type PoolRequest,
 } from './aiContentCore.js';
 import { buildContentStructuredRequest, resolveMaxOutputTokens } from './aiContentPayload.js';
-import { validateStudyPoolProposal, validatePoolProposal } from './aiContentValidation.js';
+import {
+  studyPracticeConstraint,
+  validateStudyPoolProposal,
+  validatePoolProposal,
+} from './aiContentValidation.js';
 import { buildPoolPrompt } from './aiContentPrompt.js';
 const source =
   'Per seguire un ciclo annota il valore iniziale, valuta la condizione, esegui il corpo e aggiorna la variabile prima della nuova condizione.';
@@ -136,4 +141,165 @@ describe('didactic study contract', () => {
       ]),
     ).toThrow();
   });
+});
+
+describe('practice generation contract alignment', () => {
+  it.each([3, 6, 9])(
+    'validates a monotone %i-activity plan and binds schema/prompt/identity',
+    (n) => {
+      const r = request({
+        purpose: 'practice',
+        plannedObjectives: [],
+        counts: { aperta: n, chiusa_singola: 0, chiusa_multipla: 0 },
+      });
+      const o = output();
+      o.studyPlan.plannedCoverage = [];
+      o.questions = Array.from({ length: n }, (_, i) => ({
+        ...o.questions[0]!,
+        testo: `Caso ${i}`,
+      }));
+      o.studyPlan.steps = Array.from({ length: n }, (_, i) => ({
+        ...o.studyPlan.steps[0]!,
+        questionOrder: i,
+        stage: ['esempio', 'guidato', 'autonomo'][Math.floor(i / (n / 3))]!,
+      }));
+      expect(
+        validateStudyPoolProposal(o, r.counts, r.level, source, []).studyPlan!.steps,
+      ).toHaveLength(n);
+      expect(canonicalRequest(r)).toContain('study-practice-v2');
+      expect(buildPoolPrompt(r).user).toContain(`${n} attivita richiedono esattamente ${n} steps`);
+      expect(buildPoolPrompt(r).user).toContain('EGAEGA');
+      expect(buildPoolPrompt(r).user).toContain('nomi ESATTI');
+      const schema = buildContentStructuredRequest(r, 'gpt-6-luna').text.format.schema as {
+        properties: {
+          studyPlan: {
+            anyOf: {
+              properties: {
+                objectives: { maxItems: number };
+                steps: { minItems: number; maxItems: number };
+              };
+            }[];
+          };
+        };
+      };
+      expect(schema.properties.studyPlan.anyOf[0]!.properties.objectives.maxItems).toBe(n / 3);
+      expect(schema.properties.studyPlan.anyOf[0]!.properties.steps).toMatchObject({
+        minItems: n,
+        maxItems: n,
+      });
+    },
+  );
+  it('accepts empty or absent planned objectives only, retaining types and metadata limits', () => {
+    expect(request({ purpose: 'practice', plannedObjectives: [] }).plannedObjectives).toEqual([]);
+    expect(request({ purpose: 'practice' }).plannedObjectives).toBeUndefined();
+    expect(request({ plannedObjectives: ['  Esatto  '] }).plannedObjectives).toEqual(['Esatto']);
+    for (const plannedObjectives of [null, 3, 'x', [{}], Array(41).fill('x'), ['x'.repeat(301)]])
+      expect(() => request({ plannedObjectives })).toThrow();
+  });
+  it('rejects impossible practice counts or closed-only examples before any provider, preserving normal pools', () => {
+    for (const n of [1, 2, 13, 30])
+      expect(() =>
+        request({
+          purpose: 'practice',
+          counts: { aperta: n, chiusa_singola: 0, chiusa_multipla: 0 },
+        }),
+      ).toThrow();
+    expect(() =>
+      request({
+        purpose: 'practice',
+        counts: { aperta: 0, chiusa_singola: 3, chiusa_multipla: 0 },
+      }),
+    ).toThrow();
+    for (const n of [4, 5, 7, 8, 10, 11, 12])
+      expect(() =>
+        request({
+          purpose: 'practice',
+          counts: { aperta: n, chiusa_singola: 0, chiusa_multipla: 0 },
+        }),
+      ).not.toThrow();
+    expect(
+      request({ counts: { aperta: 30, chiusa_singola: 0, chiusa_multipla: 0 } }).counts.aperta,
+    ).toBe(30);
+    expect(canonicalRequest(request())).toContain('pool-alignment-v4');
+    expect(buildPoolPrompt(request()).user).not.toContain('study-practice-v2');
+  });
+  it.each([
+    [
+      'method_text',
+      (o: ReturnType<typeof output>) => {
+        o.studyPlan.objectives[0]!.method = 'x'.repeat(1501);
+      },
+    ],
+    [
+      'quote_text',
+      (o: ReturnType<typeof output>) => {
+        o.studyPlan.objectives[0]!.sourceQuote = 'x'.repeat(19);
+      },
+    ],
+    [
+      'coverage_objectives',
+      (o: ReturnType<typeof output>) => {
+        o.studyPlan.plannedCoverage[0]!.objective = 'Parafrasi';
+      },
+    ],
+    [
+      'step_count',
+      (o: ReturnType<typeof output>) => {
+        o.studyPlan.steps.pop();
+      },
+    ],
+    [
+      'objective_count',
+      (o: ReturnType<typeof output>) => {
+        o.studyPlan.objectives.push({ ...o.studyPlan.objectives[0]! });
+      },
+    ],
+    [
+      'hint_text',
+      (o: ReturnType<typeof output>) => {
+        o.studyPlan.steps[0]!.hints[0] = '';
+      },
+    ],
+  ] as const)(
+    'reports stable sanitized %s diagnostics without relaxing validation',
+    (constraint, mutate) => {
+      const o = output();
+      mutate(o);
+      try {
+        validateStudyPoolProposal(o, request().counts, 'balanced', source, ['Prevedere output']);
+        throw new Error('Expected rejection');
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'provider_invalid_output', constraint });
+        expect(studyPracticeConstraint(error)).toBe(constraint);
+      }
+    },
+  );
+});
+
+it('never logs arbitrary exception text as a practice constraint', () => {
+  expect(studyPracticeConstraint(new Error('PRIVATE_TEXT'))).toBe('unknown');
+  expect(
+    studyPracticeConstraint(
+      Object.assign(new AiContentError('provider_invalid_output', 'PRIVATE_TEXT'), {
+        constraint: 'PRIVATE_TEXT',
+      }),
+    ),
+  ).toBe('unknown');
+});
+
+it('sanitizes an unexpected study-plan exception instead of exposing raw text', () => {
+  const o = output();
+  Object.defineProperty(o, 'studyPlan', {
+    get() {
+      throw new Error('PRIVATE_SOURCE_TEXT');
+    },
+    enumerable: true,
+  });
+  expect(() => validateStudyPoolProposal(o, request().counts, 'balanced', source)).toThrow(
+    expect.objectContaining({
+      code: 'provider_invalid_output',
+      constraint: 'unknown',
+      message: 'Esercitazione o riferimenti alla lezione non validi.',
+    }),
+  );
 });

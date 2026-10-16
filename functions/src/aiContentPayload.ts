@@ -1,4 +1,4 @@
-import { STUDY_PLAN_SCHEMA, POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
+import { buildStudyPlanSchema, POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_SCHEMA } from './aiReviewFeedback.js';
 import {
   buildDidacticReviewPrompt,
@@ -326,7 +326,14 @@ export function buildPoolOutputSchema(request: Extract<AiContentRequest, { kind:
       sourceInsufficient: { type: 'boolean' },
       ...(request.purpose === 'practice' ? {} : { coverageSummary: POOL_COVERAGE_SCHEMA }),
       ...(request.purpose === 'practice'
-        ? { studyPlan: { anyOf: [STUDY_PLAN_SCHEMA, { type: 'null' }] } }
+        ? {
+            studyPlan: {
+              anyOf: [
+                buildStudyPlanSchema(total, request.plannedObjectives ?? [], request.counts.aperta),
+                { type: 'null' },
+              ],
+            },
+          }
         : {}),
       questions: {
         type: 'array',
