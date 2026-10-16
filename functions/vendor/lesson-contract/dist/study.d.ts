@@ -57,7 +57,6 @@ export declare function buildStudyPlanSchema(questionCount?: number, plannedObje
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     status: {
                         type: string;
@@ -68,7 +67,6 @@ export declare function buildStudyPlanSchema(questionCount?: number, plannedObje
                             type: string;
                             minLength: number;
                             maxLength: number;
-                            pattern: string;
                         } | {
                             type: string;
                         })[];
@@ -89,25 +87,21 @@ export declare function buildStudyPlanSchema(questionCount?: number, plannedObje
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     prerequisites: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     method: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     sourceQuote: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                 };
             };
@@ -143,7 +137,6 @@ export declare function buildStudyPlanSchema(questionCount?: number, plannedObje
                             type: string;
                             minLength: number;
                             maxLength: number;
-                            pattern: string;
                         };
                     };
                 };
@@ -171,7 +164,6 @@ export declare const STUDY_PLAN_SCHEMA: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     status: {
                         type: string;
@@ -182,7 +174,6 @@ export declare const STUDY_PLAN_SCHEMA: {
                             type: string;
                             minLength: number;
                             maxLength: number;
-                            pattern: string;
                         } | {
                             type: string;
                         })[];
@@ -203,25 +194,21 @@ export declare const STUDY_PLAN_SCHEMA: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     prerequisites: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     method: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                     sourceQuote: {
                         type: string;
                         minLength: number;
                         maxLength: number;
-                        pattern: string;
                     };
                 };
             };
@@ -257,7 +244,6 @@ export declare const STUDY_PLAN_SCHEMA: {
                             type: string;
                             minLength: number;
                             maxLength: number;
-                            pattern: string;
                         };
                     };
                 };

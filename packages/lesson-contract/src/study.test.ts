@@ -67,7 +67,7 @@ describe('request-specific study schema', () => {
       minLength: 1,
       maxLength: 1500,
     });
-    expect(new RegExp(schema.steps.items.properties.hints.items.pattern).test('   ')).toBe(false);
+    expect(JSON.stringify(schema)).not.toContain('"pattern"');
   });
   it('keeps relational checks authoritative, including duplicate coverage and stage regression', () => {
     const p = plan();
@@ -86,4 +86,17 @@ describe('request-specific study schema', () => {
       expect.objectContaining({ constraint: 'quote_not_found' }),
     );
   });
+});
+
+it('still rejects whitespace-only hints and capabilities without provider regex constraints', () => {
+  const hints = plan();
+  hints.steps[0]!.hints[0] = '   ';
+  expect(() => validateStudyPlan(hints, source, 3)).toThrow(
+    expect.objectContaining({ constraint: 'hint_text' }),
+  );
+  const capability = plan();
+  capability.objectives[0]!.capability = '   ';
+  expect(() => validateStudyPlan(capability, source, 3)).toThrow(
+    expect.objectContaining({ constraint: 'capability_text' }),
+  );
 });

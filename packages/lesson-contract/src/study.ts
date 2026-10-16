@@ -59,11 +59,12 @@ export class StudyPlanValidationError extends Error {
     super(message);
   }
 }
+// Provider smoke completed only after omitting the regex pattern. Keep length bounds
+// in the provider schema; non-whitespace text remains enforced by the runtime validator.
 const boundedText = (max: number, min = 1) => ({
   type: 'string',
   minLength: min,
   maxLength: max,
-  pattern: '\\S',
 });
 const quoteSchema = boundedText(STUDY_TEXT_LIMITS.quoteMax, STUDY_TEXT_LIMITS.quoteMin);
 export function buildStudyPlanSchema(
