@@ -139,3 +139,36 @@ export function validateStudyPlan(value, source, questionCount, plannedObjective
     }
     return { objectives, steps, plannedCoverage };
 }
+export const POOL_COVERAGE_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['coveredCapabilities', 'gaps', 'advancedOrdinals'],
+    properties: {
+        coveredCapabilities: { type: 'array', maxItems: 40, items: { type: 'string' } },
+        gaps: { type: 'array', maxItems: 40, items: { type: 'string' } },
+        advancedOrdinals: {
+            type: 'array',
+            maxItems: 30,
+            items: { type: 'integer', minimum: 0, maximum: 29 },
+        },
+    },
+};
+export function validatePoolCoverage(value, questionCount) {
+    const v = object(value);
+    keys(v, ['coveredCapabilities', 'gaps', 'advancedOrdinals']);
+    const list = (raw) => {
+        if (!Array.isArray(raw) || raw.length > 40)
+            throw new Error('Riepilogo copertura non valido.');
+        return raw.map((s) => string(s, 500));
+    };
+    if (!Array.isArray(v.advancedOrdinals) ||
+        v.advancedOrdinals.length > 30 ||
+        new Set(v.advancedOrdinals).size !== v.advancedOrdinals.length ||
+        v.advancedOrdinals.some((i) => !Number.isInteger(i) || Number(i) < 0 || Number(i) >= questionCount))
+        throw new Error('Richieste avanzate non valide.');
+    return {
+        coveredCapabilities: list(v.coveredCapabilities),
+        gaps: list(v.gaps),
+        advancedOrdinals: v.advancedOrdinals,
+    };
+}

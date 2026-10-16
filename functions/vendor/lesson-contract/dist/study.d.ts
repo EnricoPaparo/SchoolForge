@@ -109,4 +109,40 @@ export declare const STUDY_PLAN_SCHEMA: {
     };
 };
 export declare function validateStudyPlan(value: unknown, source: string, questionCount: number, plannedObjectives?: readonly string[]): StudyPlan;
+export interface PoolCoverageSummary {
+    coveredCapabilities: string[];
+    gaps: string[];
+    advancedOrdinals: number[];
+}
+export declare const POOL_COVERAGE_SCHEMA: {
+    readonly type: "object";
+    readonly additionalProperties: false;
+    readonly required: readonly ["coveredCapabilities", "gaps", "advancedOrdinals"];
+    readonly properties: {
+        readonly coveredCapabilities: {
+            readonly type: "array";
+            readonly maxItems: 40;
+            readonly items: {
+                readonly type: "string";
+            };
+        };
+        readonly gaps: {
+            readonly type: "array";
+            readonly maxItems: 40;
+            readonly items: {
+                readonly type: "string";
+            };
+        };
+        readonly advancedOrdinals: {
+            readonly type: "array";
+            readonly maxItems: 30;
+            readonly items: {
+                readonly type: "integer";
+                readonly minimum: 0;
+                readonly maximum: 29;
+            };
+        };
+    };
+};
+export declare function validatePoolCoverage(value: unknown, questionCount: number): PoolCoverageSummary;
 //# sourceMappingURL=study.d.ts.map

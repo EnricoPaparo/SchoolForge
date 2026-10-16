@@ -1,5 +1,10 @@
 import { splitReviewFeedback, type AiReviewFeedback } from './aiReviewFeedback.js';
-import { validatePoolReview, validateMapReview } from './aiContentDidacticReview.js';
+import {
+  validatePoolReview,
+  validateMapReview,
+  validateCandidateQuestions,
+  rawQuestion,
+} from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — motore **puro** della generazione contenuti. Nessun Firestore/rete
  * qui: le operazioni con effetti sono **porte iniettate** (`AiContentPorts`), così
@@ -391,6 +396,21 @@ export async function generateContent(
   });
 
   if (outcome.kind === 'replay_completed') {
+    if (request.kind === 'pool' && request.purpose === 'practice') {
+      const stored = outcome.run.output as { questions?: unknown; studyPlan?: unknown };
+      const questions = validateCandidateQuestions(
+        stored?.questions,
+        request.counts,
+        request.level,
+      );
+      validateStudyPoolProposal(
+        { questions: questions.map(rawQuestion), studyPlan: stored?.studyPlan },
+        request.counts,
+        request.level,
+        request.lessonSource,
+        request.plannedObjectives,
+      );
+    }
     if (request.kind === 'visual_plan_proposal') {
       validateStoredVisualPlanProposalOutput(outcome.run.output, request.quantity.ceiling);
     }

@@ -41,6 +41,7 @@ export type AiContentErrorCode =
   | 'provider_config_invalid'
   | 'provider_unavailable'
   | 'provider_invalid_output'
+  | 'source_insufficient'
   | 'output_incomplete'
   | 'output_too_large'
   | 'run_conflict'
@@ -517,7 +518,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v6',
+      promptContractVersion: 'lesson-review-v7',
       reviewPolicy: resolveContentModelForRequest(request),
       kind: request.kind,
       modelProfile: request.modelProfile,
@@ -635,8 +636,8 @@ export function canonicalRequest(request: AiContentRequest): string {
           kind: 'lesson',
           promptContractVersion:
             request.modelProfile === 'economy'
-              ? 'lesson-depth-explanations-v2'
-              : 'lesson-explanations-v2',
+              ? 'lesson-depth-preparation-v3'
+              : 'lesson-preparation-v3',
           modelProfile: request.modelProfile,
           depth: request.depth,
           titolo: request.titolo,

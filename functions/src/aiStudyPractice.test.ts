@@ -6,7 +6,7 @@ import {
   type PoolRequest,
 } from './aiContentCore.js';
 import { buildContentStructuredRequest, resolveMaxOutputTokens } from './aiContentPayload.js';
-import { validateStudyPoolProposal } from './aiContentValidation.js';
+import { validateStudyPoolProposal, validatePoolProposal } from './aiContentValidation.js';
 import { buildPoolPrompt } from './aiContentPrompt.js';
 const source =
   'Per seguire un ciclo annota il valore iniziale, valuta la condizione, esegui il corpo e aggiorna la variabile prima della nuova condizione.';
@@ -46,6 +46,37 @@ const output = () => ({
   },
 });
 describe('didactic study contract', () => {
+  it('validates the teacher coverage summary without treating it as a cognitive proof', () => {
+    const r = request();
+    const raw = {
+      questions: output().questions,
+      coverageSummary: {
+        coveredCapabilities: ['Tracciare un ciclo'],
+        gaps: ['Confronto non preparato'],
+        advancedOrdinals: [2],
+      },
+    };
+    expect(validatePoolProposal(raw, r.counts, r.level).coverageSummary?.gaps).toEqual([
+      'Confronto non preparato',
+    ]);
+    expect(() =>
+      validatePoolProposal(
+        { ...raw, coverageSummary: { ...raw.coverageSummary, advancedOrdinals: [3] } },
+        r.counts,
+        r.level,
+      ),
+    ).toThrow();
+  });
+
+  it('declares insufficient preparation without materializing invented questions', () => {
+    expect(() =>
+      validatePoolProposal(
+        { sourceInsufficient: true, questions: [] },
+        request().counts,
+        'balanced',
+      ),
+    ).toThrow(expect.objectContaining({ code: 'source_insufficient' }));
+  });
   it('binds purpose, final source, planned objectives and approved practice to identity', () => {
     const base = request();
     for (const extra of [

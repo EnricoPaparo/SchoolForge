@@ -1,4 +1,4 @@
-import { STUDY_PLAN_SCHEMA } from '@schoolforge/lesson-contract';
+import { STUDY_PLAN_SCHEMA, POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_SCHEMA } from './aiReviewFeedback.js';
 import {
   buildDidacticReviewPrompt,
@@ -59,7 +59,7 @@ export const PROMPT_OVERHEAD_TOKENS = 900;
  * 220 token per domanda poteva troncare il JSON Structured Output prima della
  * chiusura. Il budget resta proporzionato al tipo e quindi prudente sui costi.
  */
-export const POOL_OUTPUT_BASE_TOKENS = 800;
+export const POOL_OUTPUT_BASE_TOKENS = 1600;
 export const OPEN_QUESTION_OUTPUT_TOKENS = 550;
 export const CLOSED_QUESTION_OUTPUT_TOKENS = 300;
 /**
@@ -216,7 +216,10 @@ export function estimateInputTokens(request: AiContentRequest): number {
     request.kind === 'pool'
       ? request.lessonSource.length +
         (request.teacherGuidance?.length ?? 0) +
-        (request.existingQuestionStems?.join('').length ?? 0)
+        (request.existingQuestionStems?.join('').length ?? 0) +
+        (request.approvedPractice?.length ?? 0) +
+        (request.plannedObjectives?.join('').length ?? 0) +
+        (request.purpose === 'practice' ? 1800 : 0)
       : request.currentBody.length +
         (request.teacherGuidance?.length ?? 0) +
         request.concettiChiave.join('').length +
@@ -315,12 +318,19 @@ export function buildPoolOutputSchema(request: Extract<AiContentRequest, { kind:
   return {
     type: 'object',
     additionalProperties: false,
-    required: request.purpose === 'practice' ? ['questions', 'studyPlan'] : ['questions'],
+    required:
+      request.purpose === 'practice'
+        ? ['questions', 'studyPlan', 'sourceInsufficient']
+        : ['questions', 'sourceInsufficient', 'coverageSummary'],
     properties: {
-      ...(request.purpose === 'practice' ? { studyPlan: STUDY_PLAN_SCHEMA } : {}),
+      sourceInsufficient: { type: 'boolean' },
+      ...(request.purpose === 'practice' ? {} : { coverageSummary: POOL_COVERAGE_SCHEMA }),
+      ...(request.purpose === 'practice'
+        ? { studyPlan: { anyOf: [STUDY_PLAN_SCHEMA, { type: 'null' }] } }
+        : {}),
       questions: {
         type: 'array',
-        minItems: total,
+        minItems: 0,
         maxItems: total,
         items: {
           anyOf: [
@@ -716,8 +726,10 @@ export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
     'failedOrdinals',
     'replacementQuestions',
     'reviewChanges',
+    'coverageSummary',
   ],
   properties: {
+    coverageSummary: POOL_COVERAGE_SCHEMA,
     reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: reviewOutcomeSchema,
     issueCodes: reviewCodesSchema(POOL_REVIEW_ISSUE_CODES),
