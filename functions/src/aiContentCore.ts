@@ -614,7 +614,8 @@ export function canonicalRequest(request: AiContentRequest): string {
     request.kind === 'pool'
       ? {
           kind: 'pool',
-          promptContractVersion: 'pool-alignment-v4',
+          promptContractVersion:
+            request.purpose === 'practice' ? 'study-practice-v2' : 'pool-alignment-v4',
           ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
           ...(request.purpose ? { purpose: request.purpose } : {}),
           ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
@@ -770,6 +771,15 @@ function parseRequiredText(value: unknown, label: string, maxChars: number): str
     throw new AiContentError('invalid_input', `${label} troppo lungo.`);
   }
   return trimmed;
+}
+
+function parsePlannedObjectives(value: unknown): string[] {
+  if (!Array.isArray(value))
+    throw new AiContentError(
+      'invalid_input',
+      'Obiettivi pianificati deve essere una lista di stringhe.',
+    );
+  return parseStringArray(value, 'Obiettivi pianificati');
 }
 
 /** Lista obbligatoria non vuota (concetti chiave / obiettivi). */
@@ -1157,14 +1167,16 @@ function validateAiContentRequestWithPolicy(
     if (existingPoolQuestionCount > MAX_EXISTING_POOL_QUESTIONS) {
       throw new AiContentError('limit_exceeded', 'Conteggio pool esistente troppo grande.');
     }
+    if (input.purpose === 'practice' && (total < 3 || total > 12 || counts.aperta < 1))
+      throw new AiContentError(
+        'invalid_input',
+        'Il percorso richiede da 3 a 12 attivita e almeno un esempio aperto.',
+      );
     return enforceTotalRequestSize({
       kind: 'pool',
       ...(input.plannedObjectives !== undefined
         ? {
-            plannedObjectives: parseRequiredStringArray(
-              input.plannedObjectives,
-              'Obiettivi pianificati',
-            ),
+            plannedObjectives: parsePlannedObjectives(input.plannedObjectives),
           }
         : {}),
       ...(input.purpose === 'practice' ? { purpose: 'practice' as const } : {}),

@@ -9,6 +9,9 @@
 
 import {
   validateStudyPlan,
+  StudyPlanValidationError,
+  STUDY_PLAN_CONSTRAINTS,
+  type StudyPlanConstraint,
   validatePoolCoverage,
   type PoolCoverageSummary,
   type StudyPlan,
@@ -334,6 +337,36 @@ export function validateLessonReviewProposal(output: unknown): ValidatedLessonRe
   return { body, reviewOutcome: root.reviewOutcome, issueCodes };
 }
 
+export type StudyPracticeConstraint =
+  | StudyPlanConstraint
+  | 'example_not_open'
+  | 'practice_size'
+  | 'unknown';
+function invalidStudyPractice(
+  constraint: StudyPracticeConstraint,
+): AiContentError & { constraint: StudyPracticeConstraint } {
+  return Object.assign(
+    new AiContentError(
+      'provider_invalid_output',
+      'Esercitazione o riferimenti alla lezione non validi.',
+    ),
+    { constraint },
+  );
+}
+/** Only allowlisted, source-free diagnostic enums may reach operational logs. */
+export function studyPracticeConstraint(error: unknown): StudyPracticeConstraint {
+  if (
+    error instanceof AiContentError &&
+    'constraint' in error &&
+    typeof error.constraint === 'string' &&
+    [...STUDY_PLAN_CONSTRAINTS, 'example_not_open', 'practice_size', 'unknown'].includes(
+      error.constraint,
+    )
+  )
+    return error.constraint as StudyPracticeConstraint;
+  return 'unknown';
+}
+
 export function validateStudyPoolProposal(
   output: unknown,
   counts: PoolCounts,
@@ -354,14 +387,13 @@ export function validateStudyPoolProposal(
         (s) => s.stage === 'esempio' && result.questions[s.questionOrder]?.tipo !== 'aperta',
       )
     )
-      throw new Error('Esempio svolto senza spiegazione.');
+      throw invalidStudyPractice('example_not_open');
     if (utf8ByteLength(JSON.stringify({ ...result, studyPlan })) > 100000)
-      throw new Error('Pratica troppo grande.');
+      throw invalidStudyPractice('practice_size');
     return { ...result, studyPlan };
-  } catch {
-    throw new AiContentError(
-      'provider_invalid_output',
-      'Esercitazione o riferimenti alla lezione non validi.',
+  } catch (error) {
+    throw invalidStudyPractice(
+      error instanceof StudyPlanValidationError ? error.constraint : studyPracticeConstraint(error),
     );
   }
 }

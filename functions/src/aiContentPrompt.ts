@@ -1,3 +1,4 @@
+import { STUDY_TEXT_LIMITS } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_INSTRUCTIONS } from './aiReviewFeedback.js';
 import { DISCIPLINARY_CHECKLIST, numericDiagnosticsBlock } from './didacticSpecialist.js';
 /**
@@ -215,11 +216,14 @@ const LESSON_PREPARATION_CONTRACT =
   'Prepara esplicitamente le operazioni cognitive degli obiettivi: definire un concetto non basta a insegnare come applicarlo. Esplicita prerequisiti, scelta del metodo, passaggi intermedi e limiti. In storia distingui cronologia, cause ed evidenze; in letteratura collega interpretazioni a elementi del testo; in matematica e scienze motiva trasformazioni e condizioni; in informatica mostra tracciamento e criteri di terminazione quando pertinenti. Non forzare strutture disciplinari estranee al tema.';
 
 /** Contratto pedagogico del pool (livello 2). Ogni regola compare una sola volta. */
+export const AI_STUDY_PRACTICE_PROMPT_VERSION = 'study-practice-v2' as const;
 export const STUDY_PRACTICE_INSTRUCTIONS =
   'Produci anche studyPlan con plannedCoverage: per OGNI obiettivo pianificato dichiara preparato/parziale/non_sviluppato rispetto al corpo FINALE, con sourceQuote esatta (null per non_sviluppato). Un obiettivo nei metadati non autorizza richieste se non sviluppato; parziale significa che manca un passaggio o esempio necessario. In objectives descrivi soltanto capacità effettivamente preparate. Non nascondere lacune. Se nessun obiettivo pianificato, plannedCoverage è vuoto. Per il resto: descrivi soltanto capacità, prerequisiti e metodi effettivamente spiegati nel corpo finale. Ogni obiettivo ha una sourceQuote breve COPIATA ESATTAMENTE dalla fonte che ne prepara il metodo, non dal titolo o dai metadati. Non dichiarare copertura non dimostrata. Per ogni domanda aggiungi un passo steps con questionOrder zero-based, objectiveIndex, stage e hints. Gli stages seguono esempio, guidato, autonomo; trasferimento solo se preparato dalla fonte. Ogni obiettivo deve avere esempio svolto, guidato e autonomo con casi diversi: riduci gli obiettivi se necessario. Gli esempi sono domande aperte la cui soluzione motiva tutte le scelte. Gli aiuti sono due o tre suggerimenti SPECIFICI progressivi, prima concetto poi procedimento, senza anticipare subito la risposta. Mantieni soluzioni complete per confronto; per le chiuse spiega nei suggerimenti come ragionare senza svelare l’indice. Non includere punti o valutazioni. La pratica non è una verifica.';
 
 export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
   const range = POOL_LEVEL_DIFFICULTY[request.level];
+  const total =
+    request.counts.aperta + request.counts.chiusa_singola + request.counts.chiusa_multipla;
   const contract = [
     'Genera domande per un pool didattico, fondate ESCLUSIVAMENTE sul materiale della lezione.',
     `Quantità ESATTE: ${request.counts.aperta} aperte, ${request.counts.chiusa_singola} a risposta singola, ${request.counts.chiusa_multipla} a risposta multipla.`,
@@ -303,6 +307,7 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     ...(request.purpose === 'practice'
       ? [
           STUDY_PRACTICE_INSTRUCTIONS,
+          `Contratto ${AI_STUDY_PRACTICE_PROMPT_VERSION}: ${total} attivita richiedono esattamente ${total} steps ordinati e al massimo ${Math.min(4, Math.floor(total / 3), request.counts.aperta)} capacita. Il massimo di capacita e un TETTO, non una quantita obbligatoria. Per ogni capacita mantieni la triade esempio/guidato/autonomo; raggruppa per la stessa capacita tutti gli esempi, poi i guidati, poi gli autonomi e gli eventuali trasferimenti: mai tornare da autonomo a esempio (EGAEGA con lo stesso objectiveIndex non e valido); gli esempi sono sempre aperti. plannedCoverage contiene esattamente una voce per ogni nome UNICO in OBIETTIVI_PIANIFICATI: copia i nomi ESATTI, senza parafrasi, duplicati o omissioni; se vuoto usa []. Copia citazioni ESATTE dalla fonte, lunghezza ${STUDY_TEXT_LIMITS.quoteMin}..${STUDY_TEXT_LIMITS.quoteMax} caratteri (null soltanto per non_sviluppato). Limiti: capability ${STUDY_TEXT_LIMITS.capability}, prerequisites ${STUDY_TEXT_LIMITS.prerequisites}, method ${STUDY_TEXT_LIMITS.method}; ogni hint non vuoto entro ${STUDY_TEXT_LIMITS.hint} caratteri, due o tre hint per step. Non raggiungere i massimi inutilmente.`,
           fence(
             'OBIETTIVI_PIANIFICATI (dati da verificare sul corpo, non prove di copertura)',
             JSON.stringify(request.plannedObjectives ?? []),

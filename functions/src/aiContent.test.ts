@@ -2644,6 +2644,29 @@ describe('study generation accounting and replay', () => {
     expect(response.output).toMatchObject({ studyPlan: { objectives: [{ sourceQuote: source }] } });
     expect(finalizeRun).toHaveBeenCalledTimes(1);
   });
+  it('replays existing completed study outputs without new diagnostic metadata or provider calls', async () => {
+    const generated = await generateContent(
+      request,
+      ctx,
+      makePorts({ callProvider: async () => ({ ...okOutcome, output: studyOutput() }) }),
+    );
+    const callProvider = vi.fn();
+    const replay = await generateContent(
+      request,
+      ctx,
+      makePorts({
+        callProvider: callProvider as never,
+        reserveRunAndBudget: async () => ({
+          kind: 'replay_completed',
+          run: { ...SAMPLE_RUN, status: 'completed', output: generated.output },
+        }),
+      }),
+    );
+    expect(replay.replayed).toBe(true);
+    expect(replay.output).toEqual(generated.output);
+    expect(replay.output).not.toHaveProperty('constraint');
+    expect(callProvider).not.toHaveBeenCalled();
+  });
   it('rejects malformed stored practice before any new provider call', async () => {
     const callProvider = vi.fn();
     await expect(
@@ -2659,6 +2682,69 @@ describe('study generation accounting and replay', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: 'provider_invalid_output' });
+    expect(callProvider).not.toHaveBeenCalled();
+  });
+  it('logs only an allowlisted study constraint and settles invalid output normally', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const failRun = vi.fn(async (_params: Parameters<AiContentPorts['failRun']>[0]) => undefined);
+    const finalizeRun = vi.fn();
+    const invalid = studyOutput();
+    invalid.studyPlan.objectives[0]!.method = 'PRIVATE_PROVIDER_TEXT'.repeat(100);
+    try {
+      await expect(
+        generateContent(
+          request,
+          ctx,
+          makePorts({
+            callProvider: async () => ({ ...okOutcome, output: invalid }),
+            failRun,
+            finalizeRun: finalizeRun as never,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'provider_invalid_output', constraint: 'method_text' });
+      expect(warn).toHaveBeenCalledWith('ai_content_pool_validation_failed', {
+        kind: 'pool',
+        reason: 'Esercitazione o riferimenti alla lezione non validi.',
+        constraint: 'method_text',
+      });
+      const logs = JSON.stringify(warn.mock.calls);
+      for (const sensitive of [
+        'PRIVATE_PROVIDER_TEXT',
+        source,
+        request.requestId,
+        ctx.authenticatedOwnerUid,
+      ])
+        expect(logs).not.toContain(sensitive);
+      expect(failRun).toHaveBeenCalledTimes(1);
+      expect(finalizeRun).not.toHaveBeenCalled();
+      const settled = failRun.mock.calls[0]![0];
+      expect(settled.actualInputTokens).toBe(1000);
+      expect(settled.actualOutputTokens).toBe(400);
+      expect(settled.actualCostMicroUsd).toBeGreaterThan(0);
+      expect(settled.settledMicroUsd).toBe(settled.actualCostMicroUsd);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('rejects impossible practice requests before lease, reservation or provider', async () => {
+    const reserveRunAndBudget = vi.fn(),
+      callProvider = vi.fn();
+    for (const counts of [1, 2, 13, 30]
+      .map((n) => ({ aperta: n, chiusa_singola: 0, chiusa_multipla: 0 }))
+      .concat([{ aperta: 0, chiusa_singola: 3, chiusa_multipla: 0 }])) {
+      await expect(
+        (async () =>
+          generateContent(
+            validateAiContentRequest(poolPayload({ purpose: 'practice', counts })),
+            ctx,
+            makePorts({
+              reserveRunAndBudget: reserveRunAndBudget as never,
+              callProvider: callProvider as never,
+            }),
+          ))(),
+      ).rejects.toMatchObject({ code: 'invalid_input' });
+    }
+    expect(reserveRunAndBudget).not.toHaveBeenCalled();
     expect(callProvider).not.toHaveBeenCalled();
   });
   it('settles an insufficient-source provider response without creating a completed run', async () => {

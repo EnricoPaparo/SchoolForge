@@ -22,85 +22,228 @@ export interface StudyPlan {
     steps: StudyStep[];
     plannedCoverage: StudyCoverage[];
 }
-export declare const STUDY_PLAN_SCHEMA: {
-    readonly type: "object";
-    readonly additionalProperties: false;
-    readonly required: readonly ["objectives", "steps", "plannedCoverage"];
-    readonly properties: {
-        readonly plannedCoverage: {
-            readonly type: "array";
-            readonly maxItems: 40;
-            readonly items: {
-                readonly type: "object";
-                readonly additionalProperties: false;
-                readonly required: readonly ["objective", "status", "sourceQuote"];
-                readonly properties: {
-                    readonly objective: {
+export declare const STUDY_TEXT_LIMITS: {
+    readonly capability: 500;
+    readonly prerequisites: 1000;
+    readonly method: 1500;
+    readonly quoteMin: 20;
+    readonly quoteMax: 1200;
+    readonly hint: 1500;
+    readonly plannedObjective: 300;
+};
+export declare const STUDY_PLAN_CONSTRAINTS: readonly ["shape", "keys", "coverage_count", "coverage_status", "coverage_evidence", "coverage_objectives", "objective_count", "step_count", "capability_text", "prerequisites_text", "method_text", "quote_text", "quote_not_found", "step_reference", "hint_text", "progression"];
+export type StudyPlanConstraint = (typeof STUDY_PLAN_CONSTRAINTS)[number];
+/** No source text, ordinals or arbitrary provider data are attached to this error. */
+export declare class StudyPlanValidationError extends Error {
+    readonly constraint: StudyPlanConstraint;
+    constructor(constraint: StudyPlanConstraint, message: string);
+}
+export declare function buildStudyPlanSchema(questionCount?: number, plannedObjectives?: readonly string[], openQuestionCount?: number): {
+    type: string;
+    additionalProperties: boolean;
+    required: string[];
+    properties: {
+        plannedCoverage: {
+            type: string;
+            minItems: number;
+            maxItems: number;
+            items: {
+                type: string;
+                additionalProperties: boolean;
+                required: string[];
+                properties: {
+                    objective: {
+                        enum?: string[] | undefined;
                         type: string;
+                        minLength: number;
+                        maxLength: number;
                     };
-                    readonly status: {
-                        readonly type: "string";
-                        readonly enum: readonly ["preparato", "parziale", "non_sviluppato"];
-                    };
-                    readonly sourceQuote: {
-                        readonly type: readonly ["string", "null"];
-                    };
-                };
-            };
-        };
-        readonly objectives: {
-            readonly type: "array";
-            readonly minItems: 1;
-            readonly maxItems: 4;
-            readonly items: {
-                readonly type: "object";
-                readonly additionalProperties: false;
-                readonly required: readonly ["capability", "prerequisites", "method", "sourceQuote"];
-                readonly properties: {
-                    readonly capability: {
+                    status: {
                         type: string;
+                        enum: string[];
                     };
-                    readonly prerequisites: {
-                        type: string;
-                    };
-                    readonly method: {
-                        type: string;
-                    };
-                    readonly sourceQuote: {
-                        type: string;
-                    };
-                };
-            };
-        };
-        readonly steps: {
-            readonly type: "array";
-            readonly minItems: 3;
-            readonly maxItems: 12;
-            readonly items: {
-                readonly type: "object";
-                readonly additionalProperties: false;
-                readonly required: readonly ["questionOrder", "objectiveIndex", "stage", "hints"];
-                readonly properties: {
-                    readonly questionOrder: {
-                        readonly type: "integer";
-                        readonly minimum: 0;
-                        readonly maximum: 11;
-                    };
-                    readonly objectiveIndex: {
-                        readonly type: "integer";
-                        readonly minimum: 0;
-                        readonly maximum: 3;
-                    };
-                    readonly stage: {
-                        readonly type: "string";
-                        readonly enum: readonly ["esempio", "guidato", "autonomo", "trasferimento"];
-                    };
-                    readonly hints: {
-                        readonly type: "array";
-                        readonly minItems: 2;
-                        readonly maxItems: 3;
-                        readonly items: {
+                    sourceQuote: {
+                        anyOf: ({
                             type: string;
+                            minLength: number;
+                            maxLength: number;
+                        } | {
+                            type: string;
+                        })[];
+                    };
+                };
+            };
+        };
+        objectives: {
+            type: string;
+            minItems: number;
+            maxItems: number;
+            items: {
+                type: string;
+                additionalProperties: boolean;
+                required: string[];
+                properties: {
+                    capability: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    prerequisites: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    method: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    sourceQuote: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                };
+            };
+        };
+        steps: {
+            type: string;
+            minItems: number;
+            maxItems: number;
+            items: {
+                type: string;
+                additionalProperties: boolean;
+                required: string[];
+                properties: {
+                    questionOrder: {
+                        type: string;
+                        minimum: number;
+                        maximum: number;
+                    };
+                    objectiveIndex: {
+                        type: string;
+                        minimum: number;
+                        maximum: number;
+                    };
+                    stage: {
+                        type: string;
+                        enum: string[];
+                    };
+                    hints: {
+                        type: string;
+                        minItems: number;
+                        maxItems: number;
+                        items: {
+                            type: string;
+                            minLength: number;
+                            maxLength: number;
+                        };
+                    };
+                };
+            };
+        };
+    };
+};
+/** General contract; provider generation uses the request-specific builder. */
+export declare const STUDY_PLAN_SCHEMA: {
+    type: string;
+    additionalProperties: boolean;
+    required: string[];
+    properties: {
+        plannedCoverage: {
+            type: string;
+            minItems: number;
+            maxItems: number;
+            items: {
+                type: string;
+                additionalProperties: boolean;
+                required: string[];
+                properties: {
+                    objective: {
+                        enum?: string[] | undefined;
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    status: {
+                        type: string;
+                        enum: string[];
+                    };
+                    sourceQuote: {
+                        anyOf: ({
+                            type: string;
+                            minLength: number;
+                            maxLength: number;
+                        } | {
+                            type: string;
+                        })[];
+                    };
+                };
+            };
+        };
+        objectives: {
+            type: string;
+            minItems: number;
+            maxItems: number;
+            items: {
+                type: string;
+                additionalProperties: boolean;
+                required: string[];
+                properties: {
+                    capability: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    prerequisites: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    method: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                    sourceQuote: {
+                        type: string;
+                        minLength: number;
+                        maxLength: number;
+                    };
+                };
+            };
+        };
+        steps: {
+            type: string;
+            minItems: number;
+            maxItems: number;
+            items: {
+                type: string;
+                additionalProperties: boolean;
+                required: string[];
+                properties: {
+                    questionOrder: {
+                        type: string;
+                        minimum: number;
+                        maximum: number;
+                    };
+                    objectiveIndex: {
+                        type: string;
+                        minimum: number;
+                        maximum: number;
+                    };
+                    stage: {
+                        type: string;
+                        enum: string[];
+                    };
+                    hints: {
+                        type: string;
+                        minItems: number;
+                        maxItems: number;
+                        items: {
+                            type: string;
+                            minLength: number;
+                            maxLength: number;
                         };
                     };
                 };

@@ -36,6 +36,7 @@ import {
   validateLessonReviewProposal,
   validatePoolProposal,
   validateStudyPoolProposal,
+  studyPracticeConstraint,
 } from './aiContentValidation.js';
 import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
 import {
@@ -632,6 +633,9 @@ export async function generateContent(
       console.warn('ai_content_pool_validation_failed', {
         kind: request.kind,
         reason: e.message,
+        ...(request.kind === 'pool' && request.purpose === 'practice'
+          ? { constraint: studyPracticeConstraint(e) }
+          : {}),
       });
       throw e;
     }
