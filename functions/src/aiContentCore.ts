@@ -65,7 +65,7 @@ export class AiContentError extends Error {
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
-  pool_review: 'pool_review-v5',
+  pool_review: 'pool_review-v7',
   concept_map_review: 'concept_map_review-v6',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -614,7 +614,7 @@ export function canonicalRequest(request: AiContentRequest): string {
     request.kind === 'pool'
       ? {
           kind: 'pool',
-          promptContractVersion: 'pool-alignment-v3',
+          promptContractVersion: 'pool-alignment-v4',
           ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
           ...(request.purpose ? { purpose: request.purpose } : {}),
           ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
@@ -1278,8 +1278,9 @@ export function resolveContentModelForRequest(request: AiContentRequest): {
 } {
   // Il revisore lezione usa Sol anche per una bozza Economy: audit disciplinare
   // indipendente dal costo del generatore. Il profilo richiesto resta nel run.
-  if (request.kind === 'lesson_review') return GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
-  if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
+  if (request.kind === 'lesson_review' || request.kind === 'pool_review')
+    return GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
+  if (request.kind === 'concept_map_review') {
     return GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy;
   }
   if (request.kind === 'lesson') {

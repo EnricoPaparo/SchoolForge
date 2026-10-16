@@ -18,7 +18,7 @@ legame pratica/verifica, struttura comune, lezioni autonome, pool equilibrati.
 ## Invarianti
 
 - Nessuna modifica a punti=difficoltà, correzione IA, mappe, ripasso o fonti esterne.
-- Nessun provider reale durante lo sviluppo; stima e accounting del gateway invariati.
+- Provider reale solo nel collaudo sintetico autorizzato, tetto aggregato 12 tentativi/$5; stima e accounting esistenti.
 - Pool sempre privato. Pratica studente subordinata ad accesso lezione, pubblicazione,
   corpo corrente e blocco verifica. Nessuna persistenza delle risposte personali.
 - Legacy senza pratica continua a funzionare. Nessuna migrazione.
@@ -32,7 +32,7 @@ legame pratica/verifica, struttura comune, lezioni autonome, pool equilibrati.
 - [x] Pratica studente con aiuti, confronto aperte e controllo chiuse.
 - [x] Legame pratica/pool e riepilogo docente.
 - [x] Prompt disciplinari e regressioni.
-- [ ] Format, lint, typecheck, test, build, rules, diff check.
+- [x] Gate completi baseline e gate proporzionati dei fix (dettaglio sotto).
 - [ ] Review indipendente, CI e deploy DEV mirato con smoke (orchestratore).
 
 ## Implementazione e confini di prodotto
@@ -85,12 +85,11 @@ legame pratica/verifica, struttura comune, lezioni autonome, pool equilibrati.
 I test automatici dimostrano schema, riferimenti presenti, progressione, isolamento,
 idempotenza e comportamento UI. Non dimostrano che una citazione insegni davvero un
 metodo o che il giudizio cognitivo del modello sia corretto. Il docente controlla
-sempre i materiali prima di pubblicare. Nessun provider reale è stato eseguito.
+sempre i materiali prima di pubblicare. Il collaudo reale autorizzato è descritto sotto.
 Il manifest `didactic-study-offline-cases-2026-10.json` contiene cinque scenari con
 attese docente: definizione while senza tracing, tracing insegnato con caso nuovo,
 proporzionalità in nuovo contesto, cronologia senza analisi fonti, interpretazione
-letteraria supportata. Il confronto reale prima/dopo resta pending fino a specifica
-autorizzazione di provider e budget.
+letteraria supportata. Le attese offline sono distinte dagli esiti reali sotto.
 
 Smoke locale dell'orchestratore, senza Functions/provider: lo studente apre pratica,
 controlla una chiusa, rivela aiuti, confronta un'aperta; chiude/riapre e i dati si
@@ -102,11 +101,10 @@ esistente. Prova DOM/interazioni in browser, nessuna QA raster dichiarata.
 
 Target necessari: Hosting DEV, Firestore Rules e le tre Function contenuti
 `aiContentPreview`, `aiContentGenerate`, `aiContentPromptExport`. Nessuna modifica Storage Rules,
-indici, segreti, provider o correzione. L'orchestratore ricava dal codice i nomi
+indici, segreti o correzione. Il solo revisore pool passa al modello Sol già usato per le lezioni. L'orchestratore ricava dal codice i nomi
 export effettivi prima del deploy. Rollback: build/Function/Rules alla release
 precedente; i documenti additivi rimangono privati/non leggibili dalla vecchia UI,
 senza migrazioni distruttive. PROD resta fuori scope.
-
 
 
 ## Gate locali e revisione ciclo 1
@@ -116,7 +114,7 @@ contratto 58, web 3.988), più regressione mirata della lettura pubblica tardiva
 Rules web: 734 test verdi; integration Functions: 222 test verdi con il solo
 override CLI `--testTimeout=15000` per il primo avvio del test upload su Windows.
 Il gate locale standard a 5 secondi incontrava quel timeout baseline; la CI
-standard Linux sullo stesso `5b36fa7` è verde. Nessun test provider reale.
+standard Linux sullo stesso `5b36fa7` è verde. Questi gate usano provider simulati.
 
 Il fix aggregato del ciclo 1 conserva difficoltà e punti originali nell'audit
 pool, comprese domande aperte e chiuse, con ID e limiti risposta invariati.
@@ -125,5 +123,53 @@ usare il tree del corso come sorgente della bozza: una lettura puntuale aggiunti
 per apertura, nessun refetch del corso. Modifiche e salvataggio restano bloccati
 finché la lettura non riesce. Regressioni coprono nuova bozza e pratica esistente
 modificata, entrambe riaperte con lo snapshot del corso ancora precedente.
-La CI sul commit di questo fix resta da eseguire: non si assume l'esito della CI
-precedente come prova del nuovo SHA.
+Al fix `db1cc63`: 127 test web mirati, format/lint/typecheck/build e diff check verdi.
+La CI e review del prossimo SHA con il fix semantico restano da eseguire; non si
+assume un esito precedente come prova del nuovo SHA.
+
+## Collaudo IA reale autorizzato e fix semantico
+
+Autorizzazione umana esplicita: materiali sintetici, massimo 12 tentativi e $5
+aggregati, chiave DEV solo in memoria. Manifest, ledger e risultati sono fuori Git
+in `%TEMP%/schoolforge-study-real-smoke`; nessun dato studente. SDK e runner senza
+retry; prima di ogni tentativo fence persistente e prenotazione conservativa.
+
+Le prime otto prove hanno prodotto blocchi coerenti sulle due fonti premature,
+soluzioni corrette sui metodi insegnati, pratica e pool riferito alla pratica.
+Le prove 9 e 10 hanno invece dimostrato un difetto del revisore `gpt-5.6-luna`:
+tracing mantenuto senza metodo insegnato, anche dopo una prima regola esplicita.
+Il collaudo si e fermato dopo ciascun difetto; nessun Quality holdout eseguito.
+
+Il fix finale usa SOLO per `pool_review` il modello/listino Quality gia adottato
+per `lesson_review`: `gpt-6.1-sol` / `v12-2026-09-29-gpt61-sol-standard`.
+Il costo e la stima seguono il resolver esistente; l'audit puo quindi costare piu
+del precedente revisore Luna e resta soggetto ai limiti runtime per operazione.
+La mappa conserva il proprio revisore. Versioni `pool_review-v7` e
+`pool-alignment-v4` invalidano l'identita delle nuove richieste coerentemente.
+
+Ogni domanda FINALE deve avere evidenza raw: indice completo/in ordine, capacita,
+operazione sintetica, stato prepared/missing e citazione esatta della lezione.
+Flag mancante, evidenze incomplete, ordine errato o citazione inventata bloccano
+l'output; missing o citazione vuota producono `source_insufficient`. Non sono
+chain-of-thought. Le evidenze non vengono aggiunte al risultato persistito;
+i completed legacy restano leggibili. Non si insegna una procedura assente
+nella consegna per rendere applicabile una domanda prematura.
+
+Retest 11: PASS. Il tracing prematuro viene sostituito con comprensione del
+significato di while e variabile, citazione pertinente e lacuna sull'obiettivo
+output dichiarata. Retest 12: PASS. Il trasferimento prezzo/produzione resta
+invariato, sostenuto da `k=y/x` e `y=kx`; risultato 64 pezzi corretto.
+Totale definitivo: 12 tentativi, $0,035596, 28.483 token input e 12.228 output,
+nessun retry o usage mancante. Il budget residuo non autorizza altri tentativi.
+
+Limiti: singolo campione per caso, fonti brevi sintetiche, nessuna validazione
+in classe. La citazione e verificata come appartenenza, non come implicazione
+semantica universale. Varieta limitata in alcuni pool e commenti gaps talvolta
+su estensioni non richieste: nessuna promessa di copertura curricolare completa
+o assenza universale di duplicati. Revisione docente resta necessaria.
+
+Sul fix semantico: test mirati di schema/evidenze/legacy/accounting e resolver,
+format/lint/typecheck, 2.218 test Functions completi e build workspace verdi.
+Rules e UI non modificate dal fix semantico: valgono i gate precedenti, con CI
+completa sul nuovo SHA ancora richiesta. Deploy DEV e smoke restano pending
+all'orchestratore, PROD esclusa.

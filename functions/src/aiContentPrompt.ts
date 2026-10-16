@@ -60,7 +60,7 @@ export const AI_LESSON_REVIEW_PROMPT_VERSION = 'lesson-review-v7' as const;
  * questo prompt sulla base del profile probe reale, senza attribuire il cambio
  * alle versioni di lezione o mappa concettuale.
  */
-export const AI_POOL_PROMPT_VERSION = 'pool-alignment-v3' as const;
+export const AI_POOL_PROMPT_VERSION = 'pool-alignment-v4' as const;
 
 /**
  * CONCEPT-MAP-01 — versione **separata** del prompt della mappa concettuale.
@@ -224,7 +224,7 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     'Genera domande per un pool didattico, fondate ESCLUSIVAMENTE sul materiale della lezione.',
     `Quantità ESATTE: ${request.counts.aperta} aperte, ${request.counts.chiusa_singola} a risposta singola, ${request.counts.chiusa_multipla} a risposta multipla.`,
     '',
-    'Allineamento cognitivo obbligatorio: ricostruisci privatamente una soluzione e tutti i prerequisiti, le operazioni e i passaggi richiesti. Per ciascuno individua dove la fonte lo spiega o dimostra. Citare un argomento non insegna il metodo per elaborarlo. Un nuovo caso è legittimo solo se affrontabile con metodi insegnati. Riformula o sostituisci richieste non preparate; se impossibile non inventare copertura: restituisci sourceInsufficient=true, questions=[] e studyPlan=null quando richiesto. Il sistema fermerà la generazione dichiarando il limite della fonte. Negli altri casi sourceInsufficient=false e quantità esatte.',
+    'Allineamento cognitivo obbligatorio: ricostruisci privatamente una soluzione e tutti i prerequisiti, le operazioni e i passaggi richiesti. Per ciascuno individua dove la fonte lo spiega o dimostra. Citare un argomento non insegna il metodo per elaborarlo. Un nuovo caso è legittimo solo se affrontabile con metodi insegnati. Non colmare una carenza della lezione insegnando nella consegna un metodo o una procedura assente: niente tutorial, nuove assunzioni operative o passaggi risolutivi che mantengano la richiesta prematura. Nuovi dati o contesti sono leciti soltanto quando il procedimento e gia insegnato. Sostituisci la domanda con una capacita effettivamente preparata; se non esiste una riparazione rispettosa dei vincoli, restituisci sourceInsufficient=true e nessuna riparazione applicabile. Riformula o sostituisci richieste non preparate; se impossibile non inventare copertura: restituisci sourceInsufficient=true, questions=[] e studyPlan=null quando richiesto. Il sistema fermerà la generazione dichiarando il limite della fonte. Negli altri casi sourceInsufficient=false e quantità esatte.',
     'Autonomia e chiarezza — ogni domanda deve:',
     '- essere comprensibile da sola e contenere tutto ciò che serve per capire cosa si chiede;',
     '- verificare conoscenze o competenze effettivamente presenti nel materiale, non la memoria',

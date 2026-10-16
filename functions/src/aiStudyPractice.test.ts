@@ -86,7 +86,7 @@ describe('didactic study contract', () => {
       { approvedPractice: 'Attività approvata' },
     ])
       expect(computeInputHash(request(extra))).not.toBe(computeInputHash(base));
-    expect(canonicalRequest(base)).toContain('pool-alignment-v3');
+    expect(canonicalRequest(base)).toContain('pool-alignment-v4');
   });
   it('rejects unknown purposes and unbounded/untyped practice inputs', () => {
     for (const extra of [
@@ -100,6 +100,7 @@ describe('didactic study contract', () => {
   it('includes cognitive alignment in ordinary generation and subordinates approved practice to source', () => {
     const p = buildPoolPrompt(request({ approvedPractice: 'Caso svolto' }));
     expect(p.user).toContain('Citare un argomento non insegna il metodo');
+    expect(p.user).toContain('niente tutorial, nuove assunzioni operative');
     expect(p.user).toContain('La pratica non autorizza contenuti o metodi assenti');
   });
   it('uses an explicitly budgeted strict study schema and validates actual source evidence', () => {

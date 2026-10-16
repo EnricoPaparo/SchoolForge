@@ -721,6 +721,8 @@ export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: [
+    'sourceInsufficient',
+    'preparationEvidence',
     'reviewOutcome',
     'issueCodes',
     'failedOrdinals',
@@ -729,6 +731,23 @@ export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
     'coverageSummary',
   ],
   properties: {
+    sourceInsufficient: { type: 'boolean' },
+    preparationEvidence: {
+      type: 'array',
+      maxItems: 30,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['questionOrder', 'capability', 'operation', 'status', 'sourceQuote'],
+        properties: {
+          questionOrder: { type: 'integer', minimum: 0, maximum: 29 },
+          capability: { type: 'string', maxLength: 500 },
+          operation: { type: 'string', maxLength: 500 },
+          status: { type: 'string', enum: ['prepared', 'missing'] },
+          sourceQuote: { type: 'string', maxLength: 1500 },
+        },
+      },
+    },
     coverageSummary: POOL_COVERAGE_SCHEMA,
     reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: reviewOutcomeSchema,

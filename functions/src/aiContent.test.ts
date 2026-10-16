@@ -961,6 +961,17 @@ describe('lesson reviewer policy and accounting', () => {
       const output =
         kind === 'pool_review'
           ? {
+              sourceInsufficient: false,
+              preparationEvidence:
+                request.kind === 'pool_review'
+                  ? request.candidateQuestions.map((q) => ({
+                      questionOrder: q.order,
+                      capability: 'Comprendere TCP',
+                      operation: 'Definire',
+                      status: 'prepared',
+                      sourceQuote: request.lessonSource,
+                    }))
+                  : [],
               reviewOutcome: 'unchanged',
               issueCodes: [],
               failedOrdinals: [],
@@ -1002,6 +1013,7 @@ describe('lesson reviewer policy and accounting', () => {
         request,
         ctx,
         makePorts({
+          loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
           reserveRunAndBudget: async () => ({ kind: 'replay_completed', run: saved }),
           callProvider,
         }),
@@ -2669,4 +2681,46 @@ describe('study generation accounting and replay', () => {
     expect(failRun).toHaveBeenCalledTimes(1);
     expect(finalizeRun).not.toHaveBeenCalled();
   });
+});
+
+it('settles metered insufficient-source pool review without a completed proposal', async () => {
+  const request = validateAiContentRequest({
+    ...poolPayload(),
+    kind: 'pool_review',
+    candidateQuestions: [
+      { order: 0, tipo: 'aperta', testo: 'Spiega TCP', difficolta: 3, soluzione: 'ok' },
+      {
+        order: 1,
+        tipo: 'chiusa_singola',
+        testo: 'Quale?',
+        difficolta: 2,
+        opzioni: ['TCP', 'UDP'],
+        soluzioneIndici: [0],
+      },
+    ],
+  });
+  const failRun = vi.fn(async () => undefined);
+  const finalizeRun = vi.fn();
+  await expect(
+    generateContent(
+      request,
+      ctx,
+      makePorts({
+        loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
+        callProvider: async () => ({ ...okOutcome, output: { sourceInsufficient: true } }),
+        failRun,
+        finalizeRun: finalizeRun as never,
+      }),
+    ),
+  ).rejects.toMatchObject({ code: 'source_insufficient' });
+  expect(failRun).toHaveBeenCalledTimes(1);
+  expect(failRun).toHaveBeenCalledWith(
+    expect.objectContaining({
+      actualInputTokens: 1000,
+      actualOutputTokens: 400,
+      actualCostMicroUsd: expect.any(Number),
+      settledMicroUsd: expect.any(Number),
+    }),
+  );
+  expect(finalizeRun).not.toHaveBeenCalled();
 });

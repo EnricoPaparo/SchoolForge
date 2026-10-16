@@ -171,6 +171,14 @@ class MockContentProvider implements ContentProvider {
       return {
         status: 'ok',
         output: {
+          sourceInsufficient: false,
+          preparationEvidence: request.candidateQuestions.map((q) => ({
+            questionOrder: q.order,
+            capability: 'Capacita mock',
+            operation: 'Operazione mock',
+            status: 'prepared',
+            sourceQuote: request.lessonSource.slice(0, 1500),
+          })),
           reviewOutcome: 'unchanged',
           issueCodes: [],
           failedOrdinals: [],
