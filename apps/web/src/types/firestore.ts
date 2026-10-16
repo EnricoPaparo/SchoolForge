@@ -1,3 +1,4 @@
+import type { StudyPractice } from '../features/repository/programs/studyPractice.js';
 import type { PoolDifficulty } from '@schoolforge/lesson-contract';
 import type { FieldValue, Timestamp } from 'firebase/firestore';
 
@@ -155,6 +156,7 @@ export interface UdaDoc {
 
 /** Stored at programs/{programId}/imports/{importId}/lessons/{lessonId} */
 export interface LessonDoc {
+  studyPractice?: StudyPractice;
   ownerUid: string;
   importId: string;
   udaDir: string;

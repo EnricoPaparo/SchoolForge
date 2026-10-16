@@ -48,6 +48,7 @@ import {
   createAiConceptMapCallables,
   type AiConceptMapCallables,
 } from '../repository/pools/aiConceptMapClient.js';
+import { StudyPracticeEditor } from './StudyPracticeEditor.js';
 import { ConceptMapEditor } from './ConceptMapEditor.js';
 import {
   createLesson,
@@ -3492,6 +3493,22 @@ function LessonDetail({
   onCloseMultiVisualDialog: () => void;
   onVisualsChange: (visuals: LessonVisualsManifest | null) => void;
 }) {
+  const [practiceContext, setPracticeContext] = useState<string | undefined>(undefined);
+  const [practiceDirty, setPracticeDirty] = useState(false);
+  const [questionDirty, setQuestionDirty] = useState(false);
+  const practiceIdentity = JSON.stringify([programId, importId, lesson.id, content]);
+  const practiceSourceRef = useRef(practiceIdentity);
+  const currentPracticeContext =
+    practiceSourceRef.current === practiceIdentity ? practiceContext : undefined;
+  useEffect(() => {
+    if (practiceSourceRef.current !== practiceIdentity) {
+      practiceSourceRef.current = practiceIdentity;
+      setPracticeContext(undefined);
+    }
+  }, [practiceIdentity]);
+  useEffect(() => {
+    onDirtyChange(practiceDirty || questionDirty);
+  }, [practiceDirty, questionDirty, onDirtyChange]);
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
   /**
@@ -3951,14 +3968,28 @@ function LessonDetail({
       >
         {/* Lazy: mounted only once the Domande tab has been opened, then kept
             mounted across tab switches so the pool is read once per lesson. */}
+        {domandeVisited && importId && content && (
+          <StudyPracticeEditor
+            key={`${lesson.id}:${content}`}
+            lesson={lesson}
+            body={content}
+            programId={programId}
+            importId={importId}
+            ownerUid={ownerUid}
+            onDirtyChange={setPracticeDirty}
+            onApprovedChange={setPracticeContext}
+          />
+        )}
         {domandeVisited && (
           <QuestionPoolEditor
+            key={`${programId}:${importId}:${lesson.id}`}
             programId={programId}
             importId={importId}
             lesson={lesson}
             ownerUid={ownerUid}
             lessonSource={content}
-            onDirtyChange={onDirtyChange}
+            approvedPractice={currentPracticeContext}
+            onDirtyChange={setQuestionDirty}
             reloadToken={poolReloadToken}
             onPoolCountChange={onPoolCountChange}
           />

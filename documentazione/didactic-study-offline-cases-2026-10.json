@@ -1,0 +1,62 @@
+{
+  "schema": "schoolforge-didactic-study-offline/v1",
+  "providerCallsExecuted": false,
+  "purpose": "Casi per collaudo docente e futuro confronto provider esplicitamente autorizzato. Le attese non sono risultati misurati.",
+  "cases": [
+    {
+      "id": "while-definition-only",
+      "discipline": "informatica",
+      "lessonBody": "Un ciclo while ripete un blocco di istruzioni finché una condizione è vera. Una variabile conserva un valore che può essere aggiornato.",
+      "plannedObjectives": [
+        "Prevedere l’output di un ciclo"
+      ],
+      "question": "Dato x=0; while x<3: stampa(x); x=x+1, prevedi l’output e giustifica ogni iterazione.",
+      "expected": "prematura",
+      "reason": "Il testo definisce ciclo e variabile, ma non insegna tracing, sequenza di valutazione o tabella di esecuzione. L’obiettivo dichiarato non colma il passaggio."
+    },
+    {
+      "id": "while-tracing-taught",
+      "discipline": "informatica",
+      "lessonBody": "Per prevedere l’output di un while costruisci una tabella: annota il valore iniziale, valuta la condizione, se vera esegui il corpo nell’ordine scritto e annota stampa e nuovo valore. Riparti dal controllo; se falso termina. Per x=1, while x<3, stampa(x), x=x+1: il primo controllo è vero e stampa 1, poi x diventa 2; il secondo stampa 2, poi x diventa 3; il terzo è falso. L’output è 1, 2.",
+      "plannedObjectives": [
+        "Prevedere l’output di un ciclo"
+      ],
+      "question": "Applica il metodo a x=2; while x<6: stampa(x); x=x+2. Motiva l’output.",
+      "expected": "ammissibile",
+      "reason": "Nuovi dati e incremento, ma il metodo di tracing è insegnato e dimostrato; lo studente può applicarlo senza nuovo procedimento."
+    },
+    {
+      "id": "direct-proportion-new-context",
+      "discipline": "matematica",
+      "lessonBody": "Nella proporzionalità diretta il rapporto y/x è costante per x diverso da zero. Calcola k=y/x e usa y=kx. Se 2 kg costano 6 euro, k=3 euro/kg e 5 kg costano 15 euro. Il prezzo unitario deve restare costante: sconti o quote fisse cambiano il modello.",
+      "plannedObjectives": [
+        "Applicare la proporzionalità diretta"
+      ],
+      "question": "Una macchina produce 40 pezzi in 5 minuti a ritmo costante senza avvio aggiuntivo. Quanti in 8 minuti? Spiega il metodo.",
+      "expected": "ammissibile",
+      "reason": "Il contesto cambia, rapporto costante e condizioni del modello sono espliciti. Non richiede una nuova tecnica."
+    },
+    {
+      "id": "history-chronology-only",
+      "discipline": "storia",
+      "lessonBody": "Nel 1789 si riunirono gli Stati generali e fu presa la Bastiglia. Nel 1792 fu proclamata la Repubblica. Nel 1793 fu giustiziato Luigi XVI.",
+      "plannedObjectives": [
+        "Analizzare criticamente fonti storiche"
+      ],
+      "question": "Valuta l’attendibilità di un discorso politico anonimo del 1793 distinguendo destinatari, intenzioni e riscontri indipendenti.",
+      "expected": "prematura",
+      "reason": "Una cronologia non insegna analisi delle fonti e mancano informazioni per le attribuzioni richieste."
+    },
+    {
+      "id": "literature-supported-interpretation",
+      "discipline": "letteratura",
+      "lessonBody": "Per sostenere un’interpretazione parti da una tesi circoscritta, cita un elemento del testo e spiega come sostiene la tesi. Distingui osservazione e inferenza. Nel verso inventato “la stanza tace dopo il tuo passo” l’osservazione è la personificazione della stanza; l’inferenza di assenza si sostiene con “dopo” e con il silenzio successivo al passo, ma non prova da sola un lutto.",
+      "plannedObjectives": [
+        "Argomentare un’interpretazione con evidenze testuali"
+      ],
+      "question": "Nel verso inventato “resta il tuo nome sul quaderno chiuso”, proponi un’interpretazione sostenuta da due elementi testuali e indica un limite della tua inferenza.",
+      "expected": "ammissibile",
+      "reason": "Il metodo tesi-evidenza-nesso e la distinzione tra osservazione e inferenza sono insegnati e dimostrati; sono possibili interpretazioni alternative motivate."
+    }
+  ]
+}

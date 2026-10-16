@@ -1,3 +1,4 @@
+import type { StudyPlan, PoolCoverageSummary } from '@schoolforge/lesson-contract';
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
 
@@ -113,6 +114,9 @@ export const MAX_TEACHER_GUIDANCE_CHARS = 500;
 /** Payload chiuso inviato a entrambe le callable (preview e generate). */
 export interface AiPoolContentRequest {
   kind: 'pool';
+  purpose?: 'practice';
+  plannedObjectives?: string[];
+  approvedPractice?: string;
   requestId: string;
   modelProfile: PoolModelProfile;
   teacherGuidance?: string;
@@ -162,6 +166,8 @@ export type AiProposalQuestion =
     };
 
 export interface AiPoolProposalOutput {
+  studyPlan?: StudyPlan;
+  coverageSummary?: PoolCoverageSummary;
   questions: AiProposalQuestion[];
 }
 
@@ -261,6 +267,8 @@ export function describeAiContentError(err: unknown): string {
   const code = (err as { details?: { code?: string } })?.details?.code;
   const httpsCode = (err as { code?: string })?.code;
   switch (code) {
+    case 'source_insufficient':
+      return 'La lezione non prepara abbastanza attività coerenti. Integra le spiegazioni o riduci il numero di domande.';
     case 'source_issue':
       return 'Il revisore ha rilevato un problema nella lezione sorgente. Controlla la lezione prima di applicare la mappa.';
     case 'feature_disabled':

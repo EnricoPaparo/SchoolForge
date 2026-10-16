@@ -14,6 +14,7 @@ import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
 import { readStudentVisualBytes } from '../repository/programs/visualReadClients.js';
 import { readStudentVisualBytesMulti } from '../repository/programs/multiVisualReadClients.js';
 import { useLessonVisual } from '../repository/programs/useLessonVisual.js';
+import { StudentStudyPractice } from './StudentStudyPractice.js';
 import { LessonNotesPanel } from './LessonNotesPanel.js';
 import { useLessonNotes, type LessonNotesController } from './useLessonNotes.js';
 import { useStudentDidattica } from './useStudentDidattica.js';
@@ -829,6 +830,13 @@ function LessonContent({
         </>
       ) : (
         body
+      )}
+      {lesson.completed && lesson.content && (
+        <StudentStudyPractice
+          key={`${lesson.id}:${lesson.content}`}
+          publicLessonId={lesson.id}
+          body={lesson.content}
+        />
       )}
     </article>
   );

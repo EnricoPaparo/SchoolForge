@@ -18,6 +18,7 @@ import {
   IconSparkles,
   IconTrash,
 } from '../../components/icons.js';
+import { PoolCoherenceAudit } from './PoolCoherenceAudit.js';
 import { AiPoolGenerationDialog } from './AiPoolGenerationDialog.js';
 import styles from './QuestionPoolEditor.module.css';
 
@@ -70,6 +71,7 @@ export type QuestionPoolEditorProps = {
    * usato come `lessonSource` per la generazione IA. Nessuna nuova lettura Storage.
    */
   lessonSource?: string | null;
+  approvedPractice?: string;
   /** Called after a successful save/delete so the parent can update its own counters. */
   onPoolCountChange?: (questionCount: number, poolStatus: PoolCountStatus) => void;
   /** Reports whether there are unsaved edits, so the parent can guard navigation. */
@@ -641,6 +643,7 @@ export function QuestionPoolEditor({
   lesson,
   ownerUid,
   lessonSource,
+  approvedPractice,
   onPoolCountChange,
   onDirtyChange,
   reloadToken,
@@ -936,6 +939,7 @@ export function QuestionPoolEditor({
       {aiDialogOpen && (
         <AiPoolGenerationDialog
           lessonSource={lessonSource ?? ''}
+          approvedPractice={approvedPractice}
           existingPool={poolState.status === 'valid' ? poolState.pool : null}
           callables={aiCallables}
           onApply={applyAiPool}
@@ -943,6 +947,15 @@ export function QuestionPoolEditor({
         />
       )}
 
+      {poolState.status === 'valid' && lessonSource && !editorOpen && !anyQuestionEditorOpen && (
+        <PoolCoherenceAudit
+          key={JSON.stringify([poolState.pool, lessonSource, approvedPractice])}
+          pool={poolState.pool}
+          lessonSource={lessonSource}
+          approvedPractice={approvedPractice}
+          onApply={applyAiPool}
+        />
+      )}
       {/* Pool absent */}
       {poolState.status === 'absent' && !editorOpen && (
         <div className={styles.absentState}>
