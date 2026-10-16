@@ -4032,7 +4032,7 @@ function LessonDetail({
         {domandeVisited && content && practiceLoadedIdentity !== practiceIdentity && (
           <p role="status">Caricamento delle esercitazioni approvate per il pool…</p>
         )}
-        {domandeVisited && (!content || practiceLoadedIdentity === practiceIdentity) && (
+        {domandeVisited && (
           <QuestionPoolEditor
             key={`${programId}:${importId}:${lesson.id}`}
             programId={programId}
@@ -4041,6 +4041,7 @@ function LessonDetail({
             ownerUid={ownerUid}
             lessonSource={content}
             approvedPractice={currentPracticeContext}
+            aiContextReady={!content || practiceLoadedIdentity === practiceIdentity}
             onDirtyChange={setQuestionDirty}
             reloadToken={poolReloadToken}
             onPoolCountChange={onPoolCountChange}

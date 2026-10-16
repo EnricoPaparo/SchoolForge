@@ -68,17 +68,17 @@ describe('etichetta della generazione', () => {
 });
 
 describe('ordine e struttura delle schede', () => {
-  it('le quattro schede sono nell’ordine definitivo', () => {
+  it('le cinque schede sono nell’ordine definitivo', () => {
     // La mappa segue il contenuto perché ne è la sintesi: si legge dopo, mai
     // al posto suo. L'ordine è dichiarato in una sola costante, ed è quella.
     const tabs = /const LESSON_TABS[^=]*=\s*\[(.*?)\];/s.exec(workspaceSource)?.[1] ?? '';
     const ids = [...tabs.matchAll(/id: '([a-z]+)'/g)].map((m) => m[1]);
-    expect(ids).toEqual(['contenuto', 'mappa', 'domande', 'informazioni']);
+    expect(ids).toEqual(['contenuto', 'mappa', 'esercitazioni', 'domande', 'informazioni']);
   });
 
-  it('il tipo della scheda include la mappa', () => {
+  it('il tipo della scheda include mappa ed esercitazioni', () => {
     expect(workspaceSource).toContain(
-      "type LessonTab = 'contenuto' | 'mappa' | 'domande' | 'informazioni'",
+      "type LessonTab = 'contenuto' | 'mappa' | 'esercitazioni' | 'domande' | 'informazioni'",
     );
   });
 

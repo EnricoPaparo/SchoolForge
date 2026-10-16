@@ -607,6 +607,14 @@ function LessonContent({
     setActiveTab('contenuto');
   }, [lesson.id]);
 
+  useEffect(() => {
+    if (
+      (activeTab === 'mappa' && !hasConceptMap) ||
+      (activeTab === 'esercitazioni' && (!lesson.completed || !lesson.content))
+    )
+      setActiveTab('contenuto');
+  }, [activeTab, hasConceptMap, lesson.completed, lesson.content]);
+
   // Stessa navigazione delle schede docente: ←/→ ciclici, Home ed End.
   function onTabKeyDown(e: React.KeyboardEvent) {
     const idx = availableTabs.findIndex((t) => t.id === activeTab);

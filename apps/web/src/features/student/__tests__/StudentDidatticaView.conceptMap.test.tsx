@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as StudentDidatticaModule from '../useStudentDidattica.js';
 import { StudentDidatticaView } from '../StudentDidatticaView.js';
 
 vi.mock('../StudentStudyPractice.js', () => ({
@@ -15,6 +16,18 @@ vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: { uid: 'student-uid', email: 's@test.com' } }),
 }));
 
+let mockRefresh: (() => Promise<void>) | undefined;
+vi.mock('../useStudentDidattica.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof StudentDidatticaModule>();
+  return {
+    ...actual,
+    useStudentDidattica(...args: Parameters<typeof actual.useStudentDidattica>) {
+      const session = actual.useStudentDidattica(...args);
+      mockRefresh = () => session.refresh(true);
+      return session;
+    },
+  };
+});
 const mockLoadStudentLessons = vi.fn();
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
   loadStudentLibrary: async (...args: unknown[]) => {
@@ -257,4 +270,21 @@ it('mounts practice only in its own tab and drops responses when leaving it, als
   expect(screen.queryByLabelText('Risposta di prova')).toBeNull();
   fireEvent.click(screen.getByRole('tab', { name: 'Esercitazioni' }));
   expect((screen.getByLabelText('Risposta di prova') as HTMLInputElement).value).toBe('');
+});
+
+it('falls back to Contenuto when a same-id refresh removes the selected map', async () => {
+  loadWith([{ ...BASE, conceptMapMarkdown: MAP }]);
+  await openLesson();
+  fireEvent.click(screen.getByRole('tab', { name: 'Mappa concettuale' }));
+  loadWith([{ ...BASE, conceptMapMarkdown: null }]);
+  await act(async () => mockRefresh!());
+  expect(screen.queryByRole('tab', { name: 'Mappa concettuale' })).toBeNull();
+  expect(screen.getByRole('tab', { name: 'Contenuto' }).getAttribute('aria-selected')).toBe('true');
+  expect(
+    screen.getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true'),
+  ).toHaveLength(1);
+  expect(screen.getByRole('tabpanel', { name: 'Contenuto' }).textContent).toContain(
+    'Contenuto della lezione',
+  );
+  expect(screen.getByRole('tab', { name: 'Esercitazioni' })).toBeTruthy();
 });
