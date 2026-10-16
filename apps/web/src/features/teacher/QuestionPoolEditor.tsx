@@ -72,6 +72,8 @@ export type QuestionPoolEditorProps = {
    */
   lessonSource?: string | null;
   approvedPractice?: string;
+  /** Blocks only IA actions while the source-bound approved-practice context loads. */
+  aiContextReady?: boolean;
   /** Called after a successful save/delete so the parent can update its own counters. */
   onPoolCountChange?: (questionCount: number, poolStatus: PoolCountStatus) => void;
   /** Reports whether there are unsaved edits, so the parent can guard navigation. */
@@ -644,6 +646,7 @@ export function QuestionPoolEditor({
   ownerUid,
   lessonSource,
   approvedPractice,
+  aiContextReady = true,
   onPoolCountChange,
   onDirtyChange,
   reloadToken,
@@ -936,7 +939,7 @@ export function QuestionPoolEditor({
 
   return (
     <div>
-      {aiDialogOpen && (
+      {aiDialogOpen && aiContextReady && (
         <AiPoolGenerationDialog
           lessonSource={lessonSource ?? ''}
           approvedPractice={approvedPractice}
@@ -947,15 +950,19 @@ export function QuestionPoolEditor({
         />
       )}
 
-      {poolState.status === 'valid' && lessonSource && !editorOpen && !anyQuestionEditorOpen && (
-        <PoolCoherenceAudit
-          key={JSON.stringify([poolState.pool, lessonSource, approvedPractice])}
-          pool={poolState.pool}
-          lessonSource={lessonSource}
-          approvedPractice={approvedPractice}
-          onApply={applyAiPool}
-        />
-      )}
+      {poolState.status === 'valid' &&
+        aiContextReady &&
+        lessonSource &&
+        !editorOpen &&
+        !anyQuestionEditorOpen && (
+          <PoolCoherenceAudit
+            key={JSON.stringify([poolState.pool, lessonSource, approvedPractice])}
+            pool={poolState.pool}
+            lessonSource={lessonSource}
+            approvedPractice={approvedPractice}
+            onApply={applyAiPool}
+          />
+        )}
       {/* Pool absent */}
       {poolState.status === 'absent' && !editorOpen && (
         <div className={styles.absentState}>
@@ -973,7 +980,7 @@ export function QuestionPoolEditor({
               type="button"
               className={`${styles.btn} ${styles.btnSecondary}`}
               onClick={() => setAiDialogOpen(true)}
-              disabled={!importId}
+              disabled={!importId || !aiContextReady}
             >
               <IconSparkles size={14} /> Genera con IA
             </button>
@@ -1021,7 +1028,7 @@ export function QuestionPoolEditor({
                 type="button"
                 className={`${styles.btn} ${styles.btnSecondary}`}
                 onClick={() => setAiDialogOpen(true)}
-                disabled={anyQuestionEditorOpen || !importId}
+                disabled={anyQuestionEditorOpen || !importId || !aiContextReady}
               >
                 <IconSparkles size={12} /> Genera con IA
               </button>

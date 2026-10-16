@@ -3,10 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QuestionPoolEditor } from '../QuestionPoolEditor.js';
 import type { LessonItem } from '../../repository/programs/programsService.js';
 
+const mockPreview = vi.fn();
 const mockLoadPool = vi.fn();
 const mockSavePool = vi.fn();
 const mockDeletePool = vi.fn();
 
+vi.mock('../../repository/pools/aiContentClient.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  createAiContentCallables: () => ({ preview: mockPreview, generate: vi.fn() }),
+}));
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../repository/pools/poolEditorService.js', () => {
   class PoolDeleteBlockedError extends Error {}
@@ -21,6 +26,13 @@ vi.mock('../../repository/pools/poolEditorService.js', () => {
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPreview.mockResolvedValue({
+    estimatedCostMicroUsd: 100,
+    reservationCostMicroUsd: 200,
+    estimatedInputTokens: 50,
+    maxOutputTokens: 100,
+    requestedTotal: 6,
+  });
 });
 
 function lesson(over: Partial<LessonItem> = {}): LessonItem {
@@ -155,4 +167,48 @@ describe('QuestionPoolEditor', () => {
     expect(mockLoadPool).toHaveBeenCalledTimes(2);
     expect(screen.queryByText('Domanda uno.')).toBeNull();
   });
+});
+
+it('blocks only IA while practice context loads, preserving a YAML draft through body changes without rereads', async () => {
+  mockLoadPool.mockResolvedValue({ status: 'valid', pool: VALID_POOL });
+  const props = { programId: 'p1', importId: 'imp1', lesson: lesson(), ownerUid: 'owner' };
+  const view = render(
+    <QuestionPoolEditor {...props} lessonSource="Corpo originale" aiContextReady={false} />,
+  );
+  const ai = await screen.findByRole('button', { name: 'Genera con IA' });
+  expect((ai as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(ai);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(mockPreview).not.toHaveBeenCalled();
+  expect(
+    (screen.getByRole('button', { name: 'Modifica YAML' }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+  view.rerender(
+    <QuestionPoolEditor
+      {...props}
+      lessonSource="Corpo originale"
+      aiContextReady
+      approvedPractice="Pratica approvata"
+    />,
+  );
+  expect(
+    (screen.getByRole('button', { name: 'Genera con IA' }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Genera con IA' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+  await waitFor(() => expect(mockPreview).toHaveBeenCalledTimes(1));
+  expect(mockPreview.mock.calls[0]![0]).toMatchObject({
+    lessonSource: 'Corpo originale',
+    approvedPractice: 'Pratica approvata',
+  });
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: 'Modifica YAML' }));
+  const yaml = screen.getByLabelText('YAML del pool');
+  fireEvent.change(yaml, { target: { value: 'bozza YAML non salvata' } });
+  view.rerender(
+    <QuestionPoolEditor {...props} lessonSource="Corpo modificato" aiContextReady={false} />,
+  );
+  expect(screen.getByLabelText('YAML del pool')).toBe(yaml);
+  expect((yaml as HTMLTextAreaElement).value).toBe('bozza YAML non salvata');
+  expect(mockLoadPool).toHaveBeenCalledTimes(1);
 });

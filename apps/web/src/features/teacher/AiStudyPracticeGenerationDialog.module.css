@@ -1,0 +1,11 @@
+.extent {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.extent legend {
+  margin-bottom: 0.65rem;
+  padding: 0;
+}

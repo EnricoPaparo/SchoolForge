@@ -4,15 +4,10 @@ import { db, functions } from '../../lib/firebase.js';
 import {
   createAiContentCallables,
   describeAiContentError,
-  formatMicroUsd,
-  newRequestId,
-  type AiPoolContentRequest,
-  type AiPoolPreviewResult,
 } from '../repository/pools/aiContentClient.js';
 import {
   currentStudyPractice,
   practicePoolContext,
-  validateStudyPractice,
   type StudyPractice,
 } from '../repository/programs/studyPractice.js';
 import {
@@ -24,6 +19,11 @@ import {
 import { resolvePublicLessonId } from '../repository/programs/publicLessonId.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
 import { StudyPracticePlayer } from '../student/StudyPracticePlayer.js';
+import { AiStudyPracticeGenerationDialog } from './AiStudyPracticeGenerationDialog.js';
+import {
+  practiceStageLabel,
+  practiceCoverageLabel,
+} from '../repository/programs/studyPracticeLabels.js';
 import styles from './StudyPracticeEditor.module.css';
 export function StudyPracticeEditor({
   lesson,
@@ -48,12 +48,10 @@ export function StudyPracticeEditor({
   const [reloadNonce, setReloadNonce] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [activityCount, setActivityCount] = useState(6);
-  const [focus, setFocus] = useState('');
+  const [generationOpen, setGenerationOpen] = useState(false);
+  const [published, setPublished] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [preview, setPreview] = useState<AiPoolPreviewResult | null>(null);
-  const [request, setRequest] = useState<AiPoolContentRequest | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
   const callables = useMemo(() => createAiContentCallables(functions), []);
   const mounted = useRef(true);
@@ -106,10 +104,16 @@ export function StudyPracticeEditor({
     const epoch = publicationEpoch.current;
     void loadPublicStudyPractice(resolvePublicLessonId(lesson, lesson.id), body, db).then(
       (p) => {
-        if (active && epoch === publicationEpoch.current) onApprovedChange(practicePoolContext(p));
+        if (active && epoch === publicationEpoch.current) {
+          setPublished(!!p);
+          onApprovedChange(practicePoolContext(p));
+        }
       },
       () => {
-        if (active && epoch === publicationEpoch.current) onApprovedChange(undefined);
+        if (active && epoch === publicationEpoch.current) {
+          setPublished(false);
+          onApprovedChange(undefined);
+        }
       },
     );
     return () => {
@@ -117,9 +121,9 @@ export function StudyPracticeEditor({
     };
   }, [lesson.id, body, onApprovedChange]);
   useEffect(() => {
-    onDirtyChange(dirty);
+    onDirtyChange(dirty || generationOpen);
     return () => onDirtyChange(false);
-  }, [dirty, onDirtyChange]);
+  }, [dirty, generationOpen, onDirtyChange]);
   async function action(work: () => Promise<void>) {
     if (locked.current || loadState !== 'ready') return;
     locked.current = true;
@@ -151,274 +155,262 @@ export function StudyPracticeEditor({
       aria-label="Esercitazioni e percorso didattico"
       aria-busy={busy || loadState === 'loading'}
     >
-      <h3>Esercitazioni per lo studente</h3>
-      {loadState === 'loading' && <p aria-busy="true">Caricamento esercitazione salvata…</p>}
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>Percorso di studio</p>
+          <h3>Esercitazioni per lo studente</h3>
+          <p className={styles.description}>
+            Un esempio da seguire, una guida per provare, una prova da svolgere in autonomia.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={blocked || !body.trim()}
+          onClick={() => setGenerationOpen(true)}
+        >
+          Genera con IA
+        </button>
+      </header>
+      {loadState === 'loading' && (
+        <p role="status" className={styles.notice}>
+          Caricamento esercitazione salvata…
+        </p>
+      )}
       {loadState === 'error' && (
         <button type="button" onClick={() => setReloadNonce((n) => n + 1)}>
           Ricarica esercitazione
         </button>
       )}
-      <p>
-        Un percorso con esempi svolti, guida e lavoro autonomo. Controlla i riferimenti alla lezione
-        e gli aiuti prima di pubblicare. Le risposte dello studente restano nella sessione.
-      </p>
       {lesson.studyPractice && !initial && !draft && (
-        <p role="status">
+        <p role="status" className={styles.notice}>
           La lezione è cambiata: il percorso precedente non è attuale. Genera una nuova proposta.
         </p>
       )}
-      <label>
-        Estensione del percorso{' '}
-        <select
-          disabled={blocked}
-          value={activityCount}
-          onChange={(e) => {
-            setActivityCount(Number(e.target.value));
-            setPreview(null);
-            setRequest(null);
-          }}
-        >
-          <option value={3}>Breve — 3 attività</option>
-          <option value={6}>Standard — 6 attività</option>
-          <option value={9}>Estesa — 9 attività</option>
-        </select>
-      </label>
-      <label>
-        Indicazioni e capacità su cui concentrarsi (facoltative)
-        <textarea
-          maxLength={500}
-          disabled={blocked}
-          value={focus}
-          onChange={(e) => {
-            setFocus(e.target.value);
-            setPreview(null);
-            setRequest(null);
+      {loadState === 'ready' && !draft && (
+        <div className={styles.empty}>
+          <h4>Costruisci un percorso per questa lezione</h4>
+          <p>
+            Genera una proposta, controlla consegne, soluzioni e aiuti, poi scegli quando renderla
+            disponibile agli studenti.
+          </p>
+          <ol className={styles.progression}>
+            <li>Esempio svolto</li>
+            <li>Esercizio guidato</li>
+            <li>Prova autonoma</li>
+          </ol>
+        </div>
+      )}
+      {generationOpen && (
+        <AiStudyPracticeGenerationDialog
+          body={body}
+          objectives={lesson.obiettivi ?? []}
+          callables={callables}
+          replacesDraft={!!draft}
+          onClose={() => setGenerationOpen(false)}
+          onApply={(next) => {
+            change(next);
+            setGenerationOpen(false);
+            setMessage('Proposta pronta da rivedere. Salva la bozza o approvala per pubblicarla.');
           }}
         />
-      </label>
-      <p>
-        Ogni capacità allenata richiede almeno un esempio, una guida e un esercizio autonomo. Il
-        riepilogo distingue la preparazione nella lezione dalla copertura delle esercitazioni.
-      </p>
-      <div className={styles.actions}>
-        <button
-          type="button"
-          disabled={blocked || !body.trim()}
-          onClick={() =>
-            void action(async () => {
-              const next: AiPoolContentRequest = {
-                kind: 'pool',
-                purpose: 'practice',
-                plannedObjectives: lesson.obiettivi ?? [],
-                requestId: newRequestId(),
-                modelProfile: 'economy',
-                level: 'balanced',
-                counts: { aperta: activityCount - 1, chiusa_singola: 1, chiusa_multipla: 0 },
-                ...(focus.trim() ? { teacherGuidance: focus.trim() } : {}),
-                lessonSource: body,
-                existingPoolQuestionCount: 0,
-              };
-              const estimate = await callables.preview(next);
-              if (mounted.current) {
-                setRequest(next);
-                setPreview(estimate);
-              }
-            })
-          }
-        >
-          Stima nuova esercitazione
-        </button>
-        <button
-          type="button"
-          disabled={blocked}
-          onClick={() =>
-            void action(async () => {
-              publicationEpoch.current += 1;
-              await withdrawStudyPractice(resolvePublicLessonId(lesson, lesson.id), ownerUid, db);
-              if (mounted.current) {
-                onApprovedChange(undefined);
-                setMessage('Esercitazione ritirata dalla vista studente.');
-              }
-            })
-          }
-        >
-          Ritira pubblicazione
-        </button>
-      </div>
-      {preview && request && (
-        <div role="status">
-          <p>
-            Stima: {formatMicroUsd(preview.estimatedCostMicroUsd)}. Prenotazione massima:{' '}
-            {formatMicroUsd(preview.reservationCostMicroUsd)}. La generazione sostituirà la proposta
-            locale.
-          </p>
+      )}
+      {(draft || published) && (
+        <div className={styles.publication}>
+          <div>
+            <span className={styles.badge}>
+              {published ? 'Pubblicata agli studenti' : 'Bozza privata'}
+            </span>
+            {dirty && <span className={styles.dirty}>Modifiche non salvate</span>}
+            <p>
+              {published
+                ? 'Gli studenti vedono l’ultima versione approvata. Salvare una bozza ritira la pubblicazione.'
+                : 'Controlla il percorso e approvalo per renderlo visibile agli studenti.'}
+            </p>
+          </div>
           <button
             type="button"
-            disabled={blocked}
+            disabled={blocked || !published}
             onClick={() =>
               void action(async () => {
-                const result = await callables.generate(request);
-                const next = validateStudyPractice(
-                  {
-                    version: 1,
-                    sourceBody: body,
-                    plan: result.output.studyPlan,
-                    questions: result.output.questions,
-                  },
-                  body,
-                );
+                publicationEpoch.current += 1;
+                await withdrawStudyPractice(resolvePublicLessonId(lesson, lesson.id), ownerUid, db);
                 if (mounted.current) {
-                  change(next);
-                  setPreview(null);
+                  setPublished(false);
+                  onApprovedChange(undefined);
+                  setMessage('Esercitazione ritirata dalla vista studente.');
                 }
               })
             }
           >
-            Genera proposta
+            Ritira pubblicazione
           </button>
         </div>
       )}
-      {error && <p role="alert">{error}</p>}
-      {message && <p role="status">{message}</p>}
+      {error && (
+        <p role="alert" className="text-error">
+          {error}
+        </p>
+      )}
+      {message && (
+        <p role="status" className={styles.notice}>
+          {message}
+        </p>
+      )}
       {draft && (
         <>
-          <h4>Obiettivi e preparazione effettiva</h4>
-          <p>
-            I riferimenti sono estratti dal testo. La corrispondenza testuale non certifica da sola
-            la validità didattica.
-          </p>
-          {draft.plan.plannedCoverage.length > 0 && (
-            <ul>
-              {draft.plan.plannedCoverage.map((c) => (
-                <li key={c.objective}>
-                  <strong>
-                    {c.objective}: {c.status}
-                  </strong>
-                  {c.sourceQuote && <blockquote>{c.sourceQuote}</blockquote>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {draft.plan.objectives.map((o, i) => (
-            <details key={i}>
-              <summary>{o.capability}</summary>
-              <p>Prerequisiti: {o.prerequisites}</p>
-              <p>Metodo: {o.method}</p>
-              <blockquote>
-                <MarkdownRenderer markdown={o.sourceQuote} />
-              </blockquote>
-            </details>
-          ))}
+          <details className={styles.preparation}>
+            <summary>Obiettivi e preparazione effettiva</summary>
+            <p>
+              I riferimenti sono estratti dal testo. La corrispondenza testuale non certifica da
+              sola la validità didattica.
+            </p>
+            {draft.plan.plannedCoverage.length > 0 && (
+              <ul>
+                {draft.plan.plannedCoverage.map((c) => (
+                  <li key={c.objective}>
+                    <strong>
+                      {c.objective}: {practiceCoverageLabel(c.status)}
+                    </strong>
+                    {c.sourceQuote && <blockquote>{c.sourceQuote}</blockquote>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {draft.plan.objectives.map((o, i) => (
+              <details key={i}>
+                <summary>{o.capability}</summary>
+                <p>Prerequisiti: {o.prerequisites}</p>
+                <p>Metodo: {o.method}</p>
+                <blockquote>
+                  <MarkdownRenderer markdown={o.sourceQuote} />
+                </blockquote>
+              </details>
+            ))}
+          </details>
+          <div className={styles.sectionHeading}>
+            <h4>Attività del percorso</h4>
+            <span>{draft.questions.length} attività</span>
+          </div>
           {draft.questions.map((q, i) => (
-            <fieldset key={i} disabled={blocked} className={styles.exercise}>
-              <legend>
-                {i + 1}. {draft.plan.steps[i]?.stage} —{' '}
-                {draft.plan.objectives[draft.plan.steps[i]!.objectiveIndex]?.capability}
-              </legend>
-              <label>
-                Consegna
-                <textarea
-                  value={q.testo}
-                  onChange={(e) =>
-                    change({
-                      ...draft,
-                      questions: draft.questions.map((item, n) =>
-                        n === i ? { ...item, testo: e.target.value } : item,
-                      ),
-                    })
-                  }
-                />
-              </label>
-              {draft.plan.steps[i]!.hints.map((hint, h) => (
-                <label key={h}>
-                  Aiuto {h + 1}
-                  <textarea
-                    value={hint}
-                    onChange={(e) =>
-                      change({
-                        ...draft,
-                        plan: {
-                          ...draft.plan,
-                          steps: draft.plan.steps.map((s, n) =>
-                            n === i
-                              ? {
-                                  ...s,
-                                  hints: s.hints.map((v, k) => (k === h ? e.target.value : v)),
-                                }
-                              : s,
-                          ),
-                        },
-                      })
-                    }
-                  />
-                </label>
-              ))}
-              {q.tipo === 'aperta' ? (
+            <details key={i} className={styles.exercise} open={i === 0}>
+              <summary>
+                <span className={styles.number}>{i + 1}</span>
+                <span>
+                  <strong>{practiceStageLabel(draft.plan.steps[i]!.stage)}</strong>
+                  <span className={styles.capability}>
+                    {draft.plan.objectives[draft.plan.steps[i]!.objectiveIndex]?.capability}
+                  </span>
+                </span>
+                <span className={styles.editLabel}>Modifica</span>
+              </summary>
+              <fieldset disabled={blocked}>
+                <legend className={styles.visuallyHidden}>Attività {i + 1}</legend>
                 <label>
-                  Soluzione commentata
+                  Consegna
                   <textarea
-                    rows={6}
-                    value={q.soluzione}
+                    value={q.testo}
                     onChange={(e) =>
                       change({
                         ...draft,
                         questions: draft.questions.map((item, n) =>
-                          n === i && item.tipo === 'aperta'
-                            ? { ...item, soluzione: e.target.value }
-                            : item,
+                          n === i ? { ...item, testo: e.target.value } : item,
                         ),
                       })
                     }
                   />
                 </label>
-              ) : (
-                <>
-                  {q.opzioni.map((option, k) => (
-                    <label key={k}>
-                      Opzione {k + 1}
-                      <input
-                        value={option}
-                        onChange={(e) =>
-                          change({
-                            ...draft,
-                            questions: draft.questions.map((item, n) =>
-                              n === i && item.tipo !== 'aperta'
+                {draft.plan.steps[i]!.hints.map((hint, h) => (
+                  <label key={h}>
+                    Aiuto {h + 1}
+                    <textarea
+                      value={hint}
+                      onChange={(e) =>
+                        change({
+                          ...draft,
+                          plan: {
+                            ...draft.plan,
+                            steps: draft.plan.steps.map((s, n) =>
+                              n === i
                                 ? {
-                                    ...item,
-                                    opzioni: item.opzioni.map((v, j) =>
-                                      j === k ? e.target.value : v,
-                                    ),
+                                    ...s,
+                                    hints: s.hints.map((v, k) => (k === h ? e.target.value : v)),
                                   }
-                                : item,
+                                : s,
                             ),
-                          })
-                        }
-                      />
-                      <input
-                        type="checkbox"
-                        checked={q.soluzioneIndici.includes(k)}
-                        aria-label={`Opzione ${k + 1} corretta`}
-                        onChange={(e) =>
-                          change({
-                            ...draft,
-                            questions: draft.questions.map((item, n) =>
-                              n === i && item.tipo !== 'aperta'
-                                ? {
-                                    ...item,
-                                    soluzioneIndici: e.target.checked
-                                      ? [...item.soluzioneIndici, k]
-                                      : item.soluzioneIndici.filter((v) => v !== k),
-                                  }
-                                : item,
-                            ),
-                          })
-                        }
-                      />
-                    </label>
-                  ))}
-                </>
-              )}
-            </fieldset>
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+                {q.tipo === 'aperta' ? (
+                  <label>
+                    Soluzione commentata
+                    <textarea
+                      rows={6}
+                      value={q.soluzione}
+                      onChange={(e) =>
+                        change({
+                          ...draft,
+                          questions: draft.questions.map((item, n) =>
+                            n === i && item.tipo === 'aperta'
+                              ? { ...item, soluzione: e.target.value }
+                              : item,
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                ) : (
+                  <>
+                    {q.opzioni.map((option, k) => (
+                      <label key={k}>
+                        Opzione {k + 1}
+                        <input
+                          value={option}
+                          onChange={(e) =>
+                            change({
+                              ...draft,
+                              questions: draft.questions.map((item, n) =>
+                                n === i && item.tipo !== 'aperta'
+                                  ? {
+                                      ...item,
+                                      opzioni: item.opzioni.map((v, j) =>
+                                        j === k ? e.target.value : v,
+                                      ),
+                                    }
+                                  : item,
+                              ),
+                            })
+                          }
+                        />
+                        <input
+                          type="checkbox"
+                          checked={q.soluzioneIndici.includes(k)}
+                          aria-label={`Opzione ${k + 1} corretta`}
+                          onChange={(e) =>
+                            change({
+                              ...draft,
+                              questions: draft.questions.map((item, n) =>
+                                n === i && item.tipo !== 'aperta'
+                                  ? {
+                                      ...item,
+                                      soluzioneIndici: e.target.checked
+                                        ? [...item.soluzioneIndici, k]
+                                        : item.soluzioneIndici.filter((v) => v !== k),
+                                    }
+                                  : item,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </>
+                )}
+              </fieldset>
+            </details>
           ))}
           <div className={styles.actions}>
             <button type="button" disabled={blocked} onClick={() => setShowPlayer((v) => !v)}>
@@ -428,6 +420,7 @@ export function StudyPracticeEditor({
               <button
                 key={String(publish)}
                 type="button"
+                className={publish ? 'btn-primary' : undefined}
                 disabled={blocked || (publish && !lesson.completed)}
                 onClick={() =>
                   void action(async () => {
@@ -444,6 +437,7 @@ export function StudyPracticeEditor({
                     });
                     if (mounted.current) {
                       setDirty(false);
+                      setPublished(publish);
                       onApprovedChange(publish ? practicePoolContext(draft) : undefined);
                       setMessage(
                         publish
@@ -459,7 +453,12 @@ export function StudyPracticeEditor({
             ))}
           </div>
           {!lesson.completed && <p>Per pubblicare, segna la lezione come svolta.</p>}
-          {showPlayer && <StudyPracticePlayer key={JSON.stringify(draft)} practice={draft} />}
+          {showPlayer && (
+            <div className={styles.preview}>
+              <h4>Vista studente</h4>
+              <StudyPracticePlayer key={JSON.stringify(draft)} practice={draft} />
+            </div>
+          )}
         </>
       )}
     </section>

@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { CourseWorkspace } from '../CourseWorkspace.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
+import { studyFixture } from '../../repository/programs/__tests__/studyFixture.js';
 import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 import type { LessonItem, UdaItem } from '../../repository/programs/programsService.js';
 import type { LessonVisualItem, LessonVisualPrivateManifest } from '../../../types/firestore.js';
@@ -10,6 +11,8 @@ import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
 import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
 import type * as PoolEditorServiceModule from '../../repository/pools/poolEditorService.js';
 
+const mockPublicPractice = vi.fn();
+const mockPoolMount = vi.fn();
 const mockFetchCurrentPrompt = vi.fn();
 vi.mock('../../repository/pools/aiContentPromptClient.js', () => ({
   fetchCurrentPrompt: (...args: unknown[]) => mockFetchCurrentPrompt(...args),
@@ -63,7 +66,7 @@ const mockMultiEdit = vi.fn();
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../repository/programs/studyPracticeService.js', () => ({
   loadPrivateStudyPractice: async () => null,
-  loadPublicStudyPractice: async () => null,
+  loadPublicStudyPractice: (...args: unknown[]) => mockPublicPractice(...args),
   saveStudyPractice: vi.fn(),
   withdrawStudyPractice: vi.fn(),
 }));
@@ -207,22 +210,36 @@ vi.mock('../QuestionPoolEditor.js', () => ({
     onDirtyChange,
     onPoolCountChange,
     reloadToken,
+    approvedPractice,
+    aiContextReady,
   }: {
     lesson: { id: string };
     onDirtyChange?: (d: boolean) => void;
     onPoolCountChange?: (n: number, s: string) => void;
     reloadToken?: number;
-  }) => (
-    <div data-testid="pool-editor">
-      POOL: {lesson.id} RELOAD:{reloadToken ?? 0}
-      <button type="button" onClick={() => onDirtyChange?.(true)}>
-        make-dirty
-      </button>
-      <button type="button" onClick={() => onPoolCountChange?.(7, 'valid')}>
-        set-count-7
-      </button>
-    </div>
-  ),
+    approvedPractice?: string;
+    aiContextReady?: boolean;
+  }) => {
+    useEffect(() => {
+      mockPoolMount();
+    }, []);
+    return (
+      <div data-testid="pool-editor">
+        <span data-testid="pool-practice-context">{approvedPractice}</span>
+        <button disabled={!aiContextReady} type="button">
+          pool-ai
+        </button>
+        <input aria-label="Bozza locale del pool" onChange={() => onDirtyChange?.(true)} />
+        POOL: {lesson.id} RELOAD:{reloadToken ?? 0}
+        <button type="button" onClick={() => onDirtyChange?.(true)}>
+          make-dirty
+        </button>
+        <button type="button" onClick={() => onPoolCountChange?.(7, 'valid')}>
+          set-count-7
+        </button>
+      </div>
+    );
+  },
 }));
 
 afterEach(() => {
@@ -233,6 +250,8 @@ afterEach(() => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPublicPractice.mockReset();
+  mockPublicPractice.mockResolvedValue(null);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   // Default: no usable Firestore projection, so existing tests exercise the
   // legacy Storage path (fetchLessonContent). MOB-01C tests override this.
@@ -1357,7 +1376,7 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     );
   }
 
-  it('shows three tabs, Contenuto active, and does NOT mount the pool before Domande is opened', async () => {
+  it('shows five separate tabs, Contenuto active, and does NOT mount the pool before Domande is opened', async () => {
     await openLesson();
     expect(screen.getByRole('tab', { name: 'Contenuto' }).getAttribute('aria-selected')).toBe(
       'true',
@@ -1380,6 +1399,88 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     expect(screen.getByTestId('pool-editor')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
     expect(screen.getByTestId('pool-editor')).toBeTruthy();
+  });
+
+  it('keeps practice separate and passes approved context to the pool without visiting its tab', async () => {
+    const fixture = studyFixture();
+    mockPublicPractice.mockResolvedValue(fixture);
+    await openLesson('Il modello ISO/OSI', fixture.sourceBody);
+    expect(screen.queryByText('Esercitazioni per lo studente')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('pool-practice-context').textContent).toContain(
+        'Tracciare un ciclo',
+      ),
+    );
+    expect(screen.queryByText('Esercitazioni per lo studente')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Esercitazioni' }));
+    expect(
+      screen
+        .getByRole('tabpanel', { name: 'Esercitazioni' })
+        .contains(screen.getByText('Esercitazioni per lo studente')),
+    ).toBe(true);
+    expect(
+      document
+        .getElementById('panel-domande')!
+        .contains(screen.getByText('Esercitazioni per lo studente')),
+    ).toBe(false);
+  });
+
+  it('keeps the pool mounted but blocks IA until approved practice is ready', async () => {
+    let resolve!: (value: ReturnType<typeof studyFixture>) => void;
+    mockPublicPractice.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const fixture = studyFixture();
+    await openLesson('Il modello ISO/OSI', fixture.sourceBody);
+    await waitFor(() => expect(mockPublicPractice).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    expect(screen.getByTestId('pool-editor')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'pool-ai' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText('Caricamento delle esercitazioni approvate per il pool…')).toBeTruthy();
+    await act(async () => resolve(fixture));
+    expect(screen.getByTestId('pool-practice-context').textContent).toContain('Tracciare un ciclo');
+    expect((screen.getByRole('button', { name: 'pool-ai' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(mockPoolMount).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Esercitazioni per lo studente')).toBeNull();
+  });
+
+  it('preserves a dirty pool draft and its single mount while saving a changed lesson body', async () => {
+    await openLesson();
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    const draft = screen.getByLabelText('Bozza locale del pool');
+    fireEvent.change(draft, { target: { value: 'Domanda non ancora salvata' } });
+    let resolve!: (value: null) => void;
+    mockPublicPractice.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
+      target: { value: 'Nuovo corpo della lezione' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await screen.findByText('Contenuto salvato');
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    expect(screen.getByLabelText('Bozza locale del pool')).toBe(draft);
+    expect((draft as HTMLInputElement).value).toBe('Domanda non ancora salvata');
+    expect((screen.getByRole('button', { name: 'pool-ai' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(mockPoolMount).toHaveBeenCalledTimes(1);
+    await act(async () => resolve(null));
+    expect((screen.getByRole('button', { name: 'pool-ai' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(screen.getByLabelText('Bozza locale del pool')).toBe(draft);
+    expect(mockPoolMount).toHaveBeenCalledTimes(1);
   });
 
   it('Informazioni shows only didactic metadata and no technical file path', async () => {
@@ -1607,7 +1708,8 @@ obiettivi:
     const tabMappa = screen.getByRole('tab', { name: 'Mappa concettuale' });
     const tabDomande = screen.getByRole('tab', { name: 'Domande' });
     const tabInformazioni = screen.getByRole('tab', { name: 'Informazioni' });
-    const allTabs = [tabContenuto, tabMappa, tabDomande, tabInformazioni];
+    const tabPractice = screen.getByRole('tab', { name: 'Esercitazioni' });
+    const allTabs = [tabContenuto, tabMappa, tabPractice, tabDomande, tabInformazioni];
 
     tabContenuto.focus();
     fireEvent.keyDown(tabContenuto, { key: 'ArrowRight' });
@@ -1617,6 +1719,9 @@ obiettivi:
     expect(allTabs.filter((t) => t.tabIndex === 0)).toEqual([tabMappa]);
 
     fireEvent.keyDown(tabMappa, { key: 'ArrowRight' });
+    expect(tabPractice.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabPractice);
+    fireEvent.keyDown(tabPractice, { key: 'ArrowRight' });
     expect(tabDomande.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(tabDomande);
 

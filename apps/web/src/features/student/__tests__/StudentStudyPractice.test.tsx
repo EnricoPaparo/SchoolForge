@@ -21,10 +21,9 @@ afterEach(() => {
 });
 const snap = (data: unknown) => ({ exists: () => !!data, data: () => data });
 describe('live practice invalidation', () => {
-  it('does not read until opened, resets answers on artifact replacement and clears on revocation', () => {
+  it('reads only when the tab mounts, resets answers on artifact replacement and clears on revocation', () => {
     render(<StudentStudyPractice publicLessonId="i1_l1" body={STUDY_BODY} />);
-    expect(mocks.listeners.size).toBe(0);
-    fireEvent.click(screen.getByText('Apri esercitazione'));
+    expect(mocks.listeners.size).toBe(2);
     act(() => {
       mocks.listeners
         .get('publicLessons/i1_l1')!
@@ -41,8 +40,7 @@ describe('live practice invalidation', () => {
     expect(screen.getByText(/Nessuna esercitazione/)).toBeTruthy();
   });
   it('hides old source immediately and unsubscribes both listeners on close', () => {
-    render(<StudentStudyPractice publicLessonId="i1_l1" body={STUDY_BODY} />);
-    fireEvent.click(screen.getByText('Apri esercitazione'));
+    const view = render(<StudentStudyPractice publicLessonId="i1_l1" body={STUDY_BODY} />);
     act(() => {
       mocks.listeners
         .get('publicLessons/i1_l1')!
@@ -56,7 +54,7 @@ describe('live practice invalidation', () => {
         .next(snap({ completed: true, content: STUDY_BODY + ' edit' })),
     );
     expect(screen.queryByRole('textbox')).toBeNull();
-    fireEvent.click(screen.getByText('Chiudi esercitazione'));
+    view.unmount();
     expect(mocks.unsubscribe).toHaveBeenCalledTimes(2);
   });
 });
