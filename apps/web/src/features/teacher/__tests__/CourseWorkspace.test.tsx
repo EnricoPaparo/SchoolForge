@@ -61,6 +61,12 @@ const mockMultiPromote = vi.fn();
 const mockMultiEdit = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+vi.mock('../../repository/programs/studyPracticeService.js', () => ({
+  loadPrivateStudyPractice: async () => null,
+  loadPublicStudyPractice: async () => null,
+  saveStudyPractice: vi.fn(),
+  withdrawStudyPractice: vi.fn(),
+}));
 vi.mock('../../repository/programs/visualGenerationClient.js', () => ({
   createVisualWorkflowPorts: () => ({
     previewProposal: (...args: unknown[]) => mockVisualPreviewProposal(...args),

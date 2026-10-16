@@ -107,3 +107,23 @@ export effettivi prima del deploy. Rollback: build/Function/Rules alla release
 precedente; i documenti additivi rimangono privati/non leggibili dalla vecchia UI,
 senza migrazioni distruttive. PROD resta fuori scope.
 
+
+
+## Gate locali e revisione ciclo 1
+
+Al commit `5b36fa7`: unit completi 6.259 test verdi (Functions 2.213,
+contratto 58, web 3.988), più regressione mirata della lettura pubblica tardiva.
+Rules web: 734 test verdi; integration Functions: 222 test verdi con il solo
+override CLI `--testTimeout=15000` per il primo avvio del test upload su Windows.
+Il gate locale standard a 5 secondi incontrava quel timeout baseline; la CI
+standard Linux sullo stesso `5b36fa7` è verde. Nessun test provider reale.
+
+Il fix aggregato del ciclo 1 conserva difficoltà e punti originali nell'audit
+pool, comprese domande aperte e chiuse, con ID e limiti risposta invariati.
+Alla riapertura l'editor pratica rilegge il documento privato dal server, senza
+usare il tree del corso come sorgente della bozza: una lettura puntuale aggiuntiva
+per apertura, nessun refetch del corso. Modifiche e salvataggio restano bloccati
+finché la lettura non riesce. Regressioni coprono nuova bozza e pratica esistente
+modificata, entrambe riaperte con lo snapshot del corso ancora precedente.
+La CI sul commit di questo fix resta da eseguire: non si assume l'esito della CI
+precedente come prova del nuovo SHA.

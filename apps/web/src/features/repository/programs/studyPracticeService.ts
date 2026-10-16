@@ -1,4 +1,11 @@
-import { collection, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocFromServer,
+  runTransaction,
+  serverTimestamp,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { LessonDoc, PublicLessonDoc } from '../../../types/firestore.js';
 import {
@@ -100,4 +107,31 @@ export async function withdrawStudyPractice(
     if (snap.exists() && snap.data().ownerUid !== ownerUid) throw new Error('Accesso negato.');
     tx.delete(ref);
   });
+}
+
+/** Read the authoritative private draft whenever its editor opens; the course tree
+ * is a navigation snapshot and may predate another save in the same workspace. */
+export async function loadPrivateStudyPractice(params: {
+  programId: string;
+  importId: string;
+  lessonId: string;
+  ownerUid: string;
+  sourceBody: string;
+  db: Firestore;
+}): Promise<StudyPractice | null> {
+  const snapshot = await getDocFromServer(
+    doc(
+      params.db,
+      'programs',
+      params.programId,
+      'imports',
+      params.importId,
+      'lessons',
+      params.lessonId,
+    ),
+  );
+  const lesson = snapshot.exists() ? (snapshot.data() as LessonDoc) : null;
+  if (!lesson || lesson.ownerUid !== params.ownerUid || lesson.importId !== params.importId)
+    throw new Error('Impossibile caricare la lezione corrente. Ricarica il corso.');
+  return currentStudyPractice(lesson.studyPractice, params.sourceBody);
 }

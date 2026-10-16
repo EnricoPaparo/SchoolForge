@@ -19,6 +19,7 @@ import {
   saveStudyPractice,
   withdrawStudyPractice,
   loadPublicStudyPractice,
+  loadPrivateStudyPractice,
 } from '../repository/programs/studyPracticeService.js';
 import { resolvePublicLessonId } from '../repository/programs/publicLessonId.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
@@ -42,7 +43,9 @@ export function StudyPracticeEditor({
   onApprovedChange: (context: string | undefined) => void;
 }) {
   const initial = currentStudyPractice(lesson.studyPractice, body);
-  const [draft, setDraft] = useState<StudyPractice | null>(initial);
+  const [draft, setDraft] = useState<StudyPractice | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activityCount, setActivityCount] = useState(6);
@@ -56,6 +59,42 @@ export function StudyPracticeEditor({
   const mounted = useRef(true);
   const locked = useRef(false);
   const publicationEpoch = useRef(0);
+  const blocked = busy || loadState !== 'ready';
+  useEffect(() => {
+    let active = true;
+    setLoadState('loading');
+    setError(null);
+    void loadPrivateStudyPractice({
+      programId,
+      importId,
+      lessonId: lesson.id,
+      ownerUid,
+      sourceBody: body,
+      db,
+    }).then(
+      (practice) => {
+        if (active) {
+          setDraft(practice);
+          setDirty(false);
+          setLoadState('ready');
+        }
+      },
+      (error) => {
+        if (active) {
+          setDraft(null);
+          setLoadState('error');
+          setError(
+            error instanceof Error && !('code' in error) && !('details' in error)
+              ? error.message
+              : describeAiContentError(error),
+          );
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [programId, importId, lesson.id, ownerUid, body, reloadNonce]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -82,7 +121,7 @@ export function StudyPracticeEditor({
     return () => onDirtyChange(false);
   }, [dirty, onDirtyChange]);
   async function action(work: () => Promise<void>) {
-    if (locked.current) return;
+    if (locked.current || loadState !== 'ready') return;
     locked.current = true;
     setBusy(true);
     setError(null);
@@ -110,9 +149,15 @@ export function StudyPracticeEditor({
     <section
       className={styles.editor}
       aria-label="Esercitazioni e percorso didattico"
-      aria-busy={busy}
+      aria-busy={busy || loadState === 'loading'}
     >
       <h3>Esercitazioni per lo studente</h3>
+      {loadState === 'loading' && <p aria-busy="true">Caricamento esercitazione salvata…</p>}
+      {loadState === 'error' && (
+        <button type="button" onClick={() => setReloadNonce((n) => n + 1)}>
+          Ricarica esercitazione
+        </button>
+      )}
       <p>
         Un percorso con esempi svolti, guida e lavoro autonomo. Controlla i riferimenti alla lezione
         e gli aiuti prima di pubblicare. Le risposte dello studente restano nella sessione.
@@ -125,7 +170,7 @@ export function StudyPracticeEditor({
       <label>
         Estensione del percorso{' '}
         <select
-          disabled={busy}
+          disabled={blocked}
           value={activityCount}
           onChange={(e) => {
             setActivityCount(Number(e.target.value));
@@ -142,7 +187,7 @@ export function StudyPracticeEditor({
         Indicazioni e capacità su cui concentrarsi (facoltative)
         <textarea
           maxLength={500}
-          disabled={busy}
+          disabled={blocked}
           value={focus}
           onChange={(e) => {
             setFocus(e.target.value);
@@ -158,7 +203,7 @@ export function StudyPracticeEditor({
       <div className={styles.actions}>
         <button
           type="button"
-          disabled={busy || !body.trim()}
+          disabled={blocked || !body.trim()}
           onClick={() =>
             void action(async () => {
               const next: AiPoolContentRequest = {
@@ -185,7 +230,7 @@ export function StudyPracticeEditor({
         </button>
         <button
           type="button"
-          disabled={busy}
+          disabled={blocked}
           onClick={() =>
             void action(async () => {
               publicationEpoch.current += 1;
@@ -209,7 +254,7 @@ export function StudyPracticeEditor({
           </p>
           <button
             type="button"
-            disabled={busy}
+            disabled={blocked}
             onClick={() =>
               void action(async () => {
                 const result = await callables.generate(request);
@@ -265,7 +310,7 @@ export function StudyPracticeEditor({
             </details>
           ))}
           {draft.questions.map((q, i) => (
-            <fieldset key={i} disabled={busy} className={styles.exercise}>
+            <fieldset key={i} disabled={blocked} className={styles.exercise}>
               <legend>
                 {i + 1}. {draft.plan.steps[i]?.stage} —{' '}
                 {draft.plan.objectives[draft.plan.steps[i]!.objectiveIndex]?.capability}
@@ -376,14 +421,14 @@ export function StudyPracticeEditor({
             </fieldset>
           ))}
           <div className={styles.actions}>
-            <button type="button" disabled={busy} onClick={() => setShowPlayer((v) => !v)}>
+            <button type="button" disabled={blocked} onClick={() => setShowPlayer((v) => !v)}>
               Anteprima studente
             </button>
             {[false, true].map((publish) => (
               <button
                 key={String(publish)}
                 type="button"
-                disabled={busy || (publish && !lesson.completed)}
+                disabled={blocked || (publish && !lesson.completed)}
                 onClick={() =>
                   void action(async () => {
                     publicationEpoch.current += 1;

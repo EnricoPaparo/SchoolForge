@@ -24,7 +24,7 @@ describe('explicit existing pool audit', () => {
             order: 0,
             tipo: 'aperta',
             testo: 'Spiega la condizione del ciclo.',
-            difficolta: 2,
+            difficolta: 5,
             soluzione: 'La condizione determina se eseguire il corpo.',
           },
         ],
@@ -71,7 +71,80 @@ describe('explicit existing pool audit', () => {
     fireEvent.click(screen.getByText('Applica proposta al pool'));
     await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
     expect(apply.mock.calls[0]![0]).toMatchObject({
-      questions: [{ id: 'original-id', testo: 'Spiega la condizione del ciclo.', maxPoints: 2 }],
+      questions: [
+        {
+          id: 'original-id',
+          testo: 'Spiega la condizione del ciclo.',
+          difficolta: 2,
+          maxPoints: 2,
+          maxCharacters: 800,
+        },
+      ],
     });
   });
+});
+
+it('preserves closed-question scoring and identity despite a different proposed difficulty', async () => {
+  mocks.preview.mockResolvedValue({ reservationCostMicroUsd: 100 });
+  mocks.review.mockResolvedValue({
+    output: {
+      reviewOutcome: 'improved',
+      issueCodes: ['unsupported_content'],
+      questions: [
+        {
+          order: 0,
+          tipo: 'chiusa_singola',
+          testo: 'Quale condizione è vera?',
+          difficolta: 1,
+          opzioni: ['Vera', 'Falsa'],
+          soluzioneIndici: [0],
+        },
+      ],
+    },
+  });
+  const pool: ParsedPool = {
+    schema: 'schoolforge-pool/v2',
+    questions: [
+      {
+        id: 'closed-id',
+        tipo: 'chiusa_singola',
+        testo: 'Richiesta precedente.',
+        difficolta: 4,
+        maxPoints: 4,
+        opzioni: [
+          { id: 'a', testo: 'Prima' },
+          { id: 'b', testo: 'Seconda' },
+        ],
+        soluzione: ['b'],
+      },
+    ],
+  };
+  const apply = vi.fn(async (_pool: ParsedPool) => undefined);
+  render(
+    <PoolCoherenceAudit
+      pool={pool}
+      lessonSource="Una condizione è una proposizione che può essere vera o falsa."
+      onApply={apply}
+    />,
+  );
+  fireEvent.click(screen.getByText('Controlla coerenza con la lezione — stima'));
+  await screen.findByText('Esegui controllo');
+  fireEvent.click(screen.getByText('Esegui controllo'));
+  await screen.findByText('Applica proposta al pool');
+  fireEvent.click(screen.getByText('Applica proposta al pool'));
+  await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+  const saved = apply.mock.calls[0]![0];
+  expect(saved.questions[0]).toEqual({
+    id: 'closed-id',
+    tipo: 'chiusa_singola',
+    testo: 'Quale condizione è vera?',
+    difficolta: 4,
+    maxPoints: 4,
+    opzioni: [
+      { id: 'a', testo: 'Vera' },
+      { id: 'b', testo: 'Falsa' },
+    ],
+    soluzione: ['a'],
+  });
+  expect(saved.questions[0]).not.toHaveProperty('maxCharacters');
 });

@@ -40,7 +40,7 @@ function repaired(original: PoolQuestion, proposal: AiProposalQuestion): PoolQue
     return {
       ...original,
       testo: proposal.testo,
-      difficolta: proposal.difficolta as PoolQuestion['difficolta'],
+      difficolta: original.difficolta,
       soluzione: proposal.soluzione,
     };
   if (original.tipo !== 'aperta' && proposal.tipo !== 'aperta' && original.tipo === proposal.tipo) {
@@ -51,7 +51,7 @@ function repaired(original: PoolQuestion, proposal: AiProposalQuestion): PoolQue
     return {
       ...original,
       testo: proposal.testo,
-      difficolta: proposal.difficolta,
+      difficolta: original.difficolta,
       opzioni,
       soluzione:
         proposal.tipo === 'chiusa_singola'
