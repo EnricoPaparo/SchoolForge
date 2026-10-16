@@ -3,6 +3,7 @@ import { db } from '../../lib/firebase.js';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { currentStudyPractice } from '../repository/programs/studyPractice.js';
 import type { StudyPractice } from '../repository/programs/studyPractice.js';
+import styles from './StudyPracticePlayer.module.css';
 import { StudyPracticePlayer } from './StudyPracticePlayer.js';
 export function StudentStudyPractice({
   publicLessonId,
@@ -11,11 +12,10 @@ export function StudentStudyPractice({
   publicLessonId: string;
   body: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [practice, setPractice] = useState<StudyPractice | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   useEffect(() => {
-    if (!open) return;
     let parentAllowed = false;
     let raw: unknown = null;
     let cancelled = false;
@@ -58,34 +58,28 @@ export function StudentStudyPractice({
       parentUnsubscribe();
       practiceUnsubscribe();
     };
-  }, [open, publicLessonId, body]);
+  }, [retryNonce, publicLessonId, body]);
   return (
-    <section>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => {
-          setPractice(null);
-          setStatus('loading');
-          setOpen((v) => !v);
-        }}
-      >
-        {open ? 'Chiudi esercitazione' : 'Apri esercitazione'}
-      </button>
-      {open && (
-        <>
-          {status === 'loading' && <p aria-busy="true">Caricamento esercitazione…</p>}
-          {status === 'error' && (
-            <p role="alert">Impossibile caricare l’esercitazione. Chiudi e riprova.</p>
-          )}
-          {status === 'ready' &&
-            (practice ? (
-              <StudyPracticePlayer key={JSON.stringify(practice)} practice={practice} />
-            ) : (
-              <p>Nessuna esercitazione pubblicata per questa versione della lezione.</p>
-            ))}
-        </>
+    <section className={styles.container} aria-label="Esercitazioni della lezione">
+      {status === 'loading' && <p aria-busy="true">Caricamento esercitazione…</p>}
+      {status === 'error' && (
+        <div className={styles.empty}>
+          <p role="alert">Impossibile caricare l’esercitazione.</p>
+          <button type="button" onClick={() => setRetryNonce((n) => n + 1)}>
+            Riprova
+          </button>
+        </div>
       )}
+      {status === 'ready' &&
+        (practice ? (
+          <StudyPracticePlayer key={JSON.stringify(practice)} practice={practice} />
+        ) : (
+          <div className={styles.empty}>
+            <h4>Il percorso non è ancora disponibile</h4>
+            <p>Nessuna esercitazione pubblicata per questa versione della lezione.</p>
+            <p>Puoi continuare a studiare dal contenuto e dalla mappa della lezione.</p>
+          </div>
+        ))}
     </section>
   );
 }

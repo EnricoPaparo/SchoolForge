@@ -559,11 +559,12 @@ function LessonRowLabel({
   );
 }
 
-type StudentLessonTab = 'contenuto' | 'mappa';
+type StudentLessonTab = 'contenuto' | 'mappa' | 'esercitazioni';
 
 const LESSON_VIEW_TABS: { id: StudentLessonTab; label: string }[] = [
   { id: 'contenuto', label: 'Contenuto' },
   { id: 'mappa', label: 'Mappa concettuale' },
+  { id: 'esercitazioni', label: 'Esercitazioni' },
 ];
 
 function LessonContent({
@@ -591,6 +592,11 @@ function LessonContent({
   const hasConceptMap =
     typeof lesson.conceptMapMarkdown === 'string' && lesson.conceptMapMarkdown.length > 0;
 
+  const availableTabs = LESSON_VIEW_TABS.filter(
+    (t) =>
+      t.id === 'contenuto' ||
+      (t.id === 'mappa' ? hasConceptMap : lesson.completed && !!lesson.content),
+  );
   const [activeTab, setActiveTab] = useState<StudentLessonTab>('contenuto');
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -603,16 +609,15 @@ function LessonContent({
 
   // Stessa navigazione delle schede docente: ←/→ ciclici, Home ed End.
   function onTabKeyDown(e: React.KeyboardEvent) {
-    const idx = LESSON_VIEW_TABS.findIndex((t) => t.id === activeTab);
+    const idx = availableTabs.findIndex((t) => t.id === activeTab);
     let next = idx;
-    if (e.key === 'ArrowRight') next = (idx + 1) % LESSON_VIEW_TABS.length;
-    else if (e.key === 'ArrowLeft')
-      next = (idx - 1 + LESSON_VIEW_TABS.length) % LESSON_VIEW_TABS.length;
+    if (e.key === 'ArrowRight') next = (idx + 1) % availableTabs.length;
+    else if (e.key === 'ArrowLeft') next = (idx - 1 + availableTabs.length) % availableTabs.length;
     else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = LESSON_VIEW_TABS.length - 1;
+    else if (e.key === 'End') next = availableTabs.length - 1;
     else return;
     e.preventDefault();
-    setActiveTab(LESSON_VIEW_TABS[next]!.id);
+    setActiveTab(availableTabs[next]!.id);
     tabRefs.current[next]?.focus();
   }
 
@@ -786,10 +791,10 @@ function LessonContent({
         documento legacy privo del campo darebbe `undefined !== null`, cioè
         `true`, e manderebbe `undefined` dentro il renderer.
       */}
-      {hasConceptMap ? (
+      {availableTabs.length > 1 ? (
         <>
           <div className={styles.lessonTablist} role="tablist" aria-label="Schede lezione">
-            {LESSON_VIEW_TABS.map((t, i) => (
+            {availableTabs.map((t, i) => (
               <button
                 key={t.id}
                 type="button"
@@ -817,26 +822,35 @@ function LessonContent({
           >
             {body}
           </div>
+          {hasConceptMap && (
+            <div
+              role="tabpanel"
+              id="student-panel-mappa"
+              aria-labelledby="student-tab-mappa"
+              hidden={activeTab !== 'mappa'}
+            >
+              <div className={styles.conceptMap}>
+                <MarkdownRenderer markdown={lesson.conceptMapMarkdown!} variant="lesson" />
+              </div>
+            </div>
+          )}
           <div
             role="tabpanel"
-            id="student-panel-mappa"
-            aria-labelledby="student-tab-mappa"
-            hidden={activeTab !== 'mappa'}
+            id="student-panel-esercitazioni"
+            aria-labelledby="student-tab-esercitazioni"
+            hidden={activeTab !== 'esercitazioni'}
           >
-            <div className={styles.conceptMap}>
-              <MarkdownRenderer markdown={lesson.conceptMapMarkdown!} variant="lesson" />
-            </div>
+            {activeTab === 'esercitazioni' && lesson.completed && lesson.content && (
+              <StudentStudyPractice
+                key={`${lesson.id}:${lesson.content}`}
+                publicLessonId={lesson.id}
+                body={lesson.content}
+              />
+            )}
           </div>
         </>
       ) : (
         body
-      )}
-      {lesson.completed && lesson.content && (
-        <StudentStudyPractice
-          key={`${lesson.id}:${lesson.content}`}
-          publicLessonId={lesson.id}
-          body={lesson.content}
-        />
       )}
     </article>
   );

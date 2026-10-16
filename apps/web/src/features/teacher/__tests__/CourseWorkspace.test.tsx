@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { CourseWorkspace } from '../CourseWorkspace.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
+import { studyFixture } from '../../repository/programs/__tests__/studyFixture.js';
 import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 import type { LessonItem, UdaItem } from '../../repository/programs/programsService.js';
 import type { LessonVisualItem, LessonVisualPrivateManifest } from '../../../types/firestore.js';
@@ -10,6 +11,7 @@ import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
 import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
 import type * as PoolEditorServiceModule from '../../repository/pools/poolEditorService.js';
 
+const mockPublicPractice = vi.fn();
 const mockFetchCurrentPrompt = vi.fn();
 vi.mock('../../repository/pools/aiContentPromptClient.js', () => ({
   fetchCurrentPrompt: (...args: unknown[]) => mockFetchCurrentPrompt(...args),
@@ -63,7 +65,7 @@ const mockMultiEdit = vi.fn();
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../repository/programs/studyPracticeService.js', () => ({
   loadPrivateStudyPractice: async () => null,
-  loadPublicStudyPractice: async () => null,
+  loadPublicStudyPractice: (...args: unknown[]) => mockPublicPractice(...args),
   saveStudyPractice: vi.fn(),
   withdrawStudyPractice: vi.fn(),
 }));
@@ -207,13 +209,16 @@ vi.mock('../QuestionPoolEditor.js', () => ({
     onDirtyChange,
     onPoolCountChange,
     reloadToken,
+    approvedPractice,
   }: {
     lesson: { id: string };
     onDirtyChange?: (d: boolean) => void;
     onPoolCountChange?: (n: number, s: string) => void;
     reloadToken?: number;
+    approvedPractice?: string;
   }) => (
     <div data-testid="pool-editor">
+      <span data-testid="pool-practice-context">{approvedPractice}</span>
       POOL: {lesson.id} RELOAD:{reloadToken ?? 0}
       <button type="button" onClick={() => onDirtyChange?.(true)}>
         make-dirty
@@ -233,6 +238,8 @@ afterEach(() => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPublicPractice.mockReset();
+  mockPublicPractice.mockResolvedValue(null);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   // Default: no usable Firestore projection, so existing tests exercise the
   // legacy Storage path (fetchLessonContent). MOB-01C tests override this.
@@ -1357,7 +1364,7 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     );
   }
 
-  it('shows three tabs, Contenuto active, and does NOT mount the pool before Domande is opened', async () => {
+  it('shows five separate tabs, Contenuto active, and does NOT mount the pool before Domande is opened', async () => {
     await openLesson();
     expect(screen.getByRole('tab', { name: 'Contenuto' }).getAttribute('aria-selected')).toBe(
       'true',
@@ -1380,6 +1387,49 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     expect(screen.getByTestId('pool-editor')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
     expect(screen.getByTestId('pool-editor')).toBeTruthy();
+  });
+
+  it('keeps practice separate and passes approved context to the pool without visiting its tab', async () => {
+    const fixture = studyFixture();
+    mockPublicPractice.mockResolvedValue(fixture);
+    await openLesson('Il modello ISO/OSI', fixture.sourceBody);
+    expect(screen.queryByText('Esercitazioni per lo studente')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('pool-practice-context').textContent).toContain(
+        'Tracciare un ciclo',
+      ),
+    );
+    expect(screen.queryByText('Esercitazioni per lo studente')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Esercitazioni' }));
+    expect(
+      screen
+        .getByRole('tabpanel', { name: 'Esercitazioni' })
+        .contains(screen.getByText('Esercitazioni per lo studente')),
+    ).toBe(true);
+    expect(
+      document
+        .getElementById('panel-domande')!
+        .contains(screen.getByText('Esercitazioni per lo studente')),
+    ).toBe(false);
+  });
+
+  it('waits for approved practice before mounting pool generation when its read is late', async () => {
+    let resolve!: (value: ReturnType<typeof studyFixture>) => void;
+    mockPublicPractice.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const fixture = studyFixture();
+    await openLesson('Il modello ISO/OSI', fixture.sourceBody);
+    await waitFor(() => expect(mockPublicPractice).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    expect(screen.queryByTestId('pool-editor')).toBeNull();
+    expect(screen.getByText('Caricamento delle esercitazioni approvate per il pool…')).toBeTruthy();
+    await act(async () => resolve(fixture));
+    expect(screen.getByTestId('pool-practice-context').textContent).toContain('Tracciare un ciclo');
+    expect(screen.queryByText('Esercitazioni per lo studente')).toBeNull();
   });
 
   it('Informazioni shows only didactic metadata and no technical file path', async () => {
@@ -1607,7 +1657,8 @@ obiettivi:
     const tabMappa = screen.getByRole('tab', { name: 'Mappa concettuale' });
     const tabDomande = screen.getByRole('tab', { name: 'Domande' });
     const tabInformazioni = screen.getByRole('tab', { name: 'Informazioni' });
-    const allTabs = [tabContenuto, tabMappa, tabDomande, tabInformazioni];
+    const tabPractice = screen.getByRole('tab', { name: 'Esercitazioni' });
+    const allTabs = [tabContenuto, tabMappa, tabPractice, tabDomande, tabInformazioni];
 
     tabContenuto.focus();
     fireEvent.keyDown(tabContenuto, { key: 'ArrowRight' });
@@ -1617,6 +1668,9 @@ obiettivi:
     expect(allTabs.filter((t) => t.tabIndex === 0)).toEqual([tabMappa]);
 
     fireEvent.keyDown(tabMappa, { key: 'ArrowRight' });
+    expect(tabPractice.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabPractice);
+    fireEvent.keyDown(tabPractice, { key: 'ArrowRight' });
     expect(tabDomande.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(tabDomande);
 

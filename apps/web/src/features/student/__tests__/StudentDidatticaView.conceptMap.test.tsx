@@ -2,6 +2,14 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StudentDidatticaView } from '../StudentDidatticaView.js';
 
+vi.mock('../StudentStudyPractice.js', () => ({
+  StudentStudyPractice: () => (
+    <label>
+      Risposta di prova
+      <input />
+    </label>
+  ),
+}));
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: { uid: 'student-uid', email: 's@test.com' } }),
@@ -85,7 +93,11 @@ describe('la scheda esiste solo quando la mappa è davvero proiettata', () => {
     loadWith([{ ...BASE, conceptMapMarkdown: MAP }]);
     await openLesson();
     const tabs = await screen.findAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['Contenuto', 'Mappa concettuale']);
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      'Contenuto',
+      'Mappa concettuale',
+      'Esercitazioni',
+    ]);
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
   });
 
@@ -93,8 +105,8 @@ describe('la scheda esiste solo quando la mappa è davvero proiettata', () => {
     loadWith([{ ...BASE, conceptMapMarkdown: null }]);
     await openLesson();
     await screen.findByText(/Contenuto della lezione/);
-    expect(screen.queryByRole('tab')).toBeNull();
-    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Mappa concettuale' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Esercitazioni' })).toBeTruthy();
     expect(document.body.textContent).not.toContain('Mappa concettuale');
     expect(document.body.textContent).not.toContain('non disponibile');
   });
@@ -105,7 +117,7 @@ describe('la scheda esiste solo quando la mappa è davvero proiettata', () => {
     loadWith([{ ...BASE, completed: false, conceptMapMarkdown: null }]);
     await openLesson();
     await screen.findByText(/Contenuto della lezione/);
-    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Mappa concettuale' })).toBeNull();
   });
 
   it('documento legacy privo del campo: nessuna esposizione', async () => {
@@ -114,14 +126,14 @@ describe('la scheda esiste solo quando la mappa è davvero proiettata', () => {
     loadWith([legacy]);
     await openLesson();
     await screen.findByText(/Contenuto della lezione/);
-    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Mappa concettuale' })).toBeNull();
   });
 
   it('mappa vuota o solo spazi: trattata come assente', async () => {
     loadWith([{ ...BASE, conceptMapMarkdown: '' }]);
     await openLesson();
     await screen.findByText(/Contenuto della lezione/);
-    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Mappa concettuale' })).toBeNull();
   });
 });
 
@@ -163,7 +175,7 @@ describe('navigazione da tastiera', () => {
     loadWith([{ ...BASE, conceptMapMarkdown: MAP }]);
     await openLesson();
     await screen.findByRole('tablist', { name: 'Schede lezione' });
-    const [contenuto, mappa] = screen.getAllByRole('tab');
+    const [contenuto, mappa, esercitazioni] = screen.getAllByRole('tab');
     // I tasti arrivano alla scheda che ha il focus, com'è per le schede
     // docente: il gestore vive sul pulsante, non sul contenitore.
     const selected = () =>
@@ -172,20 +184,22 @@ describe('navigazione da tastiera', () => {
     fireEvent.keyDown(selected(), { key: 'ArrowRight' });
     expect(mappa!.getAttribute('aria-selected')).toBe('true');
     fireEvent.keyDown(selected(), { key: 'ArrowRight' });
+    expect(esercitazioni!.getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(selected(), { key: 'ArrowRight' });
     expect(contenuto!.getAttribute('aria-selected')).toBe('true');
     fireEvent.keyDown(selected(), { key: 'ArrowLeft' });
-    expect(mappa!.getAttribute('aria-selected')).toBe('true');
+    expect(esercitazioni!.getAttribute('aria-selected')).toBe('true');
     fireEvent.keyDown(selected(), { key: 'Home' });
     expect(contenuto!.getAttribute('aria-selected')).toBe('true');
     fireEvent.keyDown(selected(), { key: 'End' });
-    expect(mappa!.getAttribute('aria-selected')).toBe('true');
+    expect(esercitazioni!.getAttribute('aria-selected')).toBe('true');
   });
 
   it('solo la scheda attiva è raggiungibile con Tab (roving tabindex)', async () => {
     loadWith([{ ...BASE, conceptMapMarkdown: MAP }]);
     await openLesson();
     const tabs = await screen.findAllByRole('tab');
-    expect(tabs.map((t) => t.getAttribute('tabindex'))).toEqual(['0', '-1']);
+    expect(tabs.map((t) => t.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
   });
 });
 
@@ -228,4 +242,19 @@ describe('costo', () => {
     // la proiezione già caricata, non da una query per scheda.
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
   });
+});
+
+it('mounts practice only in its own tab and drops responses when leaving it, also without a map', async () => {
+  loadWith([{ ...BASE, conceptMapMarkdown: null }]);
+  await openLesson();
+  expect(screen.queryByLabelText('Risposta di prova')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: 'Esercitazioni' }));
+  const panel = screen.getByRole('tabpanel', { name: 'Esercitazioni' });
+  fireEvent.change(within(panel).getByLabelText('Risposta di prova'), {
+    target: { value: 'Privata' },
+  });
+  fireEvent.click(screen.getByRole('tab', { name: 'Contenuto' }));
+  expect(screen.queryByLabelText('Risposta di prova')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: 'Esercitazioni' }));
+  expect((screen.getByLabelText('Risposta di prova') as HTMLInputElement).value).toBe('');
 });

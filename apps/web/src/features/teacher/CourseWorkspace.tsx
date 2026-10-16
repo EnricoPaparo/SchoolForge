@@ -48,6 +48,8 @@ import {
   createAiConceptMapCallables,
   type AiConceptMapCallables,
 } from '../repository/pools/aiConceptMapClient.js';
+import { loadPublicStudyPractice } from '../repository/programs/studyPracticeService.js';
+import { practicePoolContext } from '../repository/programs/studyPractice.js';
 import { StudyPracticeEditor } from './StudyPracticeEditor.js';
 import { ConceptMapEditor } from './ConceptMapEditor.js';
 import {
@@ -324,7 +326,7 @@ type Selection =
   | { kind: 'uda'; udaDir: string }
   | { kind: 'lesson'; lessonId: string };
 
-type LessonTab = 'contenuto' | 'mappa' | 'domande' | 'informazioni';
+type LessonTab = 'contenuto' | 'mappa' | 'esercitazioni' | 'domande' | 'informazioni';
 
 export function CourseWorkspace(props: CourseWorkspaceProps) {
   // A session/context switch destroys content, drafts and pending callbacks
@@ -434,6 +436,7 @@ function CourseWorkspaceSession({
   // switching tabs so the pool is read once per lesson.
   const [activeTab, setActiveTab] = useState<LessonTab>('contenuto');
   const [domandeVisited, setDomandeVisited] = useState(false);
+  const [practiceVisited, setPracticeVisited] = useState(false);
   const [mappaVisited, setMappaVisited] = useState(false);
   const [poolDirty, setPoolDirty] = useState(false);
   // Bumped after an authoritative pool mutation that happens outside
@@ -590,6 +593,7 @@ function CourseWorkspaceSession({
   function selectTab(tab: LessonTab) {
     setActiveTab(tab);
     if (tab === 'domande') setDomandeVisited(true);
+    if (tab === 'esercitazioni') setPracticeVisited(true);
     if (tab === 'mappa') setMappaVisited(true);
   }
 
@@ -634,6 +638,7 @@ function CourseWorkspaceSession({
     // contextual (pool + editor) state so nothing from it can bleed through.
     setActiveTab('contenuto');
     setDomandeVisited(false);
+    setPracticeVisited(false);
     setMappaVisited(false);
     setConceptMapDirty(false);
     setPoolDirty(false);
@@ -1479,6 +1484,7 @@ function CourseWorkspaceSession({
         setSelection({ kind: 'lesson', lessonId });
         setActiveTab('contenuto');
         setDomandeVisited(false);
+        setPracticeVisited(false);
         setMappaVisited(false);
         setConceptMapDirty(false);
         setPoolDirty(false);
@@ -2844,6 +2850,7 @@ function CourseWorkspaceSession({
               activeTab={activeTab}
               onSelectTab={selectTab}
               domandeVisited={domandeVisited}
+              practiceVisited={practiceVisited}
               mappaVisited={mappaVisited}
               programId={card.programId}
               importId={card.activeImportId}
@@ -3410,6 +3417,7 @@ const LESSON_TABS: { id: LessonTab; label: string }[] = [
   // CONCEPT-MAP-04 — la mappa segue il contenuto perché ne è la sintesi: si
   // legge dopo, mai al posto suo.
   { id: 'mappa', label: 'Mappa concettuale' },
+  { id: 'esercitazioni', label: 'Esercitazioni' },
   { id: 'domande', label: 'Domande' },
   { id: 'informazioni', label: 'Informazioni' },
 ];
@@ -3425,6 +3433,7 @@ function LessonDetail({
   activeTab,
   onSelectTab,
   domandeVisited,
+  practiceVisited,
   mappaVisited,
   programId,
   importId,
@@ -3464,6 +3473,7 @@ function LessonDetail({
   activeTab: LessonTab;
   onSelectTab: (tab: LessonTab) => void;
   domandeVisited: boolean;
+  practiceVisited: boolean;
   mappaVisited: boolean;
   programId: string;
   importId: string | null;
@@ -3495,6 +3505,13 @@ function LessonDetail({
 }) {
   const [practiceContext, setPracticeContext] = useState<string | undefined>(undefined);
   const [practiceDirty, setPracticeDirty] = useState(false);
+  const [practiceLoadedIdentity, setPracticeLoadedIdentity] = useState<string | null>(null);
+  const practiceEpoch = useRef(0);
+  const approvedPracticeChanged = useCallback((context: string | undefined) => {
+    practiceEpoch.current += 1;
+    setPracticeContext(context);
+    setPracticeLoadedIdentity(practiceSourceRef.current);
+  }, []);
   const [questionDirty, setQuestionDirty] = useState(false);
   const practiceIdentity = JSON.stringify([programId, importId, lesson.id, content]);
   const practiceSourceRef = useRef(practiceIdentity);
@@ -3505,6 +3522,29 @@ function LessonDetail({
       practiceSourceRef.current = practiceIdentity;
       setPracticeContext(undefined);
     }
+  }, [practiceIdentity]);
+  // Pool generation must receive approved practice even when its editor was never opened.
+  useEffect(() => {
+    let active = true;
+    const epoch = practiceEpoch.current;
+    if (content)
+      void loadPublicStudyPractice(resolvePublicLessonId(lesson, lesson.id), content, db).then(
+        (practice) => {
+          if (active && epoch === practiceEpoch.current) {
+            setPracticeContext(practicePoolContext(practice));
+            setPracticeLoadedIdentity(practiceIdentity);
+          }
+        },
+        () => {
+          if (active && epoch === practiceEpoch.current) {
+            setPracticeContext(undefined);
+            setPracticeLoadedIdentity(practiceIdentity);
+          }
+        },
+      );
+    return () => {
+      active = false;
+    };
   }, [practiceIdentity]);
   useEffect(() => {
     onDirtyChange(practiceDirty || questionDirty);
@@ -3962,13 +4002,11 @@ function LessonDetail({
 
       <div
         role="tabpanel"
-        id="panel-domande"
-        aria-labelledby="tab-domande"
-        hidden={activeTab !== 'domande'}
+        id="panel-esercitazioni"
+        aria-labelledby="tab-esercitazioni"
+        hidden={activeTab !== 'esercitazioni'}
       >
-        {/* Lazy: mounted only once the Domande tab has been opened, then kept
-            mounted across tab switches so the pool is read once per lesson. */}
-        {domandeVisited && importId && content && (
+        {practiceVisited && importId && content && (
           <StudyPracticeEditor
             key={`${lesson.id}:${content}`}
             lesson={lesson}
@@ -3977,10 +4015,24 @@ function LessonDetail({
             importId={importId}
             ownerUid={ownerUid}
             onDirtyChange={setPracticeDirty}
-            onApprovedChange={setPracticeContext}
+            onApprovedChange={approvedPracticeChanged}
           />
         )}
-        {domandeVisited && (
+        {!content && <p>Apri il contenuto della lezione per preparare le esercitazioni.</p>}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="panel-domande"
+        aria-labelledby="tab-domande"
+        hidden={activeTab !== 'domande'}
+      >
+        {/* Lazy: mounted only once the Domande tab has been opened, then kept
+            mounted across tab switches so the pool is read once per lesson. */}
+        {domandeVisited && content && practiceLoadedIdentity !== practiceIdentity && (
+          <p role="status">Caricamento delle esercitazioni approvate per il pool…</p>
+        )}
+        {domandeVisited && (!content || practiceLoadedIdentity === practiceIdentity) && (
           <QuestionPoolEditor
             key={`${programId}:${importId}:${lesson.id}`}
             programId={programId}

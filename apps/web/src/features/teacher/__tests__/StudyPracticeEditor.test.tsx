@@ -44,13 +44,14 @@ const lesson = {
   obiettivi: ['Prevedere output'],
 } as LessonItem;
 describe('teacher practice workflow', () => {
-  it('ignores a late initial approval read after explicit withdrawal', async () => {
+  it('ignores a late initial approval read after saving a private draft', async () => {
     let resolve!: (value: ReturnType<typeof studyFixture>) => void;
     mocks.load.mockReturnValue(
       new Promise((done) => {
         resolve = done;
       }),
     );
+    mocks.privateLoad.mockResolvedValue(studyFixture());
     const approved = vi.fn();
     render(
       <StudyPracticeEditor
@@ -64,10 +65,10 @@ describe('teacher practice workflow', () => {
       />,
     );
     await waitFor(() =>
-      expect(screen.getByText('Stima nuova esercitazione').hasAttribute('disabled')).toBe(false),
+      expect(screen.getByText('Genera con IA').hasAttribute('disabled')).toBe(false),
     );
-    fireEvent.click(screen.getByText('Ritira pubblicazione'));
-    await waitFor(() => expect(mocks.withdraw).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText('Salva bozza'));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
     resolve(studyFixture());
     await waitFor(() => expect(approved).toHaveBeenLastCalledWith(undefined));
   });
@@ -86,13 +87,17 @@ describe('teacher practice workflow', () => {
       />,
     );
     await waitFor(() =>
-      expect(screen.getByText('Stima nuova esercitazione').hasAttribute('disabled')).toBe(false),
+      expect(screen.getByText('Genera con IA').hasAttribute('disabled')).toBe(false),
     );
-    fireEvent.change(screen.getByLabelText('Estensione del percorso'), { target: { value: '3' } });
-    fireEvent.click(screen.getByText('Stima nuova esercitazione'));
-    await screen.findByText('Genera proposta');
+    fireEvent.click(screen.getByText('Genera con IA'));
+    fireEvent.click(screen.getByRole('radio', { name: /Breve/ }));
+    fireEvent.click(screen.getByText('Calcola stima'));
+    await screen.findByText('Genera esercitazioni');
     expect(mocks.generate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Genera proposta'));
+    fireEvent.click(screen.getByText('Genera esercitazioni'));
+    await screen.findByText('Usa bozza');
+    expect(mocks.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Usa bozza'));
     await screen.findByText('Obiettivi e preparazione effettiva');
     expect(mocks.generate.mock.calls[0]![0]).toMatchObject({
       purpose: 'practice',
@@ -144,12 +149,15 @@ it('reopens a newly saved draft even while the course tree still has no practice
   });
   const view = reopenableEditor(lesson);
   await waitFor(() =>
-    expect(screen.getByText('Stima nuova esercitazione').hasAttribute('disabled')).toBe(false),
+    expect(screen.getByText('Genera con IA').hasAttribute('disabled')).toBe(false),
   );
-  fireEvent.change(screen.getByLabelText('Estensione del percorso'), { target: { value: '3' } });
-  fireEvent.click(screen.getByText('Stima nuova esercitazione'));
-  await screen.findByText('Genera proposta');
-  fireEvent.click(screen.getByText('Genera proposta'));
+  fireEvent.click(screen.getByText('Genera con IA'));
+  fireEvent.click(screen.getByRole('radio', { name: /Breve/ }));
+  fireEvent.click(screen.getByText('Calcola stima'));
+  await screen.findByText('Genera esercitazioni');
+  fireEvent.click(screen.getByText('Genera esercitazioni'));
+  await screen.findByText('Usa bozza');
+  fireEvent.click(screen.getByText('Usa bozza'));
   await screen.findByText('Obiettivi e preparazione effettiva');
   fireEvent.change(screen.getAllByLabelText('Aiuto 1')[0]!, {
     target: { value: 'Bozza nuova salvata' },
@@ -198,12 +206,33 @@ it('blocks editing and saving until the private read resolves', async () => {
   );
   reopenableEditor({ ...lesson, studyPractice: studyFixture() });
   expect(screen.queryByText('Obiettivi e preparazione effettiva')).toBeNull();
-  expect(screen.getByText('Stima nuova esercitazione').hasAttribute('disabled')).toBe(true);
-  fireEvent.click(screen.getByText('Stima nuova esercitazione'));
+  expect(screen.getByText('Genera con IA').hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByText('Genera con IA'));
   expect(mocks.preview).not.toHaveBeenCalled();
   expect(mocks.save).not.toHaveBeenCalled();
   const newest = studyFixture();
   newest.plan.steps[0]!.hints[0] = 'Documento privato aggiornato';
   resolve(newest);
   await screen.findByDisplayValue('Documento privato aggiornato');
+});
+
+it('keeps the current local draft when a generated replacement is abandoned', async () => {
+  mocks.privateLoad.mockResolvedValue(studyFixture());
+  reopenableEditor(lesson);
+  await screen.findAllByDisplayValue(studyFixture().plan.steps[0]!.hints[0]!);
+  fireEvent.change(screen.getAllByLabelText('Aiuto 1')[0]!, {
+    target: { value: 'La mia bozza locale' },
+  });
+  fireEvent.click(screen.getByText('Genera con IA'));
+  fireEvent.click(screen.getByText('Calcola stima'));
+  await screen.findByText('Genera esercitazioni');
+  fireEvent.click(screen.getByText('Genera esercitazioni'));
+  await screen.findByText('Usa bozza');
+  fireEvent.click(screen.getByText('Annulla proposta'));
+  fireEvent.click(screen.getByText('Abbandona e chiudi'));
+  expect(screen.getByDisplayValue('La mia bozza locale')).toBeTruthy();
+  expect(mocks.save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Salva bozza'));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
+  expect(mocks.save.mock.calls[0]![0].practice.plan.steps[0].hints[0]).toBe('La mia bozza locale');
 });
