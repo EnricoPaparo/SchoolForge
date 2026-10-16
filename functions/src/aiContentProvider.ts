@@ -88,7 +88,34 @@ class MockContentProvider implements ContentProvider {
       // Usage esplicitamente zero: il mock non genera costo, mai un costo inventato.
       return {
         status: 'ok',
-        output: { questions },
+        output: {
+          questions,
+          ...(request.purpose === 'practice'
+            ? {
+                studyPlan: {
+                  plannedCoverage: (request.plannedObjectives ?? []).map((objective) => ({
+                    objective,
+                    status: 'preparato',
+                    sourceQuote: request.lessonSource.slice(0, 100),
+                  })),
+                  objectives: [
+                    {
+                      capability: 'Capacità dimostrativa (mock)',
+                      prerequisites: 'Prerequisiti mock',
+                      method: 'Metodo mock',
+                      sourceQuote: request.lessonSource.slice(0, 100),
+                    },
+                  ],
+                  steps: questions.map((_, i) => ({
+                    questionOrder: i,
+                    objectiveIndex: 0,
+                    stage: i === 0 ? 'esempio' : i === 1 ? 'guidato' : 'autonomo',
+                    hints: ['Richiamo specifico (mock)', 'Passaggio specifico (mock)'],
+                  })),
+                },
+              }
+            : {}),
+        },
         usage: { inputTokens: 0, outputTokens: 0 },
         metered: false,
         priorBillingRisk: false,
@@ -144,6 +171,14 @@ class MockContentProvider implements ContentProvider {
       return {
         status: 'ok',
         output: {
+          sourceInsufficient: false,
+          preparationEvidence: request.candidateQuestions.map((q) => ({
+            questionOrder: q.order,
+            capability: 'Capacita mock',
+            operation: 'Operazione mock',
+            status: 'prepared',
+            sourceQuote: request.lessonSource.slice(0, 1500),
+          })),
           reviewOutcome: 'unchanged',
           issueCodes: [],
           failedOrdinals: [],

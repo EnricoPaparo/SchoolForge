@@ -251,6 +251,7 @@ async function syncLessonMetadataDocs(
 ): Promise<void> {
   const batch = writeBatch(db);
   batch.update(lessonRef, docPatch);
+  if (publicContent !== undefined) batch.delete(doc(db, 'publicLessonPractice', publicLessonId));
   const publicLessonRef = doc(db, 'publicLessons', publicLessonId);
   if (publicLessonExists) {
     const publicPatch =
@@ -453,7 +454,9 @@ export async function clearLessonContentState(params: {
     const publicLessonId = resolvePublicLessonId(lesson, lessonId);
     const publicRef = doc(db, 'publicLessons', publicLessonId);
     const publicSnap = await tx.get(publicRef);
+    tx.delete(doc(db, 'publicLessonPractice', publicLessonId));
     tx.update(lessonRef, {
+      studyPractice: deleteField(),
       conceptMapMarkdown: deleteField(),
       visual: deleteField(),
       visuals: deleteField(),
@@ -1029,6 +1032,7 @@ export async function deleteLesson(params: {
     await deleteDocRefsInBatches(db, [
       lessonRef,
       doc(db, 'publicLessons', resolvePublicLessonId(lesson, lessonId)),
+      doc(db, 'publicLessonPractice', resolvePublicLessonId(lesson, lessonId)),
       ...questionIndexSnap.docs.map((d) => d.ref),
     ]);
     await updateDoc(doc(db, 'programs', programId, 'imports', importId, 'udas', udaId), {
@@ -1128,6 +1132,9 @@ export async function deleteUda(params: {
       ...questionIndexSnap.docs.map((d) => d.ref),
       ...lessons.map((lesson) =>
         doc(db, 'publicLessons', resolvePublicLessonId(lesson, lesson.id)),
+      ),
+      ...lessons.map((lesson) =>
+        doc(db, 'publicLessonPractice', resolvePublicLessonId(lesson, lesson.id)),
       ),
       udaRef,
     ]);

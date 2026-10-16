@@ -1,3 +1,4 @@
+import { STUDY_PLAN_SCHEMA, POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_SCHEMA } from './aiReviewFeedback.js';
 import {
   buildDidacticReviewPrompt,
@@ -58,7 +59,7 @@ export const PROMPT_OVERHEAD_TOKENS = 900;
  * 220 token per domanda poteva troncare il JSON Structured Output prima della
  * chiusura. Il budget resta proporzionato al tipo e quindi prudente sui costi.
  */
-export const POOL_OUTPUT_BASE_TOKENS = 800;
+export const POOL_OUTPUT_BASE_TOKENS = 1600;
 export const OPEN_QUESTION_OUTPUT_TOKENS = 550;
 export const CLOSED_QUESTION_OUTPUT_TOKENS = 300;
 /**
@@ -133,7 +134,7 @@ export const VISUAL_PLAN_PROPOSAL_OUTPUT_TOKENS_PER_SLOT = VISUAL_PROPOSAL_OUTPU
 export function resolveMaxOutputTokens(request: AiContentRequest): number {
   if (request.kind === 'pool') {
     return (
-      POOL_OUTPUT_BASE_TOKENS +
+      (request.purpose === 'practice' ? 6500 : POOL_OUTPUT_BASE_TOKENS) +
       request.counts.aperta * OPEN_QUESTION_OUTPUT_TOKENS +
       (request.counts.chiusa_singola + request.counts.chiusa_multipla) *
         CLOSED_QUESTION_OUTPUT_TOKENS
@@ -215,7 +216,10 @@ export function estimateInputTokens(request: AiContentRequest): number {
     request.kind === 'pool'
       ? request.lessonSource.length +
         (request.teacherGuidance?.length ?? 0) +
-        (request.existingQuestionStems?.join('').length ?? 0)
+        (request.existingQuestionStems?.join('').length ?? 0) +
+        (request.approvedPractice?.length ?? 0) +
+        (request.plannedObjectives?.join('').length ?? 0) +
+        (request.purpose === 'practice' ? 1800 : 0)
       : request.currentBody.length +
         (request.teacherGuidance?.length ?? 0) +
         request.concettiChiave.join('').length +
@@ -314,11 +318,19 @@ export function buildPoolOutputSchema(request: Extract<AiContentRequest, { kind:
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['questions'],
+    required:
+      request.purpose === 'practice'
+        ? ['questions', 'studyPlan', 'sourceInsufficient']
+        : ['questions', 'sourceInsufficient', 'coverageSummary'],
     properties: {
+      sourceInsufficient: { type: 'boolean' },
+      ...(request.purpose === 'practice' ? {} : { coverageSummary: POOL_COVERAGE_SCHEMA }),
+      ...(request.purpose === 'practice'
+        ? { studyPlan: { anyOf: [STUDY_PLAN_SCHEMA, { type: 'null' }] } }
+        : {}),
       questions: {
         type: 'array',
-        minItems: total,
+        minItems: 0,
         maxItems: total,
         items: {
           anyOf: [
@@ -709,13 +721,34 @@ export const POOL_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: [
+    'sourceInsufficient',
+    'preparationEvidence',
     'reviewOutcome',
     'issueCodes',
     'failedOrdinals',
     'replacementQuestions',
     'reviewChanges',
+    'coverageSummary',
   ],
   properties: {
+    sourceInsufficient: { type: 'boolean' },
+    preparationEvidence: {
+      type: 'array',
+      maxItems: 30,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['questionOrder', 'capability', 'operation', 'status', 'sourceQuote'],
+        properties: {
+          questionOrder: { type: 'integer', minimum: 0, maximum: 29 },
+          capability: { type: 'string', maxLength: 500 },
+          operation: { type: 'string', maxLength: 500 },
+          status: { type: 'string', enum: ['prepared', 'missing'] },
+          sourceQuote: { type: 'string', maxLength: 1500 },
+        },
+      },
+    },
+    coverageSummary: POOL_COVERAGE_SCHEMA,
     reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: reviewOutcomeSchema,
     issueCodes: reviewCodesSchema(POOL_REVIEW_ISSUE_CODES),

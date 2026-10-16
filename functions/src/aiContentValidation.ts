@@ -8,6 +8,12 @@
  */
 
 import {
+  validateStudyPlan,
+  validatePoolCoverage,
+  type PoolCoverageSummary,
+  type StudyPlan,
+} from '@schoolforge/lesson-contract';
+import {
   AiContentError,
   AI_CONTENT_LIMITS,
   POOL_LEVEL_DIFFICULTY,
@@ -39,6 +45,8 @@ export type ValidatedProposalQuestion =
 
 export interface ValidatedPoolProposal {
   questions: ValidatedProposalQuestion[];
+  studyPlan?: StudyPlan;
+  coverageSummary?: PoolCoverageSummary;
 }
 
 /**
@@ -105,6 +113,13 @@ export function validatePoolProposal(
   level: PoolLevel,
 ): ValidatedPoolProposal {
   const root = asObject(output);
+  if (root.sourceInsufficient === true)
+    throw new AiContentError(
+      'source_insufficient',
+      'La lezione non prepara abbastanza richieste coerenti. Integra il materiale o riduci le domande.',
+    );
+  if (root.sourceInsufficient !== undefined && root.sourceInsufficient !== false)
+    throw new AiContentError('provider_invalid_output', 'Stato sorgente non valido.');
   const rawQuestions = root.questions;
   if (!Array.isArray(rawQuestions)) {
     throw new AiContentError('provider_invalid_output', 'Elenco domande mancante.');
@@ -230,7 +245,15 @@ export function validatePoolProposal(
     throw new AiContentError('output_too_large', 'Le domande generate superano il limite.');
   }
 
-  return { questions };
+  let coverageSummary: PoolCoverageSummary | undefined;
+  if (root.coverageSummary !== undefined) {
+    try {
+      coverageSummary = validatePoolCoverage(root.coverageSummary, questions.length);
+    } catch {
+      throw new AiContentError('provider_invalid_output', 'Riepilogo copertura non valido.');
+    }
+  }
+  return { questions, ...(coverageSummary ? { coverageSummary } : {}) };
 }
 
 // ─── Lezione ──────────────────────────────────────────────────────────────────
@@ -309,4 +332,36 @@ export function validateLessonReviewProposal(output: unknown): ValidatedLessonRe
     throw new AiContentError('provider_invalid_output', 'Codici della revisione duplicati.');
   }
   return { body, reviewOutcome: root.reviewOutcome, issueCodes };
+}
+
+export function validateStudyPoolProposal(
+  output: unknown,
+  counts: PoolCounts,
+  level: PoolLevel,
+  source: string,
+  plannedObjectives: string[] = [],
+): ValidatedPoolProposal {
+  const result = validatePoolProposal(output, counts, level);
+  try {
+    const studyPlan = validateStudyPlan(
+      asObject(output).studyPlan,
+      source,
+      result.questions.length,
+      plannedObjectives,
+    );
+    if (
+      studyPlan.steps.some(
+        (s) => s.stage === 'esempio' && result.questions[s.questionOrder]?.tipo !== 'aperta',
+      )
+    )
+      throw new Error('Esempio svolto senza spiegazione.');
+    if (utf8ByteLength(JSON.stringify({ ...result, studyPlan })) > 100000)
+      throw new Error('Pratica troppo grande.');
+    return { ...result, studyPlan };
+  } catch {
+    throw new AiContentError(
+      'provider_invalid_output',
+      'Esercitazione o riferimenti alla lezione non validi.',
+    );
+  }
 }

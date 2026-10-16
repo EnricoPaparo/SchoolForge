@@ -514,7 +514,7 @@ describe('POOL_OUTPUT_SCHEMA (strict, discriminated)', () => {
         };
       };
     };
-    expect(schema.properties.questions.minItems).toBe(3);
+    expect(schema.properties.questions.minItems).toBe(0);
     expect(schema.properties.questions.maxItems).toBe(3);
     const [open, single, multiple] = schema.properties.questions.items.anyOf;
     expect(open!.properties.difficolta).toMatchObject({ minimum: 1, maximum: 3 });
@@ -961,6 +961,17 @@ describe('lesson reviewer policy and accounting', () => {
       const output =
         kind === 'pool_review'
           ? {
+              sourceInsufficient: false,
+              preparationEvidence:
+                request.kind === 'pool_review'
+                  ? request.candidateQuestions.map((q) => ({
+                      questionOrder: q.order,
+                      capability: 'Comprendere TCP',
+                      operation: 'Definire',
+                      status: 'prepared',
+                      sourceQuote: request.lessonSource,
+                    }))
+                  : [],
               reviewOutcome: 'unchanged',
               issueCodes: [],
               failedOrdinals: [],
@@ -1002,6 +1013,7 @@ describe('lesson reviewer policy and accounting', () => {
         request,
         ctx,
         makePorts({
+          loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
           reserveRunAndBudget: async () => ({ kind: 'replay_completed', run: saved }),
           callProvider,
         }),
@@ -1903,8 +1915,8 @@ describe('pool output hard caps (AIGEN-POOL-REAL-FIX)', () => {
       poolPayload({ counts: { aperta: 0, chiusa_singola: 2, chiusa_multipla: 0 } }),
     );
     expect(resolveMaxOutputTokens(openOnly)).toBeGreaterThan(resolveMaxOutputTokens(closedOnly));
-    expect(resolveMaxOutputTokens(openOnly)).toBe(1900);
-    expect(resolveMaxOutputTokens(closedOnly)).toBe(1400);
+    expect(resolveMaxOutputTokens(openOnly)).toBe(2700);
+    expect(resolveMaxOutputTokens(closedOnly)).toBe(2200);
   });
 });
 
@@ -2518,8 +2530,8 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
   });
 
   it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
-    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-explanations-v2');
-    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-explanations-v2');
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-preparation-v3');
+    expect(AI_CONTENT_ROLLBACK_PROMPT_VERSION).toBe('lesson-depth-preparation-v3');
   });
 
   it('rimuove autoverifiche e mantiene un controllo finale breve', () => {
@@ -2581,4 +2593,134 @@ describe('LESSON-DEPTH-01 — tetti di output e limite di costo', () => {
     expect(LESSON_OUTPUT_TOKENS.synthetic).toBeLessThan(LESSON_OUTPUT_TOKENS.complete);
     expect(LESSON_OUTPUT_TOKENS.complete).toBeLessThan(LESSON_OUTPUT_TOKENS.in_depth);
   });
+});
+
+describe('study generation accounting and replay', () => {
+  const source =
+    'Per tracciare un ciclo annota il valore iniziale, controlla la condizione, esegui il corpo e aggiorna prima di ripetere.';
+  const request = validateAiContentRequest(
+    poolPayload({
+      purpose: 'practice',
+      modelProfile: 'economy',
+      counts: { aperta: 3, chiusa_singola: 0, chiusa_multipla: 0 },
+      lessonSource: source,
+    }),
+  );
+  const studyOutput = () => ({
+    questions: [0, 1, 2].map((i) => ({
+      tipo: 'aperta',
+      testo: `Caso ${i}`,
+      difficolta: 2,
+      soluzione: 'Passaggi motivati e risultato.',
+    })),
+    studyPlan: {
+      plannedCoverage: [],
+      objectives: [
+        {
+          capability: 'Tracciare un ciclo',
+          prerequisites: 'Variabili',
+          method: 'Tabella di esecuzione',
+          sourceQuote: source,
+        },
+      ],
+      steps: ['esempio', 'guidato', 'autonomo'].map((stage, i) => ({
+        questionOrder: i,
+        objectiveIndex: 0,
+        stage,
+        hints: ['Controlla prima la condizione.', 'Annota il nuovo valore.'],
+      })),
+    },
+  });
+  it('persists the validated plan through the existing reservation and settlement path', async () => {
+    const finalizeRun = vi.fn(async () => 'finalized' as const);
+    const response = await generateContent(
+      request,
+      ctx,
+      makePorts({
+        callProvider: async () => ({ ...okOutcome, output: studyOutput() }),
+        finalizeRun,
+      }),
+    );
+    expect(response.output).toMatchObject({ studyPlan: { objectives: [{ sourceQuote: source }] } });
+    expect(finalizeRun).toHaveBeenCalledTimes(1);
+  });
+  it('rejects malformed stored practice before any new provider call', async () => {
+    const callProvider = vi.fn();
+    await expect(
+      generateContent(
+        request,
+        ctx,
+        makePorts({
+          callProvider: callProvider as never,
+          reserveRunAndBudget: async () => ({
+            kind: 'replay_completed',
+            run: { ...SAMPLE_RUN, status: 'completed', output: { questions: [] } },
+          }),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'provider_invalid_output' });
+    expect(callProvider).not.toHaveBeenCalled();
+  });
+  it('settles an insufficient-source provider response without creating a completed run', async () => {
+    const failRun = vi.fn(async () => undefined);
+    const finalizeRun = vi.fn();
+    await expect(
+      generateContent(
+        request,
+        ctx,
+        makePorts({
+          callProvider: async () => ({
+            ...okOutcome,
+            output: { questions: [], sourceInsufficient: true, studyPlan: null },
+          }),
+          failRun,
+          finalizeRun: finalizeRun as never,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'source_insufficient' });
+    expect(failRun).toHaveBeenCalledTimes(1);
+    expect(finalizeRun).not.toHaveBeenCalled();
+  });
+});
+
+it('settles metered insufficient-source pool review without a completed proposal', async () => {
+  const request = validateAiContentRequest({
+    ...poolPayload(),
+    kind: 'pool_review',
+    candidateQuestions: [
+      { order: 0, tipo: 'aperta', testo: 'Spiega TCP', difficolta: 3, soluzione: 'ok' },
+      {
+        order: 1,
+        tipo: 'chiusa_singola',
+        testo: 'Quale?',
+        difficolta: 2,
+        opzioni: ['TCP', 'UDP'],
+        soluzioneIndici: [0],
+      },
+    ],
+  });
+  const failRun = vi.fn(async () => undefined);
+  const finalizeRun = vi.fn();
+  await expect(
+    generateContent(
+      request,
+      ctx,
+      makePorts({
+        loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2_000_000 }),
+        callProvider: async () => ({ ...okOutcome, output: { sourceInsufficient: true } }),
+        failRun,
+        finalizeRun: finalizeRun as never,
+      }),
+    ),
+  ).rejects.toMatchObject({ code: 'source_insufficient' });
+  expect(failRun).toHaveBeenCalledTimes(1);
+  expect(failRun).toHaveBeenCalledWith(
+    expect.objectContaining({
+      actualInputTokens: 1000,
+      actualOutputTokens: 400,
+      actualCostMicroUsd: expect.any(Number),
+      settledMicroUsd: expect.any(Number),
+    }),
+  );
+  expect(finalizeRun).not.toHaveBeenCalled();
 });

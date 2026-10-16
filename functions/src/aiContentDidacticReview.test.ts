@@ -1,4 +1,5 @@
 import { parseStoredRunDocument, serializeRun } from './aiContentRunDoc.js';
+import { estimateContentCost } from './aiContentCost.js';
 import { AI_CONTENT_CONTRACT_VERSION } from './aiContentCore.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +12,8 @@ import {
 } from './aiContentCore.js';
 import { composeConceptMapMarkdown } from './aiContentConceptMap.js';
 import {
-  validatePoolReview,
+  buildDidacticReviewPrompt,
+  validatePoolReview as validatePoolReviewCanonical,
   validateMapReview,
   isValidStoredDidacticReview,
   assertNoDuplicateStems,
@@ -19,6 +21,24 @@ import {
 import { buildContentStructuredRequest } from './aiContentPayload.js';
 import { computeContentLeaseTtlMs } from './aiContentEngine.js';
 import { retryPolicyFromConfig } from './aiContentGateway.js';
+// Existing repair fixtures focus on replacement invariants; all now carry explicit support.
+const evidence = (request: PoolReviewRequest) =>
+  request.candidateQuestions.map((q) => ({
+    questionOrder: q.order,
+    capability: 'Comprendere la rete',
+    operation: 'Definire il significato',
+    status: 'prepared',
+    sourceQuote: request.lessonSource,
+  }));
+const validatePoolReview = (raw: unknown, request: PoolReviewRequest) =>
+  validatePoolReviewCanonical(
+    {
+      sourceInsufficient: false,
+      preparationEvidence: evidence(request),
+      ...(raw as object),
+    },
+    request,
+  );
 const base = {
   kind: 'pool' as const,
   requestId: '11111111-1111-4111-8111-111111111111',
@@ -99,10 +119,10 @@ describe('didactic content review', () => {
     ).toThrow();
   });
   it('pins review model without changing generators and versions hashes independently', () => {
-    expect(resolveContentModelForRequest(pool()).model).toBe('gpt-5.6-luna');
+    expect(resolveContentModelForRequest(pool()).model).toBe('gpt-6.1-sol');
     expect(resolveContentModelForRequest(map()).model).toBe('gpt-5.6-luna');
     expect(resolveContentModelForRequest(validateAiContentRequest(base)).model).toBe('gpt-6.1-sol');
-    expect(canonicalRequest(pool())).toContain('pool_review-v4');
+    expect(canonicalRequest(pool())).toContain('pool_review-v7');
     expect(canonicalRequest(map())).toContain('concept_map_review-v6');
     expect(buildContentStructuredRequest(pool(), 'gpt-5.6-luna').max_output_tokens).toBe(16000);
   });
@@ -238,7 +258,7 @@ describe('didactic replay provenance', () => {
       const run: StoredAiContentRun = {
         contractVersion: AI_CONTENT_CONTRACT_VERSION,
         promptContractVersion:
-          request.kind === 'concept_map_review' ? 'concept_map_review-v6' : 'pool_review-v4',
+          request.kind === 'concept_map_review' ? 'concept_map_review-v6' : 'pool_review-v7',
         sourceBodyHash: 'b'.repeat(64),
         kind: request.kind,
         status: 'completed',
@@ -338,4 +358,85 @@ it('allows duplicate candidates to reach review and rejects an unchanged duplica
     request,
   );
   expect(result.questions[0]).toBe(request.candidateQuestions[0]);
+});
+
+it('blocks an insufficient-source audit before repair/outcome constraints and preserves legacy outputs', () => {
+  expect(() => validatePoolReviewCanonical({ sourceInsufficient: true }, pool())).toThrow(
+    expect.objectContaining({ code: 'source_insufficient' }),
+  );
+  const legacy = {
+    reviewOutcome: 'unchanged',
+    issueCodes: [],
+    failedOrdinals: [],
+    replacementQuestions: [],
+  };
+  expect(validatePoolReview({ ...legacy, sourceInsufficient: false }, pool())).toEqual(
+    validatePoolReview(legacy, pool()),
+  );
+  expect(() => validatePoolReview({ ...legacy, sourceInsufficient: 'true' }, pool())).toThrow();
+  expect(isValidStoredDidacticReview('pool_review', validatePoolReview(legacy, pool()))).toBe(true);
+  const structured = buildContentStructuredRequest(pool(), 'gpt-5.6-luna');
+  expect((structured.text.format.schema as { required: string[] }).required).toContain(
+    'sourceInsufficient',
+  );
+});
+it('forbids teaching a missing procedure inside a repaired assessment question', () => {
+  const prompt = buildDidacticReviewPrompt(pool());
+  expect(prompt.user).toContain('niente tutorial, nuove assunzioni operative');
+  expect(prompt.user).toContain('Nuovi dati o contesti sono leciti soltanto');
+  expect(prompt.user).toContain('nessuna riparazione applicabile');
+});
+
+it('requires complete ordered preparation evidence for final questions, with exact source support', () => {
+  const request = pool();
+  const raw = {
+    sourceInsufficient: false,
+    reviewOutcome: 'unchanged',
+    issueCodes: [],
+    failedOrdinals: [],
+    replacementQuestions: [],
+    preparationEvidence: evidence(request),
+  };
+  expect(validatePoolReviewCanonical(raw, request).questions).toEqual(request.candidateQuestions);
+  for (const override of [
+    { sourceInsufficient: undefined },
+    { preparationEvidence: undefined },
+    { preparationEvidence: [] },
+    { preparationEvidence: [evidence(request)[1], evidence(request)[0]] },
+    { preparationEvidence: [evidence(request)[0], evidence(request)[0]] },
+    {
+      preparationEvidence: evidence(request).map((e) => ({
+        ...e,
+        sourceQuote: 'Citazione inventata',
+      })),
+    },
+  ])
+    expect(() => validatePoolReviewCanonical({ ...raw, ...override }, request)).toThrow();
+  for (const override of [{ status: 'missing' }, { sourceQuote: '' }])
+    expect(() =>
+      validatePoolReviewCanonical(
+        { ...raw, preparationEvidence: evidence(request).map((e) => ({ ...e, ...override })) },
+        request,
+      ),
+    ).toThrow(expect.objectContaining({ code: 'source_insufficient' }));
+  expect(validatePoolReviewCanonical(raw, request)).not.toHaveProperty('preparationEvidence');
+  const legacy = {
+    questions: request.candidateQuestions,
+    reviewOutcome: 'unchanged',
+    issueCodes: [],
+  };
+  expect(isValidStoredDidacticReview('pool_review', legacy)).toBe(true);
+});
+it('uses the lesson quality reviewer and binds its model and price into audit identity and estimate', () => {
+  const resolved = resolveContentModelForRequest(pool());
+  expect(resolved).toEqual({
+    model: 'gpt-6.1-sol',
+    priceListVersion: 'v12-2026-09-29-gpt61-sol-standard',
+  });
+  expect(canonicalRequest(pool())).toContain(resolved.priceListVersion);
+  expect(
+    estimateContentCost(pool(), resolved.model, resolved.priceListVersion, 1)
+      .reservationCostMicroUsd,
+  ).toBeGreaterThan(0);
+  expect(resolveContentModelForRequest(map()).model).toBe('gpt-5.6-luna');
 });

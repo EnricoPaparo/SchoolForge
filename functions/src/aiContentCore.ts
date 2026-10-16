@@ -41,6 +41,7 @@ export type AiContentErrorCode =
   | 'provider_config_invalid'
   | 'provider_unavailable'
   | 'provider_invalid_output'
+  | 'source_insufficient'
   | 'output_incomplete'
   | 'output_too_large'
   | 'run_conflict'
@@ -64,7 +65,7 @@ export class AiContentError extends Error {
 
 export const AI_CONTENT_CONTRACT_VERSION = 1 as const;
 export const DIDACTIC_REVIEW_PROMPT_VERSIONS = {
-  pool_review: 'pool_review-v4',
+  pool_review: 'pool_review-v7',
   concept_map_review: 'concept_map_review-v6',
 } as const;
 export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -188,6 +189,9 @@ export interface PoolCounts {
 
 export interface PoolRequest {
   kind: 'pool';
+  purpose?: 'practice';
+  plannedObjectives?: string[];
+  approvedPractice?: string;
   requestId: string;
   modelProfile: ModelProfile;
   teacherGuidance: string | null;
@@ -514,7 +518,7 @@ export function canonicalRequest(request: AiContentRequest): string {
   }
   if (request.kind === 'lesson_review') {
     return JSON.stringify({
-      promptContractVersion: 'lesson-review-v6',
+      promptContractVersion: 'lesson-review-v7',
       reviewPolicy: resolveContentModelForRequest(request),
       kind: request.kind,
       modelProfile: request.modelProfile,
@@ -610,7 +614,10 @@ export function canonicalRequest(request: AiContentRequest): string {
     request.kind === 'pool'
       ? {
           kind: 'pool',
-          promptContractVersion: 'pool-specialist-v2',
+          promptContractVersion: 'pool-alignment-v4',
+          ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
+          ...(request.purpose ? { purpose: request.purpose } : {}),
+          ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
           modelProfile: request.modelProfile,
           level: request.level,
           counts: {
@@ -629,8 +636,8 @@ export function canonicalRequest(request: AiContentRequest): string {
           kind: 'lesson',
           promptContractVersion:
             request.modelProfile === 'economy'
-              ? 'lesson-depth-explanations-v2'
-              : 'lesson-explanations-v2',
+              ? 'lesson-depth-preparation-v3'
+              : 'lesson-preparation-v3',
           modelProfile: request.modelProfile,
           depth: request.depth,
           titolo: request.titolo,
@@ -1107,7 +1114,17 @@ function validateAiContentRequestWithPolicy(
       'lessonSource',
       'existingPoolQuestionCount',
       'existingQuestionStems',
+      'purpose',
+      'plannedObjectives',
+      'approvedPractice',
     ]);
+    if (input.purpose !== undefined && input.purpose !== 'practice')
+      throw new AiContentError('invalid_input', 'Scopo non valido.');
+    if (
+      input.approvedPractice !== undefined &&
+      (typeof input.approvedPractice !== 'string' || utf8ByteLength(input.approvedPractice) > 50000)
+    )
+      throw new AiContentError('invalid_input', 'Pratica non valida.');
     if (input.level !== 'base' && input.level !== 'balanced' && input.level !== 'advanced') {
       throw new AiContentError('invalid_input', 'Livello del pool non valido.');
     }
@@ -1142,6 +1159,18 @@ function validateAiContentRequestWithPolicy(
     }
     return enforceTotalRequestSize({
       kind: 'pool',
+      ...(input.plannedObjectives !== undefined
+        ? {
+            plannedObjectives: parseRequiredStringArray(
+              input.plannedObjectives,
+              'Obiettivi pianificati',
+            ),
+          }
+        : {}),
+      ...(input.purpose === 'practice' ? { purpose: 'practice' as const } : {}),
+      ...(typeof input.approvedPractice === 'string'
+        ? { approvedPractice: input.approvedPractice }
+        : {}),
       requestId,
       modelProfile,
       teacherGuidance,
@@ -1249,8 +1278,9 @@ export function resolveContentModelForRequest(request: AiContentRequest): {
 } {
   // Il revisore lezione usa Sol anche per una bozza Economy: audit disciplinare
   // indipendente dal costo del generatore. Il profilo richiesto resta nel run.
-  if (request.kind === 'lesson_review') return GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
-  if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
+  if (request.kind === 'lesson_review' || request.kind === 'pool_review')
+    return GPT6_MODEL_PROFILE_RESOLUTIONS.quality;
+  if (request.kind === 'concept_map_review') {
     return GPT56_ROLLBACK_MODEL_PROFILE_RESOLUTIONS.economy;
   }
   if (request.kind === 'lesson') {

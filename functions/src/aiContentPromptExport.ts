@@ -18,6 +18,8 @@ export function exportCurrentContentPrompt(
   const request = validateAiContentRequest(input);
   if (request.kind !== 'lesson' && request.kind !== 'concept_map' && request.kind !== 'pool')
     throw new AiContentError('invalid_input', 'Tipo di prompt non supportato.');
+  if (request.kind === 'pool' && request.purpose === 'practice')
+    throw new AiContentError('invalid_input', 'Esportazione del percorso pratica non supportata.');
   const built =
     request.kind === 'lesson'
       ? buildLessonPromptForPolicy(request, policy)
@@ -102,6 +104,11 @@ export function exportCurrentContentPrompt(
         }),
     );
   } else {
+    instructions = instructions.replace(/Restituisci coverageSummary:[^\n]*\n/, '');
+    instructions = instructions.replace(
+      /restituisci sourceInsufficient=true, questions=\[\] e studyPlan=null quando richiesto\.[\s\S]*?Negli altri casi sourceInsufficient=false e quantità esatte\./,
+      'dichiara chiaramente che il materiale non prepara abbastanza richieste; non produrre un pool inventato.',
+    );
     move(
       /Nel campo soluzione[\s\S]*?(?=Formattazione di testo)/,
       'Dopo aver fissato le opzioni, controlla che tutte le opzioni selezionate siano vere e tutte quelle non selezionate false. La singola seleziona una sola opzione; la multipla almeno due e lascia almeno un’opzione non selezionata.\n\n',

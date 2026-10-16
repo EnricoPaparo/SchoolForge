@@ -147,7 +147,7 @@ describe('clearLessonContentState — completion consistency', () => {
       .mockResolvedValueOnce({ exists: () => true, data: () => lesson })
       .mockResolvedValueOnce({ exists: () => projectionExists });
     mockRunTransaction.mockImplementation(async (_db, callback) => {
-      await callback({ get, update: updates, set: vi.fn() });
+      await callback({ get, update: updates, set: vi.fn(), delete: mockBatchDelete });
     });
     return { get, updates };
   }
@@ -156,10 +156,12 @@ describe('clearLessonContentState — completion consistency', () => {
     const { updates } = transaction();
     await clearLessonContentState(params);
     expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'publicLessonPractice/imp-1_lesson-1' });
     expect(updates.mock.calls).toEqual([
       [
         { __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1' },
         {
+          studyPractice: { __deleteField: true },
           completed: false,
           completedAt: { __deleteField: true },
           conceptMapMarkdown: { __deleteField: true },

@@ -1,0 +1,6 @@
+.editor { margin-block: 1rem; padding: 1rem; border: 1px solid var(--color-border, #ccd1d9); border-radius: 8px; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem; }
+.exercise { margin-block: 1rem; min-width: 0; }
+.exercise label { display: block; margin-block: .75rem; }
+.exercise textarea { display: block; width: 100%; min-height: 5rem; box-sizing: border-box; }
+.exercise input:not([type=checkbox]) { display: block; width: 100%; box-sizing: border-box; }

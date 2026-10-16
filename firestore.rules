@@ -962,6 +962,75 @@ service cloud.firestore {
     // the student query filters programId AND importId, see
     // studentLessonsService.ts). The owner keeps full read (active, staging and
     // legacy/stale alike) via the isOwner() branch.
+    // Practice is a separate public artifact: stale/unpublished content is inaccessible
+    // even through a direct SDK read. Source equality is checked by Rules.
+    match /publicLessonPractice/{lessonId} {
+      function currentLesson() {
+        return get(/databases/$(database)/documents/publicLessons/$(lessonId)).data;
+      }
+      function validPracticeQuestion(q) {
+        return q is map && q.testo is string && q.testo.size() > 0 && q.testo.size() <= 10000
+          && q.order is int && q.difficolta is int && q.difficolta >= 1 && q.difficolta <= 5
+          && ((q.tipo == 'aperta' && q.keys().hasOnly(['order','tipo','testo','difficolta','soluzione'])
+              && q.soluzione is string && q.soluzione.size() > 0 && q.soluzione.size() <= 16000)
+            || (q.tipo in ['chiusa_singola','chiusa_multipla']
+              && q.keys().hasOnly(['order','tipo','testo','difficolta','opzioni','soluzioneIndici'])
+              && q.opzioni is list && q.opzioni.size() >= 2 && q.opzioni.size() <= 8
+              && q.soluzioneIndici is list && q.soluzioneIndici.size() >= 1 && q.soluzioneIndici.size() < q.opzioni.size()));
+      }
+      function validPracticeQuestions(q) {
+        return q is list && q.size() >= 3 && q.size() <= 12
+          && (q.size() <= 0 || validPracticeQuestion(q[0]))
+          && (q.size() <= 1 || validPracticeQuestion(q[1]))
+          && (q.size() <= 2 || validPracticeQuestion(q[2]))
+          && (q.size() <= 3 || validPracticeQuestion(q[3]))
+          && (q.size() <= 4 || validPracticeQuestion(q[4]))
+          && (q.size() <= 5 || validPracticeQuestion(q[5]))
+          && (q.size() <= 6 || validPracticeQuestion(q[6]))
+          && (q.size() <= 7 || validPracticeQuestion(q[7]))
+          && (q.size() <= 8 || validPracticeQuestion(q[8]))
+          && (q.size() <= 9 || validPracticeQuestion(q[9]))
+          && (q.size() <= 10 || validPracticeQuestion(q[10]))
+          && (q.size() <= 11 || validPracticeQuestion(q[11]))
+          ;
+      }
+      function validPracticeEnvelope() {
+        return request.resource.data.keys().hasOnly(['ownerUid', 'publicLessonId', 'practice'])
+          && request.resource.data.publicLessonId == lessonId
+          && request.resource.data.ownerUid == request.auth.uid
+          && currentLesson().ownerUid == request.auth.uid
+          && currentLesson().get('completed', false) == true
+          && request.resource.data.practice is map
+          && request.resource.data.practice.keys().hasOnly(['version', 'sourceBody', 'plan', 'questions'])
+          && request.resource.data.practice.version == 1
+          && request.resource.data.practice.sourceBody == currentLesson().content
+          && request.resource.data.practice.sourceBody.size() <= 200000
+          && validPracticeQuestions(request.resource.data.practice.questions)
+          && request.resource.data.practice.plan is map
+          && request.resource.data.practice.plan.keys().hasOnly(['objectives','steps','plannedCoverage'])
+          && request.resource.data.practice.plan.objectives is list
+          && request.resource.data.practice.plan.objectives.size() >= 1
+          && request.resource.data.practice.plan.objectives.size() <= 4
+          && request.resource.data.practice.plan.steps is list
+          && request.resource.data.practice.plan.steps.size() == request.resource.data.practice.questions.size()
+          && request.resource.data.practice.plan.plannedCoverage is list
+          && request.resource.data.practice.plan.plannedCoverage.size() <= 40;
+      }
+      allow get: if isOwner() || (
+        exists(/databases/$(database)/documents/publicLessons/$(lessonId))
+        && currentLesson().get('completed', false) == true
+        && resource.data.publicLessonId == lessonId
+        && resource.data.ownerUid == currentLesson().ownerUid
+        && resource.data.practice.sourceBody == currentLesson().content
+        && exists(/databases/$(database)/documents/programs/$(currentLesson().programId))
+        && currentLesson().importId == programActiveImportId(currentLesson().programId)
+        && isClassmateOf(get(/databases/$(database)/documents/programs/$(currentLesson().programId)).data.get('classIds', []))
+        && !examModeAppliesToClass(myStudentClassId())
+      );
+      allow create, update: if isOwner() && validPracticeEnvelope();
+      allow delete: if isOwner();
+    }
+
     match /publicLessons/{lessonId} {
       allow read: if isOwner()
         || (

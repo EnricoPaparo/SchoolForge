@@ -477,7 +477,7 @@ export async function deleteProgram(
   // program that no longer exists.
   await deleteDocsInBatches(
     db,
-    publicLessonsSnap.docs.map((d) => d.ref),
+    publicLessonsSnap.docs.flatMap((d) => [d.ref, doc(db, 'publicLessonPractice', d.id)]),
   );
 
   await deleteDoc(doc(db, 'programs', programId));

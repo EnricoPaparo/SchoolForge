@@ -1,5 +1,10 @@
 import { splitReviewFeedback, type AiReviewFeedback } from './aiReviewFeedback.js';
-import { validatePoolReview, validateMapReview } from './aiContentDidacticReview.js';
+import {
+  validatePoolReview,
+  validateMapReview,
+  validateCandidateQuestions,
+  rawQuestion,
+} from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — motore **puro** della generazione contenuti. Nessun Firestore/rete
  * qui: le operazioni con effetti sono **porte iniettate** (`AiContentPorts`), così
@@ -30,6 +35,7 @@ import {
   validateLessonProposal,
   validateLessonReviewProposal,
   validatePoolProposal,
+  validateStudyPoolProposal,
 } from './aiContentValidation.js';
 import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
 import {
@@ -390,6 +396,21 @@ export async function generateContent(
   });
 
   if (outcome.kind === 'replay_completed') {
+    if (request.kind === 'pool' && request.purpose === 'practice') {
+      const stored = outcome.run.output as { questions?: unknown; studyPlan?: unknown };
+      const questions = validateCandidateQuestions(
+        stored?.questions,
+        request.counts,
+        request.level,
+      );
+      validateStudyPoolProposal(
+        { questions: questions.map(rawQuestion), studyPlan: stored?.studyPlan },
+        request.counts,
+        request.level,
+        request.lessonSource,
+        request.plannedObjectives,
+      );
+    }
     if (request.kind === 'visual_plan_proposal') {
       validateStoredVisualPlanProposalOutput(outcome.run.output, request.quantity.ceiling);
     }
@@ -534,7 +555,15 @@ export async function generateContent(
         : request.kind === 'concept_map_review'
           ? validateMapReview(providerOutput, request)
           : request.kind === 'pool'
-            ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
+            ? request.purpose === 'practice'
+              ? validateStudyPoolProposal(
+                  providerOutcome.output,
+                  request.counts,
+                  request.level,
+                  request.lessonSource,
+                  request.plannedObjectives,
+                )
+              : validatePoolProposal(providerOutcome.output, request.counts, request.level)
             : request.kind === 'concept_map'
               ? // CONCEPT-MAP-01 — il run persiste il **Markdown canonico** già
                 // composto dal server, non i tre campi grezzi: è quello che verrà

@@ -1,3 +1,4 @@
+import { PoolCoverageReport } from './PoolCoverageReport.js';
 import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
@@ -93,6 +94,7 @@ function parseCount(value: string): number | null {
 
 export function AiPoolGenerationDialog({
   lessonSource,
+  approvedPractice,
   existingPool,
   callables,
   onApply,
@@ -100,6 +102,7 @@ export function AiPoolGenerationDialog({
 }: {
   /** Testo Markdown della lezione già in memoria (nessuna nuova lettura Storage). */
   lessonSource: string;
+  approvedPractice?: string;
   /** Pool esistente, o `null` se assente. */
   existingPool: ParsedPool | null;
   callables: AiContentCallables;
@@ -205,20 +208,23 @@ export function AiPoolGenerationDialog({
   }
 
   function currentRequest(): AiPoolContentRequest {
-    return buildPoolContentRequest({
-      modelProfile,
-      requestId: requestIdRef.current,
-      level,
-      counts: {
-        aperta: parsedCounts.aperta ?? 0,
-        chiusa_singola: parsedCounts.chiusa_singola ?? 0,
-        chiusa_multipla: parsedCounts.chiusa_multipla ?? 0,
-      },
-      lessonSource,
-      existingPoolQuestionCount: existingCount,
-      existingQuestionStems: existingPool?.questions.map((question) => question.testo),
-      teacherGuidance: guidance,
-    });
+    return {
+      ...buildPoolContentRequest({
+        modelProfile,
+        requestId: requestIdRef.current,
+        level,
+        counts: {
+          aperta: parsedCounts.aperta ?? 0,
+          chiusa_singola: parsedCounts.chiusa_singola ?? 0,
+          chiusa_multipla: parsedCounts.chiusa_multipla ?? 0,
+        },
+        lessonSource,
+        existingPoolQuestionCount: existingCount,
+        existingQuestionStems: existingPool?.questions.map((question) => question.testo),
+        teacherGuidance: guidance,
+      }),
+      ...(approvedPractice ? { approvedPractice } : {}),
+    };
   }
 
   async function requestPreview() {
@@ -566,6 +572,7 @@ export function AiPoolGenerationDialog({
             feedback={reviewFeedback}
             replayed={reviewReplayed}
           />
+          <PoolCoverageReport summary={result.output.coverageSummary} />
           <p role="status">
             {result.replayed ? 'Proposta già generata: ripristinata.' : 'Proposta generata.'}{' '}
             {result.actualCostMicroUsd === null
