@@ -1,3 +1,5 @@
+import { parseStoredRunDocument } from './aiContentRunDoc.js';
+import { encodePracticeSlots } from './aiStudyPracticeSlots.js';
 import { describe, expect, it } from 'vitest';
 import {
   validateAiContentRequest,
@@ -7,7 +9,7 @@ import {
   type PoolReviewRequest,
 } from './aiContentCore.js';
 import {
-  validatePracticeReview,
+  validatePracticeReview as validateFreshPracticeReview,
   providerPracticePlan,
   isValidStoredPracticeReview,
   buildPracticeReviewPrompt,
@@ -76,6 +78,18 @@ export function practiceReviewRaw() {
     issueCodes: [] as string[],
   };
 }
+function validatePracticeReview(output: unknown, request: PoolReviewRequest, stored = false) {
+  const raw =
+    !stored &&
+    output &&
+    typeof output === 'object' &&
+    (output as Record<string, unknown>).sourceInsufficient === true
+      ? output
+      : stored
+        ? output
+        : encodePracticeSlots(output, request);
+  return validateFreshPracticeReview(raw, request, stored);
+}
 describe('dedicated full practice review', () => {
   it('requires a complete bounded canonical candidate before provider or lease', () => {
     expect(() => practiceReviewFixture({ candidateStudyPlan: undefined })).toThrow(
@@ -90,7 +104,7 @@ describe('dedicated full practice review', () => {
   });
   it('separates practice identity and includes every hint, plan, source and request purpose', () => {
     const r = practiceReviewFixture();
-    expect(canonicalRequest(r)).toContain('practice-review-v1');
+    expect(canonicalRequest(r)).toContain('practice-review-v2');
     expect(
       computeInputHash(
         practiceReviewFixture({
@@ -297,7 +311,7 @@ it.each(['invalid', 'invocation_unknown'] as const)(
       )
       .mockResolvedValue({
         status: 'ok',
-        output: practiceReviewRaw(),
+        output: encodePracticeSlots(practiceReviewRaw(), request),
         usage: { inputTokens: 100, outputTokens: 100 },
         metered: true,
         priorBillingRisk: false,
@@ -324,6 +338,13 @@ it.each(['invalid', 'invocation_unknown'] as const)(
     expect(provider).toHaveBeenCalledTimes(2);
     expect(ledger().spentMicroUsd).toBeGreaterThan(spentAfterFailure);
     expect(ledger().reservations).toEqual({});
+    const completedDoc = [...documents.entries()].find(([path]) =>
+      path.startsWith('aiContentRuns/'),
+    )![1];
+    expect(
+      parseStoredRunDocument({ ...completedDoc, promptContractVersion: 'practice-review-v1' }),
+    ).not.toBeNull();
+    expect(parseStoredRunDocument(completedDoc)?.promptContractVersion).toBe('practice-review-v2');
     const spentAfterSuccess = ledger().spentMicroUsd;
     const replay = await generateContent(
       request,

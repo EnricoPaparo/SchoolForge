@@ -1,3 +1,4 @@
+import { encodePracticeSlots, practiceLayouts } from './aiStudyPracticeSlots.js';
 import { providerPracticePlan } from './aiStudyPracticeReview.js';
 /**
  * AIGEN-01 — provider di generazione contenuti. Selezione **esplicita** mock vs
@@ -87,36 +88,38 @@ class MockContentProvider implements ContentProvider {
         });
       }
       // Usage esplicitamente zero: il mock non genera costo, mai un costo inventato.
+      const rawOutput = {
+        questions,
+        ...(request.purpose === 'practice'
+          ? {
+              studyPlan: {
+                plannedCoverage: (request.plannedObjectives ?? []).map((objective) => ({
+                  objective,
+                  status: 'preparato',
+                  sourceExcerptId: 0,
+                })),
+                objectives: [
+                  {
+                    capability: 'Capacità dimostrativa (mock)',
+                    prerequisites: 'Prerequisiti mock',
+                    method: 'Metodo mock',
+                    sourceExcerptId: 0,
+                  },
+                ],
+                steps: questions.map((_, i) => ({
+                  questionOrder: i,
+                  objectiveIndex: 0,
+                  stage: practiceLayouts(request)[0]!.slots[i]!.stage,
+                  hints: ['Richiamo specifico (mock)', 'Passaggio specifico (mock)'],
+                })),
+              },
+            }
+          : {}),
+      };
       return {
         status: 'ok',
-        output: {
-          questions,
-          ...(request.purpose === 'practice'
-            ? {
-                studyPlan: {
-                  plannedCoverage: (request.plannedObjectives ?? []).map((objective) => ({
-                    objective,
-                    status: 'preparato',
-                    sourceExcerptId: 0,
-                  })),
-                  objectives: [
-                    {
-                      capability: 'Capacità dimostrativa (mock)',
-                      prerequisites: 'Prerequisiti mock',
-                      method: 'Metodo mock',
-                      sourceExcerptId: 0,
-                    },
-                  ],
-                  steps: questions.map((_, i) => ({
-                    questionOrder: i,
-                    objectiveIndex: 0,
-                    stage: i === 0 ? 'esempio' : i === 1 ? 'guidato' : 'autonomo',
-                    hints: ['Richiamo specifico (mock)', 'Passaggio specifico (mock)'],
-                  })),
-                },
-              }
-            : {}),
-        },
+        output:
+          request.purpose === 'practice' ? encodePracticeSlots(rawOutput, request) : rawOutput,
         usage: { inputTokens: 0, outputTokens: 0 },
         metered: false,
         priorBillingRisk: false,
@@ -171,19 +174,22 @@ class MockContentProvider implements ContentProvider {
     if (request.kind === 'pool_review' && request.purpose === 'practice')
       return {
         status: 'ok',
-        output: {
-          sourceInsufficient: false,
-          questions: request.candidateQuestions.map(({ order, ...q }) => {
-            void order;
-            if (q.tipo === 'aperta') return q;
-            const { soluzioneIndici, ...closed } = q;
-            return { ...closed, soluzione: soluzioneIndici };
-          }),
-          studyPlan: providerPracticePlan(request.candidateStudyPlan!, request.lessonSource),
-          reviewOutcome: 'unchanged',
-          issueCodes: [],
-          reviewChanges: [],
-        },
+        output: encodePracticeSlots(
+          {
+            sourceInsufficient: false,
+            questions: request.candidateQuestions.map(({ order, ...q }) => {
+              void order;
+              if (q.tipo === 'aperta') return q;
+              const { soluzioneIndici, ...closed } = q;
+              return { ...closed, soluzione: soluzioneIndici };
+            }),
+            studyPlan: providerPracticePlan(request.candidateStudyPlan!, request.lessonSource),
+            reviewOutcome: 'unchanged',
+            issueCodes: [],
+          },
+          request,
+        ),
+
         usage: { inputTokens: 0, outputTokens: 0 },
         metered: false,
         priorBillingRisk: false,

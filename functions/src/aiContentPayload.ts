@@ -1,3 +1,4 @@
+import { buildPracticeSlotsSchema } from './aiStudyPracticeSlots.js';
 import { buildPracticeReviewPrompt, PRACTICE_REVIEW_ISSUE_CODES } from './aiStudyPracticeReview.js';
 import { buildProviderStudyPlanSchema } from './aiStudyPracticeSource.js';
 import { POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
@@ -682,7 +683,9 @@ export function buildContentStructuredRequest(
       : request.kind === 'concept_map_review'
         ? MAP_REVIEW_OUTPUT_SCHEMA
         : request.kind === 'pool'
-          ? buildPoolOutputSchema(request)
+          ? request.purpose === 'practice'
+            ? buildPracticeOutputSchema(request)
+            : buildPoolOutputSchema(request)
           : request.kind === 'concept_map'
             ? CONCEPT_MAP_OUTPUT_SCHEMA
             : request.kind === 'visual_proposal'
@@ -797,8 +800,24 @@ export const MAP_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   },
 };
 
+export function buildPracticeOutputSchema(
+  request: Extract<AiContentRequest, { kind: 'pool' | 'pool_review' }>,
+) {
+  const questions = buildPoolOutputSchema({ ...request, kind: 'pool' }).properties.questions.items
+    .anyOf;
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['sourceInsufficient', 'practice'],
+    properties: {
+      sourceInsufficient: { type: 'boolean' },
+      practice: buildPracticeSlotsSchema(request, questions),
+    },
+  };
+}
+
 export function buildPracticeReviewOutputSchema(request: PoolReviewRequest) {
-  const base = buildPoolOutputSchema({ ...request, kind: 'pool' });
+  const base = buildPracticeOutputSchema(request);
   return {
     ...base,
     required: [...base.required, 'reviewOutcome', 'issueCodes', 'reviewChanges'],

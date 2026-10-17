@@ -1,3 +1,4 @@
+import { materializePracticeSlots } from './aiStudyPracticeSlots.js';
 import { validatePracticeReview } from './aiStudyPracticeReview.js';
 import { resolvePracticeSourceReferences } from './aiStudyPracticeSource.js';
 import { splitReviewFeedback, type AiReviewFeedback } from './aiReviewFeedback.js';
@@ -361,7 +362,7 @@ export async function generateContent(
       ? {
           promptContractVersion:
             request.kind === 'pool_review' && request.purpose === 'practice'
-              ? 'practice-review-v1'
+              ? 'practice-review-v2'
               : DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
           sourceBodyHash: computeContentSourceBodyHash(
             request.kind === 'pool_review' ? request.lessonSource : request.lessonBody,
@@ -567,7 +568,10 @@ export async function generateContent(
           : request.kind === 'pool'
             ? request.purpose === 'practice'
               ? validateStudyPoolProposal(
-                  resolvePracticeSourceReferences(providerOutcome.output, request.lessonSource),
+                  resolvePracticeSourceReferences(
+                    materializePracticeSlots(providerOutcome.output, request),
+                    request.lessonSource,
+                  ),
                   request.counts,
                   request.level,
                   request.lessonSource,
