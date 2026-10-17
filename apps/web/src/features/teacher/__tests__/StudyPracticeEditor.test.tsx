@@ -91,6 +91,7 @@ describe('teacher practice workflow', () => {
     );
     fireEvent.click(screen.getByText('Genera con IA'));
     fireEvent.click(screen.getByRole('radio', { name: /Breve/ }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Revisione avanzata' }));
     fireEvent.click(screen.getByText('Calcola stima'));
     await screen.findByText('Genera esercitazioni');
     expect(mocks.generate).not.toHaveBeenCalled();
@@ -153,6 +154,7 @@ it('reopens a newly saved draft even while the course tree still has no practice
   );
   fireEvent.click(screen.getByText('Genera con IA'));
   fireEvent.click(screen.getByRole('radio', { name: /Breve/ }));
+  fireEvent.click(screen.getByRole('switch', { name: 'Revisione avanzata' }));
   fireEvent.click(screen.getByText('Calcola stima'));
   await screen.findByText('Genera esercitazioni');
   fireEvent.click(screen.getByText('Genera esercitazioni'));
@@ -224,6 +226,7 @@ it('keeps the current local draft when a generated replacement is abandoned', as
     target: { value: 'La mia bozza locale' },
   });
   fireEvent.click(screen.getByText('Genera con IA'));
+  fireEvent.click(screen.getByRole('switch', { name: 'Revisione avanzata' }));
   fireEvent.click(screen.getByText('Calcola stima'));
   await screen.findByText('Genera esercitazioni');
   fireEvent.click(screen.getByText('Genera esercitazioni'));

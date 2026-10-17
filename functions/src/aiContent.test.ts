@@ -2620,7 +2620,7 @@ describe('study generation accounting and replay', () => {
           capability: 'Tracciare un ciclo',
           prerequisites: 'Variabili',
           method: 'Tabella di esecuzione',
-          sourceQuote: source,
+          sourceExcerptId: 0,
         },
       ],
       steps: ['esempio', 'guidato', 'autonomo'].map((stage, i) => ({

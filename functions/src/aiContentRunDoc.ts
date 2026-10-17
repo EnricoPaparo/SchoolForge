@@ -135,7 +135,8 @@ function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null 
   if (typeof d.status !== 'string' || !RUN_STATUSES.has(d.status)) return null;
   if (
     (d.kind === 'pool_review' || d.kind === 'concept_map_review') &&
-    (d.promptContractVersion !== DIDACTIC_REVIEW_PROMPT_VERSIONS[d.kind] ||
+    ((d.promptContractVersion !== DIDACTIC_REVIEW_PROMPT_VERSIONS[d.kind] &&
+      !(d.kind === 'pool_review' && d.promptContractVersion === 'practice-review-v1')) ||
       typeof d.sourceBodyHash !== 'string' ||
       !/^[a-f0-9]{64}$/.test(d.sourceBodyHash))
   )

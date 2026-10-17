@@ -1,3 +1,4 @@
+import type { StudyPlan } from '@schoolforge/lesson-contract';
 import { validateReviewRequest } from './aiContentDidacticReview.js';
 import type { ValidatedProposalQuestion } from './aiContentValidation.js';
 /**
@@ -377,6 +378,7 @@ export interface VisualPlanProposalRequest {
 export interface PoolReviewRequest extends Omit<PoolRequest, 'kind'> {
   kind: 'pool_review';
   candidateQuestions: ValidatedProposalQuestion[];
+  candidateStudyPlan?: StudyPlan;
 }
 export interface ConceptMapReviewRequest extends ConceptMapRequestBase {
   kind: 'concept_map_review';
@@ -511,7 +513,10 @@ export function canonicalRequest(request: AiContentRequest): string {
     const { requestId, ...payload } = request;
     void requestId;
     return JSON.stringify({
-      promptContractVersion: DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
+      promptContractVersion:
+        request.kind === 'pool_review' && request.purpose === 'practice'
+          ? 'practice-review-v1'
+          : DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
       reviewPolicy: resolveContentModelForRequest(request),
       ...payload,
     });
@@ -615,7 +620,7 @@ export function canonicalRequest(request: AiContentRequest): string {
       ? {
           kind: 'pool',
           promptContractVersion:
-            request.purpose === 'practice' ? 'study-practice-v2' : 'pool-alignment-v4',
+            request.purpose === 'practice' ? 'study-practice-v3' : 'pool-alignment-v4',
           ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
           ...(request.purpose ? { purpose: request.purpose } : {}),
           ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
@@ -1167,6 +1172,8 @@ function validateAiContentRequestWithPolicy(
     if (existingPoolQuestionCount > MAX_EXISTING_POOL_QUESTIONS) {
       throw new AiContentError('limit_exceeded', 'Conteggio pool esistente troppo grande.');
     }
+    if (input.purpose === 'practice' && input.lessonSource.length < 20)
+      throw new AiContentError('invalid_input', 'La fonte deve contenere almeno 20 caratteri.');
     if (input.purpose === 'practice' && (total < 3 || total > 12 || counts.aperta < 1))
       throw new AiContentError(
         'invalid_input',

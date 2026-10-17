@@ -1,3 +1,4 @@
+import { providerPracticePlan } from './aiStudyPracticeReview.js';
 /**
  * AIGEN-01 — provider di generazione contenuti. Selezione **esplicita** mock vs
  * OpenAI (nessun fallback silenzioso). Il percorso reale usa la **Responses API**
@@ -96,14 +97,14 @@ class MockContentProvider implements ContentProvider {
                   plannedCoverage: (request.plannedObjectives ?? []).map((objective) => ({
                     objective,
                     status: 'preparato',
-                    sourceQuote: request.lessonSource.slice(0, 100),
+                    sourceExcerptId: 0,
                   })),
                   objectives: [
                     {
                       capability: 'Capacità dimostrativa (mock)',
                       prerequisites: 'Prerequisiti mock',
                       method: 'Metodo mock',
-                      sourceQuote: request.lessonSource.slice(0, 100),
+                      sourceExcerptId: 0,
                     },
                   ],
                   steps: questions.map((_, i) => ({
@@ -167,6 +168,26 @@ class MockContentProvider implements ContentProvider {
         priorBillingRisk: false,
       };
     }
+    if (request.kind === 'pool_review' && request.purpose === 'practice')
+      return {
+        status: 'ok',
+        output: {
+          sourceInsufficient: false,
+          questions: request.candidateQuestions.map(({ order, ...q }) => {
+            void order;
+            if (q.tipo === 'aperta') return q;
+            const { soluzioneIndici, ...closed } = q;
+            return { ...closed, soluzione: soluzioneIndici };
+          }),
+          studyPlan: providerPracticePlan(request.candidateStudyPlan!, request.lessonSource),
+          reviewOutcome: 'unchanged',
+          issueCodes: [],
+          reviewChanges: [],
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
     if (request.kind === 'pool_review')
       return {
         status: 'ok',

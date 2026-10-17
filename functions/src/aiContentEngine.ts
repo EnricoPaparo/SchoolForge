@@ -1,3 +1,5 @@
+import { validatePracticeReview } from './aiStudyPracticeReview.js';
+import { resolvePracticeSourceReferences } from './aiStudyPracticeSource.js';
 import { splitReviewFeedback, type AiReviewFeedback } from './aiReviewFeedback.js';
 import {
   validatePoolReview,
@@ -357,7 +359,10 @@ export async function generateContent(
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
     ...(request.kind === 'pool_review' || request.kind === 'concept_map_review'
       ? {
-          promptContractVersion: DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
+          promptContractVersion:
+            request.kind === 'pool_review' && request.purpose === 'practice'
+              ? 'practice-review-v1'
+              : DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
           sourceBodyHash: computeContentSourceBodyHash(
             request.kind === 'pool_review' ? request.lessonSource : request.lessonBody,
           ),
@@ -397,6 +402,8 @@ export async function generateContent(
   });
 
   if (outcome.kind === 'replay_completed') {
+    if (request.kind === 'pool_review' && request.purpose === 'practice')
+      validatePracticeReview(outcome.run.output, request, true);
     if (request.kind === 'pool' && request.purpose === 'practice') {
       const stored = outcome.run.output as { questions?: unknown; studyPlan?: unknown };
       const questions = validateCandidateQuestions(
@@ -552,13 +559,15 @@ export async function generateContent(
   try {
     output =
       request.kind === 'pool_review'
-        ? validatePoolReview(providerOutput, request)
+        ? request.purpose === 'practice'
+          ? validatePracticeReview(providerOutput, request)
+          : validatePoolReview(providerOutput, request)
         : request.kind === 'concept_map_review'
           ? validateMapReview(providerOutput, request)
           : request.kind === 'pool'
             ? request.purpose === 'practice'
               ? validateStudyPoolProposal(
-                  providerOutcome.output,
+                  resolvePracticeSourceReferences(providerOutcome.output, request.lessonSource),
                   request.counts,
                   request.level,
                   request.lessonSource,
@@ -633,7 +642,8 @@ export async function generateContent(
       console.warn('ai_content_pool_validation_failed', {
         kind: request.kind,
         reason: e.message,
-        ...(request.kind === 'pool' && request.purpose === 'practice'
+        ...((request.kind === 'pool' || request.kind === 'pool_review') &&
+        request.purpose === 'practice'
           ? { constraint: studyPracticeConstraint(e) }
           : {}),
       });

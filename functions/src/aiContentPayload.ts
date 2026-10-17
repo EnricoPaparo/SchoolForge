@@ -1,4 +1,6 @@
-import { buildStudyPlanSchema, POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
+import { buildPracticeReviewPrompt, PRACTICE_REVIEW_ISSUE_CODES } from './aiStudyPracticeReview.js';
+import { buildProviderStudyPlanSchema } from './aiStudyPracticeSource.js';
+import { POOL_COVERAGE_SCHEMA } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_SCHEMA } from './aiReviewFeedback.js';
 import {
   buildDidacticReviewPrompt,
@@ -31,7 +33,11 @@ import {
   reasoningEffortForContentRequest,
   usesGpt6LessonPolicy,
 } from './aiModelRequestPolicy.js';
-import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
+import {
+  type AiContentRequest,
+  type LessonDepth,
+  type PoolReviewRequest,
+} from './aiContentCore.js';
 import {
   MAX_VISUAL_ALT_TEXT_CHARS,
   MAX_VISUAL_ANCHOR_HEADING_CHARS,
@@ -154,7 +160,10 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
 /** Stima **informativa** dei token di input (euristica caratteri/token). */
 export function estimateInputTokens(request: AiContentRequest): number {
   if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
-    const p = buildDidacticReviewPrompt(request);
+    const p =
+      request.kind === 'pool_review' && request.purpose === 'practice'
+        ? buildPracticeReviewPrompt(request)
+        : buildDidacticReviewPrompt(request);
     return Math.ceil((p.system.length + p.user.length) / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
   }
   if (request.kind === 'lesson_review') {
@@ -328,10 +337,7 @@ export function buildPoolOutputSchema(request: Extract<AiContentRequest, { kind:
       ...(request.purpose === 'practice'
         ? {
             studyPlan: {
-              anyOf: [
-                buildStudyPlanSchema(total, request.plannedObjectives ?? [], request.counts.aperta),
-                { type: 'null' },
-              ],
+              anyOf: [buildProviderStudyPlanSchema(request), { type: 'null' }],
             },
           }
         : {}),
@@ -651,7 +657,9 @@ export function buildContentStructuredRequest(
 ): OpenAiStructuredRequest {
   const prompt =
     request.kind === 'pool_review' || request.kind === 'concept_map_review'
-      ? buildDidacticReviewPrompt(request)
+      ? request.kind === 'pool_review' && request.purpose === 'practice'
+        ? buildPracticeReviewPrompt(request)
+        : buildDidacticReviewPrompt(request)
       : request.kind === 'pool'
         ? buildPoolPrompt(request)
         : request.kind === 'concept_map'
@@ -668,7 +676,9 @@ export function buildContentStructuredRequest(
                   );
   const schema =
     request.kind === 'pool_review'
-      ? POOL_REVIEW_OUTPUT_SCHEMA
+      ? request.purpose === 'practice'
+        ? buildPracticeReviewOutputSchema(request)
+        : POOL_REVIEW_OUTPUT_SCHEMA
       : request.kind === 'concept_map_review'
         ? MAP_REVIEW_OUTPUT_SCHEMA
         : request.kind === 'pool'
@@ -786,3 +796,21 @@ export const MAP_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
     sourceIssue: { type: 'boolean' },
   },
 };
+
+export function buildPracticeReviewOutputSchema(request: PoolReviewRequest) {
+  const base = buildPoolOutputSchema({ ...request, kind: 'pool' });
+  return {
+    ...base,
+    required: [...base.required, 'reviewOutcome', 'issueCodes', 'reviewChanges'],
+    properties: {
+      ...base.properties,
+      reviewOutcome: { type: 'string', enum: ['improved', 'unchanged'] },
+      issueCodes: {
+        type: 'array',
+        maxItems: PRACTICE_REVIEW_ISSUE_CODES.length,
+        items: { type: 'string', enum: [...PRACTICE_REVIEW_ISSUE_CODES] },
+      },
+      reviewChanges: REVIEW_CHANGES_SCHEMA,
+    },
+  };
+}
