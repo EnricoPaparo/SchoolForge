@@ -1,3 +1,4 @@
+import { resolvePracticeSourceReferences } from './aiStudyPracticeSource.js';
 import { splitReviewFeedback, type AiReviewFeedback } from './aiReviewFeedback.js';
 import {
   validatePoolReview,
@@ -558,7 +559,7 @@ export async function generateContent(
           : request.kind === 'pool'
             ? request.purpose === 'practice'
               ? validateStudyPoolProposal(
-                  providerOutcome.output,
+                  resolvePracticeSourceReferences(providerOutcome.output, request.lessonSource),
                   request.counts,
                   request.level,
                   request.lessonSource,

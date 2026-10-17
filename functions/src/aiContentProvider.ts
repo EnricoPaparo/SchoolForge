@@ -96,14 +96,14 @@ class MockContentProvider implements ContentProvider {
                   plannedCoverage: (request.plannedObjectives ?? []).map((objective) => ({
                     objective,
                     status: 'preparato',
-                    sourceQuote: request.lessonSource.slice(0, 100),
+                    sourceExcerptId: 0,
                   })),
                   objectives: [
                     {
                       capability: 'Capacità dimostrativa (mock)',
                       prerequisites: 'Prerequisiti mock',
                       method: 'Metodo mock',
-                      sourceQuote: request.lessonSource.slice(0, 100),
+                      sourceExcerptId: 0,
                     },
                   ],
                   steps: questions.map((_, i) => ({

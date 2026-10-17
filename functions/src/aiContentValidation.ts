@@ -341,6 +341,9 @@ export type StudyPracticeConstraint =
   | StudyPlanConstraint
   | 'example_not_open'
   | 'practice_size'
+  | 'source_reference_shape'
+  | 'coverage_reference_status'
+  | 'source_reference_unknown'
   | 'unknown';
 function invalidStudyPractice(
   constraint: StudyPracticeConstraint,
@@ -359,9 +362,15 @@ export function studyPracticeConstraint(error: unknown): StudyPracticeConstraint
     error instanceof AiContentError &&
     'constraint' in error &&
     typeof error.constraint === 'string' &&
-    [...STUDY_PLAN_CONSTRAINTS, 'example_not_open', 'practice_size', 'unknown'].includes(
-      error.constraint,
-    )
+    [
+      ...STUDY_PLAN_CONSTRAINTS,
+      'example_not_open',
+      'practice_size',
+      'source_reference_shape',
+      'coverage_reference_status',
+      'source_reference_unknown',
+      'unknown',
+    ].includes(error.constraint)
   )
     return error.constraint as StudyPracticeConstraint;
   return 'unknown';

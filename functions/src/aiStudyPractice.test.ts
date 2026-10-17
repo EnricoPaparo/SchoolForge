@@ -166,7 +166,7 @@ describe('practice generation contract alignment', () => {
       expect(
         validateStudyPoolProposal(o, r.counts, r.level, source, []).studyPlan!.steps,
       ).toHaveLength(n);
-      expect(canonicalRequest(r)).toContain('study-practice-v2');
+      expect(canonicalRequest(r)).toContain('study-practice-v3');
       expect(buildPoolPrompt(r).user).toContain(`${n} attivita richiedono esattamente ${n} steps`);
       expect(buildPoolPrompt(r).user).toContain('EGAEGA');
       expect(buildPoolPrompt(r).user).toContain('nomi ESATTI');
@@ -221,7 +221,7 @@ describe('practice generation contract alignment', () => {
       request({ counts: { aperta: 30, chiusa_singola: 0, chiusa_multipla: 0 } }).counts.aperta,
     ).toBe(30);
     expect(canonicalRequest(request())).toContain('pool-alignment-v4');
-    expect(buildPoolPrompt(request()).user).not.toContain('study-practice-v2');
+    expect(buildPoolPrompt(request()).user).not.toContain('study-practice-v3');
   });
   it.each([
     [

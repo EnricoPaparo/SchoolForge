@@ -615,7 +615,7 @@ export function canonicalRequest(request: AiContentRequest): string {
       ? {
           kind: 'pool',
           promptContractVersion:
-            request.purpose === 'practice' ? 'study-practice-v2' : 'pool-alignment-v4',
+            request.purpose === 'practice' ? 'study-practice-v3' : 'pool-alignment-v4',
           ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
           ...(request.purpose ? { purpose: request.purpose } : {}),
           ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
@@ -1167,6 +1167,8 @@ function validateAiContentRequestWithPolicy(
     if (existingPoolQuestionCount > MAX_EXISTING_POOL_QUESTIONS) {
       throw new AiContentError('limit_exceeded', 'Conteggio pool esistente troppo grande.');
     }
+    if (input.purpose === 'practice' && input.lessonSource.length < 20)
+      throw new AiContentError('invalid_input', 'La fonte deve contenere almeno 20 caratteri.');
     if (input.purpose === 'practice' && (total < 3 || total > 12 || counts.aperta < 1))
       throw new AiContentError(
         'invalid_input',
