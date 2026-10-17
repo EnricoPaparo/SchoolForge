@@ -130,6 +130,7 @@ export interface AiPoolContentRequest {
 export interface AiPoolReviewRequest extends Omit<AiPoolContentRequest, 'kind'> {
   kind: 'pool_review';
   candidateQuestions: AiProposalQuestion[];
+  candidateStudyPlan?: StudyPlan;
 }
 export interface AiPoolReviewResult extends Omit<AiPoolGenerateResult, 'kind' | 'output'> {
   kind: 'pool_review';

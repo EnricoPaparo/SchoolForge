@@ -1,3 +1,4 @@
+import type { StudyPlan } from '@schoolforge/lesson-contract';
 import { validateReviewRequest } from './aiContentDidacticReview.js';
 import type { ValidatedProposalQuestion } from './aiContentValidation.js';
 /**
@@ -377,6 +378,7 @@ export interface VisualPlanProposalRequest {
 export interface PoolReviewRequest extends Omit<PoolRequest, 'kind'> {
   kind: 'pool_review';
   candidateQuestions: ValidatedProposalQuestion[];
+  candidateStudyPlan?: StudyPlan;
 }
 export interface ConceptMapReviewRequest extends ConceptMapRequestBase {
   kind: 'concept_map_review';
@@ -511,7 +513,10 @@ export function canonicalRequest(request: AiContentRequest): string {
     const { requestId, ...payload } = request;
     void requestId;
     return JSON.stringify({
-      promptContractVersion: DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
+      promptContractVersion:
+        request.kind === 'pool_review' && request.purpose === 'practice'
+          ? 'practice-review-v1'
+          : DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
       reviewPolicy: resolveContentModelForRequest(request),
       ...payload,
     });

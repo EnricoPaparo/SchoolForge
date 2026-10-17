@@ -1,3 +1,4 @@
+import { validatePracticeCandidate, isValidStoredPracticeReview } from './aiStudyPracticeReview.js';
 import { validatePoolCoverage, type PoolCoverageSummary } from '@schoolforge/lesson-contract';
 import { REVIEW_CHANGES_INSTRUCTIONS } from './aiReviewFeedback.js';
 import { DISCIPLINARY_CHECKLIST, numericDiagnosticsBlock } from './didacticSpecialist.js';
@@ -107,10 +108,12 @@ export function validateReviewRequest(
 ): PoolReviewRequest | ConceptMapReviewRequest {
   try {
     if (input.kind === 'pool_review') {
-      const { candidateQuestions, ...base } = input;
+      const { candidateQuestions, candidateStudyPlan, ...base } = input;
       const parsed = validateAiContentRequest({ ...base, kind: 'pool' });
       if (parsed.kind !== 'pool') invalid('Richiesta pool non valida.');
-      return {
+      if (parsed.purpose !== 'practice' && candidateStudyPlan !== undefined)
+        invalid('Piano pratica non ammesso nei pool.');
+      const reviewRequest: PoolReviewRequest = {
         ...parsed,
         kind: 'pool_review',
         candidateQuestions: validateCandidateQuestions(
@@ -119,6 +122,12 @@ export function validateReviewRequest(
           parsed.level,
         ),
       };
+      if (parsed.purpose === 'practice')
+        reviewRequest.candidateStudyPlan = validatePracticeCandidate(
+          candidateStudyPlan,
+          reviewRequest,
+        );
+      return reviewRequest;
     }
     const { candidateMarkdown, ...base } = input;
     const parsed = validateAiContentRequest({ ...base, kind: 'concept_map' });
@@ -277,6 +286,7 @@ export function isValidStoredDidacticReview(kind: string, output: unknown): bool
   try {
     const o = object(output);
     if (kind === 'pool_review') {
+      if ('studyPlan' in o) return isValidStoredPracticeReview(o);
       keys(o, [
         'questions',
         'reviewOutcome',
