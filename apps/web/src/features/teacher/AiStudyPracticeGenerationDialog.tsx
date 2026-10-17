@@ -61,6 +61,7 @@ export function AiStudyPracticeGenerationDialog({
   >(null);
   const [reviewResult, setReviewResult] = useState<AiPoolReviewResult | null>(null);
   const [reviewFailed, setReviewFailed] = useState(false);
+  const [previousReviewCostUnknown, setPreviousReviewCostUnknown] = useState(false);
   const [count, setCount] = useState(6);
   const [guidance, setGuidance] = useState('');
   const [estimate, setEstimate] = useState<AiPoolPreviewResult | null>(null);
@@ -92,6 +93,7 @@ export function AiStudyPracticeGenerationDialog({
     setReviewEstimate(null);
     setReviewResult(null);
     setReviewFailed(false);
+    setPreviousReviewCostUnknown(false);
     setCost(null);
     setError(null);
     setExitConfirm(false);
@@ -117,6 +119,7 @@ export function AiStudyPracticeGenerationDialog({
     setReviewEstimate(null);
     setReviewResult(null);
     setReviewFailed(false);
+    setPreviousReviewCostUnknown(false);
     setCost(null);
     applied.current = false;
   }
@@ -260,6 +263,7 @@ export function AiStudyPracticeGenerationDialog({
       if (mounted.current && ticket === epoch.current) {
         setError(describeAiContentError(e));
         setReviewFailed(true);
+        setPreviousReviewCostUnknown(true);
         setPhase('confirm-review');
       }
     } finally {
@@ -407,7 +411,12 @@ export function AiStudyPracticeGenerationDialog({
                     {formatMicroUsd(reviewEstimate.reservationCostMicroUsd)}
                   </li>
                   <li>
-                    Totale {cost === null ? 'stimato' : 'generazione e revisione stimata'}:{' '}
+                    {previousReviewCostUnknown
+                      ? 'Costo parziale stimato'
+                      : cost === null
+                        ? 'Totale stimato'
+                        : 'Totale generazione e revisione stimata'}
+                    :{' '}
                     {formatMicroUsd(
                       (cost ?? estimate?.estimatedCostMicroUsd ?? 0) +
                         reviewEstimate.estimatedCostMicroUsd,
@@ -416,6 +425,12 @@ export function AiStudyPracticeGenerationDialog({
                 </>
               )}
             </ul>
+            {previousReviewCostUnknown && (
+              <p>
+                Il tentativo precedente di revisione potrebbe aver consumato credito. Il totale
+                complessivo non è disponibile.
+              </p>
+            )}
             {reviewFailed && <AiAdvancedReviewFailure />}
             <div className="dialog-actions">
               <button type="button" onClick={close}>
@@ -457,11 +472,17 @@ export function AiStudyPracticeGenerationDialog({
                 {reviewResult.actualCostMicroUsd === null
                   ? 'consumo esatto non disponibile'
                   : formatMicroUsd(reviewResult.actualCostMicroUsd)}
-                . Totale:{' '}
+                . {previousReviewCostUnknown ? 'Costo parziale noto' : 'Totale'}:{' '}
                 {cost === null || reviewResult.actualCostMicroUsd === null
                   ? 'consumo esatto non disponibile'
                   : formatMicroUsd(cost + reviewResult.actualCostMicroUsd)}
                 .
+              </p>
+            )}
+            {previousReviewCostUnknown && (
+              <p>
+                Il tentativo precedente di revisione potrebbe aver consumato credito. Il totale
+                complessivo non è disponibile.
               </p>
             )}
             <StudyPracticePlayer practice={proposal} />

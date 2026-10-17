@@ -179,6 +179,12 @@ describe('full practice reviewer flow', () => {
     expect(m.previewReview).toHaveBeenCalledTimes(1);
     expect(m.generateReview).toHaveBeenCalledTimes(2);
     expect(m.generateReview.mock.calls[0]![0]).toEqual(m.generateReview.mock.calls[1]![0]);
+    expect(
+      screen.getByText(/Il tentativo precedente di revisione potrebbe aver consumato credito/)
+        .textContent,
+    ).toContain('Il totale complessivo non è disponibile.');
+    expect(screen.getByText(/Costo parziale noto:/)).toBeTruthy();
+    expect(screen.queryByText(/\. Totale:/)).toBeNull();
   });
   it('retries only the review estimate after an estimate error without another base invocation', async () => {
     const m = setup(true);
@@ -193,6 +199,13 @@ describe('full practice reviewer flow', () => {
     await screen.findByText('Conferma e revisiona');
     expect(m.previewReview.mock.calls[0]![0]).toEqual(m.previewReview.mock.calls[1]![0]);
     expect(m.generate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('Conferma e revisiona'));
+    await screen.findByText('Usa bozza');
+    expect(
+      screen.queryByText(/Il tentativo precedente di revisione potrebbe aver consumato credito/),
+    ).toBeNull();
+    expect(screen.queryByText(/Costo parziale noto:/)).toBeNull();
+    expect(screen.getByText(/\. Totale:/)).toBeTruthy();
   });
   it('guards duplicate review, busy dismissal and late review responses after the source changes', async () => {
     const m = setup(true);

@@ -14,9 +14,13 @@ import {
 } from './aiStudyPracticeReview.js';
 import {
   buildContentStructuredRequest,
+  estimateInputTokens,
+  CHARS_PER_TOKEN,
+  PROMPT_OVERHEAD_TOKENS,
   reservationInputTokenUpperBound,
 } from './aiContentPayload.js';
 import { estimateContentCost } from './aiContentCost.js';
+import { buildDidacticReviewPrompt } from './aiContentDidacticReview.js';
 import { isValidStoredDidacticReview } from './aiContentDidacticReview.js';
 const source =
   'Per tracciare un ciclo controlla prima la condizione, esegui il corpo e aggiorna il valore prima di ripetere.';
@@ -159,6 +163,40 @@ describe('dedicated full practice review', () => {
     expect(text).toContain('OGNI hint');
     expect(text).toContain('sourceExcerptId');
     expect(text.split('<<<ESTRATTO 0>>>')).toHaveLength(2);
+  });
+  it('estimates the complete actual review prompt when only hints change, preserving the exact reservation payload and ordinary pool formula', () => {
+    const base = practiceReviewFixture();
+    const changed = practiceReviewFixture({
+      candidateStudyPlan: {
+        ...plan,
+        steps: plan.steps.map((step, i) =>
+          i ? step : { ...step, hints: ['Aiuto dettagliato '.repeat(60), step.hints[1]!] },
+        ),
+      },
+    });
+    expect(estimateInputTokens(changed)).toBeGreaterThan(estimateInputTokens(base));
+    for (const request of [base, changed]) {
+      const prompt = buildPracticeReviewPrompt(request);
+      expect(estimateInputTokens(request)).toBe(
+        Math.ceil((prompt.system.length + prompt.user.length) / CHARS_PER_TOKEN) +
+          PROMPT_OVERHEAD_TOKENS,
+      );
+      const policy = resolveContentModelForRequest(request);
+      expect(reservationInputTokenUpperBound(request, policy.model)).toBe(
+        Buffer.byteLength(
+          JSON.stringify(buildContentStructuredRequest(request, policy.model)),
+          'utf8',
+        ),
+      );
+    }
+    const { candidateStudyPlan, ...ordinaryFields } = base;
+    void candidateStudyPlan;
+    const ordinary = { ...ordinaryFields, purpose: undefined } as PoolReviewRequest;
+    const prompt = buildDidacticReviewPrompt(ordinary);
+    expect(estimateInputTokens(ordinary)).toBe(
+      Math.ceil((prompt.system.length + prompt.user.length) / CHARS_PER_TOKEN) +
+        PROMPT_OVERHEAD_TOKENS,
+    );
   });
   it('fails stored malformed references and source changes while ordinary pool legacy remains readable', () => {
     const result = validatePracticeReview(practiceReviewRaw(), practiceReviewFixture());

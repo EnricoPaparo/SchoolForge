@@ -160,7 +160,10 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
 /** Stima **informativa** dei token di input (euristica caratteri/token). */
 export function estimateInputTokens(request: AiContentRequest): number {
   if (request.kind === 'pool_review' || request.kind === 'concept_map_review') {
-    const p = buildDidacticReviewPrompt(request);
+    const p =
+      request.kind === 'pool_review' && request.purpose === 'practice'
+        ? buildPracticeReviewPrompt(request)
+        : buildDidacticReviewPrompt(request);
     return Math.ceil((p.system.length + p.user.length) / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
   }
   if (request.kind === 'lesson_review') {
