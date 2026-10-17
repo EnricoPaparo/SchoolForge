@@ -1,3 +1,4 @@
+import { encodePracticeSlots } from './aiStudyPracticeSlots.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -15,6 +16,7 @@ import {
   MAX_UDA_OUTLINE_ITEMS,
   MAX_UDA_DESCRIPTION_CHARS,
   type AiContentRequest,
+  type PoolRequest,
 } from './aiContentCore.js';
 import { resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
@@ -2637,7 +2639,10 @@ describe('study generation accounting and replay', () => {
       request,
       ctx,
       makePorts({
-        callProvider: async () => ({ ...okOutcome, output: studyOutput() }),
+        callProvider: async () => ({
+          ...okOutcome,
+          output: encodePracticeSlots(studyOutput(), request as PoolRequest),
+        }),
         finalizeRun,
       }),
     );
@@ -2648,7 +2653,12 @@ describe('study generation accounting and replay', () => {
     const generated = await generateContent(
       request,
       ctx,
-      makePorts({ callProvider: async () => ({ ...okOutcome, output: studyOutput() }) }),
+      makePorts({
+        callProvider: async () => ({
+          ...okOutcome,
+          output: encodePracticeSlots(studyOutput(), request as PoolRequest),
+        }),
+      }),
     );
     const callProvider = vi.fn();
     const replay = await generateContent(
@@ -2696,7 +2706,10 @@ describe('study generation accounting and replay', () => {
           request,
           ctx,
           makePorts({
-            callProvider: async () => ({ ...okOutcome, output: invalid }),
+            callProvider: async () => ({
+              ...okOutcome,
+              output: encodePracticeSlots(invalid, request as PoolRequest),
+            }),
             failRun,
             finalizeRun: finalizeRun as never,
           }),

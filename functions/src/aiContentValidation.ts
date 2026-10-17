@@ -341,6 +341,8 @@ export type StudyPracticeConstraint =
   | StudyPlanConstraint
   | 'example_not_open'
   | 'practice_size'
+  | 'practice_slot_shape'
+  | 'practice_layout'
   | 'source_reference_shape'
   | 'coverage_reference_status'
   | 'source_reference_unknown'
@@ -366,6 +368,8 @@ export function studyPracticeConstraint(error: unknown): StudyPracticeConstraint
       ...STUDY_PLAN_CONSTRAINTS,
       'example_not_open',
       'practice_size',
+      'practice_slot_shape',
+      'practice_layout',
       'source_reference_shape',
       'coverage_reference_status',
       'source_reference_unknown',

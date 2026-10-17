@@ -515,7 +515,7 @@ export function canonicalRequest(request: AiContentRequest): string {
     return JSON.stringify({
       promptContractVersion:
         request.kind === 'pool_review' && request.purpose === 'practice'
-          ? 'practice-review-v1'
+          ? 'practice-review-v2'
           : DIDACTIC_REVIEW_PROMPT_VERSIONS[request.kind],
       reviewPolicy: resolveContentModelForRequest(request),
       ...payload,
@@ -620,7 +620,7 @@ export function canonicalRequest(request: AiContentRequest): string {
       ? {
           kind: 'pool',
           promptContractVersion:
-            request.purpose === 'practice' ? 'study-practice-v3' : 'pool-alignment-v4',
+            request.purpose === 'practice' ? 'study-practice-v4' : 'pool-alignment-v4',
           ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
           ...(request.purpose ? { purpose: request.purpose } : {}),
           ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),

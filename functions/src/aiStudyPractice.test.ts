@@ -114,7 +114,7 @@ describe('didactic study contract', () => {
     const schema = buildContentStructuredRequest(r, 'gpt-6-luna').text.format.schema as {
       required: string[];
     };
-    expect(schema.required).toContain('studyPlan');
+    expect(schema.required).toContain('practice');
     expect(
       validateStudyPoolProposal(output(), r.counts, r.level, source, r.plannedObjectives).studyPlan
         ?.steps,
@@ -166,27 +166,17 @@ describe('practice generation contract alignment', () => {
       expect(
         validateStudyPoolProposal(o, r.counts, r.level, source, []).studyPlan!.steps,
       ).toHaveLength(n);
-      expect(canonicalRequest(r)).toContain('study-practice-v3');
-      expect(buildPoolPrompt(r).user).toContain(`${n} attivita richiedono esattamente ${n} steps`);
-      expect(buildPoolPrompt(r).user).toContain('EGAEGA');
+      expect(canonicalRequest(r)).toContain('study-practice-v4');
+      expect(buildPoolPrompt(r).user).toContain(`${n} attivita richiedono esattamente ${n} slot`);
+      expect(buildPoolPrompt(r).user).toContain('senza riordinare contenuti');
       expect(buildPoolPrompt(r).user).toContain('nomi ESATTI');
-      const schema = buildContentStructuredRequest(r, 'gpt-6-luna').text.format.schema as {
-        properties: {
-          studyPlan: {
-            anyOf: {
-              properties: {
-                objectives: { maxItems: number };
-                steps: { minItems: number; maxItems: number };
-              };
-            }[];
-          };
-        };
-      };
-      expect(schema.properties.studyPlan.anyOf[0]!.properties.objectives.maxItems).toBe(n / 3);
-      expect(schema.properties.studyPlan.anyOf[0]!.properties.steps).toMatchObject({
-        minItems: n,
-        maxItems: n,
-      });
+      const schema = JSON.stringify(
+        buildContentStructuredRequest(r, 'gpt-6-luna').text.format.schema,
+      );
+      expect(schema).toContain('activities');
+      expect(schema).toContain(`capabilities_${n / 3}`);
+      expect(schema).not.toContain('questionOrder');
+      expect(schema).not.toContain('objectiveIndex');
     },
   );
   it('accepts empty or absent planned objectives only, retaining types and metadata limits', () => {
@@ -221,7 +211,7 @@ describe('practice generation contract alignment', () => {
       request({ counts: { aperta: 30, chiusa_singola: 0, chiusa_multipla: 0 } }).counts.aperta,
     ).toBe(30);
     expect(canonicalRequest(request())).toContain('pool-alignment-v4');
-    expect(buildPoolPrompt(request()).user).not.toContain('study-practice-v3');
+    expect(buildPoolPrompt(request()).user).not.toContain('study-practice-v4');
   });
   it.each([
     [
