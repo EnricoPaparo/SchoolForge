@@ -158,6 +158,22 @@ export function TotalLessonGenerationDialog({
   const clearedRef = useRef(Boolean(restoredCheckpoint));
   const bodyPersistedRef = useRef(Boolean(restoredCheckpoint));
   const persistedBodyRef = useRef<string | null>(restoredCheckpoint ? context.currentBody : null);
+  // Only our successful clear may temporarily precede the authoritative save's React commit.
+  const ownClearPendingRef = useRef(false);
+  const sourceInvalidatedRef = useRef(false);
+  if (bodyPersistedRef.current && persistedBodyRef.current !== null) {
+    if (context.currentBody === persistedBodyRef.current) {
+      observedFinalBodyRef.current = true;
+      ownClearPendingRef.current = false;
+    } else if (
+      observedFinalBodyRef.current ||
+      (context.currentBody !== initialBodyRef.current &&
+        !(ownClearPendingRef.current && context.currentBody === ''))
+    ) {
+      sourceInvalidatedRef.current = true;
+    }
+  }
+
   const reviewReportsRef = useRef<
     Partial<Record<'map' | 'pool' | 'practice', CompleteReviewReport>>
   >({
@@ -246,6 +262,9 @@ export function TotalLessonGenerationDialog({
     clearedRef.current = false;
     bodyPersistedRef.current = false;
     persistedBodyRef.current = null;
+    ownClearPendingRef.current = false;
+    observedFinalBodyRef.current = false;
+    sourceInvalidatedRef.current = false;
     practiceRef.current = createCompletePracticeState(context.obiettivi ?? []);
     practiceCostRef.current = 0;
     mapCompletedRef.current = false;
@@ -263,6 +282,7 @@ export function TotalLessonGenerationDialog({
   async function clearOnce() {
     if (clearedRef.current) return;
     await onClear();
+    ownClearPendingRef.current = true;
     clearedRef.current = true;
   }
 
@@ -303,12 +323,18 @@ export function TotalLessonGenerationDialog({
 
     body = persistedBodyRef.current ?? body;
     function isCurrent() {
-      if (latestBodyRef.current === body) observedFinalBodyRef.current = true;
+      if (latestBodyRef.current === body) {
+        observedFinalBodyRef.current = true;
+        ownClearPendingRef.current = false;
+      }
       return (
         mountedRef.current &&
+        !sourceInvalidatedRef.current &&
         currentIdentityRef.current === initialIdentityRef.current &&
         (latestBodyRef.current === body ||
-          (!observedFinalBodyRef.current && latestBodyRef.current === initialBodyRef.current))
+          (!observedFinalBodyRef.current &&
+            (latestBodyRef.current === initialBodyRef.current ||
+              (ownClearPendingRef.current && latestBodyRef.current === ''))))
       );
     }
     function ensureCurrent() {

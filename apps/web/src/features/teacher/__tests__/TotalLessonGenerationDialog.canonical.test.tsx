@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type * as ContentClient from '../../repository/pools/aiContentClient.js';
 import type * as MapClient from '../../repository/pools/aiConceptMapClient.js';
 import type {
@@ -40,7 +40,9 @@ vi.mock('../../repository/programs/multiVisualClient.js', () => ({
 vi.mock('../AiCompleteLessonGenerationDialog.js', () => ({
   AiCompleteLessonGenerationDialog: ({
     onCompleteDraft,
+    onBeforeGenerate,
   }: {
+    onBeforeGenerate: () => Promise<void>;
     onCompleteDraft: (
       body: string,
       progress: (p: CompleteLessonProgress) => void,
@@ -50,6 +52,7 @@ vi.mock('../AiCompleteLessonGenerationDialog.js', () => ({
     <button
       onClick={async () => {
         try {
+          await onBeforeGenerate();
           state.summary = await onCompleteDraft(
             state.raw,
             (p) => {
@@ -150,5 +153,108 @@ it.each(['\n', '\r\n', '   '])(
     expect(save.mock.invocationCallOrder[0]).toBeLessThan(
       state.generate.mock.invocationCallOrder[1]!,
     );
+  },
+);
+
+it.each([
+  'canonical',
+  'external-before-commit',
+  'external-after-commit',
+  'external-empty-after-commit',
+] as const)(
+  'recognizes only its own clear while the canonical React commit is delayed: %s',
+  async (mode) => {
+    state.raw = '# Cicli\n\n' + STUDY_BODY + '\n';
+    const f = studyFixture();
+    let resolveMap!: (result: unknown) => void;
+    state.map.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMap = resolve;
+        }),
+    );
+    state.generate.mockImplementation(async (request: ContentClient.AiPoolContentRequest) => ({
+      kind: 'pool',
+      status: 'completed',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output:
+        request.purpose === 'practice'
+          ? { questions: f.questions, studyPlan: f.plan }
+          : { questions: [f.questions[0]] },
+    }));
+    const save = vi.fn(async (practice: typeof f) => {
+      expect(practice.sourceBody).toBe(STUDY_BODY);
+    });
+    const verify = vi.fn(async () => {});
+    const savePool = vi.fn();
+    const persist = vi.fn(async () => STUDY_BODY);
+    const clear = vi.fn(async () => {
+      view.rerender(element(''));
+    });
+    const element = (currentBody: string) => (
+      <TotalLessonGenerationDialog
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        context={{
+          titolo: 'Cicli',
+          sottotitolo: null,
+          difficolta: 'Base',
+          concettiChiave: [],
+          obiettivi: ['Prevedere output'],
+          udaTitle: 'UDA',
+          currentBody,
+        }}
+        onClear={clear}
+        onPersistBody={persist}
+        onSaveConceptMap={vi.fn()}
+        onSavePractice={save}
+        onVerifyPractice={verify}
+        onSavePool={savePool}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const view = render(element('Corpo precedente non vuoto.'));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.map).toHaveBeenCalledOnce());
+    expect(clear).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledOnce();
+    expect(state.error).toBeNull();
+    if (mode === 'external-before-commit')
+      view.rerender(element('Modifica esterna durante il salvataggio.'));
+    view.rerender(element(STUDY_BODY));
+    if (mode === 'external-after-commit' || mode === 'external-empty-after-commit') {
+      view.rerender(
+        element(mode === 'external-empty-after-commit' ? '' : 'Modifica esterna dopo il commit.'),
+      );
+      view.rerender(element(STUDY_BODY));
+    }
+    await act(async () => {
+      resolveMap({
+        kind: 'concept_map',
+        status: 'completed',
+        modelProfile: 'economy',
+        actualCostMicroUsd: 1,
+        replayed: false,
+        output: { conceptMapMarkdown: '## Sintesi\n\nIl ciclo ripete il corpo.' },
+      });
+    });
+    await waitFor(() => expect(state.summary !== null || state.error !== null).toBe(true));
+    if (mode === 'canonical') {
+      expect(state.error).toBeNull();
+      expect(save).toHaveBeenCalledOnce();
+      expect(verify).toHaveBeenCalledOnce();
+      expect(savePool).toHaveBeenCalledOnce();
+      expect(state.generate).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ lessonSource: STUDY_BODY, draftPractice: expect.any(String) }),
+      );
+    } else {
+      expect(state.error).not.toBeNull();
+      expect(state.generate).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(savePool).not.toHaveBeenCalled();
+    }
   },
 );
