@@ -1556,14 +1556,14 @@ function CourseWorkspaceSession({
    * perché il piano immagini deve leggere esattamente quel corpo e il docente
    * deve poter seguire riepilogo/retry nello stesso dialog.
    */
-  async function handlePersistGeneratedContent(lesson: LessonItem, body: string): Promise<void> {
+  async function handlePersistGeneratedContent(lesson: LessonItem, body: string): Promise<string> {
     if (!card.activeImportId) throw new Error('Import attivo non disponibile.');
     const importId = card.activeImportId;
     const lessonId = lesson.id;
     const endMutation = beginContentMutation(lessonId);
     setContentStatus({ busy: true, error: null, saved: false });
     try {
-      await updateLessonMarkdownBody({
+      const persistedBody = await updateLessonMarkdownBody({
         programId: card.programId,
         importId,
         lessonId,
@@ -1572,10 +1572,11 @@ function CourseWorkspaceSession({
         db,
         storage,
       });
-      if (!mountedRef.current || currentLessonRef.current !== lessonId) return;
-      setLessonContent(body);
+      if (!mountedRef.current || currentLessonRef.current !== lessonId) return persistedBody;
+      setLessonContent(persistedBody);
       setContentDirty(false);
       setContentStatus({ busy: false, error: null, saved: true });
+      return persistedBody;
     } catch (err) {
       if (mountedRef.current && currentLessonRef.current === lessonId) {
         setContentStatus({

@@ -392,7 +392,7 @@ export async function updateLessonMarkdownBody(params: {
   ownerUid: string;
   db: Firestore;
   storage: FirebaseStorage;
-}): Promise<void> {
+}): Promise<string> {
   const { programId, importId, lessonId, body, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
@@ -432,6 +432,7 @@ export async function updateLessonMarkdownBody(params: {
       'Il contenuto della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
     );
   }
+  return publicBody;
 }
 
 /** Clears all lesson-owned learning content while preserving its metadata. */

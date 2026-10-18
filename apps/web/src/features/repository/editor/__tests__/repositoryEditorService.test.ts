@@ -563,6 +563,30 @@ describe('updateLessonMarkdownBody', () => {
     expect(mockReadText).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [' \nCorpo canonico.\n ', 'Corpo canonico.'],
+    ['\r\n# http\r\n\r\nPrima riga.\r\nSeconda riga.\r\n ', 'Prima riga.\r\nSeconda riga.'],
+    ['# Diverso\n\nCorpo.\n', '# Diverso\n\nCorpo.'],
+  ])('returns the exact persisted body for downstream artifacts: %s', async (body, expected) => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
+      .mockResolvedValueOnce({ exists: () => true });
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: HTTP\n---\n\nVecchio corpo.'));
+    const persisted = await updateLessonMarkdownBody({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      body,
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+    expect(persisted).toBe(expected);
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { __path: 'publicLessons/lesson-1' },
+      expect.objectContaining({ content: persisted }),
+    );
+  });
   it('preserves existing front matter, replaces only the body, and resyncs Firestore + publicLessons', async () => {
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })

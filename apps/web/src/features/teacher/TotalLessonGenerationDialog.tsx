@@ -123,7 +123,7 @@ export function TotalLessonGenerationDialog({
   context: LessonAiContext;
   identity: { programId: string; importId: string; lessonId: string };
   onClear: () => Promise<void>;
-  onPersistBody: (body: string) => Promise<void>;
+  onPersistBody: (body: string) => Promise<string>;
   onSaveConceptMap: (markdown: string) => Promise<void>;
   onSavePool: (pool: ParsedPool) => Promise<void>;
   onSavePractice?: (practice: StudyPractice) => Promise<void>;
@@ -157,6 +157,7 @@ export function TotalLessonGenerationDialog({
   }, []);
   const clearedRef = useRef(Boolean(restoredCheckpoint));
   const bodyPersistedRef = useRef(Boolean(restoredCheckpoint));
+  const persistedBodyRef = useRef<string | null>(restoredCheckpoint ? context.currentBody : null);
   const reviewReportsRef = useRef<
     Partial<Record<'map' | 'pool' | 'practice', CompleteReviewReport>>
   >({
@@ -244,6 +245,7 @@ export function TotalLessonGenerationDialog({
     clearCompleteLessonCheckpoint(identity);
     clearedRef.current = false;
     bodyPersistedRef.current = false;
+    persistedBodyRef.current = null;
     practiceRef.current = createCompletePracticeState(context.obiettivi ?? []);
     practiceCostRef.current = 0;
     mapCompletedRef.current = false;
@@ -290,13 +292,30 @@ export function TotalLessonGenerationDialog({
     if (!bodyPersistedRef.current) {
       onProgress({ stage: 'content', label: 'Salvataggio della nuova lezione…' });
       try {
-        await onPersistBody(body);
+        body = await onPersistBody(body);
+        persistedBodyRef.current = body;
       } catch (cause) {
         throw new CompleteWorkflowError('persist_body', cause);
       }
       bodyPersistedRef.current = true;
       persistCheckpoint(body, options);
     }
+
+    body = persistedBodyRef.current ?? body;
+    function isCurrent() {
+      if (latestBodyRef.current === body) observedFinalBodyRef.current = true;
+      return (
+        mountedRef.current &&
+        currentIdentityRef.current === initialIdentityRef.current &&
+        (latestBodyRef.current === body ||
+          (!observedFinalBodyRef.current && latestBodyRef.current === initialBodyRef.current))
+      );
+    }
+    function ensureCurrent() {
+      if (!isCurrent())
+        throw new CompleteWorkflowError('practice', new Error('La fonte è cambiata.'));
+    }
+    ensureCurrent();
 
     if (!mapCompletedRef.current) {
       onProgress({ stage: 'map' });
@@ -345,20 +364,6 @@ export function TotalLessonGenerationDialog({
       }
     }
 
-    function isCurrent() {
-      if (latestBodyRef.current === body) observedFinalBodyRef.current = true;
-      return (
-        mountedRef.current &&
-        currentIdentityRef.current === initialIdentityRef.current &&
-        (latestBodyRef.current === body ||
-          (!observedFinalBodyRef.current && latestBodyRef.current === initialBodyRef.current))
-      );
-    }
-    function ensureCurrent() {
-      if (!isCurrent())
-        throw new CompleteWorkflowError('practice', new Error('La fonte è cambiata.'));
-    }
-    ensureCurrent();
     let draftPractice: string | undefined;
     if (options.practiceEnabled) {
       onProgress({ stage: 'practice' });
@@ -600,7 +605,12 @@ export function TotalLessonGenerationDialog({
               message: restoredCheckpoint.poolCompleted
                 ? 'È disponibile una generazione interrotta. Lezione, mappa e domande sono già salve: riprendi dalle immagini.'
                 : restoredCheckpoint.mapCompleted
-                  ? 'È disponibile una generazione interrotta. Lezione e mappa sono già salve: riprendi dalle domande.'
+                  ? restoredCheckpoint.options.practiceEnabled &&
+                    (!restoredCheckpoint.practice?.saved ||
+                      (restoredCheckpoint.options.reviewStatus !== 'disabled' &&
+                        !restoredCheckpoint.practice?.reviewed))
+                    ? 'È disponibile una generazione interrotta. Lezione e mappa sono già salve: riprendi dalle esercitazioni.'
+                    : 'È disponibile una generazione interrotta. Lezione e mappa sono già salve: riprendi dalle domande.'
                   : 'È disponibile una generazione interrotta. La lezione è già salva: riprendi dalla mappa.',
             }
           : undefined
