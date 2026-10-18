@@ -1,3 +1,4 @@
+import type { PracticeEstimate } from '../repository/programs/completePracticeGeneration.js';
 import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
@@ -49,6 +50,13 @@ export interface CompleteReviewReport {
 
 export type CompleteLessonProgress =
   | { stage: 'content'; label?: string }
+  | {
+      stage: 'practice';
+      label?: string;
+      review?: CompleteReviewReport;
+      estimate?: PracticeEstimate;
+      confirm?: (accepted: boolean) => void;
+    }
   | { stage: 'map'; label?: string; review?: CompleteReviewReport }
   | { stage: 'pool'; label?: string; review?: CompleteReviewReport }
   | { stage: 'analysis'; label?: string }
@@ -61,7 +69,8 @@ export type CompleteLessonRetry = (
 
 export interface CompleteLessonCompletionSummary {
   /** Ephemeral, never checkpointed. */
-  reviewReports?: Partial<Record<'map' | 'pool', CompleteReviewReport>>;
+  reviewReports?: Partial<Record<'map' | 'pool' | 'practice', CompleteReviewReport>>;
+  practiceGenerated?: number;
   mapGenerated?: boolean;
   questionsGenerated?: number;
   imagesApplied: number;
@@ -76,6 +85,8 @@ export interface CompleteLessonCompletionSummary {
 
 export interface CompleteLessonOptions {
   modelProfile: PoolModelProfile;
+  practiceEnabled?: boolean;
+  practiceCount?: 3 | 6 | 9;
   level: PoolLevel;
   counts: PoolCounts;
   reviewStatus: 'disabled' | 'improved' | 'unchanged';
@@ -110,6 +121,8 @@ function progressLabel(progress: CompleteLessonProgress): string {
       return 'Analisi dei concetti e scelta delle immagini…';
     case 'map':
       return 'Generazione della mappa concettuale…';
+    case 'practice':
+      return 'Preparazione delle esercitazioni…';
     case 'pool':
       return 'Generazione delle domande…';
     case 'images':
@@ -154,6 +167,13 @@ export function AiCompleteLessonGenerationDialog({
     chiusa_multipla: String(resumeDraft?.options.counts.chiusa_multipla ?? 2),
   });
   const [guidance, setGuidance] = useState('');
+  const [practiceEnabled, setPracticeEnabled] = useState(
+    resumeDraft ? (resumeDraft.options.practiceEnabled ?? false) : true,
+  );
+  const [practiceCount, setPracticeCount] = useState<3 | 6 | 9>(
+    resumeDraft?.options.practiceCount ?? 6,
+  );
+  const [contentCostUnknown, setContentCostUnknown] = useState(false);
   const [advancedReview, setAdvancedReview] = useState(true);
   const [preview, setPreview] = useState<AiLessonPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiLessonContentRequest | null>(null);
@@ -165,7 +185,7 @@ export function AiCompleteLessonGenerationDialog({
     resumeDraft?.options.reviewStatus ?? 'disabled',
   );
   const [stageReviewReports, setStageReviewReports] = useState<
-    Partial<Record<'map' | 'pool', CompleteReviewReport>>
+    Partial<Record<'map' | 'pool' | 'practice', CompleteReviewReport>>
   >({});
   const [progress, setProgress] = useState<CompleteLessonProgress | null>(null);
   const [summary, setSummary] = useState<CompleteLessonCompletionSummary | null>(null);
@@ -177,11 +197,13 @@ export function AiCompleteLessonGenerationDialog({
   const reviewRequestIdRef = useRef(newRequestId());
   const runningRef = useRef(false);
   const mountedRef = useRef(true);
+  const confirmationRef = useRef<((accepted: boolean) => void) | undefined>();
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      confirmationRef.current?.(false);
     };
   }, []);
 
@@ -212,7 +234,8 @@ export function AiCompleteLessonGenerationDialog({
   const totalActualCostMicroUsd =
     summary?.actualCostMicroUsd === undefined
       ? undefined
-      : summary.actualCostMicroUsd === null ||
+      : contentCostUnknown ||
+          summary.actualCostMicroUsd === null ||
           contentResult?.actualCostMicroUsd == null ||
           (reviewResult !== null && reviewResult.actualCostMicroUsd === null)
         ? null
@@ -234,6 +257,7 @@ export function AiCompleteLessonGenerationDialog({
     setPreview(null);
     setPreviewRequest(null);
     setContentResult(null);
+    setContentCostUnknown(false);
     setDraftBody('');
     setBaseBody('');
     setReviewResult(null);
@@ -292,7 +316,13 @@ export function AiCompleteLessonGenerationDialog({
     if (!validatedCounts) throw new Error('Quantità di domande non valida.');
     setErrorStage('generate');
     setPhase('generating');
-    const generated = await callables.generate(request);
+    let generated: AiLessonGenerateResult;
+    try {
+      generated = await callables.generate(request);
+    } catch (e) {
+      setContentCostUnknown(true);
+      throw e;
+    }
     if (generated.kind !== 'lesson') throw new Error('unexpected_content_kind');
     const next = generated;
     if (!mountedRef.current) return;
@@ -319,7 +349,13 @@ export function AiCompleteLessonGenerationDialog({
         throw new Error('advanced_review_unavailable');
       }
       await callables.previewReview(reviewRequest);
-      const reviewed = await callables.generateReview(reviewRequest);
+      let reviewed: AiLessonReviewGenerateResult;
+      try {
+        reviewed = await callables.generateReview(reviewRequest);
+      } catch (e) {
+        setContentCostUnknown(true);
+        throw e;
+      }
       if (reviewed.kind !== 'lesson_review') throw new Error('unexpected_review_kind');
       const validatedReview = validateLessonDraftResult(reviewed, 'contenuto revisionato');
       if (!validatedReview.ok) throw new Error(validatedReview.error);
@@ -348,6 +384,8 @@ export function AiCompleteLessonGenerationDialog({
         counts: validatedCounts,
         modelProfile,
         reviewStatus: finalReviewStatus,
+        practiceEnabled,
+        practiceCount,
       });
       if (!mountedRef.current) return;
       setSummary(completed);
@@ -363,8 +401,12 @@ export function AiCompleteLessonGenerationDialog({
 
   function updateProgress(next: CompleteLessonProgress) {
     if (mountedRef.current) {
+      confirmationRef.current = next.stage === 'practice' ? next.confirm : undefined;
       setProgress(next);
-      if ((next.stage === 'map' || next.stage === 'pool') && next.review) {
+      if (
+        (next.stage === 'map' || next.stage === 'pool' || next.stage === 'practice') &&
+        next.review
+      ) {
         setStageReviewReports((previous) => ({ ...previous, [next.stage]: next.review }));
       }
     }
@@ -384,6 +426,8 @@ export function AiCompleteLessonGenerationDialog({
         counts: validatedCounts,
         modelProfile,
         reviewStatus,
+        practiceEnabled,
+        practiceCount,
       });
       if (!mountedRef.current) return;
       setSummary(next);
@@ -416,7 +460,13 @@ export function AiCompleteLessonGenerationDialog({
         throw new Error('advanced_review_unavailable');
       }
       await callables.previewReview(request);
-      const reviewed = await callables.generateReview(request);
+      let reviewed: AiLessonReviewGenerateResult;
+      try {
+        reviewed = await callables.generateReview(request);
+      } catch (e) {
+        setContentCostUnknown(true);
+        throw e;
+      }
       if (reviewed.kind !== 'lesson_review') throw new Error('unexpected_review_kind');
       const validatedReview = validateLessonDraftResult(reviewed, 'contenuto revisionato');
       if (!validatedReview.ok) throw new Error(validatedReview.error);
@@ -450,6 +500,8 @@ export function AiCompleteLessonGenerationDialog({
       counts: validatedCounts,
       modelProfile,
       reviewStatus: completedReviewStatus,
+      practiceEnabled,
+      practiceCount,
     });
     setSummary(next);
     setProgress(null);
@@ -521,7 +573,7 @@ export function AiCompleteLessonGenerationDialog({
               setAdvancedReview(checked);
               invalidateEstimate();
             }}
-            description="Controlla e migliora il contenuto con il revisore didattico validato prima di creare mappa, domande e immagini."
+            description="Controlla il contenuto e revisiona mappa, eventuali esercitazioni e domande sul corpo finale, prima delle immagini."
           />
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-complete-depth-label">
@@ -577,6 +629,53 @@ export function AiCompleteLessonGenerationDialog({
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className={styles.field}>
+            <label>
+              <input
+                type="checkbox"
+                checked={practiceEnabled}
+                onChange={(e) => {
+                  setPracticeEnabled(e.target.checked);
+                  invalidateEstimate();
+                }}
+              />{' '}
+              Includi esercitazioni
+            </label>
+            <p>
+              Salvate soltanto in bozza privata. Le potrai controllare e pubblicare dalla scheda
+              Esercitazioni.
+            </p>
+            {practiceEnabled && (
+              <div
+                className={`${styles.optionRow} ${styles.depthOptions}`}
+                role="radiogroup"
+                aria-label="Numero di attività"
+              >
+                {([3, 6, 9] as const).map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    role="radio"
+                    aria-checked={practiceCount === n}
+                    className={`${styles.choice} ${practiceCount === n ? styles.choiceSelected : ''}`}
+                    onClick={() => {
+                      setPracticeCount(n);
+                      invalidateEstimate();
+                    }}
+                  >
+                    {n} attività
+                  </button>
+                ))}
+              </div>
+            )}
+            {practiceEnabled && (
+              <p>
+                Prima della generazione e dell’eventuale revisione vedrai le rispettive stime e
+                confermerai il costo.
+              </p>
+            )}
           </div>
 
           <fieldset className={styles.questionCounts}>
@@ -672,7 +771,9 @@ export function AiCompleteLessonGenerationDialog({
 
           <p className={styles.replaceWarning}>
             Contenuto, immagini, mappa concettuale e domande esistenti verranno completamente
-            sostituiti. I metadati della lezione resteranno invariati.
+            sostituiti. Le esercitazioni precedenti saranno ritirate con il cambio del corpo; se
+            selezionate, le nuove saranno salvate solo in bozza privata. I metadati della lezione
+            resteranno invariati.
           </p>
 
           <div className="dialog-actions">
@@ -761,12 +862,14 @@ export function AiCompleteLessonGenerationDialog({
           ) : reviewResult || (reviewStatus === 'disabled' && errorStage !== 'review') ? (
             <AiAdvancedReviewResult result={reviewResult} status={reviewStatus} />
           ) : null}
-          {(['map', 'pool'] as const).map((stage) => {
+          {(['map', 'practice', 'pool'] as const).map((stage) => {
             const report = summary?.reviewReports?.[stage] ?? stageReviewReports[stage];
             if (!report) return null;
             return (
               <div key={stage}>
-                <h4>{stage === 'map' ? 'Mappa' : 'Domande'}</h4>
+                <h4>
+                  {stage === 'map' ? 'Mappa' : stage === 'practice' ? 'Esercitazioni' : 'Domande'}
+                </h4>
                 {report.status === 'restored' ? (
                   <p>Fase già salvata: resoconto della revisione non disponibile.</p>
                 ) : (
@@ -783,13 +886,64 @@ export function AiCompleteLessonGenerationDialog({
         </section>
       )}
 
-      {phase === 'completing' && progress && <BusyStatus label={progressLabel(progress)} />}
+      {phase === 'completing' &&
+        progress &&
+        (progress.stage === 'practice' && progress.estimate ? (
+          <section aria-label="Conferma costo esercitazioni">
+            <h4>
+              {progress.estimate.phase === 'review'
+                ? 'Revisione delle esercitazioni'
+                : 'Generazione delle esercitazioni'}
+            </h4>
+            <p>
+              Costo stimato: {formatMicroUsd(progress.estimate.estimatedCostMicroUsd)}. Tetto
+              prenotabile: {formatMicroUsd(progress.estimate.reservationCostMicroUsd)}.
+            </p>
+            <p>
+              Questa stima riguarda soltanto la fase indicata. Le fasi già concluse restano
+              conservate.
+            </p>
+            <div className="dialog-actions">
+              <button type="button" onClick={() => progress.confirm?.(false)}>
+                Interrompi e riprendi dopo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  progress.confirm?.(false);
+                  onClose();
+                }}
+              >
+                Chiudi e riprendi dopo
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  confirmationRef.current = undefined;
+                  progress.confirm?.(true);
+                  setProgress({ stage: 'practice' });
+                }}
+              >
+                Conferma e continua
+              </button>
+            </div>
+          </section>
+        ) : (
+          <BusyStatus label={progressLabel(progress)} />
+        ))}
 
       {phase === 'summary' && summary && (
         <>
           <section className={styles.summary} aria-labelledby="ai-complete-summary-title">
             <h4 id="ai-complete-summary-title">Lezione completata</h4>
 
+            {summary.practiceGenerated && (
+              <p>
+                {summary.practiceGenerated} attività salvate in bozza privata. Non pubblicate agli
+                studenti.
+              </p>
+            )}
             {summary.mapGenerated && <p>Mappa concettuale generata e applicata.</p>}
             {summary.questionsGenerated !== undefined && (
               <p>{summary.questionsGenerated} domande generate e applicate.</p>

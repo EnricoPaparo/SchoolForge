@@ -1,3 +1,7 @@
+import {
+  saveStudyPractice,
+  verifyStudyPracticeDraft,
+} from '../repository/programs/studyPracticeService.js';
 import { LessonPdfProgressDialog, type LessonPdfProgress } from './LessonPdfProgressDialog.js';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -2905,6 +2909,30 @@ function CourseWorkspaceSession({
               onClear={() => clearLessonData(selectedLesson.id)}
               onPersistBody={(body) => handlePersistGeneratedContent(selectedLesson, body)}
               onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
+              onVerifyPractice={(practice) =>
+                verifyStudyPracticeDraft({
+                  programId: card.programId,
+                  importId: card.activeImportId!,
+                  lessonId: selectedLesson.id,
+                  ownerUid,
+                  publicLessonId: resolvePublicLessonId(selectedLesson, selectedLesson.id),
+                  sourceBody: practice.sourceBody,
+                  practice,
+                  db,
+                })
+              }
+              onSavePractice={(practice) =>
+                saveStudyPractice({
+                  programId: card.programId,
+                  importId: card.activeImportId!,
+                  lessonId: selectedLesson.id,
+                  ownerUid,
+                  sourceBody: practice.sourceBody,
+                  practice,
+                  publish: false,
+                  db,
+                })
+              }
               onSavePool={async (pool) => {
                 await savePool({
                   programId: card.programId,

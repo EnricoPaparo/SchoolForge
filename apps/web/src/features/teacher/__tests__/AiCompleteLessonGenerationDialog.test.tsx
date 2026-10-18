@@ -134,6 +134,49 @@ async function goToReview(
 }
 
 describe('AiCompleteLessonGenerationDialog', () => {
+  it.each(['generate', 'generateReview', 'previewReview'] as const)(
+    'keeps total uncertain after failed %s invocation, but excludes preview failures',
+    async (stage) => {
+      const { callables } = makeCallables();
+      vi.mocked(callables[stage]!).mockRejectedValueOnce(new Error('interrupted'));
+      renderDialog(callables, async () => ({
+        imagesApplied: 0,
+        imagesSkipped: 0,
+        imagesFailed: 0,
+        actualCostMicroUsd: 100,
+      }));
+      fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+      fireEvent.click(
+        await screen.findByRole('button', {
+          name: stage === 'generate' ? 'Riprova' : 'Riprova solo revisione',
+        }),
+      );
+      await screen.findByText('Lezione completata');
+      expect(screen.queryByText('Costo reale totale non completamente disponibile.') !== null).toBe(
+        stage !== 'previewReview',
+      );
+    },
+  );
+  it('defaults practice ON with 6 activities and sends selected count or OFF to completion', async () => {
+    const { callables } = makeCallables();
+    const complete = vi.fn(async () => ({ imagesApplied: 0, imagesSkipped: 0, imagesFailed: 0 }));
+    renderDialog(callables, complete);
+    const toggle = screen.getByRole('checkbox', { name: 'Includi esercitazioni' });
+    expect(toggle).toHaveProperty('checked', true);
+    expect(
+      screen.getByRole('radio', { name: '6 attivit\u00e0' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    fireEvent.click(screen.getByRole('radio', { name: '9 attivit\u00e0' }));
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('radiogroup', { name: 'Numero di attivit\u00e0' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Sostituisci e genera tutto' }));
+    await screen.findByText('Lezione completata');
+    expect(complete).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Function),
+      expect.objectContaining({ practiceEnabled: false, practiceCount: 9 }),
+    );
+  });
   it('keeps completed stage reports across an image failure and retry without extra review calls', async () => {
     const { callables } = makeCallables();
     let attempts = 0;
@@ -433,6 +476,8 @@ describe('AiCompleteLessonGenerationDialog', () => {
         modelProfile: 'economy',
         counts: { aperta: 5, chiusa_singola: 3, chiusa_multipla: 2 },
         reviewStatus: 'improved',
+        practiceEnabled: true,
+        practiceCount: 6,
       },
     );
 

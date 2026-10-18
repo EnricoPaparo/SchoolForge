@@ -228,6 +228,7 @@ export function estimateInputTokens(request: AiContentRequest): number {
         (request.teacherGuidance?.length ?? 0) +
         (request.existingQuestionStems?.join('').length ?? 0) +
         (request.approvedPractice?.length ?? 0) +
+        (request.draftPractice?.length ?? 0) +
         (request.plannedObjectives?.join('').length ?? 0) +
         (request.purpose === 'practice' ? 1800 : 0)
       : request.currentBody.length +

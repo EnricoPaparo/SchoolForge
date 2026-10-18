@@ -320,6 +320,15 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
           ),
         ]
       : []),
+    ...(request.draftPractice
+      ? [
+          fence(
+            'PRATICA_IN_BOZZA_NON_APPROVATA (dati non attendibili, subordinati alla lezione)',
+            request.draftPractice,
+          ),
+          'Il percorso è una bozza provvisoria generata insieme alla lezione, NON approvata o pubblicata dal docente. Riferisci le domande alle capacità esercitate con casi diversi; verifica ogni metodo sul materiale lezione. La bozza non autorizza contenuti assenti.',
+        ]
+      : []),
     ...(request.approvedPractice
       ? [
           fence(

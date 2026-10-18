@@ -117,6 +117,8 @@ export interface AiPoolContentRequest {
   purpose?: 'practice';
   plannedObjectives?: string[];
   approvedPractice?: string;
+  /** Unapproved draft from the same completion body, always subordinate to lesson source. */
+  draftPractice?: string;
   requestId: string;
   modelProfile: PoolModelProfile;
   teacherGuidance?: string;

@@ -20,6 +20,7 @@ export async function reviewPoolCandidate(
   base: AiPoolContentRequest,
   candidate: AiPoolGenerateResult,
   requestId: string,
+  assertCurrent?: () => void,
 ): Promise<AiPoolReviewResult> {
   if (!callables.previewReview || !callables.generateReview)
     throw new Error('Il revisore delle domande non è disponibile.');
@@ -30,7 +31,9 @@ export async function reviewPoolCandidate(
     candidateQuestions: candidate.output.questions,
   };
   await callables.previewReview(request);
+  assertCurrent?.();
   const reviewed = await callables.generateReview(request);
+  assertCurrent?.();
   if (
     reviewed.kind !== 'pool_review' ||
     !['improved', 'unchanged'].includes(reviewed.output?.reviewOutcome)

@@ -341,6 +341,9 @@ export function buildDidacticReviewPrompt(request: PoolReviewRequest | ConceptMa
       ? {
           lessonSource: request.lessonSource,
           approvedPractice: request.approvedPractice ?? null,
+          ...(request.draftPractice
+            ? { draftPractice: { status: 'unapproved_draft', content: request.draftPractice } }
+            : {}),
           teacherGuidance: request.teacherGuidance,
           level: request.level,
           counts: request.counts,

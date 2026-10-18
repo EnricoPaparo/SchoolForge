@@ -19,6 +19,7 @@ const poolRequest: AiPoolContentRequest = {
   level: 'balanced',
   counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
   lessonSource: 'La RAM è volatile.',
+  draftPractice: 'Bozza privata di esercitazione, non approvata.',
   existingPoolQuestionCount: 1,
   existingQuestionStems: ['Che cosa perde la RAM senza alimentazione?'],
 };
@@ -77,6 +78,25 @@ describe('artifact review safety', () => {
       candidateQuestions: pool.output.questions,
     });
     expect(api.generate).not.toHaveBeenCalled();
+  });
+  it('stops review generation when the source changes during preview', async () => {
+    let active = true;
+    const api: AiContentCallables = {
+      preview: vi.fn(),
+      generate: vi.fn(),
+      previewReview: vi.fn(async () => {
+        active = false;
+        return {} as never;
+      }),
+      generateReview: vi.fn(),
+    };
+    function throwIfStale() {
+      if (!active) throw new Error('source changed');
+    }
+    await expect(
+      reviewPoolCandidate(api, poolRequest, pool, 'review-id', throwIfStale),
+    ).rejects.toThrow('source changed');
+    expect(api.generateReview).not.toHaveBeenCalled();
   });
   it('does not accept a source issue or silently use the base map', async () => {
     const api: AiConceptMapCallables = {

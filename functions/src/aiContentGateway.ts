@@ -83,7 +83,7 @@ export function retryPolicyFromConfig(config: AiRuntimeConfig | null, kind?: str
   const attemptTimeoutMs =
     kind === 'pool_review' || kind === 'concept_map_review'
       ? 180_000
-      : kind === 'lesson'
+      : kind === 'lesson' || kind === 'lesson_review'
         ? (config?.limits.lessonAttemptTimeoutMs ?? 180_000)
         : kind === 'pool'
           ? (config?.limits.poolAttemptTimeoutMs ?? 180_000)
