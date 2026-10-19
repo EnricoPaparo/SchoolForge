@@ -34,7 +34,7 @@ spesa o deploy PROD da parte dell'implementatore.
   conservando retry effettivi ed editor standalone.
 - Un payload immutabile viene costruito una volta per operazione e condiviso da
   prenotazione e invio, anche per la proposta visuale. Evento separato
-  `aiContentPerformance`: kind, durata totale provider (incluso eventuale backoff),
+  `aiContentPerformance`: kind, profilo, token input/output, durata totale provider (incluso eventuale backoff),
   tentativi, cache token osservati dell'ultimo tentativo, status provider e review.
   Numeri bounded/nullable; nessun prompt, contenuto, identificativo, PII o errore
   grezzo. Il log terminale generico mantiene il proprio contratto. Cache non

@@ -59,6 +59,7 @@ export type ContentProviderOutcome = {
 export function contentPerformanceMetadata(
   kind: AiContentRequest['kind'],
   outcome: ContentProviderOutcome,
+  modelProfile?: string,
 ) {
   const bounded = (value: unknown) =>
     typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 1000000000
@@ -70,6 +71,9 @@ export function contentPerformanceMetadata(
       : null;
   return {
     kind,
+    modelProfile: modelProfile === 'economy' || modelProfile === 'quality' ? modelProfile : null,
+    inputTokens: outcome.status === 'ok' ? bounded(outcome.usage?.inputTokens) : null,
+    outputTokens: outcome.status === 'ok' ? bounded(outcome.usage?.outputTokens) : null,
     durationProviderMs: bounded(outcome.metrics?.durationProviderMs),
     attemptCount: bounded(outcome.metrics?.attemptCount),
     cachedInputTokens: outcome.status === 'ok' ? bounded(outcome.usage?.cachedInputTokens) : null,

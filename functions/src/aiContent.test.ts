@@ -2955,8 +2955,11 @@ it('performance metadata is whitelisted, bounded, nullable and excludes source/P
     metrics: { durationProviderMs: 123, attemptCount: 2 },
     private: 'PRIVATE PII',
   };
-  expect(contentPerformanceMetadata('lesson_review', outcome)).toEqual({
+  expect(contentPerformanceMetadata('lesson_review', outcome, 'quality')).toEqual({
     kind: 'lesson_review',
+    modelProfile: 'quality',
+    inputTokens: 99,
+    outputTokens: 55,
     durationProviderMs: 123,
     attemptCount: 2,
     cachedInputTokens: 12,
@@ -2968,6 +2971,9 @@ it('performance metadata is whitelisted, bounded, nullable and excludes source/P
     status: 'error',
     phase: 'invocation_unknown',
   });
+  expect(failed.modelProfile).toBeNull();
+  expect(failed.inputTokens).toBeNull();
+  expect(failed.outputTokens).toBeNull();
   expect(failed.cachedInputTokens).toBeNull();
   expect(failed.durationProviderMs).toBeNull();
   expect(failed.attemptCount).toBeNull();

@@ -304,7 +304,10 @@ export function createPorts(
         throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
       }
       const outcome = await provider.generate(request, model, payload);
-      logger.info('aiContentPerformance', contentPerformanceMetadata(request.kind, outcome));
+      logger.info(
+        'aiContentPerformance',
+        contentPerformanceMetadata(request.kind, outcome, request.modelProfile),
+      );
       return outcome;
     },
     async finalizeRun(params) {
