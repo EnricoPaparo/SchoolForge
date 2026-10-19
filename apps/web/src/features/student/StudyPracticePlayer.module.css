@@ -1,5 +1,8 @@
 .container {
   padding-block: 1.25rem;
+  max-width: 42rem;
+  margin-inline: auto;
+  min-width: 0;
 }
 .player {
   display: grid;

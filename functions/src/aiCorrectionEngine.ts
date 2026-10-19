@@ -1251,6 +1251,7 @@ async function loadEnabledRealProviderConfig(
 function enforceRealProviderLimits(
   config: AiRuntimeConfig,
   eligible: EligiblePreflightItem[],
+  isolatedPlanSubmission = false,
 ): void {
   const input: OperationLimitInput = {
     eligibleSubmissionCount: eligible.length,
@@ -1260,7 +1261,52 @@ function enforceRealProviderLimits(
     })),
     totalEstimatedTokens: eligible.reduce((sum, e) => sum + e.estimatedTokens, 0),
   };
-  enforceOperationLimits(config.limits, input);
+  // A durable plan may isolate one long submission instead of excluding it.
+  // Keep the complete question/answer context in one call, under the existing
+  // operation cap. Character/question, reservation and budget guards still run.
+  // This policy is a trusted server dependency, never a client request field.
+  if (
+    isolatedPlanSubmission &&
+    eligible.length === 1 &&
+    eligible[0]!.estimatedTokens > config.limits.maxEstimatedTokensPerOperation
+  )
+    throw new AiGatewayError(
+      'operation_tokens_exceeded',
+      'La consegna supera il limite di token dell’operazione.',
+    );
+  const limits =
+    isolatedPlanSubmission && eligible.length === 1
+      ? {
+          ...config.limits,
+          maxEstimatedTokensPerSubmission: config.limits.maxEstimatedTokensPerOperation,
+        }
+      : config.limits;
+  enforceOperationLimits(limits, input);
+}
+
+/** Include the reviewer proposal in the operation workload, consistently in
+ * preview and execution. A long plan item is never an unbounded provider call. */
+function enforcePlannedOperationTokens(
+  config: AiRuntimeConfig,
+  request: AiCorrectionRequest,
+  preflight: OperationPreflight,
+): void {
+  const passes = request.advancedReview === false ? 1 : 2;
+  const total =
+    (preflight.estimate.inputTokens + preflight.estimate.outputTokens) * passes +
+    (passes === 2
+      ? preflight.eligibleLimits.reduce(
+          (sum, item) =>
+            sum +
+            (item.openQuestionCount ? estimateAuditProposalTokens(item.openQuestionCount) : 0),
+          0,
+        )
+      : 0);
+  if (total > config.limits.maxEstimatedTokensPerOperation)
+    throw new AiGatewayError(
+      'operation_tokens_exceeded',
+      'La consegna supera il limite di token dell’operazione, inclusa la revisione.',
+    );
 }
 
 async function buildOperationPreflight(
@@ -1442,6 +1488,8 @@ function computeReservationBoundMicroUsd(
 
 export interface PreviewDeps extends AiCorrectionAuthDeps {
   ports: EngineReadPorts;
+  /** Server-only policy for a single-submission durable plan group. */
+  isolatedPlanSubmission?: boolean;
   /**
    * M5-05D1 — lettura della config runtime `settings/aiConfig` (kill switch +
    * limiti). Richiesta **solo** sul percorso provider reale; assente ⇒ trattata
@@ -1494,9 +1542,16 @@ export async function runPreview(
 
   // M5-05D1 — solo provider reale: kill switch da config runtime + limiti DEV
   // applicati nel preflight, prima di qualsiasi elaborazione. Mock: nessun gate.
-  // I limiti restano quelli di `settings/aiConfig` (invariati dal profilo).
+  // Il profilo non modifica i limiti di settings/aiConfig. Solo il planner può
+  // isolare una consegna lunga sotto il tetto token dell'operazione esistente.
   if (effectiveConfig) {
-    enforceRealProviderLimits(effectiveConfig, preflight.eligibleLimits);
+    enforceRealProviderLimits(
+      effectiveConfig,
+      preflight.eligibleLimits,
+      deps.isolatedPlanSubmission === true && request.submissionIds.length === 1,
+    );
+    if (deps.isolatedPlanSubmission)
+      enforcePlannedOperationTokens(effectiveConfig, request, preflight);
   }
 
   // M5-05D2B-1 — stima costo con lo **stesso** contratto del run (ripartizione
@@ -1620,6 +1675,8 @@ function buildCostEstimateFields(
 // ── Run ─────────────────────────────────────────────────────────────────────
 
 export interface RunDeps extends AiCorrectionAuthDeps {
+  /** Server-only policy; enabled only after durable plan consent validation. */
+  isolatedPlanSubmission?: boolean;
   ports: EngineWritePorts;
   /**
    * Factory lazy: sul percorso reale riceve l'unica config runtime già
@@ -1791,7 +1848,13 @@ export async function runExecution(
   const preflight =
     mode === 'openai' ? await buildOperationPreflight(request, ownerUid, deps.ports) : null;
   if (effectiveConfig && preflight) {
-    enforceRealProviderLimits(effectiveConfig, preflight.eligibleLimits);
+    enforceRealProviderLimits(
+      effectiveConfig,
+      preflight.eligibleLimits,
+      deps.isolatedPlanSubmission === true && request.submissionIds.length === 1,
+    );
+    if (deps.isolatedPlanSubmission)
+      enforcePlannedOperationTokens(effectiveConfig, request, preflight);
   }
   const grader = typeof deps.grader === 'function' ? deps.grader(effectiveConfig) : deps.grader;
 

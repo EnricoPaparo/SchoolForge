@@ -233,7 +233,7 @@ export function AiPlannedCorrectionDialog({
           {error}
         </p>
       )}
-      {plan && phase !== 'configure' && (
+      {plan && phase !== 'configure' && phase !== 'running' && (
         <div className={styles.appliedGuidance}>
           <strong>Criteri del piano</strong>
           <p>
@@ -374,64 +374,68 @@ export function AiPlannedCorrectionDialog({
       )}
       {plan && ['running', 'paused', 'result'].includes(phase) && (
         <>
-          <div role="status" aria-live="polite">
-            <strong>
-              {phase === 'running'
-                ? 'Correzione in corso…'
-                : phase === 'paused'
-                  ? 'Correzione sospesa'
-                  : failed.length
-                    ? 'Elaborazione terminata con consegne da riprendere.'
-                    : 'Correzione completata.'}
-            </strong>
-            <p>
-              Consegne elaborate: {processed} di {plan.preview.counts.eligible}. Gruppi completati:{' '}
-              {completed.length} di {plan.groups.length}.
-            </p>
+          <div
+            role="status"
+            aria-live="polite"
+            aria-busy={phase === 'running'}
+            className={styles.runningStatus}
+          >
+            {phase === 'running' && <span className="spinner" aria-hidden="true" />}
+            <div>
+              <strong>
+                {phase === 'running'
+                  ? 'Correzione in corso…'
+                  : phase === 'paused'
+                    ? 'Correzione sospesa'
+                    : failed.length
+                      ? 'Elaborazione terminata con consegne da riprendere.'
+                      : 'Correzione completata.'}
+              </strong>
+              <p>
+                Consegne elaborate: {processed} di {plan.preview.counts.eligible}.
+              </p>
+            </div>
           </div>
           <progress
+            className={styles.progress}
             max={Math.max(1, plan.preview.counts.eligible)}
             value={processed}
             aria-label="Consegne elaborate"
           />
-          <p>
-            Costo contabilizzato, incluse quote prudenziali: {usd(settled)}. Massimo dell’intero
-            piano: {usd(plan.preview.maximumCostMicroUsd ?? 0)}.
-          </p>
-          {phase === 'running' && (
+          {phase !== 'running' && (
             <p>
-              Puoi fermarti o chiudere: il gruppo avviato terminerà; i successivi partiranno
-              soltanto alla ripresa.
+              Costo contabilizzato, incluse quote prudenziali: {usd(settled)}. Massimo dell’intero
+              piano: {usd(plan.preview.maximumCostMicroUsd ?? 0)}.
             </p>
           )}
-          <details open>
-            <summary>Avanzamento consegne</summary>
-            <ul>
-              {plan.groups.flatMap((g, index) =>
-                g.submissionIds.map((id) => (
-                  <li key={id}>
-                    {label(id)}:{' '}
-                    {g.state === 'completed'
-                      ? (() => {
-                          const r = g.result?.results.find((r) => r.submissionId === id);
-                          return r?.reason
-                            ? describeExclusion(r.reason)
-                            : r?.outcome === 'succeeded'
-                              ? 'corretta'
-                              : r?.outcome === 'partial'
-                                ? 'parziale'
-                                : 'da verificare';
-                        })()
-                      : phase === 'running' && index === completed.length
-                        ? 'in elaborazione'
+          {phase !== 'running' && (
+            <details>
+              <summary>Avanzamento consegne</summary>
+              <ul>
+                {plan.groups.flatMap((g) =>
+                  g.submissionIds.map((id) => (
+                    <li key={id}>
+                      {label(id)}:{' '}
+                      {g.state === 'completed'
+                        ? (() => {
+                            const r = g.result?.results.find((r) => r.submissionId === id);
+                            return r?.reason
+                              ? describeExclusion(r.reason)
+                              : r?.outcome === 'succeeded'
+                                ? 'corretta'
+                                : r?.outcome === 'partial'
+                                  ? 'parziale'
+                                  : 'da verificare';
+                          })()
                         : g.state === 'running'
                           ? 'esito da recuperare'
                           : 'in attesa'}
-                  </li>
-                )),
-              )}
-            </ul>
-          </details>
+                    </li>
+                  )),
+                )}
+              </ul>
+            </details>
+          )}
           <div className="dialog-actions">
             {phase === 'running' && (
               <button
