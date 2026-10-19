@@ -135,3 +135,34 @@ export async function loadPrivateStudyPractice(params: {
     throw new Error('Impossibile caricare la lezione corrente. Ricarica il corso.');
   return currentStudyPractice(lesson.studyPractice, params.sourceBody);
 }
+
+/** Verify the authoritative private artifact AND current public lesson body before continuing. */
+export async function verifyStudyPracticeDraft(
+  params: Parameters<typeof loadPrivateStudyPractice>[0] & {
+    publicLessonId: string;
+    practice: StudyPractice;
+  },
+): Promise<void> {
+  const practice = validateStudyPractice(params.practice, params.sourceBody);
+  const stored = await loadPrivateStudyPractice(params);
+  const projection = await getDocFromServer(doc(params.db, 'publicLessons', params.publicLessonId));
+  if (
+    !projection.exists() ||
+    projection.data().ownerUid !== params.ownerUid ||
+    projection.data().content !== params.sourceBody ||
+    !stored
+  )
+    throw new Error('La fonte o la bozza salvata è cambiata. Ricarica prima di continuare.');
+  const stable = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(stable)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.entries(v)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, x]) => [k, stable(x)]),
+          )
+        : v;
+  if (JSON.stringify(stable(stored)) !== JSON.stringify(stable(practice)))
+    throw new Error('La bozza salvata è cambiata. Ricarica prima di continuare.');
+}

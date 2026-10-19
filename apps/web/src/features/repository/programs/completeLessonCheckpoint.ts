@@ -1,3 +1,9 @@
+import { fingerprintCompleteLessonBody } from './completeLessonFingerprint.js';
+export { fingerprintCompleteLessonBody } from './completeLessonFingerprint.js';
+import {
+  parseCompletePracticeState,
+  type CompletePracticeState,
+} from './completePracticeGeneration.js';
 import type { PoolLevel, PoolModelProfile } from '../pools/aiContentClient.js';
 
 export const COMPLETE_LESSON_CHECKPOINT_VERSION = 1 as const;
@@ -10,6 +16,8 @@ export interface CompleteLessonCheckpointIdentity {
 }
 
 export interface CompleteLessonCheckpointOptions {
+  practiceEnabled?: boolean;
+  practiceCount?: 3 | 6 | 9;
   level: PoolLevel;
   counts: { aperta: number; chiusa_singola: number; chiusa_multipla: number };
   modelProfile: PoolModelProfile;
@@ -23,6 +31,7 @@ export interface CompleteLessonCheckpoint {
   bodyFingerprint: string;
   options: CompleteLessonCheckpointOptions;
   bodyPersisted: true;
+  practice?: CompletePracticeState;
   mapCompleted: boolean;
   poolCompleted: boolean;
   mapRequestId: string;
@@ -40,18 +49,6 @@ export interface CompleteLessonCheckpoint {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** Impronta locale anti-stale, non usata come garanzia crittografica. */
-export function fingerprintCompleteLessonBody(body: string): string {
-  let first = 0x811c9dc5;
-  let second = 0x9e3779b9;
-  for (let index = 0; index < body.length; index += 1) {
-    const code = body.charCodeAt(index);
-    first = Math.imul(first ^ code, 0x01000193);
-    second = Math.imul(second ^ (code + index), 0x85ebca6b);
-  }
-  return `${body.length}:${(first >>> 0).toString(16)}:${(second >>> 0).toString(16)}`;
 }
 
 export function completeLessonCheckpointKey(identity: CompleteLessonCheckpointIdentity): string {
@@ -75,6 +72,13 @@ export function createCompleteLessonCheckpoint(
 
 function validOptions(value: unknown): value is CompleteLessonCheckpointOptions {
   if (!isRecord(value)) return false;
+  if (value.practiceEnabled !== undefined && typeof value.practiceEnabled !== 'boolean')
+    return false;
+  if (
+    value.practiceCount !== undefined &&
+    (typeof value.practiceCount !== 'number' || ![3, 6, 9].includes(value.practiceCount))
+  )
+    return false;
   if (value.level !== 'base' && value.level !== 'balanced' && value.level !== 'advanced') {
     return false;
   }
@@ -149,6 +153,15 @@ export function parseCompleteLessonCheckpoint(
         return null;
       }
     }
+    if (value.practice !== undefined) {
+      const options = value.options as unknown as CompleteLessonCheckpointOptions;
+      if (!options.practiceEnabled || !options.practiceCount) return null;
+      value.practice = parseCompletePracticeState(
+        value.practice,
+        currentBody,
+        options.practiceCount,
+      );
+    }
     return value as unknown as CompleteLessonCheckpoint;
   } catch {
     return null;
@@ -188,11 +201,14 @@ export function writeCompleteLessonCheckpoint(checkpoint: CompleteLessonCheckpoi
         expiresAtMs: checkpoint.expiresAtMs,
         bodyFingerprint: checkpoint.bodyFingerprint,
         options: {
+          practiceEnabled: checkpoint.options.practiceEnabled,
+          practiceCount: checkpoint.options.practiceCount,
           level: checkpoint.options.level,
           counts: checkpoint.options.counts,
           modelProfile: checkpoint.options.modelProfile,
           reviewStatus: checkpoint.options.reviewStatus,
         },
+        practice: checkpoint.practice,
         bodyPersisted: checkpoint.bodyPersisted,
         mapCompleted: checkpoint.mapCompleted,
         poolCompleted: checkpoint.poolCompleted,

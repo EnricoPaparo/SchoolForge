@@ -193,6 +193,8 @@ export interface PoolRequest {
   purpose?: 'practice';
   plannedObjectives?: string[];
   approvedPractice?: string;
+  /** Unapproved draft from the same completion body, always subordinate to lesson source. */
+  draftPractice?: string;
   requestId: string;
   modelProfile: ModelProfile;
   teacherGuidance: string | null;
@@ -624,6 +626,7 @@ export function canonicalRequest(request: AiContentRequest): string {
           ...(request.plannedObjectives ? { plannedObjectives: request.plannedObjectives } : {}),
           ...(request.purpose ? { purpose: request.purpose } : {}),
           ...(request.approvedPractice ? { approvedPractice: request.approvedPractice } : {}),
+          ...(request.draftPractice ? { draftPractice: request.draftPractice } : {}),
           modelProfile: request.modelProfile,
           level: request.level,
           counts: {
@@ -1132,6 +1135,7 @@ function validateAiContentRequestWithPolicy(
       'purpose',
       'plannedObjectives',
       'approvedPractice',
+      'draftPractice',
     ]);
     if (input.purpose !== undefined && input.purpose !== 'practice')
       throw new AiContentError('invalid_input', 'Scopo non valido.');
@@ -1140,6 +1144,13 @@ function validateAiContentRequestWithPolicy(
       (typeof input.approvedPractice !== 'string' || utf8ByteLength(input.approvedPractice) > 50000)
     )
       throw new AiContentError('invalid_input', 'Pratica non valida.');
+    if (
+      input.draftPractice !== undefined &&
+      (input.purpose === 'practice' ||
+        typeof input.draftPractice !== 'string' ||
+        utf8ByteLength(input.draftPractice) > 50000)
+    )
+      throw new AiContentError('invalid_input', 'Contesto bozza esercitazioni non valido.');
     if (input.level !== 'base' && input.level !== 'balanced' && input.level !== 'advanced') {
       throw new AiContentError('invalid_input', 'Livello del pool non valido.');
     }
@@ -1190,6 +1201,7 @@ function validateAiContentRequestWithPolicy(
       ...(typeof input.approvedPractice === 'string'
         ? { approvedPractice: input.approvedPractice }
         : {}),
+      ...(typeof input.draftPractice === 'string' ? { draftPractice: input.draftPractice } : {}),
       requestId,
       modelProfile,
       teacherGuidance,

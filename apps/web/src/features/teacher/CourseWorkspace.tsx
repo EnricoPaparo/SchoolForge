@@ -1,3 +1,7 @@
+import {
+  saveStudyPractice,
+  verifyStudyPracticeDraft,
+} from '../repository/programs/studyPracticeService.js';
 import { LessonPdfProgressDialog, type LessonPdfProgress } from './LessonPdfProgressDialog.js';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -1552,14 +1556,14 @@ function CourseWorkspaceSession({
    * perché il piano immagini deve leggere esattamente quel corpo e il docente
    * deve poter seguire riepilogo/retry nello stesso dialog.
    */
-  async function handlePersistGeneratedContent(lesson: LessonItem, body: string): Promise<void> {
+  async function handlePersistGeneratedContent(lesson: LessonItem, body: string): Promise<string> {
     if (!card.activeImportId) throw new Error('Import attivo non disponibile.');
     const importId = card.activeImportId;
     const lessonId = lesson.id;
     const endMutation = beginContentMutation(lessonId);
     setContentStatus({ busy: true, error: null, saved: false });
     try {
-      await updateLessonMarkdownBody({
+      const persistedBody = await updateLessonMarkdownBody({
         programId: card.programId,
         importId,
         lessonId,
@@ -1568,10 +1572,11 @@ function CourseWorkspaceSession({
         db,
         storage,
       });
-      if (!mountedRef.current || currentLessonRef.current !== lessonId) return;
-      setLessonContent(body);
+      if (!mountedRef.current || currentLessonRef.current !== lessonId) return persistedBody;
+      setLessonContent(persistedBody);
       setContentDirty(false);
       setContentStatus({ busy: false, error: null, saved: true });
+      return persistedBody;
     } catch (err) {
       if (mountedRef.current && currentLessonRef.current === lessonId) {
         setContentStatus({
@@ -2905,6 +2910,30 @@ function CourseWorkspaceSession({
               onClear={() => clearLessonData(selectedLesson.id)}
               onPersistBody={(body) => handlePersistGeneratedContent(selectedLesson, body)}
               onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
+              onVerifyPractice={(practice) =>
+                verifyStudyPracticeDraft({
+                  programId: card.programId,
+                  importId: card.activeImportId!,
+                  lessonId: selectedLesson.id,
+                  ownerUid,
+                  publicLessonId: resolvePublicLessonId(selectedLesson, selectedLesson.id),
+                  sourceBody: practice.sourceBody,
+                  practice,
+                  db,
+                })
+              }
+              onSavePractice={(practice) =>
+                saveStudyPractice({
+                  programId: card.programId,
+                  importId: card.activeImportId!,
+                  lessonId: selectedLesson.id,
+                  ownerUid,
+                  sourceBody: practice.sourceBody,
+                  practice,
+                  publish: false,
+                  db,
+                })
+              }
               onSavePool={async (pool) => {
                 await savePool({
                   programId: card.programId,

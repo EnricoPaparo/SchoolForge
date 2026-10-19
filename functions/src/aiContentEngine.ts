@@ -473,6 +473,15 @@ export async function generateContent(
       settledMicroUsd: settled,
       nowMs: ctx.nowMs,
     });
+    console.warn('ai_content_provider_failed', {
+      kind: request.kind,
+      phase: providerOutcome.phase,
+      reason: ['max_output_tokens', 'content_filter', 'other'].includes(
+        providerOutcome.reason ?? '',
+      )
+        ? providerOutcome.reason
+        : 'unspecified',
+    });
     if (providerOutcome.reason === 'max_output_tokens') {
       // Diagnostica sanitizzata: nessun prompt, contenuto, UID o requestId.
       console.warn('ai_content_provider_output_incomplete', {

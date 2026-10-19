@@ -1,5 +1,11 @@
+import {
+  createCompletePracticeState,
+  runCompletePractice,
+  parseCompletePracticeState,
+} from '../repository/programs/completePracticeGeneration.js';
+import type { StudyPractice } from '../repository/programs/studyPractice.js';
 import type { CompleteReviewReport } from './AiCompleteLessonGenerationDialog.js';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { reviewMapCandidate, reviewPoolCandidate } from '../repository/pools/aiArtifactReview.js';
 import { functions } from '../../lib/firebase.js';
 import {
@@ -39,7 +45,12 @@ import {
 } from './AiCompleteLessonGenerationDialog.js';
 import type { ParsedPool } from '@schoolforge/lesson-contract';
 
-type CompleteWorkflowStage = 'persist_body' | 'concept_map' | 'question_pool' | 'visual_plan';
+type CompleteWorkflowStage =
+  | 'persist_body'
+  | 'concept_map'
+  | 'practice'
+  | 'question_pool'
+  | 'visual_plan';
 
 export class CompleteWorkflowError extends Error {
   constructor(
@@ -77,6 +88,14 @@ export function describeCompleteWorkflowError(cause: unknown): string {
     }
     return 'La generazione della mappa si è interrotta. La lezione è salva: riprova dalla mappa.';
   }
+  if (
+    cause.stage === 'practice' &&
+    cause.cause instanceof Error &&
+    cause.cause.message.startsWith('Conferma')
+  )
+    return 'Completamento interrotto prima della fase confermata. Nessuna chiamata IA per questa fase. Puoi riprendere più tardi.';
+  if (cause.stage === 'practice')
+    return 'Le esercitazioni non sono state completate. Lezione e mappa sono conservate: riprova soltanto la fase rimasta. Nessuna pubblicazione automatica.';
   if (cause.stage === 'question_pool') {
     if (code === 'provider_invalid_output' || code === 'output_incomplete') {
       return 'Le domande prodotte non erano valide. Lezione e mappa sono salve: riprova dalle domande.';
@@ -96,15 +115,19 @@ export function TotalLessonGenerationDialog({
   onPersistBody,
   onSaveConceptMap,
   onSavePool,
+  onSavePractice,
+  onVerifyPractice,
   onRefreshVisuals,
   onClose,
 }: {
   context: LessonAiContext;
   identity: { programId: string; importId: string; lessonId: string };
   onClear: () => Promise<void>;
-  onPersistBody: (body: string) => Promise<void>;
+  onPersistBody: (body: string) => Promise<string>;
   onSaveConceptMap: (markdown: string) => Promise<void>;
   onSavePool: (pool: ParsedPool) => Promise<void>;
+  onSavePractice?: (practice: StudyPractice) => Promise<void>;
+  onVerifyPractice?: (practice: StudyPractice) => Promise<void>;
   onRefreshVisuals: () => Promise<void>;
   onClose: () => void;
 }) {
@@ -118,12 +141,49 @@ export function TotalLessonGenerationDialog({
     [context.currentBody, identity.importId, identity.lessonId, identity.programId],
   );
 
+  const mountedRef = useRef(true);
+  const latestBodyRef = useRef(context.currentBody);
+  latestBodyRef.current = context.currentBody;
+  const initialBodyRef = useRef(context.currentBody);
+  const currentIdentityRef = useRef(JSON.stringify(identity));
+  currentIdentityRef.current = JSON.stringify(identity);
+  const initialIdentityRef = useRef(JSON.stringify(identity));
+  const observedFinalBodyRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const clearedRef = useRef(Boolean(restoredCheckpoint));
   const bodyPersistedRef = useRef(Boolean(restoredCheckpoint));
-  const reviewReportsRef = useRef<Partial<Record<'map' | 'pool', CompleteReviewReport>>>({
+  const persistedBodyRef = useRef<string | null>(restoredCheckpoint ? context.currentBody : null);
+  // Only our successful clear may temporarily precede the authoritative save's React commit.
+  const ownClearPendingRef = useRef(false);
+  const sourceInvalidatedRef = useRef(false);
+  if (bodyPersistedRef.current && persistedBodyRef.current !== null) {
+    if (context.currentBody === persistedBodyRef.current) {
+      observedFinalBodyRef.current = true;
+      ownClearPendingRef.current = false;
+    } else if (
+      observedFinalBodyRef.current ||
+      (context.currentBody !== initialBodyRef.current &&
+        !(ownClearPendingRef.current && context.currentBody === ''))
+    ) {
+      sourceInvalidatedRef.current = true;
+    }
+  }
+
+  const reviewReportsRef = useRef<
+    Partial<Record<'map' | 'pool' | 'practice', CompleteReviewReport>>
+  >({
     ...(restoredCheckpoint?.mapCompleted ? { map: { status: 'restored' as const } } : {}),
     ...(restoredCheckpoint?.poolCompleted ? { pool: { status: 'restored' as const } } : {}),
   });
+  const practiceRef = useRef(
+    restoredCheckpoint?.practice ?? createCompletePracticeState(context.obiettivi ?? []),
+  );
+  const practiceCostRef = useRef<number | null>(0);
   const mapCompletedRef = useRef(restoredCheckpoint?.mapCompleted ?? false);
   const poolCompletedRef = useRef(restoredCheckpoint?.poolCompleted ?? false);
   const mapRequestIdRef = useRef(restoredCheckpoint?.mapRequestId ?? newRequestId());
@@ -169,6 +229,15 @@ export function TotalLessonGenerationDialog({
         body,
         options,
         bodyPersisted: true,
+        ...(options.practiceEnabled
+          ? {
+              practice: parseCompletePracticeState(
+                practiceRef.current,
+                body,
+                options.practiceCount ?? 6,
+              ),
+            }
+          : {}),
         mapCompleted: mapCompletedRef.current,
         poolCompleted: poolCompletedRef.current,
         mapRequestId: mapRequestIdRef.current,
@@ -192,6 +261,12 @@ export function TotalLessonGenerationDialog({
     clearCompleteLessonCheckpoint(identity);
     clearedRef.current = false;
     bodyPersistedRef.current = false;
+    persistedBodyRef.current = null;
+    ownClearPendingRef.current = false;
+    observedFinalBodyRef.current = false;
+    sourceInvalidatedRef.current = false;
+    practiceRef.current = createCompletePracticeState(context.obiettivi ?? []);
+    practiceCostRef.current = 0;
     mapCompletedRef.current = false;
     poolCompletedRef.current = false;
     mapRequestIdRef.current = newRequestId();
@@ -207,6 +282,7 @@ export function TotalLessonGenerationDialog({
   async function clearOnce() {
     if (clearedRef.current) return;
     await onClear();
+    ownClearPendingRef.current = true;
     clearedRef.current = true;
   }
 
@@ -236,13 +312,36 @@ export function TotalLessonGenerationDialog({
     if (!bodyPersistedRef.current) {
       onProgress({ stage: 'content', label: 'Salvataggio della nuova lezione…' });
       try {
-        await onPersistBody(body);
+        body = await onPersistBody(body);
+        persistedBodyRef.current = body;
       } catch (cause) {
         throw new CompleteWorkflowError('persist_body', cause);
       }
       bodyPersistedRef.current = true;
       persistCheckpoint(body, options);
     }
+
+    body = persistedBodyRef.current ?? body;
+    function isCurrent() {
+      if (latestBodyRef.current === body) {
+        observedFinalBodyRef.current = true;
+        ownClearPendingRef.current = false;
+      }
+      return (
+        mountedRef.current &&
+        !sourceInvalidatedRef.current &&
+        currentIdentityRef.current === initialIdentityRef.current &&
+        (latestBodyRef.current === body ||
+          (!observedFinalBodyRef.current &&
+            (latestBodyRef.current === initialBodyRef.current ||
+              (ownClearPendingRef.current && latestBodyRef.current === ''))))
+      );
+    }
+    function ensureCurrent() {
+      if (!isCurrent())
+        throw new CompleteWorkflowError('practice', new Error('La fonte è cambiata.'));
+    }
+    ensureCurrent();
 
     if (!mapCompletedRef.current) {
       onProgress({ stage: 'map' });
@@ -291,21 +390,68 @@ export function TotalLessonGenerationDialog({
       }
     }
 
+    let draftPractice: string | undefined;
+    if (options.practiceEnabled) {
+      onProgress({ stage: 'practice' });
+      try {
+        const result = await runCompletePractice(practiceRef.current, {
+          body,
+          count: options.practiceCount ?? 6,
+          modelProfile: options.modelProfile,
+          review: options.reviewStatus !== 'disabled',
+          callables: poolCallables,
+          checkpoint: () => persistCheckpoint(body, options),
+          active: isCurrent,
+          verify: async (practice) => {
+            ensureCurrent();
+            if (!onVerifyPractice) throw new Error('Verifica bozza non disponibile.');
+            await onVerifyPractice(practice);
+          },
+          confirm: (estimate) =>
+            new Promise<boolean>((confirm) => onProgress({ stage: 'practice', estimate, confirm })),
+          save: async (practice) => {
+            if (!onSavePractice) throw new Error('Salvataggio esercitazioni non disponibile.');
+            await onSavePractice(practice);
+          },
+        });
+        draftPractice = result.context;
+        practiceCostRef.current = result.cost;
+        const reviewed = practiceRef.current.reviewed;
+        const report: CompleteReviewReport = reviewed
+          ? {
+              status: reviewed.output.reviewOutcome,
+              feedback: reviewed.reviewFeedback,
+              replayed: reviewed.replayed,
+            }
+          : { status: 'disabled' };
+        reviewReportsRef.current.practice = report;
+        onProgress({ stage: 'practice', review: report });
+      } catch (cause) {
+        throw new CompleteWorkflowError('practice', cause);
+      }
+    }
+
+    ensureCurrent();
     if (!poolCompletedRef.current) {
       const total =
         options.counts.aperta + options.counts.chiusa_singola + options.counts.chiusa_multipla;
       onProgress({ stage: 'pool', label: `Generazione di ${total} domande…` });
-      const request = buildPoolContentRequest({
-        modelProfile: options.modelProfile,
-        requestId: poolRequestIdRef.current,
-        level: options.level,
-        counts: options.counts,
-        lessonSource: body,
-        existingPoolQuestionCount: 0,
-      });
+      const request = {
+        ...buildPoolContentRequest({
+          modelProfile: options.modelProfile,
+          requestId: poolRequestIdRef.current,
+          level: options.level,
+          counts: options.counts,
+          lessonSource: body,
+          existingPoolQuestionCount: 0,
+        }),
+        ...(draftPractice ? { draftPractice } : {}),
+      };
       try {
         await poolCallables.preview(request);
+        ensureCurrent();
         const generated = await poolCallables.generate(request);
+        ensureCurrent();
         persistCheckpoint(body, options);
         if (options.reviewStatus !== 'disabled')
           onProgress({ stage: 'pool', label: 'Revisione delle domande e delle soluzioni…' });
@@ -317,6 +463,7 @@ export function TotalLessonGenerationDialog({
                 request,
                 generated,
                 poolReviewRequestIdRef.current,
+                ensureCurrent,
               );
         const reviewReport = reviewed
           ? {
@@ -332,6 +479,7 @@ export function TotalLessonGenerationDialog({
           proposalToLocalQuestions(reviewed?.output ?? generated.output),
         );
         if (!mapped.ok) throw new Error(mapped.errors.join(' '));
+        ensureCurrent();
         await onSavePool(mapped.pool);
         poolCostRef.current =
           generated.actualCostMicroUsd === null || reviewed?.actualCostMicroUsd === null
@@ -344,6 +492,7 @@ export function TotalLessonGenerationDialog({
       }
     }
 
+    ensureCurrent();
     if (!visualStateRef.current) {
       visualStateRef.current = {
         ...createCompleteLessonGenerationState({
@@ -431,7 +580,12 @@ export function TotalLessonGenerationDialog({
       plan.settlement.proposalActualCost,
       ...plan.settlement.slots.map((slot) => slot.actualCost),
     ];
-    const allCosts = [mapCostRef.current, poolCostRef.current, ...visualCosts];
+    const allCosts = [
+      mapCostRef.current,
+      practiceCostRef.current,
+      poolCostRef.current,
+      ...visualCosts,
+    ];
     const actualCostMicroUsd = allCosts.some((cost) => cost === null)
       ? null
       : allCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
@@ -445,6 +599,7 @@ export function TotalLessonGenerationDialog({
 
     return {
       reviewReports: reviewReportsRef.current,
+      practiceGenerated: options.practiceEnabled ? (options.practiceCount ?? 6) : undefined,
       mapGenerated: mapCompletedRef.current,
       questionsGenerated:
         options.counts.aperta + options.counts.chiusa_singola + options.counts.chiusa_multipla,
@@ -476,7 +631,12 @@ export function TotalLessonGenerationDialog({
               message: restoredCheckpoint.poolCompleted
                 ? 'È disponibile una generazione interrotta. Lezione, mappa e domande sono già salve: riprendi dalle immagini.'
                 : restoredCheckpoint.mapCompleted
-                  ? 'È disponibile una generazione interrotta. Lezione e mappa sono già salve: riprendi dalle domande.'
+                  ? restoredCheckpoint.options.practiceEnabled &&
+                    (!restoredCheckpoint.practice?.saved ||
+                      (restoredCheckpoint.options.reviewStatus !== 'disabled' &&
+                        !restoredCheckpoint.practice?.reviewed))
+                    ? 'È disponibile una generazione interrotta. Lezione e mappa sono già salve: riprendi dalle esercitazioni.'
+                    : 'È disponibile una generazione interrotta. Lezione e mappa sono già salve: riprendi dalle domande.'
                   : 'È disponibile una generazione interrotta. La lezione è già salva: riprendi dalla mappa.',
             }
           : undefined

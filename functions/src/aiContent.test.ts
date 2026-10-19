@@ -257,6 +257,28 @@ describe('validateAiContentRequest', () => {
   });
 });
 
+describe('complete generation draft practice context', () => {
+  it('bounds draft context and binds hashes, prompt and estimates without approving it', () => {
+    const base = validateAiContentRequest(poolPayload()) as PoolRequest;
+    const draft = validateAiContentRequest(
+      poolPayload({ draftPractice: 'Bozza: esercizio sul protocollo TCP.' }),
+    ) as PoolRequest;
+    expect(computeInputHash(draft)).not.toBe(computeInputHash(base));
+    expect(JSON.stringify(canonicalRequest(draft))).toContain('draftPractice');
+    expect(JSON.stringify(buildPoolPrompt(draft))).toContain(
+      'Bozza: esercizio sul protocollo TCP.',
+    );
+    expect(estimateInputTokens(draft)).toBeGreaterThan(estimateInputTokens(base));
+    expect(draft.approvedPractice).toBeUndefined();
+    expect(() =>
+      validateAiContentRequest(poolPayload({ draftPractice: 'x'.repeat(50_001) })),
+    ).toThrow();
+    expect(() =>
+      validateAiContentRequest(poolPayload({ purpose: 'practice', draftPractice: 'bozza' })),
+    ).toThrow();
+  });
+});
+
 describe('POOL-ROLLOUT-01 gateway fail-closed order', () => {
   const gatewaySource = readFileSync(new URL('./aiContentGateway.ts', import.meta.url), 'utf8');
 
@@ -2822,4 +2844,46 @@ it('settles metered insufficient-source pool review without a completed proposal
     }),
   );
   expect(finalizeRun).not.toHaveBeenCalled();
+});
+
+it('settles a failed lesson review conservatively and logs only allowlisted provider metadata', async () => {
+  const fields = lessonPayload() as Record<string, unknown>;
+  delete fields.currentBody;
+  delete fields.hasCurrentContent;
+  const request = validateAiContentRequest({
+    ...fields,
+    kind: 'lesson_review',
+    candidateBody: 'PRIVATE_SOURCE_TEXT da revisionare.',
+  });
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined),
+    failRun = vi.fn(async (_p: Parameters<AiContentPorts['failRun']>[0]) => undefined),
+    finalizeRun = vi.fn();
+  try {
+    await expect(
+      generateContent(
+        request,
+        ctx,
+        makePorts({
+          loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 5000000 }),
+          callProvider: async () => ({
+            status: 'error',
+            phase: 'invocation_unknown',
+            reason: 'PRIVATE_PROVIDER_OR_SECRET' as 'other',
+          }),
+          failRun,
+          finalizeRun: finalizeRun as never,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'provider_unavailable' });
+    expect(warn).toHaveBeenCalledWith('ai_content_provider_failed', {
+      kind: 'lesson_review',
+      phase: 'invocation_unknown',
+      reason: 'unspecified',
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/PRIVATE_|owner-1|11111111/);
+    expect(failRun.mock.calls[0]?.[0]).toMatchObject({ actualCostMicroUsd: null });
+    expect(finalizeRun).not.toHaveBeenCalled();
+  } finally {
+    warn.mockRestore();
+  }
 });
