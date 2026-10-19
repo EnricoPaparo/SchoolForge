@@ -24,6 +24,7 @@ import {
   estimateInputTokens,
   resolveMaxOutputTokens,
   reservationInputTokenUpperBound,
+  type buildContentStructuredRequest,
 } from './aiContentPayload.js';
 
 export interface ContentCostEstimate {
@@ -53,6 +54,7 @@ export function estimateContentCost(
   model: string,
   priceListVersion: string,
   maxAttempts: number,
+  payload?: ReturnType<typeof buildContentStructuredRequest>,
 ): ContentCostEstimate {
   const price = lookupModelPrice(priceListVersion, model);
   if (!price) {
@@ -81,7 +83,9 @@ export function estimateContentCost(
   // Prenotazione conservativa: input = byte UTF-8 dell'esatto payload, output =
   // hard cap, × numero massimo di tentativi (il provider può essere invocato più
   // volte in caso di retry). ceil → mai sotto-riservare.
-  const inputUpperBound = reservationInputTokenUpperBound(request, model);
+  const inputUpperBound = payload
+    ? Buffer.byteLength(JSON.stringify(payload), 'utf8')
+    : reservationInputTokenUpperBound(request, model);
   const attempts = Math.max(1, Math.floor(maxAttempts));
   // I listini cache-aware contabilizzano prudentemente i dettagli cache assenti
   // come cache write. La prenotazione usa la stessa regola del settlement, così

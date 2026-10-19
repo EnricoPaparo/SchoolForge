@@ -855,7 +855,7 @@ export function buildLessonReviewPrompt(request: LessonReviewRequest): BuiltProm
     'Scrivi formule ed equazioni in testo piano leggibile con simboli Unicode, per esempio ρ = m / V e 100 g / 20 cm³ = 5 g/cm³. Non usare LaTeX: niente delimitatori matematici $, $$, \\(, \\[ o comandi come \\frac, \\rho, \\text. Mantieni formule, passaggi e unità corretti senza eliminare dettagli.',
     'Rispetta il livello scolastico e la profondità richiesta. Conserva i passaggi validi della bozza anche se migliorabili nello stile; integra soltanto spiegazioni necessarie a risolvere un difetto didattico concreto, senza quote editoriali.',
     REVIEW_CHANGES_INSTRUCTIONS,
-    'reviewOutcome deve essere unchanged e body identico alla BOZZA quando non trovi un difetto concreto che richieda riparazione; improved soltanto per correzioni o integrazioni didattiche dimostrabili, mai per una preferenza stilistica.',
+    'reviewOutcome deve essere unchanged e body=null (il server conserva la BOZZA identica) quando non trovi un difetto concreto che richieda riparazione; improved soltanto per correzioni o integrazioni didattiche dimostrabili, mai per una preferenza stilistica.',
     'issueCodes contiene soltanto codici fra: disciplinary_error, false_simplification, logical_gap, missing_prerequisite, weak_example, misconception_risk, structure, verbosity. Può essere vuoto.',
   ].join('\n\n');
   const user = [

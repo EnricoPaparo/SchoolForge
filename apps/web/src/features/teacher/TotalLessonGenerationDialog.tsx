@@ -1,9 +1,19 @@
 import {
+  emptyArtifactState,
+  type MapArtifactState,
+  type PoolArtifactState,
+} from '../repository/programs/completeArtifactState.js';
+import {
   createCompletePracticeState,
   runCompletePractice,
   parseCompletePracticeState,
 } from '../repository/programs/completePracticeGeneration.js';
-import type { StudyPractice } from '../repository/programs/studyPractice.js';
+import {
+  legacyPracticePoolContext,
+  practicePoolContext,
+  type CompletePoolContext,
+  type StudyPractice,
+} from '../repository/programs/studyPractice.js';
 import type { CompleteReviewReport } from './AiCompleteLessonGenerationDialog.js';
 import { useEffect, useMemo, useRef } from 'react';
 import { reviewMapCandidate, reviewPoolCandidate } from '../repository/pools/aiArtifactReview.js';
@@ -77,6 +87,8 @@ export function describeCompleteWorkflowError(cause: unknown): string {
     return 'Il completamento si è interrotto. Riprova.';
   }
   const code = completionErrorCode(cause.cause);
+  if (code === 'legacy_practice_context_overflow')
+    return 'La sessione precedente non conservava un contesto completo delle esercitazioni. Per evitare richieste diverse con lo stesso identificativo, scarta la ripresa e avvia esplicitamente una nuova generazione.';
   if (cause.stage === 'persist_body') {
     return 'Non è stato possibile salvare la lezione. Nessuna fase successiva è stata avviata.';
   }
@@ -184,6 +196,22 @@ export function TotalLessonGenerationDialog({
     restoredCheckpoint?.practice ?? createCompletePracticeState(context.obiettivi ?? []),
   );
   const practiceCostRef = useRef<number | null>(0);
+  const poolContextRef = useRef<CompletePoolContext>(
+    restoredCheckpoint?.poolContext ?? {
+      format:
+        restoredCheckpoint &&
+        restoredCheckpoint.mapState === undefined &&
+        restoredCheckpoint.poolState === undefined
+          ? 'legacy'
+          : 'compact',
+    },
+  );
+  const mapStateRef = useRef<MapArtifactState>(
+    restoredCheckpoint?.mapState ?? emptyArtifactState(),
+  );
+  const poolStateRef = useRef<PoolArtifactState>(
+    restoredCheckpoint?.poolState ?? emptyArtifactState(),
+  );
   const mapCompletedRef = useRef(restoredCheckpoint?.mapCompleted ?? false);
   const poolCompletedRef = useRef(restoredCheckpoint?.poolCompleted ?? false);
   const mapRequestIdRef = useRef(restoredCheckpoint?.mapRequestId ?? newRequestId());
@@ -238,6 +266,9 @@ export function TotalLessonGenerationDialog({
               ),
             }
           : {}),
+        poolContext: poolContextRef.current,
+        mapState: mapStateRef.current,
+        poolState: poolStateRef.current,
         mapCompleted: mapCompletedRef.current,
         poolCompleted: poolCompletedRef.current,
         mapRequestId: mapRequestIdRef.current,
@@ -267,6 +298,9 @@ export function TotalLessonGenerationDialog({
     sourceInvalidatedRef.current = false;
     practiceRef.current = createCompletePracticeState(context.obiettivi ?? []);
     practiceCostRef.current = 0;
+    poolContextRef.current = { format: 'compact' };
+    mapStateRef.current = emptyArtifactState();
+    poolStateRef.current = emptyArtifactState();
     mapCompletedRef.current = false;
     poolCompletedRef.current = false;
     mapRequestIdRef.current = newRequestId();
@@ -351,20 +385,46 @@ export function TotalLessonGenerationDialog({
         lessonBody: body,
       });
       try {
-        await mapCallables.preview(request);
-        const generated = await mapCallables.generate(request);
+        ensureCurrent();
+        if (!mapStateRef.current.base) {
+          await mapCallables.preview(request);
+          ensureCurrent();
+          try {
+            const generated = await mapCallables.generate(request);
+            ensureCurrent();
+            mapStateRef.current.base = generated;
+          } catch (error) {
+            mapStateRef.current.costUnknown = true;
+            persistCheckpoint(body, options);
+            throw error;
+          }
+        }
+        const generated = mapStateRef.current.base!;
         persistCheckpoint(body, options);
         if (options.reviewStatus !== 'disabled')
           onProgress({ stage: 'map', label: 'Revisione della mappa rispetto alla lezione…' });
+        let reviewInvoked = false;
         const reviewed =
           options.reviewStatus === 'disabled'
             ? null
-            : await reviewMapCandidate(
+            : (mapStateRef.current.reviewed ??
+              (await reviewMapCandidate(
                 mapCallables,
                 request,
                 generated,
                 mapReviewRequestIdRef.current,
-              );
+                ensureCurrent,
+                () => {
+                  reviewInvoked = true;
+                },
+              ).catch((error: unknown) => {
+                if (reviewInvoked) mapStateRef.current.costUnknown = true;
+                persistCheckpoint(body, options);
+                throw error;
+              })));
+        ensureCurrent();
+        mapStateRef.current.reviewed = reviewed;
+        persistCheckpoint(body, options);
         const reviewReport = reviewed
           ? {
               status: reviewed.output.reviewOutcome,
@@ -378,9 +438,13 @@ export function TotalLessonGenerationDialog({
           reviewed ? { ...reviewed, kind: 'concept_map' } : generated,
         );
         if (!validated.ok) throw new Error(validated.error);
+        ensureCurrent();
         await onSaveConceptMap(validated.conceptMapMarkdown);
+        ensureCurrent();
         mapCostRef.current =
-          generated.actualCostMicroUsd === null || reviewed?.actualCostMicroUsd === null
+          mapStateRef.current.costUnknown ||
+          generated.actualCostMicroUsd === null ||
+          reviewed?.actualCostMicroUsd === null
             ? null
             : generated.actualCostMicroUsd + (reviewed?.actualCostMicroUsd ?? 0);
         mapCompletedRef.current = true;
@@ -397,6 +461,14 @@ export function TotalLessonGenerationDialog({
         const result = await runCompletePractice(practiceRef.current, {
           body,
           count: options.practiceCount ?? 6,
+          poolContext: (practice) =>
+            poolCompletedRef.current
+              ? undefined
+              : poolContextRef.current.draftPractice !== undefined
+                ? (poolContextRef.current.draftPractice ?? undefined)
+                : poolContextRef.current.format === 'legacy'
+                  ? legacyPracticePoolContext(practice)
+                  : practicePoolContext(practice),
           modelProfile: options.modelProfile,
           review: options.reviewStatus !== 'disabled',
           callables: poolCallables,
@@ -431,6 +503,14 @@ export function TotalLessonGenerationDialog({
 
     ensureCurrent();
     if (!poolCompletedRef.current) {
+      if (poolContextRef.current.draftPractice === undefined) {
+        poolContextRef.current = {
+          ...poolContextRef.current,
+          draftPractice: draftPractice ?? null,
+        };
+        persistCheckpoint(body, options);
+      }
+      draftPractice = poolContextRef.current.draftPractice ?? undefined;
       const total =
         options.counts.aperta + options.counts.chiusa_singola + options.counts.chiusa_multipla;
       onProgress({ stage: 'pool', label: `Generazione di ${total} domande…` });
@@ -446,23 +526,46 @@ export function TotalLessonGenerationDialog({
         ...(draftPractice ? { draftPractice } : {}),
       };
       try {
-        await poolCallables.preview(request);
         ensureCurrent();
-        const generated = await poolCallables.generate(request);
-        ensureCurrent();
+        if (!poolStateRef.current.base) {
+          await poolCallables.preview(request);
+          ensureCurrent();
+          try {
+            const generated = await poolCallables.generate(request);
+            ensureCurrent();
+            poolStateRef.current.base = generated;
+          } catch (error) {
+            poolStateRef.current.costUnknown = true;
+            persistCheckpoint(body, options);
+            throw error;
+          }
+        }
+        const generated = poolStateRef.current.base!;
         persistCheckpoint(body, options);
         if (options.reviewStatus !== 'disabled')
           onProgress({ stage: 'pool', label: 'Revisione delle domande e delle soluzioni…' });
+        let reviewInvoked = false;
         const reviewed =
           options.reviewStatus === 'disabled'
             ? null
-            : await reviewPoolCandidate(
+            : (poolStateRef.current.reviewed ??
+              (await reviewPoolCandidate(
                 poolCallables,
                 request,
                 generated,
                 poolReviewRequestIdRef.current,
                 ensureCurrent,
-              );
+                () => {
+                  reviewInvoked = true;
+                },
+              ).catch((error: unknown) => {
+                if (reviewInvoked) poolStateRef.current.costUnknown = true;
+                persistCheckpoint(body, options);
+                throw error;
+              })));
+        ensureCurrent();
+        poolStateRef.current.reviewed = reviewed;
+        persistCheckpoint(body, options);
         const reviewReport = reviewed
           ? {
               status: reviewed.output.reviewOutcome,
@@ -479,8 +582,11 @@ export function TotalLessonGenerationDialog({
         if (!mapped.ok) throw new Error(mapped.errors.join(' '));
         ensureCurrent();
         await onSavePool(mapped.pool);
+        ensureCurrent();
         poolCostRef.current =
-          generated.actualCostMicroUsd === null || reviewed?.actualCostMicroUsd === null
+          poolStateRef.current.costUnknown ||
+          generated.actualCostMicroUsd === null ||
+          reviewed?.actualCostMicroUsd === null
             ? null
             : generated.actualCostMicroUsd + (reviewed?.actualCostMicroUsd ?? 0);
         poolCompletedRef.current = true;

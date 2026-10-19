@@ -11,6 +11,9 @@ import { STUDY_BODY, studyFixture } from '../../repository/programs/__tests__/st
 const state = vi.hoisted(() => ({
   generate: vi.fn(),
   map: vi.fn(),
+  mapPreview: vi.fn(),
+  mapReviewPreview: vi.fn(),
+  reviewEnabled: false,
   raw: '',
   summary: null as CompleteLessonCompletionSummary | null,
   error: null as unknown,
@@ -22,11 +25,42 @@ vi.mock('../../repository/pools/aiContentClient.js', async (original) => ({
   createAiContentCallables: () => ({
     preview: vi.fn(async () => ({ estimatedCostMicroUsd: 1, reservationCostMicroUsd: 2 })),
     generate: state.generate,
+    previewReview: vi.fn(),
+    generateReview: vi.fn(async (request: ContentClient.AiPoolReviewRequest) => ({
+      status: 'completed',
+      kind: 'pool_review',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output: {
+        questions: request.candidateQuestions,
+        studyPlan: request.candidateStudyPlan,
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+      },
+    })),
   }),
 }));
 vi.mock('../../repository/pools/aiConceptMapClient.js', async (original) => ({
   ...(await original<typeof MapClient>()),
-  createAiConceptMapCallables: () => ({ preview: vi.fn(), generate: state.map }),
+  createAiConceptMapCallables: () => ({
+    preview: state.mapPreview,
+    generate: state.map,
+    previewReview: state.mapReviewPreview,
+    generateReview: vi.fn(async (request: MapClient.AiConceptMapReviewRequest) => ({
+      status: 'completed',
+      kind: 'concept_map_review',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output: {
+        conceptMapMarkdown: request.candidateMarkdown,
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+        sourceIssue: false,
+      },
+    })),
+  }),
 }));
 vi.mock('../../repository/programs/multiVisualClient.js', () => ({
   createMultiVisualClient: () => ({
@@ -57,7 +91,7 @@ vi.mock('../AiCompleteLessonGenerationDialog.js', () => ({
             modelProfile: 'economy',
             level: 'balanced',
             counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
-            reviewStatus: 'disabled',
+            reviewStatus: state.reviewEnabled ? 'improved' : 'disabled',
             practiceEnabled: true,
             practiceCount: 3,
           });
@@ -77,6 +111,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.summary = null;
   state.error = null;
+  state.reviewEnabled = false;
 });
 it.each(['\n', '\r\n', '   '])(
   'uses authoritative persisted source through private practice save and pool, with %j raw boundary',
@@ -252,3 +287,166 @@ it.each([
     }
   },
 );
+
+it.each(['map', 'pool'] as const)(
+  'retries failed %s save without repeating generation',
+  async (failedStage) => {
+    state.raw = STUDY_BODY;
+    const fixture = studyFixture();
+    state.map.mockResolvedValue({
+      status: 'completed',
+      kind: 'concept_map',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output: { conceptMapMarkdown: '## Sintesi\n\nIl ciclo ripete il corpo.' },
+    });
+    state.generate.mockImplementation(async (request: ContentClient.AiPoolContentRequest) => ({
+      status: 'completed',
+      kind: 'pool',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output:
+        request.purpose === 'practice'
+          ? { questions: fixture.questions, studyPlan: fixture.plan }
+          : { questions: [fixture.questions[0]] },
+    }));
+    const saveMap = vi.fn(async () => {});
+    const savePool = vi.fn(async () => {});
+    (failedStage === 'map' ? saveMap : savePool).mockRejectedValueOnce(
+      new Error('save unavailable'),
+    );
+    render(
+      <TotalLessonGenerationDialog
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        context={{
+          titolo: 'Cicli',
+          sottotitolo: null,
+          difficolta: 'Base',
+          concettiChiave: [],
+          obiettivi: ['Prevedere output'],
+          udaTitle: 'UDA',
+          currentBody: STUDY_BODY,
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn(async () => STUDY_BODY)}
+        onSaveConceptMap={saveMap}
+        onSavePool={savePool}
+        onSavePractice={vi.fn()}
+        onVerifyPractice={vi.fn()}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.error).not.toBeNull());
+    state.error = null;
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.summary).not.toBeNull());
+    expect(state.error).toBeNull();
+    expect(state.map).toHaveBeenCalledOnce();
+    expect(state.generate).toHaveBeenCalledTimes(2);
+    expect(failedStage === 'map' ? saveMap : savePool).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each(['unmount', 'source_changed'] as const)(
+  'stops map generation when %s occurs during preview',
+  async (change) => {
+    state.raw = STUDY_BODY;
+    let release!: () => void;
+    state.mapPreview.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const saveMap = vi.fn();
+    const element = (body: string) => (
+      <TotalLessonGenerationDialog
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        context={{
+          titolo: 'Cicli',
+          sottotitolo: null,
+          difficolta: 'Base',
+          udaTitle: 'UDA',
+          currentBody: body,
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn(async () => STUDY_BODY)}
+        onSaveConceptMap={saveMap}
+        onSavePool={vi.fn()}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const view = render(element(STUDY_BODY));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.mapPreview).toHaveBeenCalledOnce());
+    if (change === 'unmount') view.unmount();
+    else view.rerender(element('Changed body'));
+    await act(async () => release());
+    await waitFor(() => expect(state.error).not.toBeNull());
+    expect(state.map).not.toHaveBeenCalled();
+    expect(saveMap).not.toHaveBeenCalled();
+    expect(state.generate).not.toHaveBeenCalled();
+  },
+);
+
+it('keeps known cost and candidate when map review preview alone fails', async () => {
+  state.raw = STUDY_BODY;
+  state.reviewEnabled = true;
+  state.mapReviewPreview.mockRejectedValueOnce(new Error('preview only'));
+  const fixture = studyFixture();
+  state.map.mockResolvedValue({
+    status: 'completed',
+    kind: 'concept_map',
+    modelProfile: 'economy',
+    actualCostMicroUsd: 1,
+    replayed: false,
+    output: { conceptMapMarkdown: '## Sintesi\n\nIl ciclo ripete il corpo.' },
+  });
+  state.generate.mockImplementation(async (request: ContentClient.AiPoolContentRequest) => ({
+    status: 'completed',
+    kind: 'pool',
+    modelProfile: 'economy',
+    actualCostMicroUsd: 1,
+    replayed: false,
+    output:
+      request.purpose === 'practice'
+        ? { questions: fixture.questions, studyPlan: fixture.plan }
+        : { questions: [fixture.questions[0]] },
+  }));
+  render(
+    <TotalLessonGenerationDialog
+      identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+      context={{
+        titolo: 'Cicli',
+        sottotitolo: null,
+        difficolta: 'Base',
+        obiettivi: ['Prevedere output'],
+        udaTitle: 'UDA',
+        currentBody: STUDY_BODY,
+      }}
+      onClear={vi.fn()}
+      onPersistBody={vi.fn(async () => STUDY_BODY)}
+      onSaveConceptMap={vi.fn()}
+      onSavePool={vi.fn()}
+      onSavePractice={vi.fn()}
+      onVerifyPractice={vi.fn()}
+      onRefreshVisuals={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+  await waitFor(() => expect(state.error).not.toBeNull());
+  state.error = null;
+  fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+  await waitFor(() => expect(state.summary).not.toBeNull());
+  expect(state.error).toBeNull();
+  expect(state.summary?.actualCostMicroUsd).not.toBeNull();
+  expect(state.map).toHaveBeenCalledOnce();
+  expect(state.mapReviewPreview).toHaveBeenCalledTimes(2);
+  expect(state.generate).toHaveBeenCalledTimes(2);
+});

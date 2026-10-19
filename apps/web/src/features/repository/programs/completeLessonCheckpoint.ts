@@ -1,3 +1,9 @@
+import { parseCompletePoolContext, type CompletePoolContext } from './studyPractice.js';
+import {
+  parseArtifactState,
+  type MapArtifactState,
+  type PoolArtifactState,
+} from './completeArtifactState.js';
 import { fingerprintCompleteLessonBody } from './completeLessonFingerprint.js';
 export { fingerprintCompleteLessonBody } from './completeLessonFingerprint.js';
 import {
@@ -32,6 +38,9 @@ export interface CompleteLessonCheckpoint {
   options: CompleteLessonCheckpointOptions;
   bodyPersisted: true;
   practice?: CompletePracticeState;
+  mapState?: MapArtifactState;
+  poolState?: PoolArtifactState;
+  poolContext?: CompletePoolContext;
   mapCompleted: boolean;
   poolCompleted: boolean;
   mapRequestId: string;
@@ -116,7 +125,7 @@ export function parseCompleteLessonCheckpoint(
   currentBody: string,
   nowMs = Date.now(),
 ): CompleteLessonCheckpoint | null {
-  if (!raw || !currentBody.trim()) return null;
+  if (!raw || raw.length > 1500000 || !currentBody.trim()) return null;
   try {
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value)) return null;
@@ -162,6 +171,20 @@ export function parseCompleteLessonCheckpoint(
         options.practiceCount,
       );
     }
+    if (value.mapState !== undefined)
+      value.mapState = parseArtifactState(
+        value.mapState,
+        'map',
+        value.options as unknown as CompleteLessonCheckpointOptions,
+      );
+    if (value.poolState !== undefined)
+      value.poolState = parseArtifactState(
+        value.poolState,
+        'pool',
+        value.options as unknown as CompleteLessonCheckpointOptions,
+      );
+    if (value.poolContext !== undefined)
+      value.poolContext = parseCompletePoolContext(value.poolContext);
     return value as unknown as CompleteLessonCheckpoint;
   } catch {
     return null;
@@ -210,6 +233,15 @@ export function writeCompleteLessonCheckpoint(checkpoint: CompleteLessonCheckpoi
         },
         practice: checkpoint.practice,
         bodyPersisted: checkpoint.bodyPersisted,
+        mapState: checkpoint.mapState
+          ? parseArtifactState(checkpoint.mapState, 'map', checkpoint.options)
+          : undefined,
+        poolState: checkpoint.poolState
+          ? parseArtifactState(checkpoint.poolState, 'pool', checkpoint.options)
+          : undefined,
+        poolContext: checkpoint.poolContext
+          ? parseCompletePoolContext(checkpoint.poolContext)
+          : undefined,
         mapCompleted: checkpoint.mapCompleted,
         poolCompleted: checkpoint.poolCompleted,
         mapRequestId: checkpoint.mapRequestId,

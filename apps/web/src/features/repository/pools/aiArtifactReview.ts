@@ -21,6 +21,7 @@ export async function reviewPoolCandidate(
   candidate: AiPoolGenerateResult,
   requestId: string,
   assertCurrent?: () => void,
+  onInvocation?: () => void,
 ): Promise<AiPoolReviewResult> {
   if (!callables.previewReview || !callables.generateReview)
     throw new Error('Il revisore delle domande non è disponibile.');
@@ -30,8 +31,10 @@ export async function reviewPoolCandidate(
     requestId,
     candidateQuestions: candidate.output.questions,
   };
+  assertCurrent?.();
   await callables.previewReview(request);
   assertCurrent?.();
+  onInvocation?.();
   const reviewed = await callables.generateReview(request);
   assertCurrent?.();
   if (
@@ -49,6 +52,8 @@ export async function reviewMapCandidate(
   base: AiConceptMapRequest,
   candidate: AiConceptMapGenerateResult,
   requestId: string,
+  assertCurrent?: () => void,
+  onInvocation?: () => void,
 ): Promise<AiConceptMapReviewResult> {
   if (!callables.previewReview || !callables.generateReview)
     throw new Error('Il revisore della mappa non è disponibile.');
@@ -58,8 +63,12 @@ export async function reviewMapCandidate(
     requestId,
     candidateMarkdown: candidate.output.conceptMapMarkdown,
   };
+  assertCurrent?.();
   await callables.previewReview(request);
+  assertCurrent?.();
+  onInvocation?.();
   const reviewed = await callables.generateReview(request);
+  assertCurrent?.();
   if (
     reviewed.kind !== 'concept_map_review' ||
     typeof reviewed.output?.sourceIssue !== 'boolean' ||

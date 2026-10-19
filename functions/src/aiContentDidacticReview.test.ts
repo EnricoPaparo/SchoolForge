@@ -247,8 +247,8 @@ describe('didactic replay provenance', () => {
             )
           : validateMapReview(
               {
-                summaryMarkdown: 'La rete collega nodi.',
-                diagram: 'Rete -> collega -> nodi',
+                summaryMarkdown: null,
+                diagram: null,
                 reviewOutcome: 'unchanged',
                 issueCodes: [],
                 sourceIssue: false,
@@ -440,3 +440,36 @@ it('uses the lesson quality reviewer and binds its model and price into audit id
   ).toBeGreaterThan(0);
   expect(resolveContentModelForRequest(map()).model).toBe('gpt-5.6-luna');
 });
+
+it.each([null, ''])(
+  'materializes compact unchanged map %j while retaining canonical replay and source provenance',
+  (empty) => {
+    const request = map();
+    const before = canonicalRequest(request);
+    const output = validateMapReview(
+      {
+        summaryMarkdown: empty,
+        diagram: empty,
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+        sourceIssue: false,
+      },
+      request,
+    );
+    expect(output.conceptMapMarkdown).toBe(candidateMarkdown);
+    expect(isValidStoredDidacticReview('concept_map_review', output)).toBe(true);
+    expect(canonicalRequest(request)).toBe(before);
+    expect(() =>
+      validateMapReview(
+        {
+          summaryMarkdown: empty,
+          diagram: empty,
+          reviewOutcome: 'improved',
+          issueCodes: ['incorrect_relation'],
+          sourceIssue: false,
+        },
+        request,
+      ),
+    ).toThrow();
+  },
+);
