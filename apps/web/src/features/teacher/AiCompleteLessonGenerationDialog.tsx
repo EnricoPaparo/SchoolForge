@@ -1,4 +1,3 @@
-import type { PracticeEstimate } from '../repository/programs/completePracticeGeneration.js';
 import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
@@ -54,8 +53,6 @@ export type CompleteLessonProgress =
       stage: 'practice';
       label?: string;
       review?: CompleteReviewReport;
-      estimate?: PracticeEstimate;
-      confirm?: (accepted: boolean) => void;
     }
   | { stage: 'map'; label?: string; review?: CompleteReviewReport }
   | { stage: 'pool'; label?: string; review?: CompleteReviewReport }
@@ -197,13 +194,11 @@ export function AiCompleteLessonGenerationDialog({
   const reviewRequestIdRef = useRef(newRequestId());
   const runningRef = useRef(false);
   const mountedRef = useRef(true);
-  const confirmationRef = useRef<((accepted: boolean) => void) | undefined>();
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      confirmationRef.current?.(false);
     };
   }, []);
 
@@ -401,7 +396,6 @@ export function AiCompleteLessonGenerationDialog({
 
   function updateProgress(next: CompleteLessonProgress) {
     if (mountedRef.current) {
-      confirmationRef.current = next.stage === 'practice' ? next.confirm : undefined;
       setProgress(next);
       if (
         (next.stage === 'map' || next.stage === 'pool' || next.stage === 'practice') &&
@@ -672,8 +666,8 @@ export function AiCompleteLessonGenerationDialog({
             )}
             {practiceEnabled && (
               <p>
-                Prima della generazione e dell’eventuale revisione vedrai le rispettive stime e
-                confermerai il costo.
+                Le esercitazioni e l'eventuale revisione proseguono automaticamente, con verifica
+                del budget prima di ogni fase.
               </p>
             )}
           </div>
@@ -886,52 +880,7 @@ export function AiCompleteLessonGenerationDialog({
         </section>
       )}
 
-      {phase === 'completing' &&
-        progress &&
-        (progress.stage === 'practice' && progress.estimate ? (
-          <section aria-label="Conferma costo esercitazioni">
-            <h4>
-              {progress.estimate.phase === 'review'
-                ? 'Revisione delle esercitazioni'
-                : 'Generazione delle esercitazioni'}
-            </h4>
-            <p>
-              Costo stimato: {formatMicroUsd(progress.estimate.estimatedCostMicroUsd)}. Tetto
-              prenotabile: {formatMicroUsd(progress.estimate.reservationCostMicroUsd)}.
-            </p>
-            <p>
-              Questa stima riguarda soltanto la fase indicata. Le fasi già concluse restano
-              conservate.
-            </p>
-            <div className="dialog-actions">
-              <button type="button" onClick={() => progress.confirm?.(false)}>
-                Interrompi e riprendi dopo
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  progress.confirm?.(false);
-                  onClose();
-                }}
-              >
-                Chiudi e riprendi dopo
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => {
-                  confirmationRef.current = undefined;
-                  progress.confirm?.(true);
-                  setProgress({ stage: 'practice' });
-                }}
-              >
-                Conferma e continua
-              </button>
-            </div>
-          </section>
-        ) : (
-          <BusyStatus label={progressLabel(progress)} />
-        ))}
+      {phase === 'completing' && progress && <BusyStatus label={progressLabel(progress)} />}
 
       {phase === 'summary' && summary && (
         <>

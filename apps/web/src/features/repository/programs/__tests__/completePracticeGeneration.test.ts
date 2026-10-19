@@ -9,7 +9,6 @@ import {
   parseCompleteLessonCheckpoint,
 } from '../completeLessonCheckpoint.js';
 import { studyFixture, STUDY_BODY } from './studyFixture.js';
-import type { PracticeEstimate } from '../completePracticeGeneration.js';
 import type {
   AiPoolGenerateResult,
   AiPoolReviewResult,
@@ -81,7 +80,6 @@ function setup(n = 6) {
     review: true,
     callables,
     checkpoint: vi.fn(),
-    confirm: vi.fn(async (_estimate: PracticeEstimate) => true),
     save: vi.fn(async () => undefined),
     verify: vi.fn(async () => undefined),
   };
@@ -113,11 +111,25 @@ function setup(n = 6) {
 describe('resumable complete practice', () => {
   beforeEach(() => vi.clearAllMocks());
   it.each([3, 6, 9])(
-    'confirms generation and review costs for %i activities from the final body, saving only after review',
+    'automatically generates and reviews %i activities after budget previews, saving only after review',
     async (n) => {
       const { state, params } = setup(n);
       const result = await runCompletePractice(state, params);
-      expect(params.confirm.mock.calls.map((c) => c[0].phase)).toEqual(['generation', 'review']);
+      expect(params.callables.preview.mock.calls[0]?.[0]).toEqual(
+        params.callables.generate.mock.calls[0]?.[0],
+      );
+      expect(params.callables.previewReview.mock.calls[0]?.[0]).toEqual(
+        params.callables.generateReview.mock.calls[0]?.[0],
+      );
+      expect(params.callables.preview.mock.invocationCallOrder[0]).toBeLessThan(
+        params.callables.generate.mock.invocationCallOrder[0]!,
+      );
+      expect(params.callables.previewReview.mock.invocationCallOrder[0]).toBeLessThan(
+        params.callables.generateReview.mock.invocationCallOrder[0]!,
+      );
+      expect(params.callables.generateReview.mock.invocationCallOrder[0]).toBeLessThan(
+        params.save.mock.invocationCallOrder[0]!,
+      );
       expect(params.callables.generate.mock.calls[0]?.[0]).toMatchObject({
         lessonSource: STUDY_BODY,
         purpose: 'practice',
@@ -165,19 +177,60 @@ describe('resumable complete practice', () => {
     expect(params.save).toHaveBeenCalledTimes(2);
     expect(params.verify).toHaveBeenCalledTimes(2);
   });
-  it('preview-only failure or declined confirmation causes no spend or unknown-cost flag', async () => {
+  it('preview-only failure causes no spend or unknown-cost flag', async () => {
     const { state, params } = setup();
     params.callables.preview.mockRejectedValueOnce(new Error('preview'));
     await expect(runCompletePractice(state, params)).rejects.toThrow();
     expect(state.costUnknown).toBe(false);
     expect(params.callables.generate).not.toHaveBeenCalled();
-    params.confirm.mockResolvedValueOnce(false);
-    await expect(runCompletePractice(state, params)).rejects.toThrow();
-    expect(params.callables.generate).not.toHaveBeenCalled();
     params.review = false;
     expect((await runCompletePractice(state, params)).cost).toBe(10);
     expect(params.callables.generateReview).not.toHaveBeenCalled();
   });
+  it('review budget preview failure keeps the paid base and resumes only review without unknown costs', async () => {
+    const { state, params } = setup();
+    params.callables.previewReview.mockRejectedValueOnce(new Error('budget unavailable'));
+    await expect(runCompletePractice(state, params)).rejects.toThrow('budget unavailable');
+    expect(state.base).not.toBeNull();
+    expect(state.costUnknown).toBe(false);
+    expect(params.callables.generateReview).not.toHaveBeenCalled();
+    expect(params.save).not.toHaveBeenCalled();
+    const result = await runCompletePractice(state, params);
+    expect(params.callables.preview).toHaveBeenCalledTimes(1);
+    expect(params.callables.generate).toHaveBeenCalledTimes(1);
+    expect(params.callables.previewReview).toHaveBeenCalledTimes(2);
+    expect(params.callables.previewReview.mock.calls[0]?.[0]).toEqual(
+      params.callables.previewReview.mock.calls[1]?.[0],
+    );
+    expect(result.cost).toBe(30);
+  });
+  it.each(['generation', 'review'] as const)(
+    'stops before the paid %s call when closed during its budget preview',
+    async (phase) => {
+      const { state, params } = setup();
+      let active = true;
+      if (phase === 'generation') {
+        const original = params.callables.preview.getMockImplementation()!;
+        params.callables.preview.mockImplementationOnce(async (request) => {
+          active = false;
+          return original(request);
+        });
+      } else {
+        const original = params.callables.previewReview.getMockImplementation()!;
+        params.callables.previewReview.mockImplementationOnce(async (request) => {
+          active = false;
+          return original(request);
+        });
+      }
+      await expect(runCompletePractice(state, { ...params, active: () => active })).rejects.toThrow(
+        /la finestra/,
+      );
+      expect(params.callables.generate).toHaveBeenCalledTimes(phase === 'generation' ? 0 : 1);
+      expect(params.callables.generateReview).not.toHaveBeenCalled();
+      expect(params.save).not.toHaveBeenCalled();
+      expect(state.costUnknown).toBe(false);
+    },
+  );
   it('rejects changed source/checkpoint and stops all later calls after unmount during generation', async () => {
     const { state, params, checkpoint } = setup();
     let active = true;
