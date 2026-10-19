@@ -1,3 +1,4 @@
+import { parseCompletePoolContext, type CompletePoolContext } from './studyPractice.js';
 import {
   parseArtifactState,
   type MapArtifactState,
@@ -39,6 +40,7 @@ export interface CompleteLessonCheckpoint {
   practice?: CompletePracticeState;
   mapState?: MapArtifactState;
   poolState?: PoolArtifactState;
+  poolContext?: CompletePoolContext;
   mapCompleted: boolean;
   poolCompleted: boolean;
   mapRequestId: string;
@@ -181,6 +183,8 @@ export function parseCompleteLessonCheckpoint(
         'pool',
         value.options as unknown as CompleteLessonCheckpointOptions,
       );
+    if (value.poolContext !== undefined)
+      value.poolContext = parseCompletePoolContext(value.poolContext);
     return value as unknown as CompleteLessonCheckpoint;
   } catch {
     return null;
@@ -234,6 +238,9 @@ export function writeCompleteLessonCheckpoint(checkpoint: CompleteLessonCheckpoi
           : undefined,
         poolState: checkpoint.poolState
           ? parseArtifactState(checkpoint.poolState, 'pool', checkpoint.options)
+          : undefined,
+        poolContext: checkpoint.poolContext
+          ? parseCompletePoolContext(checkpoint.poolContext)
           : undefined,
         mapCompleted: checkpoint.mapCompleted,
         poolCompleted: checkpoint.poolCompleted,

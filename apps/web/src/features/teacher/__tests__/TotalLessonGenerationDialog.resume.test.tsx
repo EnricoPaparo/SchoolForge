@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto';
+import { STUDY_BODY } from '../../repository/programs/__tests__/studyFixture.js';
+import { createCompletePracticeState } from '../../repository/programs/completePracticeGeneration.js';
+import { legacyPracticePoolContext } from '../../repository/programs/studyPractice.js';
+import { fingerprintCompleteLessonBody } from '../../repository/programs/completeLessonFingerprint.js';
+import { buildPoolContentRequest } from '../../repository/pools/aiContentClient.js';
 import { studyFixture } from '../../repository/programs/__tests__/studyFixture.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as ContentClient from '../../repository/pools/aiContentClient.js';
@@ -10,6 +16,7 @@ import type {
 import {
   createCompleteLessonCheckpoint,
   writeCompleteLessonCheckpoint,
+  readCompleteLessonCheckpoint,
 } from '../../repository/programs/completeLessonCheckpoint.js';
 
 const state = vi.hoisted(() => ({
@@ -61,7 +68,10 @@ vi.mock('../AiCompleteLessonGenerationDialog.js', () => ({
     </button>
   ),
 }));
-import { TotalLessonGenerationDialog } from '../TotalLessonGenerationDialog.js';
+import {
+  TotalLessonGenerationDialog,
+  describeCompleteWorkflowError,
+} from '../TotalLessonGenerationDialog.js';
 
 describe('completed artifact costs after reload', () => {
   beforeEach(() => {
@@ -234,6 +244,202 @@ it.each(['generated', 'reviewed'] as const)(
     expect(state.generate).not.toHaveBeenCalled();
     expect(saveMap).toHaveBeenCalledTimes(2);
     expect(savePool).toHaveBeenCalledOnce();
-    expect(state.summary?.actualCostMicroUsd).toBe(stage === 'reviewed' ? 11 : 8);
+    expect((state.summary as CompleteLessonCompletionSummary | null)?.actualCostMicroUsd).toBe(
+      stage === 'reviewed' ? 11 : 8,
+    );
+  },
+);
+
+it('replays a lost-response legacy pool request with identical JSON/hash and no additional provider spend', async () => {
+  cleanup();
+  window.sessionStorage.clear();
+  state.summary = null;
+  state.error = null;
+  state.generate.mockReset();
+  const identity = { programId: 'p', importId: 'i', lessonId: 'l' };
+  const fixture = studyFixture();
+  const originalContext = JSON.stringify({
+    objectives: fixture.plan.objectives,
+    activities: fixture.plan.steps.map((s) => ({
+      capability: fixture.plan.objectives[s.objectiveIndex]?.capability,
+      stage: s.stage,
+      question: fixture.questions[s.questionOrder]?.testo,
+    })),
+  });
+  expect(legacyPracticePoolContext(fixture)).toBe(originalContext);
+  const originalRequest = {
+    ...buildPoolContentRequest({
+      modelProfile: 'quality',
+      requestId: 'legacy-lost-pool',
+      level: 'balanced',
+      counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
+      lessonSource: STUDY_BODY,
+      existingPoolQuestionCount: 0,
+    }),
+    draftPractice: originalContext,
+  };
+  const originalJSON = JSON.stringify(originalRequest);
+  const originalHash = createHash('sha256').update(originalJSON).digest('hex');
+  const providerSpend = vi.fn();
+  providerSpend(); // The server completed the original call; its response was lost.
+  const practice = {
+    ...createCompletePracticeState(['Prevedere output']),
+    sourceFingerprint: fingerprintCompleteLessonBody(STUDY_BODY),
+    base: {
+      status: 'completed' as const,
+      kind: 'pool' as const,
+      modelProfile: 'quality',
+      actualCostMicroUsd: 3,
+      replayed: false,
+      output: { questions: fixture.questions, studyPlan: fixture.plan },
+    },
+    saved: true,
+  };
+  writeCompleteLessonCheckpoint(
+    createCompleteLessonCheckpoint({
+      identity,
+      body: STUDY_BODY,
+      options: {
+        practiceEnabled: true,
+        practiceCount: 3,
+        modelProfile: 'quality',
+        level: 'balanced',
+        counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
+        reviewStatus: 'disabled',
+      },
+      bodyPersisted: true,
+      practice,
+      mapCompleted: true,
+      poolCompleted: false,
+      mapRequestId: 'legacy-map',
+      poolRequestId: 'legacy-lost-pool',
+      mapCostMicroUsd: 1,
+      poolCostMicroUsd: null,
+      visual: null,
+    }),
+  );
+  state.generate.mockImplementation(async (request) => {
+    expect(JSON.stringify(request)).toBe(originalJSON);
+    expect(createHash('sha256').update(JSON.stringify(request)).digest('hex')).toBe(originalHash);
+    const saved = readCompleteLessonCheckpoint(identity, STUDY_BODY)!;
+    expect(saved.poolContext).toEqual({ format: 'legacy', draftPractice: originalContext });
+    return {
+      status: 'completed',
+      kind: 'pool',
+      modelProfile: 'quality',
+      actualCostMicroUsd: null,
+      replayed: true,
+      output: { questions: [fixture.questions[0]] },
+    };
+  });
+  render(
+    <TotalLessonGenerationDialog
+      identity={identity}
+      context={{
+        titolo: 'Cicli',
+        sottotitolo: null,
+        difficolta: 'Base',
+        udaTitle: 'Cicli',
+        currentBody: STUDY_BODY,
+      }}
+      onClear={vi.fn()}
+      onPersistBody={vi.fn()}
+      onSaveConceptMap={vi.fn()}
+      onSavePool={vi.fn()}
+      onSavePractice={vi.fn()}
+      onVerifyPractice={vi.fn()}
+      onRefreshVisuals={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+  await waitFor(() => expect(state.summary).not.toBeNull());
+  expect(state.error).toBeNull();
+  expect(state.generate).toHaveBeenCalledOnce();
+  expect(providerSpend).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  'handles legacy context overflow safely with poolCompleted=%s',
+  async (poolCompleted) => {
+    cleanup();
+    window.sessionStorage.clear();
+    state.summary = null;
+    state.error = null;
+    state.generate.mockReset();
+    const identity = { programId: 'p', importId: 'i', lessonId: 'l' };
+    const fixture = studyFixture();
+    fixture.questions.forEach((q) => {
+      q.testo = '界'.repeat(9000);
+    });
+    expect(() => legacyPracticePoolContext(fixture)).toThrow();
+    const practice = {
+      ...createCompletePracticeState(['Prevedere output']),
+      sourceFingerprint: fingerprintCompleteLessonBody(STUDY_BODY),
+      base: {
+        status: 'completed' as const,
+        kind: 'pool' as const,
+        modelProfile: 'quality',
+        actualCostMicroUsd: 3,
+        replayed: false,
+        output: { questions: fixture.questions, studyPlan: fixture.plan },
+      },
+      saved: true,
+    };
+    writeCompleteLessonCheckpoint(
+      createCompleteLessonCheckpoint({
+        identity,
+        body: STUDY_BODY,
+        options: {
+          practiceEnabled: true,
+          practiceCount: 3,
+          modelProfile: 'quality',
+          level: 'balanced',
+          counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
+          reviewStatus: 'disabled',
+        },
+        bodyPersisted: true,
+        practice,
+        mapCompleted: true,
+        poolCompleted,
+        mapRequestId: 'legacy-map',
+        poolRequestId: 'legacy-pool',
+        mapCostMicroUsd: 1,
+        poolCostMicroUsd: 2,
+        visual: null,
+      }),
+    );
+    const verify = vi.fn();
+    render(
+      <TotalLessonGenerationDialog
+        identity={identity}
+        context={{
+          titolo: 'Cicli',
+          sottotitolo: null,
+          difficolta: 'Base',
+          udaTitle: 'Cicli',
+          currentBody: STUDY_BODY,
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn()}
+        onSaveConceptMap={vi.fn()}
+        onSavePool={vi.fn()}
+        onSavePractice={vi.fn()}
+        onVerifyPractice={verify}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(state.summary !== null || state.error !== null).toBe(true));
+    if (poolCompleted) {
+      expect(state.summary).not.toBeNull();
+      expect(state.error).toBeNull();
+    } else {
+      expect(state.summary).toBeNull();
+      expect(describeCompleteWorkflowError(state.error)).toContain('scarta');
+    }
+    expect(state.generate).not.toHaveBeenCalled();
+    expect(verify).toHaveBeenCalledOnce();
   },
 );

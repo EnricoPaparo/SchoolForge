@@ -28,6 +28,12 @@ spesa o deploy PROD da parte dell'implementatore.
   copre due output pool da 200.000 byte con coverage. Browser storage indisponibile
   conserva lo stato in memoria; con checkpoint precedente gli stessi IDs permettono
   replay server, senza promettere ripresa persistente quando lo storage è disabilitato.
+  Il contesto pool esatto è ora persistito prima della preview. Per checkpoint
+  precedenti privi di snapshot mappa/pool, il marker legacy conserva la precedente
+  rappresentazione byte per byte e gli stessi hash/IDs. Se il vecchio contesto
+  oltrepassava 50 KB (prima veniva omesso), la ripresa fallisce esplicitamente:
+  occorre scartarla e avviare manualmente una nuova generazione, senza cambiare
+  silenziosamente request ID o avviare nuova spesa.
   L'incertezza di costo resta sticky dopo una risposta generate persa; errori della
   sola preview non la introducono. I checkpoint legacy v1 restano leggibili.
 - Rimossi i soli rami UI confirm/review irraggiungibili della generazione completa,
@@ -59,4 +65,7 @@ Gate completi e CI: registrati nella PR sullo SHA finale. Review/merge e deploy
 restano all'orchestratore. Target DEV: `aiContentPreview`, `aiContentGenerate`,
 `aiContentPromptExport`, `aiVisualPlanAuthorize` e hosting. Smoke successivo mirato
 alla generazione e ripresa. Rollback: revert del commit e stessi target DEV;
-checkpoint opzionali v1 ignorati dal codice precedente. Nessuna migrazione dati.
+checkpoint opzionali v1 ignorati dal codice precedente. Il rollback può richiedere
+un riavvio esplicito dei lavori in corso, perché il codice precedente non conosce
+il contesto fissato dal marker; non garantisce replay attraverso il downgrade.
+Nessuna migrazione dati.

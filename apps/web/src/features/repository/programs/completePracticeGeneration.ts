@@ -135,6 +135,7 @@ export async function runCompletePractice(
   state: CompletePracticeState,
   params: {
     body: string;
+    poolContext?: (practice: StudyPractice) => string | undefined;
     count: number;
     modelProfile: 'economy' | 'quality';
     review: boolean;
@@ -221,7 +222,7 @@ export async function runCompletePractice(
   ];
   return {
     practice,
-    context: practicePoolContext(practice),
+    context: (params.poolContext ?? practicePoolContext)(practice),
     cost:
       state.costUnknown || costs.includes(null)
         ? null

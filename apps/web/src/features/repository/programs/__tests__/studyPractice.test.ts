@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   currentStudyPractice,
   practicePoolContext,
+  legacyPracticePoolContext,
+  parseCompletePoolContext,
   validateStudyPractice,
 } from '../studyPractice.js';
 import { STUDY_BODY, studyFixture } from './studyFixture.js';
@@ -68,4 +70,55 @@ describe('bounded practice pool context', () => {
     expect(() => practicePoolContext(practice)).toThrow('limite');
     expect(practicePoolContext(null)).toBeUndefined();
   });
+});
+
+it('preserves stored context bytes and rejects legacy overflow or hints before a pool call', () => {
+  const practice = studyFixture();
+  const original = legacyPracticePoolContext(practice);
+  expect(
+    parseCompletePoolContext({ format: 'legacy', draftPractice: original, private: 'discard' }),
+  ).toEqual({ format: 'legacy', draftPractice: original });
+  const hints = JSON.parse(original);
+  hints.activities[0].hints = ['private'];
+  expect(() =>
+    parseCompletePoolContext({ format: 'legacy', draftPractice: JSON.stringify(hints) }),
+  ).toThrow();
+  practice.questions.forEach((q) => {
+    q.testo = '界'.repeat(9000);
+  });
+  expect(() => legacyPracticePoolContext(practice)).toThrow('riavviare');
+  const compact = practicePoolContext(practice)!;
+  expect(
+    parseCompletePoolContext({ format: 'compact', draftPractice: compact }).draftPractice,
+  ).toBe(compact);
+});
+
+it('rejects nested/private leaves and mismatched context formats before persistence', () => {
+  const practice = studyFixture();
+  const raw = JSON.parse(legacyPracticePoolContext(practice));
+  for (const change of [
+    (v: typeof raw) => {
+      v.objectives[0].capability = { privateMetadata: 'PRIVATE' };
+    },
+    (v: typeof raw) => {
+      v.activities[0].stage = 'PRIVATE';
+    },
+    (v: typeof raw) => {
+      v.activities[0].question = { hints: ['PRIVATE'] };
+    },
+  ]) {
+    const value = structuredClone(raw);
+    change(value);
+    expect(() =>
+      parseCompletePoolContext({ format: 'legacy', draftPractice: JSON.stringify(value) }),
+    ).toThrow();
+  }
+  expect(() =>
+    parseCompletePoolContext({ format: 'compact', draftPractice: JSON.stringify(raw) }),
+  ).toThrow();
+  const compact = JSON.parse(practicePoolContext(practice)!);
+  compact.activities[0].objective = 99;
+  expect(() =>
+    parseCompletePoolContext({ format: 'compact', draftPractice: JSON.stringify(compact) }),
+  ).toThrow();
 });
