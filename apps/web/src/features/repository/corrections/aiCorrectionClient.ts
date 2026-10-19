@@ -340,6 +340,8 @@ export function describeAiError(err: unknown): string {
     return 'Dati o limiti cambiati: calcola una nuova anteprima e conferma le consegne rimanenti.';
   if (code === 'plan_ambiguous')
     return 'Un gruppo ha un esito ancora incerto. Nessuna nuova correzione è stata avviata: riprendi più tardi per recuperare l’esito.';
+  if (code === 'plan_size_exceeded')
+    return 'Il piano è troppo grande per conservarne la ripresa in sicurezza. Riduci la selezione prima di confermare.';
   if (code === 'submission_count_exceeded')
     return 'Il gruppo supera il numero massimo di consegne consentito.';
   if (code === 'submission_questions_exceeded')

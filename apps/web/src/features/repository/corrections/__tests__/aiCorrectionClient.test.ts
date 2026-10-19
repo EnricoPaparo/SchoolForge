@@ -113,6 +113,7 @@ describe('describeAiError', () => {
       ['operation_budget_exceeded', 'singola operazione'],
       ['daily_budget_exceeded', 'giornaliero'],
       ['budget_exceeded', 'mensile'],
+      ['plan_size_exceeded', 'piano è troppo grande'],
     ]) {
       const message = describeAiError({ code: 'functions/resource-exhausted', details: { code } });
       expect(message).toContain(expected);

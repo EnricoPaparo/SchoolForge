@@ -13,6 +13,13 @@ import {
   type PlanDeps,
   type CorrectionPlan,
   type PlanView,
+  MAX_PLAN_SUBMISSIONS,
+  MAX_PLAN_DOCUMENT_BYTES,
+  encodeCorrectionPlan,
+  decodeCorrectionPlan,
+  terminalPlanSizeForecast,
+  planStorageUpperBound,
+  assertPlanStorageCapacity,
 } from './aiCorrectionPlan.js';
 import {
   replayPersistedRun,
@@ -223,6 +230,52 @@ function action(plan: PlanView, index = 0) {
 }
 
 describe('durable correction plans', () => {
+  it('reserves checkpoint growth before consent for the maximum selection, single-student groups and escaped Unicode guidance', async () => {
+    const f = fixture(MAX_PLAN_SUBMISSIONS);
+    const verificationId = 'v'.repeat(180);
+    const ids = f.request.submissionIds.map(
+      (_, i) => `${verificationId}_${String(i).padStart(19, '0')}`,
+    );
+    const rows = [...f.submissions.values()];
+    f.submissions.clear();
+    ids.forEach((id, i) => f.submissions.set(id, { ...rows[i]!, verificationId }));
+    f.request.verificationId = verificationId;
+    f.request.submissionIds = ids;
+    f.request.teacherGuidance = '😀\\"\n'.repeat(100);
+    f.config.limits.maxProviderConcurrency = 1;
+    const view = await previewCorrectionPlan(f.request, f.deps);
+    expect(view.groups).toHaveLength(MAX_PLAN_SUBMISSIONS);
+    const plan = f.plans.get(view.planId)!;
+    expect(decodeCorrectionPlan(structuredClone(plan))).toEqual(plan);
+    // Budget recommendations can repeat up to all selected IDs in the same
+    // document: include their maximal contribution in this boundary case.
+    plan.budget = {
+      reason: 'daily_budget_exceeded',
+      availableMicroUsd: 1,
+      compatibleSubmissionIds: ids,
+    };
+    assertPlanStorageCapacity(plan);
+    const terminal = terminalPlanSizeForecast(plan);
+    expect(planStorageUpperBound(terminal)).toBeLessThan(MAX_PLAN_DOCUMENT_BYTES);
+    const encoded = encodeCorrectionPlan(terminal);
+    expect(
+      encoded.groups.every(
+        (g) => !('teacherGuidance' in g.request) && !('verificationId' in g.request),
+      ),
+    ).toBe(true);
+    expect(encoded.groups[0]!.result!.results[0]).not.toHaveProperty('submissionId');
+    expect(decodeCorrectionPlan(encoded)).toEqual(terminal);
+    const excessive: CorrectionPlan = {
+      ...plan,
+      groups: [...plan.groups, ...plan.groups],
+      budget: undefined,
+    };
+    delete excessive.budget;
+    expect(() => assertPlanStorageCapacity(excessive)).toThrowError(
+      expect.objectContaining({ code: 'plan_size_exceeded' }),
+    );
+    expect(f.grade).not.toHaveBeenCalled();
+  });
   it('plans >200 selections in canonical server groups without enlarging the run request limit or reading content twice', async () => {
     const f = fixture(205);
     expect(() => validateAiCorrectionRequest(f.request)).toThrowError(AiGatewayError);

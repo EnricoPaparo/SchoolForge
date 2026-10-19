@@ -23,7 +23,7 @@ import {
 } from './aiCorrectionBudget.js';
 import { OPENAI_GRADING_CONTRACT_VERSION } from './openAiGrader.js';
 
-export const MAX_PLAN_SUBMISSIONS = 2000;
+export const MAX_PLAN_SUBMISSIONS = 350;
 export const PLAN_LIFETIME_MS = 24 * 60 * 60 * 1000;
 type PlanSettings = Pick<
   AiCorrectionRequest,
@@ -111,6 +111,183 @@ export interface PlanPorts {
 }
 export interface PlanDeps extends RunDeps {
   plans: PlanPorts;
+}
+
+/** Shared settings and ordinal outcomes avoid repeating guidance, verification
+ * IDs and submission IDs in every child/result of a durable checkpoint. */
+type StoredPlan = Omit<CorrectionPlan, 'groups'> & {
+  storageVersion: 1;
+  groups: (Omit<CorrectionPlanGroup, 'request' | 'result'> & {
+    request: Pick<AiCorrectionRequest, 'requestId' | 'submissionIds'>;
+    result?: Omit<AiCorrectionRunResponse, 'requestId' | 'verificationId' | 'results'> & {
+      results: (Omit<AiCorrectionRunResponse['results'][number], 'submissionId'> & {
+        ordinal: number;
+      })[];
+    };
+  })[];
+};
+function omitKeys<T, K extends keyof T>(value: T, keys: readonly K[]): Omit<T, K> {
+  const result = { ...value };
+  for (const key of keys) delete result[key];
+  return result;
+}
+export function encodeCorrectionPlan(plan: CorrectionPlan): StoredPlan {
+  return {
+    ...plan,
+    storageVersion: 1,
+    groups: plan.groups.map((group) => {
+      const { result, request, ...rest } = group;
+      const encoded: StoredPlan['groups'][number] = {
+        ...rest,
+        request: { requestId: request.requestId, submissionIds: request.submissionIds },
+      };
+      if (result) {
+        const metadata = omitKeys(result, ['requestId', 'verificationId', 'results']);
+        encoded.result = {
+          ...metadata,
+          results: result.results.map(({ submissionId, ...outcome }) => {
+            const ordinal = request.submissionIds.indexOf(submissionId);
+            if (ordinal < 0)
+              throw new AiGatewayError('invalid_input', 'Esito non appartenente al piano.');
+            return { ...outcome, ordinal };
+          }),
+        };
+      }
+      return encoded;
+    }),
+  };
+}
+export function decodeCorrectionPlan(stored: StoredPlan | CorrectionPlan): CorrectionPlan {
+  // Read the expanded v1 checkpoint written before the compact codec, preserving
+  // original child IDs and invocation fences. Future writes use the codec.
+  if (!('storageVersion' in stored)) {
+    if (
+      stored.version !== 1 ||
+      !stored.settings ||
+      !Array.isArray(stored.groups) ||
+      stored.groups.some((g) => !g.request || !Array.isArray(g.request.submissionIds))
+    )
+      throw new AiGatewayError('invalid_input', 'Checkpoint del piano non riconosciuto.');
+    return stored;
+  }
+  if (stored.storageVersion !== 1)
+    throw new AiGatewayError('invalid_input', 'Checkpoint del piano non riconosciuto.');
+  const plan = omitKeys(stored, ['storageVersion']);
+  return {
+    ...plan,
+    groups: stored.groups.map((group) => {
+      const { request, result, ...rest } = group;
+      const decoded: CorrectionPlanGroup = {
+        ...rest,
+        request: { ...request, ...stored.settings, verificationId: stored.verificationId },
+      };
+      if (result)
+        decoded.result = {
+          ...result,
+          requestId: request.requestId,
+          verificationId: stored.verificationId,
+          results: result.results.map(({ ordinal, ...outcome }) => {
+            const submissionId = request.submissionIds[ordinal];
+            if (!submissionId)
+              throw new AiGatewayError('invalid_input', 'Esito ordinale del piano non valido.');
+            return { ...outcome, submissionId };
+          }),
+        };
+      return decoded;
+    }),
+  };
+}
+
+/** Firestore field/value sizes plus deliberately generous map/array overhead;
+ * also consider JSON escaping, then retain >140KB below the 1MiB document cap. */
+export const MAX_PLAN_DOCUMENT_BYTES = 900_000;
+export function planStorageUpperBound(plan: CorrectionPlan): number {
+  const encoded = encodeCorrectionPlan(plan);
+  function size(value: unknown): number {
+    if (value === null || typeof value === 'boolean') return 1;
+    if (typeof value === 'number') return 8;
+    if (typeof value === 'string') return Buffer.byteLength(value, 'utf8') + 1;
+    if (Array.isArray(value)) return 32 + value.reduce((sum, item) => sum + size(item), 0);
+    if (value && typeof value === 'object')
+      return (
+        32 +
+        Object.entries(value).reduce(
+          (sum, [key, item]) => sum + Buffer.byteLength(key, 'utf8') + 1 + size(item),
+          0,
+        )
+      );
+    throw new AiGatewayError('invalid_input', 'Checkpoint non serializzabile.');
+  }
+  return Math.max(size(encoded), Buffer.byteLength(JSON.stringify(encoded), 'utf8')) + 4096;
+}
+export function terminalPlanSizeForecast(plan: CorrectionPlan): CorrectionPlan {
+  const maximum = Number.MAX_SAFE_INTEGER;
+  return {
+    ...plan,
+    consented: true,
+    groups: plan.groups.map((group) => {
+      const counts: AiCorrectionRunResponse['counts'] = {
+        selected: maximum,
+        eligible: maximum,
+        excluded: maximum,
+        closedToGrade: maximum,
+        openToGrade: maximum,
+        closedOnlySubmissions: maximum,
+        alreadyGradedIgnored: maximum,
+        succeeded: maximum,
+        partial: maximum,
+        failed: maximum,
+      };
+      const result: AiCorrectionRunResponse = {
+        mode: 'openai',
+        phase: 'run',
+        requestId: group.request.requestId,
+        verificationId: plan.verificationId,
+        status: 'completed',
+        idempotentReplay: true,
+        counts,
+        inputTokensEstimated: maximum,
+        outputTokensEstimated: maximum,
+        totalTokensEstimated: maximum,
+        costEstimatedMicroUsd: maximum,
+        costEstimated: maximum,
+        tokensEstimated: maximum,
+        inputTokensActual: maximum,
+        outputTokensActual: maximum,
+        totalTokensActual: maximum,
+        costActualMicroUsd: maximum,
+        costActual: maximum,
+        tokensActual: maximum,
+        costReservationMicroUsd: maximum,
+        costSettledMicroUsd: maximum,
+        retry: {
+          attemptsTotal: maximum,
+          retriesTotal: maximum,
+          retryReasonCodes: Array.from({ length: 16 }, () => 'provider_unavailable'),
+          retryDelayTotalMs: maximum,
+          unknownBillingAttempts: maximum,
+        },
+        results: group.request.submissionIds.map((submissionId) => ({
+          submissionId,
+          outcome: 'succeeded',
+          closedGraded: maximum,
+          openGraded: maximum,
+          openSkipped: maximum,
+          closedSkipped: maximum,
+          alreadyIgnored: maximum,
+          reason: 'correction_not_in_progress',
+        })),
+      };
+      return { ...group, state: 'completed', result };
+    }),
+  };
+}
+export function assertPlanStorageCapacity(plan: CorrectionPlan): void {
+  if (planStorageUpperBound(terminalPlanSizeForecast(plan)) > MAX_PLAN_DOCUMENT_BYTES)
+    throw new AiGatewayError(
+      'plan_size_exceeded',
+      'La selezione richiede un checkpoint troppo grande per essere ripreso in sicurezza. Riduci la selezione prima di confermare.',
+    );
 }
 function configHash(config: AiRuntimeConfig | null, mode: string) {
   return planHash({ config, mode, contract: OPENAI_GRADING_CONTRACT_VERSION });
@@ -351,6 +528,7 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
     consented: false,
     ...(budget ? { budget } : {}),
   };
+  assertPlanStorageCapacity(plan);
   return planView(await deps.plans.save(plan));
 }
 export async function loadCorrectionPlan(raw: unknown, deps: PlanDeps): Promise<PlanView | null> {
@@ -438,6 +616,7 @@ export async function executeCorrectionPlanGroup(raw: unknown, deps: PlanDeps): 
       'Preparare un piano compatibile con il budget disponibile.',
     );
   const config = await configFor(deps);
+  assertPlanStorageCapacity(plan);
   if (
     plan.expiresAtMs <= (deps.now ?? Date.now)() ||
     plan.configHash !== configHash(config, deps.featureMode)

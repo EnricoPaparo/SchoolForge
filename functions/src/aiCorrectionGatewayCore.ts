@@ -40,6 +40,7 @@ export type AiGatewayErrorCode =
   | 'operation_tokens_exceeded'
   | 'plan_changed'
   | 'plan_ambiguous'
+  | 'plan_size_exceeded'
   | 'operation_budget_exceeded'
   | 'daily_budget_exceeded'
   | 'budget_exceeded'
@@ -221,7 +222,7 @@ export function validateAiCorrectionRequest(
   if (submissionIds.length > maximum) {
     throw new AiGatewayError(
       'batch_limit_exceeded',
-      `Troppe consegne in una sola operazione (max ${MAX_SUBMISSIONS_PER_OPERATION}).`,
+      `Troppe consegne nella selezione (max ${maximum}).`,
     );
   }
   const prefix = `${verificationId}_`;

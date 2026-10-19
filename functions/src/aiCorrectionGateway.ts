@@ -56,8 +56,10 @@ import {
   loadCorrectionPlan,
   executeCorrectionPlanGroup,
   planHash,
-  type CorrectionPlan,
   type PlanDeps,
+  encodeCorrectionPlan,
+  decodeCorrectionPlan,
+  assertPlanStorageCapacity,
 } from './aiCorrectionPlan.js';
 import { monthKeyFromMs } from './aiCorrectionBudget.js';
 import { replayPersistedRun, computeSelectionHash } from './aiCorrectionEngine.js';
@@ -989,6 +991,7 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     operation_tokens_exceeded: 'resource-exhausted',
     plan_changed: 'failed-precondition',
     plan_ambiguous: 'aborted',
+    plan_size_exceeded: 'resource-exhausted',
     operation_budget_exceeded: 'resource-exhausted',
     daily_budget_exceeded: 'resource-exhausted',
     budget_exceeded: 'resource-exhausted',
@@ -1131,12 +1134,15 @@ export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps
           : {}),
       }),
     plans: {
-      save: (plan) =>
-        db.runTransaction(async (tx) => {
+      save: (plan) => {
+        assertPlanStorageCapacity(plan);
+        return db.runTransaction(async (tx) => {
           const ref = db.doc(`aiCorrectionPlans/${plan.planId}`);
           const existing = await tx.get(ref);
           if (existing.exists) {
-            const saved = existing.data() as CorrectionPlan;
+            const saved = decodeCorrectionPlan(
+              existing.data() as Parameters<typeof decodeCorrectionPlan>[0],
+            );
             if (saved.ownerUid !== plan.ownerUid || saved.selectionHash !== plan.selectionHash)
               throw new AiGatewayError('invalid_input', 'Identificatore del piano già usato.');
             return saved;
@@ -1144,9 +1150,10 @@ export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps
           const head = await tx.get(headRef(plan.ownerUid, plan.verificationId));
           const priorId = head.data()?.planId;
           if (typeof priorId === 'string') {
-            const previous = (await tx.get(db.doc(`aiCorrectionPlans/${priorId}`))).data() as
-              | CorrectionPlan
-              | undefined;
+            const previousData = (await tx.get(db.doc(`aiCorrectionPlans/${priorId}`))).data();
+            const previous = previousData
+              ? decodeCorrectionPlan(previousData as Parameters<typeof decodeCorrectionPlan>[0])
+              : null;
             if (
               previous?.groups.some(
                 (g) => g.state === 'running' || (g.result?.retry.unknownBillingAttempts ?? 0) > 0,
@@ -1157,27 +1164,28 @@ export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps
                 'Recuperare il piano precedente prima di crearne un altro.',
               );
           }
-          tx.create(ref, { ...plan, expireAt: Timestamp.fromMillis(plan.expiresAtMs) });
+          tx.create(ref, encodeCorrectionPlan(plan));
           tx.set(headRef(plan.ownerUid, plan.verificationId), { planId: plan.planId });
           return plan;
-        }),
+        });
+      },
       load: async (owner, verification, planId) => {
         const id = planId ?? (await headRef(owner, verification).get()).data()?.planId;
         if (typeof id !== 'string') return null;
         const snap = await db.doc(`aiCorrectionPlans/${id}`).get();
-        const plan = snap.data() as CorrectionPlan | undefined;
-        return plan?.version === 1 &&
-          plan.ownerUid === owner &&
-          plan.verificationId === verification
-          ? plan
-          : null;
+        const data = snap.data();
+        if (data?.version !== 1 || data.ownerUid !== owner || data.verificationId !== verification)
+          return null;
+        return decodeCorrectionPlan(data as Parameters<typeof decodeCorrectionPlan>[0]);
       },
       update: (id, mutate) =>
         db.runTransaction(async (tx) => {
           const ref = db.doc(`aiCorrectionPlans/${id}`);
           const snap = await tx.get(ref);
           if (!snap.exists) throw new AiGatewayError('invalid_input', 'Piano non disponibile.');
-          const saved = snap.data() as CorrectionPlan;
+          const saved = decodeCorrectionPlan(
+            snap.data() as Parameters<typeof decodeCorrectionPlan>[0],
+          );
           const pending = saved.groups.map((g) => g.state === 'pending');
           const head = await tx.get(headRef(saved.ownerUid, saved.verificationId));
           const updated = mutate(saved);
@@ -1189,7 +1197,7 @@ export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps
               'plan_changed',
               'Questo piano è stato sostituito da una nuova anteprima.',
             );
-          tx.set(ref, updated);
+          tx.set(ref, encodeCorrectionPlan(updated));
           return updated;
         }),
       ledger: async (config, nowMs) => {

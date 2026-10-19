@@ -16,7 +16,7 @@ singola consegna, token del gruppo, costo operazione, budget giornaliero e mensi
 
 ## Piano e consenso
 
-`aiCorrectionPlanPreview` valida fino a 2000 ID e rilegge l'eleggibilità dal
+`aiCorrectionPlanPreview` valida fino a 350 ID e rilegge l'eleggibilità dal
 server. I limiti di `aiCorrectionRun` restano a 200 ID. Le letture del piano sono
 memoizzate, con sei worker: una verifica e due letture per consegna. I gruppi
 sono costruiti in ordine canonico secondo conteggio, token e prenotazione
@@ -45,6 +45,18 @@ ID, impostazioni applicate, hash delle fonti/configurazione, esiti e costi.
 Non conserva domande, soluzioni, risposte, feedback o output integrali.
 Nessun checkpoint è salvato nel browser. Le Rules negano accesso client alle
 collezioni `aiCorrectionPlans` e `aiCorrectionPlanHeads`, anche al docente.
+
+Il formato persistito conserva i criteri e l'ID della verifica una sola volta;
+nei risultati usa ordinali anziché duplicare gli ID delle consegne. La lettura
+del formato precedente mantiene gli stessi requestId e la prima scrittura lo
+compatta. Prima di salvare il piano e prima del consenso, un controllo di spazio
+stima la crescita di tutti i gruppi fino ai massimi risultati terminali, con
+retry/esclusioni e margine prudenziale sotto il limite Firestore di 1 MiB.
+Il tetto tecnico di 350 selezioni preserva i casi oltre 200 senza ampliare il
+run. Test con 350 gruppi singoli, ID lunghi 200 caratteri, guidance Unicode con
+escape di 500 caratteri e lista di selezione compatibile verificano anche la
+scrittura terminale reale sull'emulatore. Un piano non contenibile viene
+rifiutato con `plan_size_exceeded` prima di qualsiasi spesa, non dopo il grader.
 
 Il docente può fermarsi dopo il gruppo corrente o chiudere il dialog. Alla
 riapertura trova i gruppi originali e i criteri originali; la ripresa richiede
@@ -113,4 +125,12 @@ e review indipendente. Deploy DEV mirato: hosting e le cinque callable
 `aiCorrectionPlanStatus`, `aiCorrectionPlanRunGroup`. Rollback tramite lo SHA
 precedente del solo codice applicativo, mantenendo i checkpoint non terminali.
 Smoke reale con dati sintetici e budget autorizzato separatamente gestito
-dall'orchestratore. Nessun deploy PROD autorizzato.
+dall'orchestratore. Il 19 ottobre sullo SHA `e2f28a6`, sei chiamate sintetiche
+sono state validate dal motore senza retry: costo effettivo totale 0,029358 USD.
+Per Economy, il secondo elaborato ha riutilizzato 2800 token del grader e 2968
+del reviewer; il primo ha dichiarato rispettivamente 2800 e 2968 cache-write.
+Le due correzioni finali erano distinte (9,75/10 e 0,75/10). Il terzo elaborato
+Qualità ha completato grader e reviewer con punteggio finale 4,75/10. Questo
+dimostra riuso del prefisso e valutazioni indipendenti, senza promettere una
+percentuale di risparmio. Nessun dato scolastico è stato usato e nessun secret
+è stato salvato negli artefatti. Nessun deploy PROD autorizzato.

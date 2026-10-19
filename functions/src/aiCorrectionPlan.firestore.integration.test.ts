@@ -4,7 +4,14 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildPlanDeps } from './aiCorrectionGateway.js';
-import type { CorrectionPlan, PlanPorts } from './aiCorrectionPlan.js';
+import {
+  MAX_PLAN_SUBMISSIONS,
+  MAX_PLAN_DOCUMENT_BYTES,
+  planStorageUpperBound,
+  terminalPlanSizeForecast,
+  type CorrectionPlan,
+  type PlanPorts,
+} from './aiCorrectionPlan.js';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 function plan(id: string): CorrectionPlan {
@@ -126,5 +133,60 @@ emulatorDescribe('correction plan Admin transactions', () => {
     await expect(ports.save({ ...original, ownerUid: 'other' })).rejects.toMatchObject({
       code: 'invalid_input',
     });
+  });
+  it('persists and reloads the maximum single-student plan through its worst terminal growth below Firestore capacity', async () => {
+    const maximum = plan('plan-storage-bound');
+    maximum.verificationId = 'v'.repeat(180);
+    maximum.settings.teacherGuidance = '😀\\"\n'.repeat(100);
+    const ids = Array.from(
+      { length: MAX_PLAN_SUBMISSIONS },
+      (_, i) => `${maximum.verificationId}_${String(i).padStart(19, '0')}`,
+    );
+    maximum.groups = ids.map((id, i) => ({
+      request: {
+        ...maximum.settings,
+        verificationId: maximum.verificationId,
+        requestId: `child-${String(i).padStart(26, '0')}`,
+        gradingMode: 'balanced',
+        submissionIds: [id],
+      },
+      state: 'pending',
+      sourceHash: 'b'.repeat(64),
+      maximumCostMicroUsd: 0,
+      tokensEstimated: 0,
+    }));
+    maximum.preview.verificationId = maximum.verificationId;
+    maximum.preview.counts.selected = MAX_PLAN_SUBMISSIONS;
+    maximum.preview.counts.eligible = MAX_PLAN_SUBMISSIONS;
+    maximum.budget = {
+      reason: 'daily_budget_exceeded',
+      availableMicroUsd: 1,
+      compatibleSubmissionIds: ids,
+    };
+    const terminal = terminalPlanSizeForecast(maximum);
+    expect(planStorageUpperBound(terminal)).toBeLessThan(MAX_PLAN_DOCUMENT_BYTES);
+    await ports.save(maximum);
+    await ports.update(maximum.planId, () => terminal);
+    expect(await ports.load(maximum.ownerUid, maximum.verificationId)).toEqual(terminal);
+    const persisted = (await db.doc(`aiCorrectionPlans/${maximum.planId}`).get()).data()!;
+    expect(persisted.storageVersion).toBe(1);
+    expect(persisted.groups[0].request).not.toHaveProperty('teacherGuidance');
+    expect(persisted.groups[0].result.results[0]).not.toHaveProperty('submissionId');
+  });
+  it('reads an expanded legacy checkpoint and compacts it on update without shifting child IDs', async () => {
+    const legacy = plan('plan-legacy');
+    await db.doc(`aiCorrectionPlans/${legacy.planId}`).set(legacy);
+    expect(await ports.load('owner', 'v1', legacy.planId)).toEqual(legacy);
+    await ports.update(legacy.planId, (current) => {
+      current.groups[0]!.state = 'completed';
+      return current;
+    });
+    const loaded = await ports.load('owner', 'v1', legacy.planId);
+    expect(loaded?.groups.map((g) => g.request.requestId)).toEqual(
+      legacy.groups.map((g) => g.request.requestId),
+    );
+    expect((await db.doc(`aiCorrectionPlans/${legacy.planId}`).get()).data()?.storageVersion).toBe(
+      1,
+    );
   });
 });
