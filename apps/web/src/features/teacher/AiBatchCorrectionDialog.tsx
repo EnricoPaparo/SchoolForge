@@ -165,7 +165,13 @@ function LegacyAiBatchCorrectionDialog({
   const activeMode = result?.mode ?? preview?.mode;
 
   return (
-    <DialogShell title="Correggi con IA" onCancel={onClose} busy={busy}>
+    <DialogShell
+      title="Correggi con IA"
+      onCancel={onClose}
+      busy={busy}
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+    >
       {phase === 'configure' && (
         <div className={styles.config}>
           {/* 1) Titolo (DialogShell) + breve spiegazione. */}

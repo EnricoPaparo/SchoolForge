@@ -122,6 +122,49 @@ function harness(initial: AiCorrectionPlanView | null = null) {
 }
 
 describe('planned correction UI', () => {
+  it('keeps edited criteria open on backdrop and Escape while explicit cancel still works', async () => {
+    const h = harness();
+    render(<AiBatchCorrectionDialog {...h.props} />);
+    const guidance = await screen.findByLabelText('Indicazioni aggiuntive per la correzione');
+    fireEvent.change(guidance, { target: { value: 'Criteri da non perdere.' } });
+    const dialog = screen.getByRole('dialog', { name: 'Correggi con IA' });
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(h.props.onClose).not.toHaveBeenCalled();
+    expect((guidance as HTMLTextAreaElement).value).toBe('Criteri da non perdere.');
+    expect(h.preview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(h.props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not interrupt server groups on outside click or Escape while running', async () => {
+    const p = planFixture();
+    p.consented = true;
+    const h = harness(p);
+    let resolve!: (plan: AiCorrectionPlanView) => void;
+    h.runGroup.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    render(<AiBatchCorrectionDialog {...h.props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Riprendi correzione' }));
+    await waitFor(() => expect(h.runGroup).toHaveBeenCalledTimes(1));
+    const dialog = screen.getByRole('dialog', { name: 'Correggi con IA' });
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(h.props.onClose).not.toHaveBeenCalled();
+    await act(async () => resolve(h.complete(h.runGroup.mock.calls[0]![0])));
+    await screen.findByText('Correzione completata.');
+    expect(h.runGroup.mock.calls.map(([action]) => action.groupIndex)).toEqual([0, 1, 2]);
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(h.props.onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi' }));
+    expect(h.props.onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('confirms the total and each server group once, shows student progress and accounts completed groups', async () => {
     const h = harness();
     render(<AiBatchCorrectionDialog {...h.props} />);

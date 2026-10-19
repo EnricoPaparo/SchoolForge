@@ -220,7 +220,13 @@ export function AiPlannedCorrectionDialog({
     onClose();
   }
   return (
-    <DialogShell title="Correggi con IA" onCancel={close} busy={busy}>
+    <DialogShell
+      title="Correggi con IA"
+      onCancel={close}
+      busy={busy}
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+    >
       {phase === 'loading' && <p role="status">Recupero delle correzioni in corso…</p>}
       {error && (
         <p role="alert" className="text-error">
