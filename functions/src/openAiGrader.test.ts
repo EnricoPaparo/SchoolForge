@@ -82,6 +82,102 @@ function validOutput() {
   });
 }
 
+describe('explicit correction prompt cache boundary', () => {
+  it.each(['gpt-6-luna', 'gpt-6.1-sol'])(
+    'keeps the same exact question prefix across students on %s, outside all dynamic content',
+    (model) => {
+      const first = buildOpenAiGradingRequest(input, model);
+      const second = buildOpenAiGradingRequest(
+        {
+          ...input,
+          requestId: 'request-other-002',
+          questions: input.questions.map((q) => ({
+            ...q,
+            studentAnswer: 'DIFFERENT_STUDENT_ANSWER',
+          })),
+          submissionContext: { priorPoints: 3, totalMaxPoints: 6 },
+        },
+        model,
+      );
+      expect(first.prompt_cache_options).toEqual({ mode: 'explicit' });
+      expect(first.input[0]).toEqual(second.input[0]);
+      expect(first.input[0].role).toBe('developer');
+      const blocks = first.input[0].content;
+      expect(Array.isArray(blocks)).toBe(true);
+      if (!Array.isArray(blocks)) throw new Error('Expected static input_text block');
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]!.prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
+      // Shared disciplinary instructions alone exceed the documented 1024-token
+      // eligibility floor in normal tokenizer usage; no student text is padding.
+      expect(blocks[0]!.text.length).toBeGreaterThan(6000);
+      const reusable = JSON.parse(blocks[0]!.text.slice(blocks[0]!.text.lastIndexOf('\n') + 1));
+      expect(reusable.questions[0]).toMatchObject({
+        order: 2,
+        questionText: input.questions[0]!.questionText,
+        referenceSolution: input.questions[0]!.referenceSolution,
+        difficulty: 3,
+        maxPoints: 3,
+        numericDiagnostics: { reference: expect.anything() },
+      });
+      expect(reusable).not.toHaveProperty('requestId');
+      expect(reusable).not.toHaveProperty('submissionContext');
+      expect(reusable.questions[0]).not.toHaveProperty('studentAnswer');
+      expect(JSON.stringify(first.input[0])).not.toContain(input.requestId);
+      expect(JSON.stringify(first.input[0])).not.toContain(input.questions[0]!.studentAnswer);
+      expect(second.input[1].content).toContain('DIFFERENT_STUDENT_ANSWER');
+      expect(JSON.parse(second.input[1].content)).toMatchObject({
+        requestId: 'request-other-002',
+        submissionContext: { priorPoints: 3, totalMaxPoints: 6 },
+        questions: [
+          {
+            order: 2,
+            studentAnswer: 'DIFFERENT_STUDENT_ANSWER',
+            numericDiagnostics: { answer: expect.anything() },
+          },
+          {
+            order: 5,
+            studentAnswer: 'DIFFERENT_STUDENT_ANSWER',
+            numericDiagnostics: { answer: expect.anything() },
+          },
+        ],
+      });
+      expect(first.store).toBe(false);
+    },
+  );
+  it('separates grader/reviewer and invalidates the reusable prefix for exact subset, rubric and criteria changes', () => {
+    const primary = buildOpenAiGradingRequest(input, 'gpt-6.1-sol');
+    const auditInput = buildMaximumAuditInput(input);
+    const reviewer = buildOpenAiGradingRequest(auditInput, 'gpt-6.1-sol');
+    expect(reviewer.input[0]).not.toEqual(primary.input[0]);
+    const otherProposal = buildOpenAiGradingRequest(
+      {
+        ...auditInput,
+        reviewProposal: {
+          ...auditInput.reviewProposal!,
+          generalFeedback: 'OTHER_PROPOSAL_PRIVATE',
+        },
+      },
+      'gpt-6.1-sol',
+    );
+    expect(otherProposal.input[0]).toEqual(reviewer.input[0]);
+    expect(JSON.stringify(otherProposal.input[0])).not.toContain('OTHER_PROPOSAL_PRIVATE');
+    expect(otherProposal.input[1].content).toContain('OTHER_PROPOSAL_PRIVATE');
+    for (const changed of [
+      { ...input, questions: [input.questions[0]!] },
+      { ...input, teacherGuidance: 'Changed criteria' },
+      { ...input, gradingMode: 'rigorous' as const },
+      {
+        ...input,
+        questions: input.questions.map((q) => ({ ...q, referenceSolution: 'Changed reference' })),
+      },
+    ]) {
+      expect(buildOpenAiGradingRequest(changed, 'gpt-6.1-sol').input[0]).not.toEqual(
+        primary.input[0],
+      );
+    }
+  });
+});
+
 describe('OpenAiGrader payload and mapping', () => {
   it('builds a strict, minimal payload without PII, closed questions or tools', () => {
     const request = buildOpenAiGradingRequest(input, 'gpt-5-nano');
@@ -909,7 +1005,7 @@ it('audits a bounded first proposal and reserves enough UTF-8 bytes for quarter 
     },
   };
   const payload = buildOpenAiGradingRequest(audit, 'gpt-6.1-sol');
-  expect(payload.input[0]?.content).toContain(OPENAI_AUDIT_INSTRUCTIONS);
+  expect(JSON.stringify(payload.input[0]?.content)).toContain(OPENAI_AUDIT_INSTRUCTIONS);
   expect(JSON.parse(payload.input[1]!.content).reviewProposal.results[0].points).toBe(4.75);
   expect(
     Buffer.byteLength(

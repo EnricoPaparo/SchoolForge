@@ -104,6 +104,28 @@ describe('describeExclusion', () => {
 });
 
 describe('describeAiError', () => {
+  it('distinguishes count, tokens, individual size and budget even under the same resource-exhausted envelope', () => {
+    for (const [code, expected] of [
+      ['submission_count_exceeded', 'numero massimo'],
+      ['submission_questions_exceeded', 'domande aperte'],
+      ['submission_tokens_exceeded', 'singola consegna'],
+      ['operation_tokens_exceeded', 'token stimati per operazione'],
+      ['operation_budget_exceeded', 'singola operazione'],
+      ['daily_budget_exceeded', 'giornaliero'],
+      ['budget_exceeded', 'mensile'],
+      ['plan_size_exceeded', 'piano è troppo grande'],
+    ]) {
+      const message = describeAiError({ code: 'functions/resource-exhausted', details: { code } });
+      expect(message).toContain(expected);
+      expect(message).not.toContain('Troppe consegne selezionate');
+    }
+    expect(describeAiError({ code: 'functions/resource-exhausted' })).not.toContain(
+      'Troppe consegne',
+    );
+    expect(
+      describeAiError({ code: 'functions/failed-precondition', details: { code: 'plan_changed' } }),
+    ).toContain('nuova anteprima');
+  });
   it('recognises the stable gateway codes without leaking details', () => {
     expect(describeAiError({ details: { code: 'feature_disabled' } })).toBe(
       'La correzione assistita da IA è disattivata.',

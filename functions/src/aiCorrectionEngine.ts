@@ -262,6 +262,10 @@ export interface CorrectionData {
 // ── Esiti / codici ────────────────────────────────────────────────────────────
 
 export type ExclusionCode =
+  | 'submission_questions_exceeded'
+  | 'submission_tokens_exceeded'
+  | 'operation_tokens_exceeded'
+  | 'operation_budget_exceeded'
   | 'not_found'
   | 'wrong_owner'
   | 'wrong_verification'
@@ -1674,7 +1678,7 @@ function persistRunResponse(
   };
 }
 
-function replayPersistedRun(
+export function replayPersistedRun(
   request: AiCorrectionRequest,
   persisted: PersistedRun,
 ): AiCorrectionRunResponse | null {

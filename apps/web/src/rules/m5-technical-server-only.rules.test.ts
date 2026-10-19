@@ -18,6 +18,8 @@ const OTHER_UID = 'other-uid';
 const TECHNICAL_DOCUMENTS = [
   'settings/aiConfig',
   'aiCorrectionRuns/run-1',
+  'aiCorrectionPlans/opaque-plan-1',
+  'aiCorrectionPlanHeads/opaque-plan-head-1',
   'aiBudgetLedger/2026-07',
   // AIGEN-01 — run tecnici della generazione contenuti IA, server-only.
   'aiContentRuns/opaque-run-1',

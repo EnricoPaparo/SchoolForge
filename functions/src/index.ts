@@ -7,7 +7,13 @@
 export { repositoryGateway } from './repositoryGateway.js';
 export { returnVerificationToDraft } from './verificationReturnToDraftGateway.js';
 export { renderTeacherLessonPdf } from './teacherLessonPdf.js';
-export { aiCorrectionPreview, aiCorrectionRun } from './aiCorrectionGateway.js';
+export {
+  aiCorrectionPreview,
+  aiCorrectionRun,
+  aiCorrectionPlanPreview,
+  aiCorrectionPlanStatus,
+  aiCorrectionPlanRunGroup,
+} from './aiCorrectionGateway.js';
 // AIGEN-01 — callable server-side della generazione IA di pool e lezioni
 // (aiContentPreview/aiContentGenerate). Provider reale disabilitato dal kill
 // switch; run server-only in aiContentRuns. Vedi ai-content-generation-roadmap.md.

@@ -34,6 +34,13 @@ export type AiGatewayErrorCode =
   | 'batch_limit_exceeded'
   // M5-05D1 — guardrail server-side prima dell'attivazione del provider reale.
   | 'limit_exceeded'
+  | 'submission_count_exceeded'
+  | 'submission_questions_exceeded'
+  | 'submission_tokens_exceeded'
+  | 'operation_tokens_exceeded'
+  | 'plan_changed'
+  | 'plan_ambiguous'
+  | 'plan_size_exceeded'
   | 'operation_budget_exceeded'
   | 'daily_budget_exceeded'
   | 'budget_exceeded'
@@ -183,7 +190,10 @@ const ALLOWED_REQUEST_KEYS = [
   'advancedReview',
 ] as const;
 
-export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest {
+export function validateAiCorrectionRequest(
+  input: unknown,
+  maximum = MAX_SUBMISSIONS_PER_OPERATION,
+): AiCorrectionRequest {
   if (typeof input !== 'object' || input === null) {
     throw new AiGatewayError('invalid_input', 'Payload mancante o non valido.');
   }
@@ -209,10 +219,10 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
   if (submissionIds.length === 0) {
     throw new AiGatewayError('invalid_input', 'submissionIds non può essere vuoto.');
   }
-  if (submissionIds.length > MAX_SUBMISSIONS_PER_OPERATION) {
+  if (submissionIds.length > maximum) {
     throw new AiGatewayError(
       'batch_limit_exceeded',
-      `Troppe consegne in una sola operazione (max ${MAX_SUBMISSIONS_PER_OPERATION}).`,
+      `Troppe consegne nella selezione (max ${maximum}).`,
     );
   }
   const prefix = `${verificationId}_`;

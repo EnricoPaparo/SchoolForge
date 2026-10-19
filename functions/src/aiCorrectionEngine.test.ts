@@ -1125,7 +1125,7 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
           loadRuntimeConfig: enabledConfigPort,
         },
       ),
-    ).rejects.toMatchObject({ code: 'limit_exceeded' });
+    ).rejects.toMatchObject({ code: 'submission_count_exceeded' });
     expect(store.runs.size).toBe(0);
     expect(store.commitCalls).toBe(0);
     expect(graderFactory).not.toHaveBeenCalled();
