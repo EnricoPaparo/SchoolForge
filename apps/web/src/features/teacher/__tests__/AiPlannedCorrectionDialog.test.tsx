@@ -151,6 +151,15 @@ describe('planned correction UI', () => {
     render(<AiBatchCorrectionDialog {...h.props} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Riprendi correzione' }));
     await waitFor(() => expect(h.runGroup).toHaveBeenCalledTimes(1));
+    expect(
+      screen.getByRole('progressbar', { name: 'Consegne elaborate' }).getAttribute('value'),
+    ).toBe('0');
+    expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByRole('status').querySelector('.spinner')).toBeTruthy();
+    expect(screen.queryByText('Criteri del piano')).toBeNull();
+    expect(screen.queryByText('Guidance originale')).toBeNull();
+    expect(screen.queryByText('Avanzamento consegne')).toBeNull();
+    expect(screen.queryByText(/Costo contabilizzato/)).toBeNull();
     const dialog = screen.getByRole('dialog', { name: 'Correggi con IA' });
     fireEvent.click(dialog.parentElement!);
     fireEvent.keyDown(dialog, { key: 'Escape' });

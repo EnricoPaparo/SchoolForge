@@ -385,7 +385,12 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
               requestId: planHash([request.requestId, 'estimate']).slice(0, 32),
               submissionIds: [id],
             },
-            { ...deps, ports: reads, loadRuntimeConfig: async () => config },
+            {
+              ...deps,
+              ports: reads,
+              loadRuntimeConfig: async () => config,
+              isolatedPlanSubmission: true,
+            },
           );
           candidates[position] = item.counts.eligible
             ? { id, preview: item }
@@ -421,6 +426,12 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
     let last = groups.at(-1);
     if (
       !last ||
+      // Long submissions retain their full context in a dedicated group;
+      // neither a preceding nor a following normal item may be merged into it.
+      (config && item.preview.tokensEstimated > config.limits.maxEstimatedTokensPerSubmission) ||
+      (config &&
+        last.request.submissionIds.length === 1 &&
+        last.tokensEstimated > config.limits.maxEstimatedTokensPerSubmission) ||
       last.request.submissionIds.length >= countCap ||
       last.tokensEstimated + item.preview.tokensEstimated > tokenCap ||
       last.maximumCostMicroUsd + item.preview.maximumCostMicroUsd > costCap
@@ -447,6 +458,7 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
     // item ceilings is conservative with respect to aggregate rounding.
     await runPreview(group.request, {
       ...deps,
+      isolatedPlanSubmission: true,
       ports: reads,
       loadRuntimeConfig: async () => config,
     });
@@ -627,6 +639,7 @@ export async function executeCorrectionPlanGroup(raw: unknown, deps: PlanDeps): 
     throw new AiGatewayError('plan_changed', 'Consegne cambiate dopo la stima.');
   const fresh = await runPreview(group.request, {
     ...deps,
+    isolatedPlanSubmission: true,
     ports: snapshot.ports,
     loadRuntimeConfig: async () => config,
   });
@@ -651,6 +664,7 @@ export async function executeCorrectionPlanGroup(raw: unknown, deps: PlanDeps): 
   try {
     result = await runExecution(group.request, {
       ...deps,
+      isolatedPlanSubmission: true,
       loadRuntimeConfig: async () => config,
       ports: {
         ...deps.ports,

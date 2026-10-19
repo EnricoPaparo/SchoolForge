@@ -23,6 +23,8 @@ import {
 } from './aiCorrectionPlan.js';
 import {
   replayPersistedRun,
+  runPreview,
+  runExecution,
   type PersistedRun,
   type EngineWritePorts,
   type SubmissionData,
@@ -335,18 +337,126 @@ describe('durable correction plans', () => {
     );
     expect(tokenPlan.groups.every((g) => g.submissionIds.length < 3)).toBe(true);
   });
-  it('excludes an oversized single submission with its precise reason while retaining other eligible submissions', async () => {
+  it('isolates a long submission without truncating its question, reference or answer, including the reviewer', async () => {
     const f = fixture(3);
+    const question = 'Domanda completa '.repeat(500);
+    const reference = 'Soluzione completa '.repeat(700);
+    const answer = 'Risposta completa '.repeat(1000);
+    f.verification.teacherQuestions![0]!.testo = question;
+    f.verification.teacherQuestions![0]!.soluzione = reference;
+    f.submissions.get(f.request.submissionIds[1]!)!.answers['0'] = {
+      tipo: 'aperta',
+      testo: answer,
+    };
+    const request = { ...f.request, advancedReview: true };
+    const plan = await previewCorrectionPlan(request, f.deps);
+    expect(plan.preview.counts).toMatchObject({ selected: 3, eligible: 3, excluded: 0 });
+    expect(plan.groups.map((g) => g.submissionIds)).toEqual(
+      f.request.submissionIds.map((id) => [id]),
+    );
+    expect(f.config.limits.maxEstimatedTokensPerSubmission).toBe(10000);
+    await executeCorrectionPlanGroup(action(plan, 0), f.deps);
+    const result = await executeCorrectionPlanGroup(action(plan, 1), f.deps);
+    const calls = f.grade.mock.calls.filter(
+      ([input]) => input.questions[0]?.studentAnswer === answer,
+    );
+    expect(calls).toHaveLength(2);
+    for (const [input] of calls)
+      expect(input.questions[0]).toMatchObject({
+        questionText: question,
+        referenceSolution: reference,
+        studentAnswer: answer,
+      });
+    expect(calls[1]![0].reviewProposal).toBeTruthy();
+    expect(result.groups[1]!.result!.costReservationMicroUsd).toBe(
+      plan.groups[1]!.maximumCostMicroUsd,
+    );
+    expect(result.groups[1]!.result!.costSettledMicroUsd).toBeLessThanOrEqual(
+      result.groups[1]!.result!.costReservationMicroUsd,
+    );
+    const attempts = f.grade.mock.calls.length;
+    await executeCorrectionPlanGroup(action(plan, 1), f.deps);
+    expect(f.grade).toHaveBeenCalledTimes(attempts);
+    f.submissions.get(f.request.submissionIds[2]!)!.answers['0'] = {
+      tipo: 'aperta',
+      testo: answer,
+    };
+    const legacy = {
+      ...request,
+      requestId: 'legacy-long-request',
+      submissionIds: [f.request.submissionIds[2]!],
+    };
+    await expect(runPreview(legacy, f.deps)).rejects.toMatchObject({
+      code: 'submission_tokens_exceeded',
+    });
+    await expect(runExecution(legacy, f.deps)).rejects.toMatchObject({
+      code: 'submission_tokens_exceeded',
+    });
+    await expect(
+      runPreview({ ...legacy, isolatedPlanSubmission: true }, f.deps),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
+  });
+  it('retains the operation workload cap and character guards for isolated plan submissions', async () => {
+    const f = fixture(3);
+    f.config.limits.maxEstimatedTokensPerOperation = 1000;
     f.submissions.get(f.request.submissionIds[1]!)!.answers['0'] = {
       tipo: 'aperta',
       testo: 'a'.repeat(18000),
     };
-    f.config.limits.maxEstimatedTokensPerSubmission = 1000;
+    f.submissions.get(f.request.submissionIds[2]!)!.answers['0'] = {
+      tipo: 'aperta',
+      testo: 'a'.repeat(20001),
+    };
     const plan = await previewCorrectionPlan(f.request, f.deps);
-    expect(plan.preview.counts).toMatchObject({ selected: 3, eligible: 2, excluded: 1 });
+    expect(plan.preview.counts).toMatchObject({ selected: 3, eligible: 1, excluded: 2 });
     expect(plan.preview.excluded).toEqual([
-      { submissionId: f.request.submissionIds[1], reason: 'submission_tokens_exceeded' },
+      { submissionId: f.request.submissionIds[1], reason: 'operation_tokens_exceeded' },
+      { submissionId: f.request.submissionIds[2], reason: 'too_large' },
     ]);
+    expect(f.grade).not.toHaveBeenCalled();
+  });
+  it('does not combine a long isolated item with other submissions or bypass the reviewer workload cap', async () => {
+    const f = fixture(3);
+    f.config.limits.maxEstimatedTokensPerSubmission = 1000;
+    f.submissions.get(f.request.submissionIds[1]!)!.answers['0'] = {
+      tipo: 'aperta',
+      testo: 'a'.repeat(18000),
+    };
+    const plan = await previewCorrectionPlan(f.request, f.deps);
+    expect(plan.groups.map((g) => g.submissionIds)).toEqual(
+      f.request.submissionIds.map((id) => [id]),
+    );
+    await expect(
+      runPreview(f.request, { ...f.deps, isolatedPlanSubmission: true }),
+    ).rejects.toMatchObject({ code: 'submission_tokens_exceeded' });
+    f.config.limits.maxEstimatedTokensPerOperation = 6000;
+    const reviewed = await previewCorrectionPlan(
+      { ...f.request, requestId: 'reviewed-limited-plan', advancedReview: true },
+      f.deps,
+    );
+    expect(reviewed.preview.excluded).toEqual([
+      { submissionId: f.request.submissionIds[1], reason: 'operation_tokens_exceeded' },
+    ]);
+    expect(f.grade).not.toHaveBeenCalled();
+  });
+  it('requires a new plan if the operation cap is lowered after a long submission was consented', async () => {
+    const f = fixture(1);
+    f.verification.teacherQuestions![0]!.soluzione = 'Soluzione completa '.repeat(1200);
+    f.submissions.get(f.request.submissionIds[0]!)!.answers['0'] = {
+      tipo: 'aperta',
+      testo: 'a'.repeat(18000),
+    };
+    const plan = await previewCorrectionPlan(f.request, f.deps);
+    expect(plan.preview.counts.eligible).toBe(1);
+    f.config.limits.maxEstimatedTokensPerOperation = 1000;
+    await expect(executeCorrectionPlanGroup(action(plan), f.deps)).rejects.toMatchObject({
+      code: 'plan_changed',
+    });
+    expect(f.grade).not.toHaveBeenCalled();
+    expect(f.ports.reserveBudget).not.toHaveBeenCalled();
+    expect(f.ports.markBudgetInvoked).not.toHaveBeenCalled();
   });
   it.each(['daily', 'monthly'] as const)(
     'offers an explicit budget-compatible subset for insufficient %s budget without reserving anything',
