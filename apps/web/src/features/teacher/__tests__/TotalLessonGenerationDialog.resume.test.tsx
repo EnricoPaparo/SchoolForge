@@ -1,3 +1,4 @@
+import { studyFixture } from '../../repository/programs/__tests__/studyFixture.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as ContentClient from '../../repository/pools/aiContentClient.js';
 import type * as MapClient from '../../repository/pools/aiConceptMapClient.js';
@@ -13,6 +14,7 @@ import {
 
 const state = vi.hoisted(() => ({
   summary: null as CompleteLessonCompletionSummary | null,
+  error: null as unknown,
   generate: vi.fn(),
 }));
 vi.mock('../../../lib/firebase.js', () => ({ functions: {} }));
@@ -48,7 +50,11 @@ vi.mock('../AiCompleteLessonGenerationDialog.js', () => ({
   }) => (
     <button
       onClick={async () => {
-        state.summary = await onCompleteDraft(resumeDraft.body, () => {}, resumeDraft.options);
+        try {
+          state.summary = await onCompleteDraft(resumeDraft.body, () => {}, resumeDraft.options);
+        } catch (error) {
+          state.error = error;
+        }
       }}
     >
       Resume
@@ -62,6 +68,7 @@ describe('completed artifact costs after reload', () => {
     cleanup();
     window.sessionStorage.clear();
     state.summary = null;
+    state.error = null;
     state.generate.mockClear();
   });
   it.each(['map', 'pool'] as const)(
@@ -116,3 +123,117 @@ describe('completed artifact costs after reload', () => {
     },
   );
 });
+
+it.each(['generated', 'reviewed'] as const)(
+  'reloads %s snapshots after failed save without calling any generator or reviewer',
+  async (stage) => {
+    cleanup();
+    window.sessionStorage.clear();
+    state.summary = null;
+    state.error = null;
+    state.generate.mockClear();
+    const identity = { programId: 'p', importId: 'i', lessonId: 'l' };
+    const body = '## RAM\n\nLa RAM è volatile.';
+    const map = {
+      status: 'completed' as const,
+      kind: 'concept_map' as const,
+      modelProfile: 'quality',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output: { conceptMapMarkdown: '## Sintesi\n\nLa RAM è volatile.' },
+    };
+    const pool = {
+      ...map,
+      kind: 'pool' as const,
+      actualCostMicroUsd: 2,
+      output: { questions: [studyFixture().questions[0]!] },
+    };
+    writeCompleteLessonCheckpoint(
+      createCompleteLessonCheckpoint({
+        identity,
+        body,
+        options: {
+          modelProfile: 'quality',
+          level: 'balanced',
+          counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
+          reviewStatus: stage === 'reviewed' ? 'improved' : 'disabled',
+        },
+        bodyPersisted: true,
+        mapCompleted: false,
+        poolCompleted: false,
+        mapRequestId: 'stable-map',
+        poolRequestId: 'stable-pool',
+        mapReviewRequestId: 'stable-map-review',
+        poolReviewRequestId: 'stable-pool-review',
+        mapCostMicroUsd: 0,
+        poolCostMicroUsd: 0,
+        visual: null,
+        mapState: {
+          base: map,
+          reviewed:
+            stage === 'reviewed'
+              ? {
+                  ...map,
+                  kind: 'concept_map_review',
+                  output: {
+                    ...map.output,
+                    reviewOutcome: 'unchanged',
+                    issueCodes: [],
+                    sourceIssue: false,
+                  },
+                }
+              : null,
+          costUnknown: false,
+        },
+        poolState: {
+          base: pool,
+          reviewed:
+            stage === 'reviewed'
+              ? {
+                  ...pool,
+                  kind: 'pool_review',
+                  output: { ...pool.output, reviewOutcome: 'unchanged', issueCodes: [] },
+                }
+              : null,
+          costUnknown: false,
+        },
+      }),
+    );
+    const saveMap = vi
+      .fn(async () => {})
+      .mockRejectedValueOnce(new Error('temporary save failure'));
+    const savePool = vi.fn(async () => {});
+    const element = (
+      <TotalLessonGenerationDialog
+        identity={identity}
+        context={{
+          titolo: 'RAM',
+          sottotitolo: null,
+          difficolta: 'Base',
+          udaTitle: 'Memorie',
+          currentBody: body,
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn()}
+        onSaveConceptMap={saveMap}
+        onSavePool={savePool}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const view = render(element);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(state.error).not.toBeNull());
+    expect(state.summary).toBeNull();
+    view.unmount();
+    state.error = null;
+    render(element);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(state.summary).not.toBeNull());
+    expect(state.error).toBeNull();
+    expect(state.generate).not.toHaveBeenCalled();
+    expect(saveMap).toHaveBeenCalledTimes(2);
+    expect(savePool).toHaveBeenCalledOnce();
+    expect(state.summary?.actualCostMicroUsd).toBe(stage === 'reviewed' ? 11 : 8);
+  },
+);
