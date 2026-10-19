@@ -53,20 +53,14 @@ vi.mock('../AiCompleteLessonGenerationDialog.js', () => ({
       onClick={async () => {
         try {
           await onBeforeGenerate();
-          state.summary = await onCompleteDraft(
-            state.raw,
-            (p) => {
-              if (p.stage === 'practice') p.confirm?.(true);
-            },
-            {
-              modelProfile: 'economy',
-              level: 'balanced',
-              counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
-              reviewStatus: 'disabled',
-              practiceEnabled: true,
-              practiceCount: 3,
-            },
-          );
+          state.summary = await onCompleteDraft(state.raw, () => {}, {
+            modelProfile: 'economy',
+            level: 'balanced',
+            counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
+            reviewStatus: 'disabled',
+            practiceEnabled: true,
+            practiceCount: 3,
+          });
         } catch (e) {
           state.error = e;
         }

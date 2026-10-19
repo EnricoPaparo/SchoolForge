@@ -19,11 +19,6 @@ export interface CompletePracticeState {
   saved: boolean;
   costUnknown: boolean;
 }
-export interface PracticeEstimate {
-  phase: 'generation' | 'review';
-  estimatedCostMicroUsd: number;
-  reservationCostMicroUsd: number;
-}
 export function createCompletePracticeState(objectives: string[]): CompletePracticeState {
   return {
     sourceFingerprint: null,
@@ -145,7 +140,6 @@ export async function runCompletePractice(
     review: boolean;
     callables: AiContentCallables;
     checkpoint: () => void;
-    confirm: (estimate: PracticeEstimate) => Promise<boolean>;
     save: (practice: StudyPractice) => Promise<void>;
     verify?: (practice: StudyPractice) => Promise<void>;
     active?: () => boolean;
@@ -174,9 +168,7 @@ export async function runCompletePractice(
     existingPoolQuestionCount: 0,
   };
   if (!state.base) {
-    const preview = await callables.preview(request);
-    if (!(await params.confirm({ phase: 'generation', ...preview })))
-      throw new Error('Conferma esercitazioni annullata.');
+    await callables.preview(request);
     active();
     try {
       const generated = await callables.generate(request);
@@ -200,9 +192,7 @@ export async function runCompletePractice(
       candidateQuestions: state.base.output.questions,
       candidateStudyPlan: state.base.output.studyPlan,
     };
-    const preview = await callables.previewReview(review);
-    if (!(await params.confirm({ phase: 'review', ...preview })))
-      throw new Error('Conferma revisione annullata.');
+    await callables.previewReview(review);
     active();
     try {
       const result = await callables.generateReview(review);

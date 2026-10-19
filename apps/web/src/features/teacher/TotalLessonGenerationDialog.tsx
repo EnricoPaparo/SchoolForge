@@ -407,8 +407,6 @@ export function TotalLessonGenerationDialog({
             if (!onVerifyPractice) throw new Error('Verifica bozza non disponibile.');
             await onVerifyPractice(practice);
           },
-          confirm: (estimate) =>
-            new Promise<boolean>((confirm) => onProgress({ stage: 'practice', estimate, confirm })),
           save: async (practice) => {
             if (!onSavePractice) throw new Error('Salvataggio esercitazioni non disponibile.');
             await onSavePractice(practice);
