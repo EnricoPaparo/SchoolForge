@@ -184,7 +184,9 @@ export interface AiRunResult {
 export interface AiCorrectionCallables {
   preview: (req: AiCorrectionRequest) => Promise<AiPreviewResult>;
   run: (req: AiCorrectionRequest) => Promise<AiRunResult>;
-  planPreview?: (req: AiCorrectionRequest) => Promise<AiCorrectionPlanView>;
+  planPreview?: (
+    req: AiCorrectionRequest & { retryOfPlanId?: string },
+  ) => Promise<AiCorrectionPlanView>;
   planStatus?: (req: {
     verificationId: string;
     planId?: string;
@@ -200,6 +202,8 @@ export interface AiPlanGroupAction {
   groupMaximumCostMicroUsd: number;
 }
 export interface AiCorrectionPlanView {
+  retryOfPlanId?: string;
+  retryableSubmissionIds?: string[];
   settings: Pick<
     AiCorrectionRequest,
     'modelProfile' | 'gradingMode' | 'teacherGuidance' | 'advancedReview'
@@ -339,7 +343,7 @@ export function describeAiError(err: unknown): string {
   if (code === 'plan_changed')
     return 'Dati o limiti cambiati: calcola una nuova anteprima e conferma le consegne rimanenti.';
   if (code === 'plan_ambiguous')
-    return 'Un gruppo ha un esito ancora incerto. Nessuna nuova correzione è stata avviata: riprendi più tardi per recuperare l’esito.';
+    return 'Nessuna nuova correzione è stata avviata. Recupera l’esito del gruppo in corso; per le consegne fallite prepara una nuova stima e conferma il nuovo tentativo.';
   if (code === 'plan_size_exceeded')
     return 'Il piano è troppo grande per conservarne la ripresa in sicurezza. Riduci la selezione prima di confermare.';
   if (code === 'submission_count_exceeded')

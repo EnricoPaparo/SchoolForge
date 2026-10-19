@@ -42,6 +42,8 @@ export interface CorrectionPlanGroup {
   result?: AiCorrectionRunResponse;
 }
 export interface CorrectionPlan {
+  retryOfPlanId?: string;
+  retrySources?: Record<string, string>;
   version: 1;
   ownerUid: string;
   planId: string;
@@ -60,6 +62,8 @@ export interface CorrectionPlan {
   };
 }
 export interface PlanView {
+  retryOfPlanId?: string;
+  retryableSubmissionIds: string[];
   planId: string;
   verificationId: string;
   expiresAtMs: number;
@@ -78,6 +82,8 @@ export interface PlanView {
 }
 export function planView(plan: CorrectionPlan): PlanView {
   return {
+    ...(plan.retryOfPlanId ? { retryOfPlanId: plan.retryOfPlanId } : {}),
+    retryableSubmissionIds: Object.keys(retrySources(plan)),
     planId: plan.planId,
     verificationId: plan.verificationId,
     expiresAtMs: plan.expiresAtMs,
@@ -343,12 +349,76 @@ const perItemErrors = new Set([
   'operation_tokens_exceeded',
   'operation_budget_exceeded',
 ]);
+/** The retry capability is minted from a terminal, owner-scoped plan, never
+ * from a client flag. Billing uncertainty is retained on the original run. */
+export function assertPlanReplacement(previous: CorrectionPlan | null, next: CorrectionPlan): void {
+  if (next.retryOfPlanId) {
+    if (
+      !previous ||
+      (previous.planId !== next.retryOfPlanId &&
+        (previous.consented || previous.retryOfPlanId !== next.retryOfPlanId)) ||
+      previous.ownerUid !== next.ownerUid ||
+      previous.verificationId !== next.verificationId
+    )
+      throw new AiGatewayError('plan_changed', 'Il piano da riprendere è cambiato.');
+    if (previous.groups.some((g) => g.state === 'running'))
+      throw new AiGatewayError(
+        'plan_ambiguous',
+        'Un gruppo è ancora in corso: recuperare prima il suo esito.',
+      );
+    const sources =
+      previous.planId === next.retryOfPlanId
+        ? retrySources(previous)
+        : (previous.retrySources ?? {});
+    const ids = next.groups.flatMap((g) => g.request.submissionIds);
+    if (
+      !ids.length ||
+      ids.some((id) => !sources[id]) ||
+      !next.retrySources ||
+      Object.keys(sources).length !== Object.keys(next.retrySources).length ||
+      Object.entries(sources).some(([id, source]) => next.retrySources?.[id] !== source)
+    )
+      throw new AiGatewayError(
+        'invalid_input',
+        'Il nuovo tentativo può includere soltanto consegne fallite del piano precedente.',
+      );
+  } else if (
+    previous?.groups.some(
+      (g) => g.state === 'running' || (g.result?.retry.unknownBillingAttempts ?? 0) > 0,
+    ) ||
+    (previous?.retrySources && Object.keys(retrySources(previous)).length > 0)
+  ) {
+    throw new AiGatewayError(
+      'plan_ambiguous',
+      'Recuperare il gruppo in corso oppure preparare esplicitamente una nuova stima delle consegne fallite.',
+    );
+  }
+}
+function retrySources(plan: CorrectionPlan): Record<string, string> {
+  const sources = { ...plan.retrySources };
+  for (const group of plan.groups) {
+    for (const id of group.request.submissionIds) delete sources[id];
+    if (group.state === 'completed')
+      for (const result of group.result?.results ?? [])
+        if (result.outcome === 'failed' || result.outcome === 'partial')
+          sources[result.submissionId] = group.request.requestId;
+  }
+  return sources;
+}
 export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promise<PlanView> {
   const ownerUid = await authorizeOwnerCall(deps);
   const config = await configFor(deps);
-  const validated = validateAiCorrectionRequest(raw, MAX_PLAN_SUBMISSIONS);
+  const { retryOfPlanId, ...input } = (
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  ) as Record<string, unknown>;
+  if (
+    retryOfPlanId !== undefined &&
+    (typeof retryOfPlanId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(retryOfPlanId))
+  )
+    throw new AiGatewayError('invalid_input', 'Piano da riprendere non valido.');
+  const validated = validateAiCorrectionRequest(input, MAX_PLAN_SUBMISSIONS);
   const request = { ...validated, submissionIds: [...validated.submissionIds].sort() };
-  const selectionHash = planHash(request);
+  const selectionHash = planHash(retryOfPlanId ? { ...request, retryOfPlanId } : request);
   const existing = await deps.plans.load(ownerUid, request.verificationId, request.requestId);
   if (existing) {
     if (existing.selectionHash !== selectionHash)
@@ -357,15 +427,36 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
   }
   const previous = await deps.plans.load(ownerUid, request.verificationId);
   if (
+    !retryOfPlanId &&
     previous?.groups.some(
       (g) => g.state === 'running' || (g.result?.retry.unknownBillingAttempts ?? 0) > 0,
     )
   ) {
     throw new AiGatewayError(
       'plan_ambiguous',
-      'Il piano precedente contiene consegne con esito o costo incerto: recuperare il risultato prima di creare un nuovo piano.',
+      'Recuperare il gruppo in corso oppure preparare esplicitamente una nuova stima delle consegne fallite.',
     );
   }
+  const sources =
+    retryOfPlanId && previous
+      ? previous.planId === retryOfPlanId
+        ? retrySources(previous)
+        : !previous.consented && previous.retryOfPlanId === retryOfPlanId
+          ? (previous.retrySources ?? {})
+          : {}
+      : {};
+  if (
+    retryOfPlanId &&
+    (!previous ||
+      (previous.planId !== retryOfPlanId &&
+        (previous.consented || previous.retryOfPlanId !== retryOfPlanId)) ||
+      previous.groups.some((g) => g.state === 'running') ||
+      request.submissionIds.some((id) => !sources[id]))
+  )
+    throw new AiGatewayError(
+      'plan_changed',
+      'Riprendere soltanto le consegne fallite del piano corrente, dopo il termine di tutti i gruppi.',
+    );
   const reads = memoizedReads(deps.ports);
   const candidates: (
     | { id: string; preview: AiCorrectionPreviewResponse }
@@ -527,6 +618,12 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
     ...(request.teacherGuidance ? { teacherGuidance: request.teacherGuidance } : {}),
   };
   const plan: CorrectionPlan = {
+    ...(typeof retryOfPlanId === 'string'
+      ? {
+          retryOfPlanId,
+          retrySources: sources,
+        }
+      : {}),
     version: 1,
     ownerUid,
     planId: request.requestId,
@@ -540,6 +637,7 @@ export async function previewCorrectionPlan(raw: unknown, deps: PlanDeps): Promi
     consented: false,
     ...(budget ? { budget } : {}),
   };
+  assertPlanReplacement(previous, plan);
   assertPlanStorageCapacity(plan);
   return planView(await deps.plans.save(plan));
 }
@@ -669,6 +767,17 @@ export async function executeCorrectionPlanGroup(raw: unknown, deps: PlanDeps): 
       ports: {
         ...deps.ports,
         ...snapshot.ports,
+        ...(deps.ports.reviewCheckpoint
+          ? {
+              reviewCheckpoint: (submissionId, requestId, executionId) =>
+                deps.ports.reviewCheckpoint!(
+                  submissionId,
+                  requestId,
+                  executionId,
+                  plan.retrySources?.[submissionId],
+                ),
+            }
+          : {}),
         markBudgetInvoked: async (input) => {
           // Set before awaiting: a lost response to this fence is ambiguous.
           providerMayHaveStarted = true;

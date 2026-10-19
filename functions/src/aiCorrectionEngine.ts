@@ -1083,6 +1083,7 @@ export interface EngineWritePorts extends EngineReadPorts {
     submissionId: string,
     requestId: string,
     executionId: string,
+    retrySourceRequestId?: string,
   ) => ReviewCheckpointPorts;
   /**
    * Acquisisce/riconosce `aiCorrectionRuns/{requestId}` in **una transazione**

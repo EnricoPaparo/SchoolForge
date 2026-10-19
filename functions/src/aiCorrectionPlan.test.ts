@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   AiGatewayError,
+  AiGraderFailure,
   MockAiGrader,
   validateAiCorrectionRequest,
   type AiCorrectionRequest,
@@ -20,6 +21,7 @@ import {
   terminalPlanSizeForecast,
   planStorageUpperBound,
   assertPlanStorageCapacity,
+  assertPlanReplacement,
 } from './aiCorrectionPlan.js';
 import {
   replayPersistedRun,
@@ -232,6 +234,162 @@ function action(plan: PlanView, index = 0) {
 }
 
 describe('durable correction plans', () => {
+  async function timedOutFixture() {
+    const f = fixture(4);
+    f.config.limits.maxProviderConcurrency = 1;
+    const failure = () =>
+      Promise.reject(
+        new AiGraderFailure('synthetic timeout', {
+          reasonCode: 'timeout',
+          attempts: {
+            attemptsTotal: 2,
+            retriesTotal: 1,
+            unknownBillingAttempts: 2,
+            retryReasonCodes: ['timeout'],
+            retryDelayTotalMs: 250,
+          },
+        }),
+      );
+    f.grade.mockImplementationOnce(failure).mockImplementationOnce(failure);
+    let p = await previewCorrectionPlan(f.request, f.deps);
+    for (let i = 0; i < p.groups.length; i++)
+      p = await executeCorrectionPlanGroup(action(p, i), f.deps);
+    return { f, p };
+  }
+  it('recovers terminal legacy timeout failures with fresh consent while retaining successful grades and original accounting', async () => {
+    const { f, p } = await timedOutFixture();
+    expect(p.retryableSubmissionIds).toEqual(f.request.submissionIds.slice(0, 2));
+    const oldPlan = structuredClone(f.plans.get(p.planId));
+    const oldRuns = structuredClone([...f.runs]);
+    const oldSpent = f.ledger().spentMicroUsd;
+    const successful = structuredClone([...f.corrections]);
+    const ids = p.retryableSubmissionIds;
+    await expect(
+      previewCorrectionPlan({ ...f.request, requestId: 'retry-without-consent' }, f.deps),
+    ).rejects.toMatchObject({ code: 'plan_ambiguous' });
+    await expect(
+      previewCorrectionPlan(
+        { ...f.request, requestId: 'retry-forged-scope', retryOfPlanId: p.planId },
+        f.deps,
+      ),
+    ).rejects.toMatchObject({ code: 'plan_changed' });
+    await expect(
+      previewCorrectionPlan(
+        { ...f.request, requestId: 'retry-forged-flag', retrySources: { [ids[0]!]: 'forged' } },
+        f.deps,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(
+      previewCorrectionPlan(
+        {
+          ...f.request,
+          requestId: 'retry-other-owner',
+          retryOfPlanId: p.planId,
+          submissionIds: ids,
+        },
+        { ...f.deps, callerUid: 'other' },
+      ),
+    ).rejects.toMatchObject({ code: 'not_owner' });
+    let retry = await previewCorrectionPlan(
+      {
+        ...f.request,
+        requestId: 'retry-terminal-failed',
+        retryOfPlanId: p.planId,
+        submissionIds: ids,
+      },
+      f.deps,
+    );
+    expect(retry.consented).toBe(false);
+    expect(f.grade).toHaveBeenCalledTimes(4);
+    expect(f.ledger().spentMicroUsd).toBe(oldSpent);
+    expect(
+      decodeCorrectionPlan(encodeCorrectionPlan(f.plans.get(retry.planId)!)).retrySources,
+    ).toEqual(f.plans.get(retry.planId)!.retrySources);
+    await expect(
+      executeCorrectionPlanGroup({ ...action(retry), maximumCostMicroUsd: 0 }, f.deps),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+    const checkpoint = vi.fn<NonNullable<EngineWritePorts['reviewCheckpoint']>>(() => ({
+      load: async () => ({}),
+      claim: async () => true,
+      finish: async () => {},
+    }));
+    f.ports.reviewCheckpoint = checkpoint;
+    for (let i = 0; i < retry.groups.length; i++)
+      retry = await executeCorrectionPlanGroup(action(retry, i), f.deps);
+    expect(retry.retryableSubmissionIds).toEqual([]);
+    expect(f.grade).toHaveBeenCalledTimes(6);
+    for (const [id, correction] of successful) expect(f.corrections.get(id)).toEqual(correction);
+    expect(f.plans.get(p.planId)).toEqual(oldPlan);
+    for (const [id, run] of oldRuns) expect(f.runs.get(id)).toEqual(run);
+    expect(f.ledger().spentMicroUsd).toBeGreaterThan(oldSpent);
+    expect(checkpoint.mock.calls.map((c) => c[3])).toEqual(
+      p.groups.slice(0, 2).map((g) => g.requestId),
+    );
+    await executeCorrectionPlanGroup(action(retry), f.deps);
+    expect(f.grade).toHaveBeenCalledTimes(6);
+  });
+  it('can edit and re-estimate an unconsented recovery draft, and retains failed IDs omitted by a budget subset', async () => {
+    const { f, p } = await timedOutFixture();
+    const ids = p.retryableSubmissionIds;
+    const first = await previewCorrectionPlan(
+      { ...f.request, requestId: 'retry-draft-one', retryOfPlanId: p.planId, submissionIds: ids },
+      f.deps,
+    );
+    const subset = await previewCorrectionPlan(
+      {
+        ...f.request,
+        requestId: 'retry-draft-edited',
+        retryOfPlanId: p.planId,
+        submissionIds: ids.slice(0, 1),
+        teacherGuidance: 'Updated criteria',
+      },
+      f.deps,
+    );
+    expect(subset.consented).toBe(false);
+    expect(Object.keys(f.plans.get(subset.planId)!.retrySources!)).toEqual(ids);
+    // Firestore applies the same guard transactionally when a stale preview races a new head.
+    const forged = structuredClone(f.plans.get(subset.planId)!);
+    forged.retrySources = { [ids[0]!]: 'forged-source' };
+    expect(() => assertPlanReplacement(f.plans.get(first.planId)!, forged)).toThrow();
+    const done = await executeCorrectionPlanGroup(action(subset), f.deps);
+    expect(done.retryableSubmissionIds).toEqual(ids.slice(1));
+    await expect(
+      previewCorrectionPlan(
+        {
+          ...f.request,
+          requestId: 'retry-stale-source',
+          retryOfPlanId: p.planId,
+          submissionIds: ids.slice(1),
+        },
+        f.deps,
+      ),
+    ).rejects.toMatchObject({ code: 'plan_changed' });
+    const remaining = await previewCorrectionPlan(
+      {
+        ...f.request,
+        requestId: 'retry-last-remaining',
+        retryOfPlanId: done.planId,
+        submissionIds: ids.slice(1),
+      },
+      f.deps,
+    );
+    expect(f.plans.get(remaining.planId)!.retrySources?.[ids[1]!]).toBe(p.groups[1]!.requestId);
+    expect(
+      (await executeCorrectionPlanGroup(action(remaining), f.deps)).retryableSubmissionIds,
+    ).toEqual([]);
+  });
+  it('never treats a running or crashed group as an explicit terminal retry', async () => {
+    const f = fixture(1);
+    const p = await previewCorrectionPlan(f.request, f.deps);
+    f.plans.get(p.planId)!.groups[0]!.state = 'running';
+    await expect(
+      previewCorrectionPlan(
+        { ...f.request, requestId: 'retry-active-run', retryOfPlanId: p.planId },
+        f.deps,
+      ),
+    ).rejects.toMatchObject({ code: 'plan_changed' });
+    expect(f.grade).not.toHaveBeenCalled();
+  });
   it('reserves checkpoint growth before consent for the maximum selection, single-student groups and escaped Unicode guidance', async () => {
     const f = fixture(MAX_PLAN_SUBMISSIONS);
     const verificationId = 'v'.repeat(180);

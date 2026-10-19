@@ -54,6 +54,15 @@ function harness(initial: AiCorrectionPlanView | null = null) {
   const preview = vi.fn<NonNullable<AiCorrectionCallables['planPreview']>>(async (request) => {
     saved = planFixture();
     saved.planId = request.requestId;
+    saved.retryOfPlanId = request.retryOfPlanId;
+    saved.groups = saved.groups
+      .map((g) => ({
+        ...g,
+        submissionIds: g.submissionIds.filter((id) => request.submissionIds.includes(id)),
+      }))
+      .filter((g) => g.submissionIds.length);
+    saved.preview.counts.selected = request.submissionIds.length;
+    saved.preview.counts.eligible = request.submissionIds.length;
     saved.settings = {
       modelProfile: request.modelProfile,
       gradingMode: request.gradingMode,
@@ -122,6 +131,96 @@ function harness(initial: AiCorrectionPlanView | null = null) {
 }
 
 describe('planned correction UI', () => {
+  it('offers an explicit fresh estimate only for terminal failed deliveries, including timeouts with uncertain old billing', async () => {
+    const p = planFixture();
+    p.consented = true;
+    const h = harness(p);
+    for (let i = 0; i < p.groups.length; i++)
+      h.complete({
+        verificationId: 'v1',
+        planId: p.planId,
+        groupIndex: i,
+        maximumCostMicroUsd: 700000,
+        groupMaximumCostMicroUsd: p.groups[i]!.maximumCostMicroUsd,
+      });
+    const saved = h.getSaved()!;
+    for (const index of [0, 1]) {
+      const result = saved.groups[index]!.result!;
+      result.results[0]!.outcome = 'failed';
+      result.results[0]!.reason = 'provider_timeout';
+      result.retry = { unknownBillingAttempts: 2 };
+    }
+    render(<AiBatchCorrectionDialog {...h.props} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Nuova stima delle 2 consegne da riprovare' }),
+    );
+    await screen.findByRole('button', { name: 'Conferma correzione' });
+    expect(h.preview.mock.calls[0]![0]).toMatchObject({
+      retryOfPlanId: p.planId,
+      submissionIds: ['v1_s1', 'v1_s4'],
+    });
+    expect(
+      screen.getByText(
+        /Gli eventuali costi prudenziali dei tentativi precedenti restano contabilizzati/,
+      ),
+    ).toBeTruthy();
+    expect(h.runGroup).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
+    expect(screen.getByText('Consegne selezionate:').querySelector('strong')?.textContent).toBe(
+      '2',
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('button', { name: 'Conferma correzione' });
+    expect(h.preview.mock.calls[1]![0]).toMatchObject({
+      retryOfPlanId: p.planId,
+      submissionIds: ['v1_s1', 'v1_s4'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma correzione' }));
+    await screen.findByText('Correzione completata.');
+    expect(h.runGroup).toHaveBeenCalledTimes(2);
+    expect(
+      h.props.onApplied.mock.calls.flatMap(([r]) => r.results.map((item) => item.submissionId)),
+    ).toEqual(['v1_s1', 'v1_s4']);
+  });
+  it('shows outstanding failed IDs carried from a previous subset even when the current groups succeeded', async () => {
+    const p = planFixture();
+    p.consented = true;
+    p.retryableSubmissionIds = ['v1_s7'];
+    const h = harness(p);
+    for (let i = 0; i < p.groups.length; i++)
+      h.complete({
+        verificationId: 'v1',
+        planId: p.planId,
+        groupIndex: i,
+        maximumCostMicroUsd: 700000,
+        groupMaximumCostMicroUsd: p.groups[i]!.maximumCostMicroUsd,
+      });
+    render(<AiBatchCorrectionDialog {...h.props} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Nuova stima: 1 consegna da riprovare' }),
+    );
+    await waitFor(() => expect(h.preview).toHaveBeenCalledTimes(1));
+    expect(h.preview.mock.calls[0]![0]).toMatchObject({
+      retryOfPlanId: p.planId,
+      submissionIds: ['v1_s7'],
+    });
+  });
+  it('restores confirmation after an estimate error instead of labelling pending work completed', async () => {
+    const p = planFixture();
+    p.budget = {
+      reason: 'daily_budget_exceeded',
+      availableMicroUsd: 300000,
+      compatibleSubmissionIds: ['v1_s1'],
+    };
+    const h = harness(p);
+    h.preview.mockRejectedValueOnce(new Error('Synthetic estimate failure'));
+    render(<AiBatchCorrectionDialog {...h.props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepara piano per 1 consegne' }));
+    await screen.findByText('Impossibile completare l’operazione di correzione IA. Riprova.');
+    expect(screen.getByRole('button', { name: 'Conferma correzione' })).toBeTruthy();
+    expect(screen.queryByText('Correzione completata.')).toBeNull();
+    expect(h.runGroup).not.toHaveBeenCalled();
+  });
   it('keeps edited criteria open on backdrop and Escape while explicit cancel still works', async () => {
     const h = harness();
     render(<AiBatchCorrectionDialog {...h.props} />);

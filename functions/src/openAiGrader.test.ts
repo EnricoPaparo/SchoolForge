@@ -25,6 +25,14 @@ import {
   type OpenAiTransportResponse,
 } from './openAiGrader.js';
 import type { RetryPolicy } from './openAiRetryPolicy.js';
+import { gradeWithIndependentReview } from './aiCorrectionReview.js';
+import { CORRECTION_ATTEMPT_TIMEOUT_MS } from './aiCorrectionProvider.js';
+import {
+  RUN_OVERALL_DEADLINE_MS,
+  RUN_FINALIZE_MARGIN_MS,
+  AI_RUN_TIMEOUT_SECONDS,
+  RUN_LEASE_MS,
+} from './aiCorrectionEngine.js';
 
 const input: AiGraderInput = {
   requestId: 'request-test-001',
@@ -701,6 +709,47 @@ const fail =
     Promise.reject(new OpenAiTransportError('boom', opts));
 
 describe('OpenAiGrader — single application retry policy (M5-05D2B-2)', () => {
+  it('keeps the extended correction and secondary retry inside the overall deadline, with time left for settlement', async () => {
+    let clock = 0;
+    const deadline = RUN_OVERALL_DEADLINE_MS - RUN_FINALIZE_MARGIN_MS;
+    const slowTimeout = async () => {
+      clock += CORRECTION_ATTEMPT_TIMEOUT_MS;
+      throw new OpenAiTransportError('Synthetic slow timeout', {
+        transient: true,
+        billingRisk: true,
+        retryAfterMs: 8000,
+      });
+    };
+    const { grader, send } = retryGrader(
+      [
+        slowTimeout,
+        async () => {
+          clock += CORRECTION_ATTEMPT_TIMEOUT_MS;
+          return okResponse();
+        },
+        slowTimeout,
+        okResponse,
+      ],
+      {
+        policy: { ...TEST_POLICY, attemptTimeoutMs: CORRECTION_ATTEMPT_TIMEOUT_MS },
+        now: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+      },
+    );
+    await expect(
+      gradeWithIndependentReview(grader, input, { deadlineMs: deadline }),
+    ).rejects.toMatchObject({
+      reasonCode: 'timeout',
+      attempts: { attemptsTotal: 3, retriesTotal: 1, unknownBillingAttempts: 2 },
+    });
+    expect(send).toHaveBeenCalledTimes(3); // No time for a fourth 120s call.
+    expect(clock).toBe(368000);
+    expect(clock + RUN_FINALIZE_MARGIN_MS).toBeLessThan(RUN_OVERALL_DEADLINE_MS);
+    expect(RUN_OVERALL_DEADLINE_MS).toBeLessThan(AI_RUN_TIMEOUT_SECONDS * 1000);
+    expect(RUN_LEASE_MS).toBe(AI_RUN_TIMEOUT_SECONDS * 1000);
+  });
   it('retries a transient error once then succeeds, reporting attempt stats', async () => {
     const { grader, send, sleep } = retryGrader([
       fail({ transient: true, status: 500, billingRisk: true }),

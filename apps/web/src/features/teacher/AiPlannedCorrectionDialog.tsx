@@ -50,6 +50,9 @@ export function AiPlannedCorrectionDialog({
     'loading' | 'configure' | 'previewing' | 'confirm' | 'running' | 'paused' | 'result'
   >('loading');
   const [error, setError] = useState<string | null>(null);
+  const [retrySelection, setRetrySelection] = useState<{ planId: string; ids: string[] } | null>(
+    null,
+  );
   const active = useRef(true);
   const stop = useRef(false);
   const sending = useRef(false);
@@ -61,6 +64,7 @@ export function AiPlannedCorrectionDialog({
     active.current = true;
     const session = { ownerUid, verificationId };
     setPlan(null);
+    setRetrySelection(null);
     setError(null);
     setPhase('loading');
     void callables.planStatus!({ verificationId })
@@ -72,6 +76,11 @@ export function AiPlannedCorrectionDialog({
         )
           return;
         setPlan(saved);
+        if (saved?.retryOfPlanId)
+          setRetrySelection({
+            planId: saved.retryOfPlanId,
+            ids: saved.groups.flatMap((g) => g.submissionIds),
+          });
         if (saved) {
           setSettings({
             modelProfile: saved.settings.modelProfile ?? DEFAULT_MODEL_PROFILE,
@@ -107,15 +116,19 @@ export function AiPlannedCorrectionDialog({
     };
   }, [callables, ownerUid, verificationId]);
 
-  async function preview(ids = submissionIds) {
+  async function preview(
+    ids = retrySelection?.ids ?? submissionIds,
+    retryPlanId = retrySelection?.planId,
+  ) {
     if (sending.current) return;
     sending.current = true;
+    const previousPhase = phase;
     setError(null);
     setPhase('previewing');
     const attempt = generation.current;
     try {
-      const response = await callables.planPreview!(
-        buildRequest(
+      const response = await callables.planPreview!({
+        ...buildRequest(
           verificationId,
           ids,
           newRequestId(),
@@ -124,14 +137,16 @@ export function AiPlannedCorrectionDialog({
           settings.modelProfile,
           advancedReview,
         ),
-      );
+        ...(retryPlanId ? { retryOfPlanId: retryPlanId } : {}),
+      });
       if (!active.current || generation.current !== attempt) return;
       setPlan(response);
+      setRetrySelection(retryPlanId ? { planId: retryPlanId, ids } : null);
       setPhase('confirm');
     } catch (err) {
       if (active.current && generation.current === attempt) {
         setError(describeAiError(err));
-        setPhase('configure');
+        setPhase(previousPhase);
       }
     } finally {
       sending.current = false;
@@ -198,20 +213,16 @@ export function AiPlannedCorrectionDialog({
     plan?.groups
       .filter((g) => g.state === 'pending' || g.state === 'blocked')
       .flatMap((g) => g.submissionIds) ?? [];
-  const safeFailedIds = completed
-    .filter(
-      (g) =>
-        !g.result?.results.some((r) => r.reason === 'provider_timeout') &&
-        !(g.result as (AiRunResult & { retry?: { unknownBillingAttempts?: number } }) | undefined)
-          ?.retry?.unknownBillingAttempts,
-    )
-    .flatMap(
+  const failedIds =
+    plan?.retryableSubmissionIds ??
+    completed.flatMap(
       (g) =>
         g.result?.results
           .filter((r) => r.outcome === 'failed' || r.outcome === 'partial')
           .map((r) => r.submissionId) ?? [],
     );
-  const remainingIds = [...pendingIds, ...safeFailedIds];
+  const remainingIds = [...pendingIds];
+  const canRetryFailed = failedIds.length > 0 && !plan?.groups.some((g) => g.state === 'running');
   const label = (id: string) =>
     submissionLabels[id] ?? `Consegna ${Math.max(0, allIds.indexOf(id)) + 1}`;
   const busy = phase === 'loading' || phase === 'previewing';
@@ -254,7 +265,8 @@ export function AiPlannedCorrectionDialog({
             deterministiche. La selezione sarà organizzata automaticamente in gruppi.
           </p>
           <p>
-            Consegne selezionate: <strong>{submissionIds.length}</strong>
+            Consegne selezionate:{' '}
+            <strong>{retrySelection?.ids.length ?? submissionIds.length}</strong>
           </p>
           <AiCorrectionSettingsFields
             value={settings}
@@ -284,6 +296,13 @@ export function AiPlannedCorrectionDialog({
       )}
       {phase === 'confirm' && plan && (
         <>
+          {plan.retryOfPlanId && (
+            <p role="note">
+              Nuovo tentativo delle sole consegne fallite. Le correzioni riuscite restano salvate.
+              Gli eventuali costi prudenziali dei tentativi precedenti restano contabilizzati;
+              questa conferma autorizza il nuovo costo indicato qui sotto.
+            </p>
+          )}
           <p>
             Consegne selezionate: {plan.preview.counts.selected}. Elaborabili:{' '}
             {plan.preview.counts.eligible}. Escluse: {plan.preview.counts.excluded}.
@@ -387,7 +406,7 @@ export function AiPlannedCorrectionDialog({
                   ? 'Correzione in corso…'
                   : phase === 'paused'
                     ? 'Correzione sospesa'
-                    : failed.length
+                    : failed.length || failedIds.length
                       ? 'Elaborazione terminata con consegne da riprendere.'
                       : 'Correzione completata.'}
               </strong>
@@ -456,10 +475,18 @@ export function AiPlannedCorrectionDialog({
                 Nuova stima delle consegne rimanenti
               </button>
             )}
+            {phase !== 'running' && canRetryFailed && (
+              <button onClick={() => void preview(failedIds, plan.planId)}>
+                {failedIds.length === 1
+                  ? 'Nuova stima: 1 consegna da riprovare'
+                  : `Nuova stima delle ${failedIds.length} consegne da riprovare`}
+              </button>
+            )}
             {phase === 'result' && (
               <button
                 onClick={() => {
                   setPlan(null);
+                  setRetrySelection(null);
                   setPhase('configure');
                 }}
               >

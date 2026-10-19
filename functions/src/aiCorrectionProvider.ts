@@ -25,7 +25,10 @@ export interface AiProviderConfiguration {
    * default prudenti. È l'unica fonte del numero di retry.
    */
   retry?: { maxRetries: number; attemptTimeoutMs: number };
+  /** Server-only correction policy; does not change shared content generators. */
+  extendedCorrectionTimeout?: true;
 }
+export const CORRECTION_ATTEMPT_TIMEOUT_MS = 120_000;
 
 export interface AiProviderFactories {
   createOpenAiTransport?: (apiKey: string) => OpenAiTransport;
@@ -83,7 +86,12 @@ export function createConfiguredAiGrader(
   }
   const createTransport = factories.createOpenAiTransport ?? createOpenAiSdkTransport;
   return new OpenAiGrader(model, createTransport(apiKey), {
-    policy: resolveRetryPolicy(configuration.retry),
+    policy: {
+      ...resolveRetryPolicy(configuration.retry),
+      ...(configuration.extendedCorrectionTimeout
+        ? { attemptTimeoutMs: CORRECTION_ATTEMPT_TIMEOUT_MS }
+        : {}),
+    },
     ...factories.openAiGraderDeps,
   });
 }

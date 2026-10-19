@@ -60,6 +60,7 @@ import {
   encodeCorrectionPlan,
   decodeCorrectionPlan,
   assertPlanStorageCapacity,
+  assertPlanReplacement,
 } from './aiCorrectionPlan.js';
 import { monthKeyFromMs } from './aiCorrectionBudget.js';
 import { replayPersistedRun, computeSelectionHash } from './aiCorrectionEngine.js';
@@ -417,6 +418,10 @@ const SUBMISSION_OUTCOMES = new Set<SubmissionOutcome>([
   'failed',
 ]);
 const EXCLUSION_CODES = new Set<ExclusionCode>([
+  'submission_questions_exceeded',
+  'submission_tokens_exceeded',
+  'operation_tokens_exceeded',
+  'operation_budget_exceeded',
   'not_found',
   'wrong_owner',
   'wrong_verification',
@@ -427,6 +432,12 @@ const EXCLUSION_CODES = new Set<ExclusionCode>([
   'too_large',
   'changed_since_preview',
   'write_error',
+  'invalid_variant',
+  'deadline_exceeded',
+  'rate_limited',
+  'provider_timeout',
+  'provider_unavailable',
+  'retry_after_exceeded',
 ]);
 const COUNT_KEYS = [
   'selected',
@@ -816,11 +827,12 @@ function reconcileBudget(db: Firestore): NonNullable<EngineWritePorts['reconcile
   };
 }
 
-function reviewCheckpoint(
+export function reviewCheckpoint(
   db: Firestore,
   submissionId: string,
   requestId: string,
   executionId: string,
+  retrySourceRequestId?: string,
 ): ReviewCheckpointPorts {
   const correctionRef = db.doc(`corrections/${submissionId}`);
   const runRef = db.doc(`aiCorrectionRuns/${requestId}`);
@@ -872,13 +884,38 @@ function reviewCheckpoint(
             JSON.stringify(d ? [d.status, d.evaluations, d.generalFeedback, d.reopenCount] : null),
           )
           .digest('hex');
-        if (run.data()?.executionId !== executionId || current !== initialBaseline) return false;
+        if (
+          run.data()?.executionId !== executionId ||
+          run.data()?.status !== 'running' ||
+          current !== initialBaseline
+        )
+          return false;
         const data = draft.data();
+        // Only a freshly consented, server-bound plan may replace a terminal
+        // failed stage. Invoked/crashed stages stay fenced even after expiry.
+        let explicitRetry = false;
+        if (
+          retrySourceRequestId &&
+          retrySourceRequestId !== requestId &&
+          data?.baseline === initialBaseline &&
+          data[`${stage}State`] === 'blocked' &&
+          data.requestId === retrySourceRequestId
+        ) {
+          const old = (await tx.get(db.doc(`aiCorrectionRuns/${retrySourceRequestId}`))).data();
+          const source = old ? readPersistedRun(old) : null;
+          explicitRetry =
+            !!source &&
+            old?.leaseExpiresAt === 0 &&
+            (source.status === 'failed' || source.status === 'partial') &&
+            old?.reviewStages?.[key]?.[stage]?.state === 'blocked' &&
+            source.resultOrdinals.some((r) => r.status === 'failed' || r.status === 'partial');
+        }
         if (
           data &&
           data.baseline === initialBaseline &&
           data[`${stage}State`] &&
-          data[`${stage}State`] !== 'retryable'
+          data[`${stage}State`] !== 'retryable' &&
+          !explicitRetry
         )
           return false;
         if (data?.baseline === initialBaseline)
@@ -966,8 +1003,8 @@ function buildWritePorts(db: Firestore): EngineWritePorts {
     beginRun: beginRun(db),
     finishRun: finishRun(db),
     commitSubmission: commitSubmission(db),
-    reviewCheckpoint: (submissionId, requestId, executionId) =>
-      reviewCheckpoint(db, submissionId, requestId, executionId),
+    reviewCheckpoint: (submissionId, requestId, executionId, retrySourceRequestId) =>
+      reviewCheckpoint(db, submissionId, requestId, executionId, retrySourceRequestId),
     reserveBudget: reserveBudget(db),
     markBudgetInvoked: markBudgetInvoked(db),
     reconcileBudget: reconcileBudget(db),
@@ -1086,6 +1123,7 @@ export const aiCorrectionRun = onCall(
         grader: (runtimeConfig) => {
           const mode = auth.featureMode;
           return createConfiguredAiGrader({
+            extendedCorrectionTimeout: true,
             mode,
             // `settings/aiConfig.model` è l'unica fonte autoritativa. Nessun
             // fallback o override da OPENAI_MODEL/process.env.
@@ -1093,8 +1131,8 @@ export const aiCorrectionRun = onCall(
             // Questa lettura avviene solo quando il motore invoca la factory,
             // dopo config/kill switch/classificazione/limiti.
             openAiApiKey: mode === 'openai' ? readOpenAiSecret() : undefined,
-            // M5-05D2B-2 — retry/timeout dalla config runtime validata (unica fonte
-            // del numero di retry; ceiling DEV: retry ≤ 1, timeout ≤ 60 s).
+            // Retry count remains runtime-bounded. Correction-only timeout is
+            // 120s, additionally bounded by the engine's remaining deadline.
             ...(runtimeConfig
               ? {
                   retry: {
@@ -1121,6 +1159,7 @@ export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps
     loadRuntimeConfig: loadRuntimeConfig(db),
     grader: (config) =>
       createConfiguredAiGrader({
+        extendedCorrectionTimeout: true,
         mode: auth.featureMode,
         openAiModel: config?.model,
         openAiApiKey: auth.featureMode === 'openai' ? readOpenAiSecret() : undefined,
@@ -1154,14 +1193,30 @@ export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps
             const previous = previousData
               ? decodeCorrectionPlan(previousData as Parameters<typeof decodeCorrectionPlan>[0])
               : null;
+            assertPlanReplacement(previous, plan);
+          } else assertPlanReplacement(null, plan);
+          // Validate every inherited source before publishing a recovery head,
+          // including when changed settings produce a different checkpoint key.
+          // A crashed/invoked stage must never become a fresh-hash bypass.
+          for (const sourceId of new Set(Object.values(plan.retrySources ?? {}))) {
+            const data = (await tx.get(db.doc(`aiCorrectionRuns/${sourceId}`))).data();
+            const source = data ? readPersistedRun(data) : null;
+            const stages = Object.values(data?.reviewStages ?? {}).flatMap((entry) =>
+              Object.values(entry as Record<string, { state?: string }>),
+            );
             if (
-              previous?.groups.some(
-                (g) => g.state === 'running' || (g.result?.retry.unknownBillingAttempts ?? 0) > 0,
-              )
+              !source ||
+              data?.leaseExpiresAt !== 0 ||
+              (source.status !== 'failed' && source.status !== 'partial') ||
+              !source.resultOrdinals.some((r) => r.status === 'failed' || r.status === 'partial') ||
+              stages.some(
+                (stage) => !['completed', 'blocked', 'retryable'].includes(stage?.state ?? ''),
+              ) ||
+              (source.retry.unknownBillingAttempts > 0 && !stages.length)
             )
               throw new AiGatewayError(
                 'plan_ambiguous',
-                'Recuperare il piano precedente prima di crearne un altro.',
+                'Un tentativo precedente non è terminato in modo verificabile. Recuperare il suo esito prima di riprovare.',
               );
           }
           tx.create(ref, encodeCorrectionPlan(plan));

@@ -3,8 +3,45 @@ import { MockAiGrader, resolveAiFeatureMode } from './aiCorrectionGatewayCore.js
 import { createConfiguredAiGrader } from './aiCorrectionProvider.js';
 import { OPENAI_PRODUCTION_MODEL, OPENAI_RUNTIME_LUNA_MODEL } from './aiCorrectionCost.js';
 import type { OpenAiTransport } from './openAiGrader.js';
+import { OpenAiTransportError } from './openAiGrader.js';
 
 describe('AI provider configuration', () => {
+  it.each([false, true])(
+    'uses the extended timeout only for explicit correction policy: %s',
+    async (extended) => {
+      const send = vi.fn<OpenAiTransport['send']>(async () => {
+        throw new OpenAiTransportError('Synthetic failure', { transient: false });
+      });
+      const grader = createConfiguredAiGrader(
+        {
+          mode: 'openai',
+          openAiModel: OPENAI_RUNTIME_LUNA_MODEL,
+          openAiApiKey: 'synthetic-only',
+          retry: { maxRetries: 0, attemptTimeoutMs: 60000 },
+          ...(extended ? { extendedCorrectionTimeout: true as const } : {}),
+        },
+        { createOpenAiTransport: () => ({ send }) },
+      );
+      await expect(
+        grader.grade({
+          requestId: 'synthetic-request',
+          gradingMode: 'balanced',
+          questions: [
+            {
+              order: 0,
+              difficulty: 1,
+              maxPoints: 1,
+              questionText: 'Q',
+              referenceSolution: 'A',
+              studentAnswer: 'A',
+            },
+          ],
+        }),
+      ).rejects.toThrow();
+      expect(send.mock.calls[0]?.[1].timeoutMs).toBe(extended ? 120000 : 60000);
+      expect(send).toHaveBeenCalledTimes(1);
+    },
+  );
   it('defaults to disabled and keeps mock unchanged', () => {
     expect(resolveAiFeatureMode({})).toBe('disabled');
     expect(createConfiguredAiGrader({ mode: 'mock' })).toBeInstanceOf(MockAiGrader);
