@@ -122,6 +122,41 @@ afterEach(() => {
 });
 
 describe('AiBatchCorrectionDialog (M5-03)', () => {
+  it('keeps criteria and results open on backdrop or Escape, allowing only explicit close', async () => {
+    const onClose = vi.fn();
+    const { callables, runSpy } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={onClose}
+        onApplied={() => {}}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Correggi con IA' });
+    const guidance = screen.getByLabelText('Indicazioni aggiuntive per la correzione');
+    fireEvent.change(guidance, { target: { value: 'Conservare questi criteri.' } });
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect((guidance as HTMLTextAreaElement).value).toBe('Conservare questi criteri.');
+    await calculatePreview();
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma correzione' }));
+    await screen.findByText('Correzione completata.');
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(runSpy).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('sends only the three closed IDs to preview and shows the mock banner', async () => {
     const { callables, previewSpy } = makeCallables(
       () => Promise.resolve(makePreview()),
