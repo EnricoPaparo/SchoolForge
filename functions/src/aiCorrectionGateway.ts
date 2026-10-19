@@ -51,6 +51,16 @@ import {
   type ReservationStatus,
 } from './aiCorrectionBudget.js';
 import { SCHOOLFORGE_FUNCTION_REGION } from './deploymentRegion.js';
+import {
+  previewCorrectionPlan,
+  loadCorrectionPlan,
+  executeCorrectionPlanGroup,
+  planHash,
+  type CorrectionPlan,
+  type PlanDeps,
+} from './aiCorrectionPlan.js';
+import { monthKeyFromMs } from './aiCorrectionBudget.js';
+import { replayPersistedRun, computeSelectionHash } from './aiCorrectionEngine.js';
 
 /**
  * M5-02 — wiring runtime del motore della correzione assistita da IA.
@@ -973,6 +983,12 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     invalid_input: 'invalid-argument',
     batch_limit_exceeded: 'resource-exhausted',
     limit_exceeded: 'resource-exhausted',
+    submission_count_exceeded: 'resource-exhausted',
+    submission_questions_exceeded: 'resource-exhausted',
+    submission_tokens_exceeded: 'resource-exhausted',
+    operation_tokens_exceeded: 'resource-exhausted',
+    plan_changed: 'failed-precondition',
+    plan_ambiguous: 'aborted',
     operation_budget_exceeded: 'resource-exhausted',
     daily_budget_exceeded: 'resource-exhausted',
     budget_exceeded: 'resource-exhausted',
@@ -1088,4 +1104,147 @@ export const aiCorrectionRun = onCall(
         },
       });
     }),
+);
+
+/** Plans are server-only; their checkpoint contains IDs, hashes, settings and
+ * accounting, never answers, question text or provider output. */
+export function buildPlanDeps(request: CallableRequest, db: Firestore): PlanDeps {
+  const auth = authDeps(request, db);
+  const headRef = (owner: string, verification: string) =>
+    db.doc(`aiCorrectionPlanHeads/${planHash([owner, verification])}`);
+  return {
+    ...auth,
+    ports: buildWritePorts(db),
+    loadRuntimeConfig: loadRuntimeConfig(db),
+    grader: (config) =>
+      createConfiguredAiGrader({
+        mode: auth.featureMode,
+        openAiModel: config?.model,
+        openAiApiKey: auth.featureMode === 'openai' ? readOpenAiSecret() : undefined,
+        ...(config
+          ? {
+              retry: {
+                maxRetries: config.limits.maxApplicationRetries,
+                attemptTimeoutMs: config.limits.attemptTimeoutMs,
+              },
+            }
+          : {}),
+      }),
+    plans: {
+      save: (plan) =>
+        db.runTransaction(async (tx) => {
+          const ref = db.doc(`aiCorrectionPlans/${plan.planId}`);
+          const existing = await tx.get(ref);
+          if (existing.exists) {
+            const saved = existing.data() as CorrectionPlan;
+            if (saved.ownerUid !== plan.ownerUid || saved.selectionHash !== plan.selectionHash)
+              throw new AiGatewayError('invalid_input', 'Identificatore del piano già usato.');
+            return saved;
+          }
+          const head = await tx.get(headRef(plan.ownerUid, plan.verificationId));
+          const priorId = head.data()?.planId;
+          if (typeof priorId === 'string') {
+            const previous = (await tx.get(db.doc(`aiCorrectionPlans/${priorId}`))).data() as
+              | CorrectionPlan
+              | undefined;
+            if (
+              previous?.groups.some(
+                (g) => g.state === 'running' || (g.result?.retry.unknownBillingAttempts ?? 0) > 0,
+              )
+            )
+              throw new AiGatewayError(
+                'plan_ambiguous',
+                'Recuperare il piano precedente prima di crearne un altro.',
+              );
+          }
+          tx.create(ref, { ...plan, expireAt: Timestamp.fromMillis(plan.expiresAtMs) });
+          tx.set(headRef(plan.ownerUid, plan.verificationId), { planId: plan.planId });
+          return plan;
+        }),
+      load: async (owner, verification, planId) => {
+        const id = planId ?? (await headRef(owner, verification).get()).data()?.planId;
+        if (typeof id !== 'string') return null;
+        const snap = await db.doc(`aiCorrectionPlans/${id}`).get();
+        const plan = snap.data() as CorrectionPlan | undefined;
+        return plan?.version === 1 &&
+          plan.ownerUid === owner &&
+          plan.verificationId === verification
+          ? plan
+          : null;
+      },
+      update: (id, mutate) =>
+        db.runTransaction(async (tx) => {
+          const ref = db.doc(`aiCorrectionPlans/${id}`);
+          const snap = await tx.get(ref);
+          if (!snap.exists) throw new AiGatewayError('invalid_input', 'Piano non disponibile.');
+          const saved = snap.data() as CorrectionPlan;
+          const pending = saved.groups.map((g) => g.state === 'pending');
+          const head = await tx.get(headRef(saved.ownerUid, saved.verificationId));
+          const updated = mutate(saved);
+          if (
+            head.data()?.planId !== id &&
+            updated.groups.some((g, index) => pending[index] && g.state === 'running')
+          )
+            throw new AiGatewayError(
+              'plan_changed',
+              'Questo piano è stato sostituito da una nuova anteprima.',
+            );
+          tx.set(ref, updated);
+          return updated;
+        }),
+      ledger: async (config, nowMs) => {
+        const month = monthKeyFromMs(nowMs);
+        return readLedgerState(
+          await db.doc(`aiBudgetLedger/${month}`).get(),
+          month,
+          config.monthlyBudgetMicroUsd,
+          config.dailyBudgetMicroUsd,
+        );
+      },
+      terminalResult: async (child) => {
+        const snap = await db.doc(`aiCorrectionRuns/${child.requestId}`).get();
+        const persisted = snap.exists ? readPersistedRun(snap.data()!) : null;
+        const expected = computeSelectionHash(
+          child.verificationId,
+          child.submissionIds,
+          child.gradingMode,
+          child.modelProfile ?? 'economy',
+          child.teacherGuidance,
+          child.advancedReview !== false,
+        );
+        return persisted?.selectionHash === expected ? replayPersistedRun(child, persisted) : null;
+      },
+    },
+  };
+}
+
+export const aiCorrectionPlanPreview = onCall(
+  {
+    region: AI_GATEWAY_REGION,
+    minInstances: 0,
+    maxInstances: 3,
+    timeoutSeconds: AI_RUN_TIMEOUT_SECONDS,
+  },
+  (request) =>
+    run('preview', request, (db) =>
+      previewCorrectionPlan(request.data, buildPlanDeps(request, db)),
+    ),
+);
+export const aiCorrectionPlanStatus = onCall(
+  { region: AI_GATEWAY_REGION, minInstances: 0, maxInstances: 3 },
+  (request) =>
+    run('preview', request, (db) => loadCorrectionPlan(request.data, buildPlanDeps(request, db))),
+);
+export const aiCorrectionPlanRunGroup = onCall(
+  {
+    region: AI_GATEWAY_REGION,
+    minInstances: 0,
+    maxInstances: 3,
+    timeoutSeconds: AI_RUN_TIMEOUT_SECONDS,
+    secrets: [OPENAI_API_KEY],
+  },
+  (request) =>
+    run('run', request, (db) =>
+      executeCorrectionPlanGroup(request.data, buildPlanDeps(request, db)),
+    ),
 );

@@ -30,7 +30,11 @@ export type AiExclusionReason =
   | 'rate_limited'
   | 'provider_timeout'
   | 'provider_unavailable'
-  | 'retry_after_exceeded';
+  | 'retry_after_exceeded'
+  | 'submission_questions_exceeded'
+  | 'submission_tokens_exceeded'
+  | 'operation_tokens_exceeded'
+  | 'operation_budget_exceeded';
 
 export type AiRunStatus = 'running' | 'completed' | 'partial' | 'failed';
 
@@ -161,6 +165,7 @@ export interface AiRunSubmissionResult {
 }
 
 export interface AiRunResult {
+  retry?: { unknownBillingAttempts: number };
   mode: 'mock' | 'openai';
   phase: 'run';
   requestId: string;
@@ -179,6 +184,44 @@ export interface AiRunResult {
 export interface AiCorrectionCallables {
   preview: (req: AiCorrectionRequest) => Promise<AiPreviewResult>;
   run: (req: AiCorrectionRequest) => Promise<AiRunResult>;
+  planPreview?: (req: AiCorrectionRequest) => Promise<AiCorrectionPlanView>;
+  planStatus?: (req: {
+    verificationId: string;
+    planId?: string;
+  }) => Promise<AiCorrectionPlanView | null>;
+  planRunGroup?: (req: AiPlanGroupAction) => Promise<AiCorrectionPlanView>;
+}
+
+export interface AiPlanGroupAction {
+  verificationId: string;
+  planId: string;
+  groupIndex: number;
+  maximumCostMicroUsd: number;
+  groupMaximumCostMicroUsd: number;
+}
+export interface AiCorrectionPlanView {
+  settings: Pick<
+    AiCorrectionRequest,
+    'modelProfile' | 'gradingMode' | 'teacherGuidance' | 'advancedReview'
+  >;
+  planId: string;
+  verificationId: string;
+  expiresAtMs: number;
+  preview: AiPreviewResult;
+  consented: boolean;
+  budget?: {
+    reason: 'daily_budget_exceeded' | 'budget_exceeded';
+    availableMicroUsd: number;
+    compatibleSubmissionIds: string[];
+  };
+  groups: {
+    requestId: string;
+    submissionIds: string[];
+    maximumCostMicroUsd: number;
+    state: 'pending' | 'running' | 'completed' | 'blocked';
+    errorCode?: string;
+    result?: AiRunResult;
+  }[];
 }
 
 /** Nuovo `requestId` client-side (idempotenza server-side su `aiCorrectionRuns`). */
@@ -215,15 +258,40 @@ export function createAiCorrectionCallables(functions: Functions): AiCorrectionC
     'aiCorrectionPreview',
   );
   const runFn = httpsCallable<AiCorrectionRequest, AiRunResult>(functions, 'aiCorrectionRun');
+  const planPreview = httpsCallable<AiCorrectionRequest, AiCorrectionPlanView>(
+    functions,
+    'aiCorrectionPlanPreview',
+    { timeout: 540000 },
+  );
+  const planStatus = httpsCallable<
+    { verificationId: string; planId?: string },
+    AiCorrectionPlanView | null
+  >(functions, 'aiCorrectionPlanStatus');
+  const planRunGroup = httpsCallable<AiPlanGroupAction, AiCorrectionPlanView>(
+    functions,
+    'aiCorrectionPlanRunGroup',
+    { timeout: 540000 },
+  );
   return {
     preview: async (req) => (await previewFn(req)).data,
     run: async (req) => (await runFn(req)).data,
+    planPreview: async (req) => (await planPreview(req)).data,
+    planStatus: async (req) => (await planStatus(req)).data,
+    planRunGroup: async (req) => (await planRunGroup(req)).data,
   };
 }
 
 /** Etichetta leggibile per un codice di esclusione (nessun dato sensibile). */
 export function describeExclusion(reason: AiExclusionReason): string {
   switch (reason) {
+    case 'submission_questions_exceeded':
+      return 'La singola consegna supera il limite di domande aperte';
+    case 'submission_tokens_exceeded':
+      return 'La singola consegna supera il limite di token stimati';
+    case 'operation_tokens_exceeded':
+      return 'La singola consegna supera il limite di token per gruppo';
+    case 'operation_budget_exceeded':
+      return 'La singola consegna supera il costo massimo per operazione';
     case 'not_found':
       return 'Consegna non trovata';
     case 'wrong_owner':
@@ -268,7 +336,22 @@ export function describeExclusion(reason: AiExclusionReason): string {
 export function describeAiError(err: unknown): string {
   const code = (err as { code?: string; details?: { code?: string } })?.details?.code;
   const httpsCode = (err as { code?: string })?.code;
-  if (code === 'feature_disabled' || httpsCode === 'functions/failed-precondition') {
+  if (code === 'plan_changed')
+    return 'Dati o limiti cambiati: calcola una nuova anteprima e conferma le consegne rimanenti.';
+  if (code === 'plan_ambiguous')
+    return 'Un gruppo ha un esito ancora incerto. Nessuna nuova correzione è stata avviata: riprendi più tardi per recuperare l’esito.';
+  if (code === 'submission_count_exceeded')
+    return 'Il gruppo supera il numero massimo di consegne consentito.';
+  if (code === 'submission_questions_exceeded')
+    return 'Una consegna supera il limite di domande aperte: riduci le domande della singola consegna.';
+  if (code === 'submission_tokens_exceeded')
+    return 'Una consegna supera il limite di token stimati: il testo della singola consegna è troppo lungo.';
+  if (code === 'operation_tokens_exceeded')
+    return 'Il gruppo supera il limite di token stimati per operazione.';
+  if (code === 'limit_exceeded')
+    return 'La selezione supera un limite operativo della correzione IA.';
+  if (code === 'provider_config_invalid') return 'Configurazione del servizio IA non disponibile.';
+  if (code === 'feature_disabled' || (!code && httpsCode === 'functions/failed-precondition')) {
     return 'La correzione assistita da IA è disattivata.';
   }
   if (code === 'not_owner' || httpsCode === 'functions/permission-denied') {
@@ -286,9 +369,11 @@ export function describeAiError(err: unknown): string {
   if (code === 'budget_exceeded') {
     return 'Il budget mensile per la correzione IA è esaurito.';
   }
-  if (code === 'batch_limit_exceeded' || httpsCode === 'functions/resource-exhausted') {
+  if (code === 'batch_limit_exceeded') {
     return 'Troppe consegne selezionate: riduci la selezione.';
   }
+  if (httpsCode === 'functions/resource-exhausted')
+    return 'Un limite operativo o di budget impedisce la correzione IA. Ricalcola l’anteprima.';
   if (code === 'invalid_input' || httpsCode === 'functions/invalid-argument') {
     return 'Selezione non valida. Riprova.';
   }

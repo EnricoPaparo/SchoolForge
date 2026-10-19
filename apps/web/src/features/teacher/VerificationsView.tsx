@@ -3842,6 +3842,13 @@ export function VerificationsView() {
 
       {aiDialogOpen && selectedVer && aiPrefs.status === 'ready' && (
         <AiBatchCorrectionDialog
+          ownerUid={ownerUid}
+          submissionLabels={Object.fromEntries(
+            sortedMonitorRows.map((row) => [
+              `${selectedVer.id}_${row.studentUid}`,
+              row.studentName,
+            ]),
+          )}
           verificationId={selectedVer.id}
           submissionIds={aiSelectedSubmissionIds}
           callables={aiCallables}

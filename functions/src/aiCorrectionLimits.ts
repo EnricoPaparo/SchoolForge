@@ -35,27 +35,27 @@ export interface OperationLimitInput {
 export function enforceOperationLimits(limits: AiRuntimeLimits, input: OperationLimitInput): void {
   if (input.eligibleSubmissionCount > limits.maxSubmissionsPerOperation) {
     throw new AiGatewayError(
-      'limit_exceeded',
+      'submission_count_exceeded',
       `Troppe consegne elaborabili in una sola operazione (max ${limits.maxSubmissionsPerOperation}).`,
     );
   }
   for (const s of input.perSubmission) {
     if (s.openQuestionCount > limits.maxOpenQuestionsPerSubmission) {
       throw new AiGatewayError(
-        'limit_exceeded',
+        'submission_questions_exceeded',
         `Una consegna supera il massimo di domande aperte (max ${limits.maxOpenQuestionsPerSubmission}).`,
       );
     }
     if (s.estimatedTokens > limits.maxEstimatedTokensPerSubmission) {
       throw new AiGatewayError(
-        'limit_exceeded',
+        'submission_tokens_exceeded',
         `Una consegna supera i token stimati ammessi (max ${limits.maxEstimatedTokensPerSubmission}).`,
       );
     }
   }
   if (input.totalEstimatedTokens > limits.maxEstimatedTokensPerOperation) {
     throw new AiGatewayError(
-      'limit_exceeded',
+      'operation_tokens_exceeded',
       `L'operazione supera i token stimati ammessi (max ${limits.maxEstimatedTokensPerOperation}).`,
     );
   }

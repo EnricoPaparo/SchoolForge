@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { AiPlannedCorrectionDialog } from './AiPlannedCorrectionDialog.js';
 import { DialogShell } from './workspaceDialogs.js';
 import { AiAdvancedReviewControl } from './AiAdvancedReviewControl.js';
 import styles from './AiBatchCorrectionDialog.module.css';
@@ -43,7 +44,7 @@ export const DEFAULT_AI_SETTINGS: AiCorrectionSettingsValue = {
 
 type Phase = 'configure' | 'previewing' | 'confirm' | 'running' | 'result' | 'error';
 
-export function AiBatchCorrectionDialog({
+function LegacyAiBatchCorrectionDialog({
   verificationId,
   submissionIds,
   callables,
@@ -403,5 +404,24 @@ export function AiBatchCorrectionDialog({
         </>
       )}
     </DialogShell>
+  );
+}
+
+export function AiBatchCorrectionDialog(props: {
+  verificationId: string;
+  submissionIds: string[];
+  ownerUid?: string;
+  submissionLabels?: Record<string, string>;
+  callables: AiCorrectionCallables;
+  onClose: () => void;
+  onApplied: (result: AiRunResult) => void;
+  defaults?: AiCorrectionSettingsValue;
+}) {
+  return props.callables.planPreview &&
+    props.callables.planStatus &&
+    props.callables.planRunGroup ? (
+    <AiPlannedCorrectionDialog {...props} defaults={props.defaults ?? DEFAULT_AI_SETTINGS} />
+  ) : (
+    <LegacyAiBatchCorrectionDialog {...props} />
   );
 }
