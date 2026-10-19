@@ -33,12 +33,17 @@ import {
   POOL_OUTPUT_SCHEMA,
   buildPoolOutputSchema,
   buildContentStructuredRequest,
+  prepareContentStructuredRequest,
   estimateInputTokens,
   reservationInputTokenUpperBound,
   resolveMaxOutputTokens,
   LESSON_OUTPUT_TOKENS,
 } from './aiContentPayload.js';
-import { createContentProvider, selectContentProvider } from './aiContentProvider.js';
+import {
+  createContentProvider,
+  selectContentProvider,
+  contentPerformanceMetadata,
+} from './aiContentProvider.js';
 import { canMarkProviderPending } from './aiContentPending.js';
 import { runStructuredCall } from './openAiStructuredRunner.js';
 import { OpenAiTransportError } from './openAiGrader.js';
@@ -1127,7 +1132,11 @@ describe('lesson reviewer policy and accounting', () => {
         estimateContentCost(request, reserved!.run.model, reserved!.run.priceListVersion, 2)
           .reservationCostMicroUsd,
       );
-      expect(callProvider).toHaveBeenCalledWith({ request, model: 'gpt-6.1-sol' });
+      expect(callProvider).toHaveBeenCalledWith({
+        request,
+        model: 'gpt-6.1-sol',
+        payload: prepareContentStructuredRequest(request, 'gpt-6.1-sol'),
+      });
     }
   });
   it('fails before the provider if the stronger review exceeds the operation budget', async () => {
@@ -2886,4 +2895,128 @@ it('settles a failed lesson review conservatively and logs only allowlisted prov
   } finally {
     warn.mockRestore();
   }
+});
+
+it('shares one immutable serialized payload between reservation and send', async () => {
+  const request = validateAiContentRequest(poolPayload());
+  const model = OPENAI_RUNTIME_LUNA_MODEL;
+  const prepared = prepareContentStructuredRequest(request, model);
+  const json = JSON.stringify(prepared);
+  const estimate = estimateContentCost(
+    request,
+    model,
+    OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    1,
+    prepared,
+  );
+  let captured: OpenAiStructuredRequest | undefined;
+  const provider = createContentProvider({
+    mode: 'openai',
+    transport: jsonTransport('{}', undefined, (payload) => {
+      captured = payload;
+    }),
+    runnerDeps: { policy: { ...DEFAULT_OPENAI_RETRY_POLICY, maxRetries: 0 } },
+  });
+  await provider.generate(request, model, prepared);
+  expect(captured).toBe(prepared);
+  expect(Object.isFrozen(prepared)).toBe(true);
+  expect(Object.isFrozen(prepared.text.format.schema)).toBe(true);
+  expect(JSON.stringify(captured)).toBe(json);
+  expect(estimate.reservationInputTokenUpperBound).toBe(Buffer.byteLength(json));
+});
+
+it('records measured duration and exact attempts on success and failure with no raw errors', async () => {
+  let clock = 100;
+  const transport: OpenAiTransport = {
+    send: vi.fn(async () => {
+      clock += 25;
+      throw new OpenAiTransportError('private-source-text', {
+        transient: false,
+        billingRisk: true,
+      });
+    }),
+  };
+  const outcome = await runStructuredCall(
+    transport,
+    prepareContentStructuredRequest(genReq, OPENAI_RUNTIME_LUNA_MODEL),
+    { now: () => clock, policy: { ...DEFAULT_OPENAI_RETRY_POLICY, maxRetries: 0 } },
+  );
+  expect(outcome.metrics).toEqual({ durationProviderMs: 25, attemptCount: 1 });
+  expect(JSON.stringify(outcome)).not.toContain('private-source-text');
+});
+
+it('performance metadata is whitelisted, bounded, nullable and excludes source/PII/errors', () => {
+  const outcome = {
+    status: 'ok' as const,
+    output: { body: 'PRIVATE LESSON', reviewOutcome: 'unchanged', rawError: 'PRIVATE ERROR' },
+    usage: { inputTokens: 99, outputTokens: 55, cachedInputTokens: 12, cacheWriteInputTokens: NaN },
+    metered: true,
+    priorBillingRisk: false,
+    metrics: { durationProviderMs: 123, attemptCount: 2 },
+    private: 'PRIVATE PII',
+  };
+  expect(contentPerformanceMetadata('lesson_review', outcome)).toEqual({
+    kind: 'lesson_review',
+    durationProviderMs: 123,
+    attemptCount: 2,
+    cachedInputTokens: 12,
+    cacheWriteInputTokens: null,
+    providerOutcome: 'ok',
+    reviewOutcome: 'unchanged',
+  });
+  const failed = contentPerformanceMetadata('lesson', {
+    status: 'error',
+    phase: 'invocation_unknown',
+  });
+  expect(failed.cachedInputTokens).toBeNull();
+  expect(failed.durationProviderMs).toBeNull();
+  expect(failed.attemptCount).toBeNull();
+  expect(JSON.stringify(contentPerformanceMetadata('lesson_review', outcome))).not.toContain(
+    'PRIVATE',
+  );
+});
+
+it('stores compact unchanged lesson output fully and replays without another provider call', async () => {
+  const fields = lessonPayload() as Record<string, unknown>;
+  delete fields.currentBody;
+  delete fields.hasCurrentContent;
+  const candidateBody = '## TCP\r\n\r\nTCP trasporta byte. 😀  ';
+  const request = validateAiContentRequest({ ...fields, kind: 'lesson_review', candidateBody });
+  let stored!: StoredAiContentRun;
+  const callProvider = vi.fn(async () => ({
+    ...okOutcome,
+    output: { body: null, reviewOutcome: 'unchanged', issueCodes: [], reviewChanges: [] },
+  }));
+  const ports = makePorts({
+    loadRuntimeConfig: async () => ({ ...CONFIG, maxOperationCostMicroUsd: 2000000 }),
+    callProvider,
+    reserveRunAndBudget: async ({ run, reserveMicroUsd }) => {
+      stored = run;
+      return { kind: 'reserved', reservedMicroUsd: reserveMicroUsd };
+    },
+    finalizeRun: async (params) => {
+      stored = {
+        ...stored,
+        status: 'completed',
+        output: params.output,
+        actualCostMicroUsd: params.actualCostMicroUsd,
+        settledCostMicroUsd: params.settledMicroUsd,
+        actualInputTokens: params.actualInputTokens,
+        actualOutputTokens: params.actualOutputTokens,
+      };
+      return 'finalized';
+    },
+  });
+  const generated = await generateContent(request, ctx, ports);
+  expect((generated.output as { body: string }).body).toBe(candidateBody);
+  const parsed = parseStoredRunDocument(serializeRun(stored))!;
+  expect(parsed.output).toEqual(generated.output);
+  expect(parsed.inputHash).toBe(computeInputHash(request));
+  const replay = await generateContent(request, ctx, {
+    ...ports,
+    reserveRunAndBudget: async () => ({ kind: 'replay_completed', run: parsed }),
+  });
+  expect(replay.output).toEqual(generated.output);
+  expect(replay.replayed).toBe(true);
+  expect(callProvider).toHaveBeenCalledOnce();
 });

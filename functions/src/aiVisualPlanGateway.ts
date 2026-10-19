@@ -455,11 +455,11 @@ function createVisualPlanProposalPorts(params: {
         return true;
       });
     },
-    async callProvider({ request, model }) {
+    async callProvider({ request, model, payload }) {
       if (!provider) {
         throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
       }
-      return provider.generate(request, model);
+      return provider.generate(request, model, payload);
     },
     async finalizeRun(reqParams) {
       const runRef = db.doc(`aiContentRuns/${reqParams.opaqueRunId}`);

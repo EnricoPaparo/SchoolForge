@@ -75,13 +75,55 @@ export function currentStudyPractice(raw: unknown, body: string): StudyPractice 
 }
 export function practicePoolContext(practice: StudyPractice | null): string | undefined {
   if (!practice) return undefined;
-  const context = JSON.stringify({
-    objectives: practice.plan.objectives,
-    activities: practice.plan.steps.map((s) => ({
-      capability: practice.plan.objectives[s.objectiveIndex]?.capability,
-      stage: s.stage,
-      question: practice.questions[s.questionOrder]?.testo,
+  const unique = <T>(values: T[]): T[] => [
+    ...new Map(values.map((value) => [JSON.stringify(value), value])).values(),
+  ];
+  // Source remains authoritative in the separate lessonSource field. Never send answers or hints.
+  const objectives = unique(
+    practice.plan.objectives.map(({ capability, method, prerequisites }) => ({
+      capability,
+      method,
+      prerequisites,
     })),
+  );
+  const activities = practice.plan.steps.map((step) => ({
+    objective: objectives.findIndex(
+      (o) =>
+        JSON.stringify(o) ===
+        JSON.stringify(
+          (({ capability, method, prerequisites }) => ({ capability, method, prerequisites }))(
+            practice.plan.objectives[step.objectiveIndex]!,
+          ),
+        ),
+    ),
+    stage: step.stage,
+    question: practice.questions[step.questionOrder]?.testo,
+  }));
+  const coverage = unique(
+    practice.plan.plannedCoverage.map(({ objective, status }) => ({ objective, status })),
+  );
+  const fits = (value: unknown) => {
+    const text = JSON.stringify(value);
+    return new TextEncoder().encode(text).length <= 50000 ? text : null;
+  };
+  const full = fits({ objectives, coverage, activities: unique(activities) });
+  if (full) return full;
+  // Deterministic semantic fallback: retain every capability, method and activity stage/count,
+  // instead of truncating stems or silently omitting the entire approved practice.
+  const groups = unique(activities.map(({ objective, stage }) => ({ objective, stage })));
+  const compact = fits({
+    objectives,
+    coverage,
+    activities: groups.map((group) => ({
+      ...group,
+      count: activities.filter((a) => a.objective === group.objective && a.stage === group.stage)
+        .length,
+    })),
+    representation: 'capabilities_methods_stages',
   });
-  return new TextEncoder().encode(context).length <= 50000 ? context : undefined;
+  if (!compact)
+    throw new Error(
+      'Il contesto delle esercitazioni supera il limite: impossibile conservarne capacità e metodi.',
+    );
+  return compact;
 }

@@ -7,7 +7,6 @@ import {
 } from '../repository/pools/aiContentClient.js';
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
-import { MarkdownRenderer } from './MarkdownRenderer.js';
 import {
   buildLessonContentRequest,
   buildLessonReviewRequest,
@@ -27,7 +26,6 @@ import {
   type AiLessonCallables,
   type AiLessonContentRequest,
   type AiLessonGenerateResult,
-  type AiLessonPreviewResult,
   type AiLessonReviewGenerateResult,
   type LessonAiContext,
   type LessonDepth,
@@ -89,15 +87,7 @@ export interface CompleteLessonOptions {
   reviewStatus: 'disabled' | 'improved' | 'unchanged';
 }
 
-type Phase =
-  | 'configure'
-  | 'previewing'
-  | 'confirm'
-  | 'generating'
-  | 'review'
-  | 'completing'
-  | 'summary'
-  | 'error';
+type Phase = 'configure' | 'previewing' | 'generating' | 'completing' | 'summary' | 'error';
 
 type ErrorStage = 'preview' | 'generate' | 'review' | 'complete';
 type CountsDraft = { aperta: string; chiusa_singola: string; chiusa_multipla: string };
@@ -172,7 +162,6 @@ export function AiCompleteLessonGenerationDialog({
   );
   const [contentCostUnknown, setContentCostUnknown] = useState(false);
   const [advancedReview, setAdvancedReview] = useState(true);
-  const [preview, setPreview] = useState<AiLessonPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiLessonContentRequest | null>(null);
   const [contentResult, setContentResult] = useState<AiLessonGenerateResult | null>(null);
   const [draftBody, setDraftBody] = useState(resumeDraft?.body ?? '');
@@ -249,7 +238,6 @@ export function AiCompleteLessonGenerationDialog({
   }
 
   function invalidateEstimate() {
-    setPreview(null);
     setPreviewRequest(null);
     setContentResult(null);
     setContentCostUnknown(false);
@@ -275,9 +263,8 @@ export function AiCompleteLessonGenerationDialog({
     setPhase('previewing');
     const request = currentRequest();
     try {
-      const next = await callables.preview(request);
+      await callables.preview(request);
       if (!mountedRef.current) return;
-      setPreview(next);
       setPreviewRequest(request);
       // Modalità pilota automatico: la preview è un preflight tecnico senza
       // una seconda conferma. Dopo la stima parte subito il percorso completo.
@@ -788,67 +775,9 @@ export function AiCompleteLessonGenerationDialog({
 
       {phase === 'previewing' && <BusyStatus label="Calcolo della stima…" />}
 
-      {phase === 'confirm' && preview && (
-        <div className={styles.estimate}>
-          <p>
-            Dopo questa conferma verrà generato il contenuto. Le immagini saranno scelte
-            automaticamente dal modello, senza passaggi intermedi.
-          </p>
-          <ul className={styles.estimateList}>
-            <li>Profondità: {LESSON_DEPTH_OPTIONS.find((item) => item.value === depth)?.label}</li>
-            <li>
-              Token stimati contenuto: {preview.estimatedInputTokens + preview.maxOutputTokens}
-            </li>
-            <li>Costo stimato contenuto: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
-            <li>Tetto massimo contenuto: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
-            <li>
-              Revisione avanzata:{' '}
-              {advancedReview ? 'attiva, con prenotazione separata' : 'disattivata'}
-            </li>
-          </ul>
-          <p className={styles.costNote}>
-            Il riepilogo finale mostrerà anche il costo delle immagini effettivamente necessarie.
-          </p>
-          <div className="dialog-actions">
-            <button type="button" onClick={invalidateEstimate}>
-              Modifica configurazione
-            </button>
-            <button type="button" className="btn-primary" onClick={() => void generateContent()}>
-              Genera contenuto
-            </button>
-          </div>
-        </div>
-      )}
-
       {phase === 'generating' && <BusyStatus label="Generazione del contenuto…" />}
 
-      {phase === 'review' && contentResult && (
-        <>
-          <p role="status">
-            Contenuto generato.{' '}
-            {contentResult.actualCostMicroUsd === null
-              ? 'Il costo esatto del contenuto non è disponibile.'
-              : `Costo reale contenuto: ${formatMicroUsd(contentResult.actualCostMicroUsd)}.`}
-          </p>
-          <p>
-            Controlla il testo. Con il comando finale il modello sceglierà automaticamente se e dove
-            aggiungere fino a tre immagini.
-          </p>
-          <div className={styles.reviewItem}>
-            <MarkdownRenderer markdown={draftBody} />
-          </div>
-          <div className="dialog-actions">
-            <button type="button" onClick={onClose}>
-              Annulla
-            </button>
-            <button type="button" className="btn-primary" onClick={() => void completeDraft()}>
-              Usa e completa la lezione
-            </button>
-          </div>
-        </>
-      )}
-
-      {draftBody && ['review', 'completing', 'summary', 'error'].includes(phase) && (
+      {draftBody && ['completing', 'summary', 'error'].includes(phase) && (
         <section aria-label="Resoconti delle revisioni">
           <h4>Lezione</h4>
           {resumeAvailable && !reviewResult ? (

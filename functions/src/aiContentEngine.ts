@@ -1,3 +1,4 @@
+import { prepareContentStructuredRequest } from './aiContentPayload.js';
 import { materializePracticeSlots } from './aiStudyPracticeSlots.js';
 import { validatePracticeReview } from './aiStudyPracticeReview.js';
 import { resolvePracticeSourceReferences } from './aiStudyPracticeSource.js';
@@ -168,6 +169,7 @@ export interface AiContentPorts {
   callProvider(params: {
     request: AiContentRequest;
     model: string;
+    payload: ReturnType<typeof prepareContentStructuredRequest>;
   }): Promise<ContentProviderOutcome>;
   /**
    * Finalizza: persiste output + costo reale e riconcilia (reconcile al costo
@@ -222,6 +224,7 @@ export interface AiContentGenerateResult {
 }
 
 interface ResolvedCost {
+  payload: ReturnType<typeof prepareContentStructuredRequest>;
   model: string;
   priceListVersion: string;
   estimatedInputTokens: number;
@@ -254,11 +257,13 @@ function enforceConfigAndLimits(
   // 6. risoluzione profilo → modello/listino (server-side, nessun fallback).
   const { model, priceListVersion } = resolveContentModelForRequest(request);
   // 7. stima informativa + prenotazione conservativa (× tentativi).
+  const payload = prepareContentStructuredRequest(request, model);
   const estimate = estimateContentCost(
     request,
     model,
     priceListVersion,
     maxAttemptsFromConfig(config),
+    payload,
   );
   const totalTokens = estimate.estimatedInputTokens + estimate.maxOutputTokens;
   if (totalTokens > config.limits.maxEstimatedTokensPerOperation) {
@@ -277,6 +282,7 @@ function enforceConfigAndLimits(
     maxOutputTokens: estimate.maxOutputTokens,
     estimatedCostMicroUsd: estimate.estimatedCostMicroUsd,
     reservationCostMicroUsd: estimate.reservationCostMicroUsd,
+    payload,
   };
 }
 
@@ -457,7 +463,11 @@ export async function generateContent(
   }
 
   // 11. provider (esito tipizzato: pre-invocazione vs invocazione incerta).
-  const providerOutcome = await ports.callProvider({ request, model: resolved.model });
+  const providerOutcome = await ports.callProvider({
+    request,
+    model: resolved.model,
+    payload: resolved.payload,
+  });
 
   if (providerOutcome.status === 'error') {
     // pre_invocation → costo 0 (release); invocation_unknown → settlement
@@ -637,7 +647,7 @@ export async function generateContent(
                       ),
                     }
                   : request.kind === 'lesson_review'
-                    ? validateLessonReviewProposal(providerOutput)
+                    ? validateLessonReviewProposal(providerOutput, request.candidateBody)
                     : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({

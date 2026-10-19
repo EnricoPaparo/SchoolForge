@@ -12,7 +12,7 @@ import { providerPracticePlan } from './aiStudyPracticeReview.js';
  * zero. Nessuna API key, chiamata reale o costo nei test.
  */
 
-import { buildContentStructuredRequest } from './aiContentPayload.js';
+import { prepareContentStructuredRequest } from './aiContentPayload.js';
 import { AiContentError, type AiContentRequest } from './aiContentCore.js';
 import { createOpenAiSdkTransport, type OpenAiTransport } from './openAiGrader.js';
 import { runStructuredCall, type StructuredRunnerDeps } from './openAiStructuredRunner.js';
@@ -33,7 +33,9 @@ export interface ProviderUsage {
  * reale, e usage assente/incoerente è fail-closed a valle. Gli errori distinguono
  * pre-invocazione (costo zero) da invocazione incerta (settlement conservativo).
  */
-export type ContentProviderOutcome =
+export type ContentProviderOutcome = {
+  metrics?: { durationProviderMs: number; attemptCount: number };
+} & (
   | {
       status: 'ok';
       output: unknown;
@@ -50,10 +52,40 @@ export type ContentProviderOutcome =
       status: 'error';
       phase: 'pre_invocation' | 'invocation_unknown';
       reason?: 'max_output_tokens' | 'content_filter' | 'other';
-    };
+    }
+);
+
+/** Closed source-free performance event, separate from terminal gateway telemetry. */
+export function contentPerformanceMetadata(
+  kind: AiContentRequest['kind'],
+  outcome: ContentProviderOutcome,
+) {
+  const bounded = (value: unknown) =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 1000000000
+      ? value
+      : null;
+  const review =
+    outcome.status === 'ok' && outcome.output && typeof outcome.output === 'object'
+      ? (outcome.output as Record<string, unknown>).reviewOutcome
+      : null;
+  return {
+    kind,
+    durationProviderMs: bounded(outcome.metrics?.durationProviderMs),
+    attemptCount: bounded(outcome.metrics?.attemptCount),
+    cachedInputTokens: outcome.status === 'ok' ? bounded(outcome.usage?.cachedInputTokens) : null,
+    cacheWriteInputTokens:
+      outcome.status === 'ok' ? bounded(outcome.usage?.cacheWriteInputTokens) : null,
+    providerOutcome: outcome.status,
+    reviewOutcome: review === 'improved' || review === 'unchanged' ? review : null,
+  };
+}
 
 export interface ContentProvider {
-  generate(request: AiContentRequest, model: string): Promise<ContentProviderOutcome>;
+  generate(
+    request: AiContentRequest,
+    model: string,
+    payload?: ReturnType<typeof prepareContentStructuredRequest>,
+  ): Promise<ContentProviderOutcome>;
 }
 
 /** Proposta mock deterministica, strutturalmente valida per lo schema richiesto. */
@@ -265,20 +297,25 @@ class OpenAiContentProvider implements ContentProvider {
     private readonly deps: StructuredRunnerDeps = {},
   ) {}
 
-  async generate(request: AiContentRequest, model: string): Promise<ContentProviderOutcome> {
+  async generate(
+    request: AiContentRequest,
+    model: string,
+    payload?: ReturnType<typeof prepareContentStructuredRequest>,
+  ): Promise<ContentProviderOutcome> {
     // Payload **esatto**: lo stesso builder usato da stima e prenotazione, così il
     // `max_output_tokens` prenotato è quello trasmesso.
-    const httpRequest = buildContentStructuredRequest(request, model);
+    const httpRequest = payload ?? prepareContentStructuredRequest(request, model);
     const outcome = await runStructuredCall(this.transport, httpRequest, this.deps);
     if (outcome.status === 'incomplete') {
       return {
         status: 'error',
+        metrics: outcome.metrics,
         phase: 'invocation_unknown',
         reason: outcome.reason,
       };
     }
     if (outcome.status !== 'ok') {
-      return { status: 'error', phase: outcome.status };
+      return { status: 'error', phase: outcome.status, metrics: outcome.metrics };
     }
     let parsed: unknown;
     try {
@@ -291,6 +328,7 @@ class OpenAiContentProvider implements ContentProvider {
       status: 'ok',
       output: parsed,
       usage: outcome.usage,
+      metrics: outcome.metrics,
       metered: true,
       priorBillingRisk: outcome.priorBillingRisk,
     };

@@ -152,3 +152,54 @@ describe('artifact review safety', () => {
     await expect(reviewMapCandidate(api, mapRequest, map, 'id')).rejects.toThrow('non è valida');
   });
 });
+
+it.each(['before', 'preview', 'review'] as const)(
+  'guards the map against source changes %s awaiting provider',
+  async (stage) => {
+    let active = stage !== 'before';
+    const previewReview = vi.fn(async () => {
+      if (stage === 'preview') active = false;
+      return {} as never;
+    });
+    const generateReview = vi.fn(async () => {
+      if (stage === 'review') active = false;
+      return {} as never;
+    });
+    const assertCurrent = () => {
+      if (!active) throw new Error('source_changed');
+    };
+    await expect(
+      reviewMapCandidate(
+        { preview: vi.fn(), generate: vi.fn(), previewReview, generateReview },
+        mapRequest,
+        map,
+        'stable',
+        assertCurrent,
+      ),
+    ).rejects.toThrow('source_changed');
+    expect(previewReview).toHaveBeenCalledTimes(stage === 'before' ? 0 : 1);
+    expect(generateReview).toHaveBeenCalledTimes(stage === 'review' ? 1 : 0);
+  },
+);
+
+it.each(['map', 'pool'] as const)(
+  'does not mark %s review invoked when only preview fails',
+  async (kind) => {
+    const invoked = vi.fn();
+    const api = {
+      preview: vi.fn(),
+      generate: vi.fn(),
+      previewReview: vi.fn(async () => {
+        throw new Error('preview unavailable');
+      }),
+      generateReview: vi.fn(),
+    };
+    const call =
+      kind === 'map'
+        ? reviewMapCandidate(api, mapRequest, map, 'stable', undefined, invoked)
+        : reviewPoolCandidate(api, poolRequest, pool, 'stable', undefined, invoked);
+    await expect(call).rejects.toThrow('preview unavailable');
+    expect(invoked).not.toHaveBeenCalled();
+    expect(api.generateReview).not.toHaveBeenCalled();
+  },
+);

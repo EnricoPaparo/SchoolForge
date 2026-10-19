@@ -378,7 +378,7 @@ export const LESSON_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
   required: ['body', 'reviewOutcome', 'issueCodes', 'reviewChanges'],
   properties: {
-    body: { type: 'string' },
+    body: { type: ['string', 'null'] },
     reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: { type: 'string', enum: ['improved', 'unchanged'] },
     issueCodes: {
@@ -724,6 +724,18 @@ export function buildContentStructuredRequest(
   };
 }
 
+/** Immutable per-operation snapshot shared by reservation and transport. */
+export function prepareContentStructuredRequest(request: AiContentRequest, model: string) {
+  const payload = structuredClone(buildContentStructuredRequest(request, model));
+  function freeze(value: unknown): void {
+    if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  freeze(payload);
+  return payload;
+}
+
 /**
  * Upper bound **provabile** dei token di input fatturabili: byte UTF-8 dell'esatta
  * richiesta serializzata. Il tokenizer BPE è byte-level ⇒ token input ≤ byte UTF-8
@@ -794,6 +806,8 @@ export const MAP_REVIEW_OUTPUT_SCHEMA: Record<string, unknown> = {
   ],
   properties: {
     ...(CONCEPT_MAP_OUTPUT_SCHEMA.properties as Record<string, unknown>),
+    summaryMarkdown: { type: ['string', 'null'] },
+    diagram: { type: ['string', 'null'] },
     reviewChanges: REVIEW_CHANGES_SCHEMA,
     reviewOutcome: reviewOutcomeSchema,
     issueCodes: reviewCodesSchema(MAP_REVIEW_ISSUE_CODES),

@@ -1,3 +1,4 @@
+import { contentPerformanceMetadata } from './aiContentProvider.js';
 /**
  * AIGEN-01 — wiring runtime dei callable di generazione contenuti. Monta il
  * motore puro `aiContentEngine` sull'Admin SDK: due Cloud Functions v2 `onCall`
@@ -298,11 +299,13 @@ export function createPorts(
         return true;
       });
     },
-    async callProvider({ request, model }) {
+    async callProvider({ request, model, payload }) {
       if (!provider) {
         throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
       }
-      return provider.generate(request, model);
+      const outcome = await provider.generate(request, model, payload);
+      logger.info('aiContentPerformance', contentPerformanceMetadata(request.kind, outcome));
+      return outcome;
     },
     async finalizeRun(params) {
       const monthKey = monthKeyFromMs(params.nowMs);

@@ -314,10 +314,19 @@ export interface ValidatedLessonReviewProposal extends ValidatedLessonProposal {
   issueCodes: LessonReviewIssueCode[];
 }
 
-export function validateLessonReviewProposal(output: unknown): ValidatedLessonReviewProposal {
+export function validateLessonReviewProposal(
+  output: unknown,
+  candidateBody?: string,
+): ValidatedLessonReviewProposal {
   const root = asObject(output);
   assertExactOutputKeys(root, ['body', 'reviewOutcome', 'issueCodes'], 'La revisione');
-  const { body } = validateLessonProposal(root);
+  if (root.body !== null && typeof root.body !== 'string')
+    throw new AiContentError('provider_invalid_output', 'Corpo revisione non valido.');
+  const { body } = validateLessonProposal(
+    root.reviewOutcome === 'unchanged' && candidateBody !== undefined
+      ? { body: candidateBody }
+      : root,
+  );
   if (root.reviewOutcome !== 'improved' && root.reviewOutcome !== 'unchanged') {
     throw new AiContentError('provider_invalid_output', 'Esito della revisione non valido.');
   }

@@ -31,7 +31,9 @@ export interface StructuredRunnerDeps {
 }
 
 /** Esito **tipizzato** del runner: distingue pre-invocazione da invocazione incerta. */
-export type StructuredRunOutcome =
+export type StructuredRunOutcome = {
+  metrics: { durationProviderMs: number; attemptCount: number };
+} & (
   | {
       status: 'ok';
       outputText: string;
@@ -57,7 +59,8 @@ export type StructuredRunOutcome =
   /** La richiesta **certamente non** ha raggiunto il provider: nessun costo. */
   | { status: 'pre_invocation' }
   /** La richiesta **può** aver raggiunto il provider: settlement conservativo. */
-  | { status: 'invocation_unknown' };
+  | { status: 'invocation_unknown' }
+);
 
 /** Numero massimo di tentativi complessivi (1 + retry) per una policy. */
 export function maxAttemptsForPolicy(policy: RetryPolicy): number {
@@ -83,8 +86,15 @@ export async function runStructuredCall(
   // `true` non appena un tentativo può aver generato costo: da lì in poi l'esito
   // finale è `invocation_unknown` anche se l'ultimo errore fosse pre-invocazione.
   let anyBillingRisk = false;
+  const startedAt = now();
+  let attemptCount = 0;
+  const metrics = () => ({
+    durationProviderMs: Math.min(3600000, Math.max(0, Math.round(now() - startedAt))),
+    attemptCount,
+  });
 
   for (let attemptIndex = 0; ; attemptIndex++) {
+    attemptCount++;
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(),
@@ -98,11 +108,13 @@ export async function runStructuredCall(
       if (response.completionStatus === 'incomplete') {
         return {
           status: 'incomplete',
+          metrics: metrics(),
           reason: response.incompleteReason ?? 'other',
         };
       }
       return {
         status: 'ok',
+        metrics: metrics(),
         outputText: response.outputText,
         usage: response.usage
           ? {
@@ -125,18 +137,19 @@ export async function runStructuredCall(
         random,
       });
       if (!decision.retry) {
-        return anyBillingRisk ? { status: 'invocation_unknown' } : { status: 'pre_invocation' };
+        return anyBillingRisk
+          ? { status: 'invocation_unknown', metrics: metrics() }
+          : { status: 'pre_invocation', metrics: metrics() };
       }
       try {
         await sleep(decision.delayMs);
       } catch {
-        return anyBillingRisk ? { status: 'invocation_unknown' } : { status: 'pre_invocation' };
+        return anyBillingRisk
+          ? { status: 'invocation_unknown', metrics: metrics() }
+          : { status: 'pre_invocation', metrics: metrics() };
       }
     } finally {
       clearTimeout(timer);
     }
-    // `now` è iniettato solo per i test deterministici; il loop non lo consulta
-    // direttamente ma lo espone per coerenza con gli altri runner.
-    void now;
   }
 }

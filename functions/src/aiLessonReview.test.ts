@@ -113,7 +113,7 @@ describe('lesson advanced review', () => {
     expect(serialized).toContain(
       'rispetto ai principi della disciplina, non soltanto al resto della bozza',
     );
-    expect(serialized).toContain('body identico alla BOZZA');
+    expect(serialized).toContain('body=null (il server conserva la BOZZA identica)');
     expect(serialized).toContain('mai per una preferenza stilistica');
     expect(serialized).not.toContain('unchanged solo se la bozza era già ottimale');
     expect(serialized).toContain(raw.candidateBody.replace(/\n/g, '\\n'));
@@ -153,4 +153,36 @@ describe('lesson advanced review', () => {
       }),
     ).toThrow('proprietà mancanti o non ammesse');
   });
+});
+
+it.each([null, ''])(
+  'materializes compact unchanged %j byte for byte without changing request identity',
+  (body) => {
+    const candidate = '## Memoria\r\n\r\n  RAM è volatile. 😀  ';
+    const request = validateAiContentRequest({ ...raw, candidateBody: candidate });
+    const hash = computeInputHash(request);
+    const result = validateLessonReviewProposal(
+      { body, reviewOutcome: 'unchanged', issueCodes: [] },
+      candidate,
+    );
+    expect(result.body).toBe(candidate);
+    expect(Buffer.from(result.body)).toEqual(Buffer.from(candidate));
+    expect(computeInputHash(request)).toBe(hash);
+    expect(validateLessonReviewProposal(result)).toEqual(result);
+    expect(() =>
+      validateLessonReviewProposal(
+        { body, reviewOutcome: 'improved', issueCodes: ['logical_gap'] },
+        candidate,
+      ),
+    ).toThrow();
+  },
+);
+it('rejects compact unchanged values outside the nullable-string protocol', () => {
+  for (const body of [true, {}, [], 3, undefined])
+    expect(() =>
+      validateLessonReviewProposal(
+        { body, reviewOutcome: 'unchanged', issueCodes: [] },
+        raw.candidateBody,
+      ),
+    ).toThrow();
 });

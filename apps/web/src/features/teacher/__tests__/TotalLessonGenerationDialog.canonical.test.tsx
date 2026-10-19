@@ -11,6 +11,7 @@ import { STUDY_BODY, studyFixture } from '../../repository/programs/__tests__/st
 const state = vi.hoisted(() => ({
   generate: vi.fn(),
   map: vi.fn(),
+  mapPreview: vi.fn(),
   raw: '',
   summary: null as CompleteLessonCompletionSummary | null,
   error: null as unknown,
@@ -26,7 +27,7 @@ vi.mock('../../repository/pools/aiContentClient.js', async (original) => ({
 }));
 vi.mock('../../repository/pools/aiConceptMapClient.js', async (original) => ({
   ...(await original<typeof MapClient>()),
-  createAiConceptMapCallables: () => ({ preview: vi.fn(), generate: state.map }),
+  createAiConceptMapCallables: () => ({ preview: state.mapPreview, generate: state.map }),
 }));
 vi.mock('../../repository/programs/multiVisualClient.js', () => ({
   createMultiVisualClient: () => ({
@@ -250,5 +251,111 @@ it.each([
       expect(save).not.toHaveBeenCalled();
       expect(savePool).not.toHaveBeenCalled();
     }
+  },
+);
+
+it.each(['map', 'pool'] as const)(
+  'retries failed %s save without repeating generation',
+  async (failedStage) => {
+    state.raw = STUDY_BODY;
+    const fixture = studyFixture();
+    state.map.mockResolvedValue({
+      status: 'completed',
+      kind: 'concept_map',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output: { conceptMapMarkdown: '## Sintesi\n\nIl ciclo ripete il corpo.' },
+    });
+    state.generate.mockImplementation(async (request: ContentClient.AiPoolContentRequest) => ({
+      status: 'completed',
+      kind: 'pool',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output:
+        request.purpose === 'practice'
+          ? { questions: fixture.questions, studyPlan: fixture.plan }
+          : { questions: [fixture.questions[0]] },
+    }));
+    const saveMap = vi.fn(async () => {});
+    const savePool = vi.fn(async () => {});
+    (failedStage === 'map' ? saveMap : savePool).mockRejectedValueOnce(
+      new Error('save unavailable'),
+    );
+    render(
+      <TotalLessonGenerationDialog
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        context={{
+          titolo: 'Cicli',
+          sottotitolo: null,
+          difficolta: 'Base',
+          concettiChiave: [],
+          obiettivi: ['Prevedere output'],
+          udaTitle: 'UDA',
+          currentBody: STUDY_BODY,
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn(async () => STUDY_BODY)}
+        onSaveConceptMap={saveMap}
+        onSavePool={savePool}
+        onSavePractice={vi.fn()}
+        onVerifyPractice={vi.fn()}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.error).not.toBeNull());
+    state.error = null;
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.summary).not.toBeNull());
+    expect(state.error).toBeNull();
+    expect(state.map).toHaveBeenCalledOnce();
+    expect(state.generate).toHaveBeenCalledTimes(2);
+    expect(failedStage === 'map' ? saveMap : savePool).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each(['unmount', 'source_changed'] as const)(
+  'stops map generation when %s occurs during preview',
+  async (change) => {
+    state.raw = STUDY_BODY;
+    let release!: () => void;
+    state.mapPreview.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const saveMap = vi.fn();
+    const element = (body: string) => (
+      <TotalLessonGenerationDialog
+        identity={{ programId: 'p', importId: 'i', lessonId: 'l' }}
+        context={{
+          titolo: 'Cicli',
+          sottotitolo: null,
+          difficolta: 'Base',
+          udaTitle: 'UDA',
+          currentBody: body,
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn(async () => STUDY_BODY)}
+        onSaveConceptMap={saveMap}
+        onSavePool={vi.fn()}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    const view = render(element(STUDY_BODY));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.mapPreview).toHaveBeenCalledOnce());
+    if (change === 'unmount') view.unmount();
+    else view.rerender(element('Changed body'));
+    await act(async () => release());
+    await waitFor(() => expect(state.error).not.toBeNull());
+    expect(state.map).not.toHaveBeenCalled();
+    expect(saveMap).not.toHaveBeenCalled();
+    expect(state.generate).not.toHaveBeenCalled();
   },
 );
