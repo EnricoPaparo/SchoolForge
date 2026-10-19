@@ -352,6 +352,7 @@ export function AiPlannedCorrectionDialog({
             </div>
           )}
           <div className="dialog-actions">
+            <button onClick={close}>Annulla</button>
             <button
               onClick={() => {
                 setPlan(null);

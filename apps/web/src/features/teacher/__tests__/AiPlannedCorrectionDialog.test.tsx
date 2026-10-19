@@ -165,6 +165,20 @@ describe('planned correction UI', () => {
     expect(h.props.onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('allows explicit cancellation from the confirmation without starting a group', async () => {
+    const h = harness();
+    render(<AiBatchCorrectionDialog {...h.props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Calcola stima' }));
+    await screen.findByRole('button', { name: 'Conferma correzione' });
+    const dialog = screen.getByRole('dialog', { name: 'Correggi con IA' });
+    fireEvent.click(dialog.parentElement!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(h.props.onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(h.props.onClose).toHaveBeenCalledTimes(1);
+    expect(h.runGroup).not.toHaveBeenCalled();
+  });
+
   it('confirms the total and each server group once, shows student progress and accounts completed groups', async () => {
     const h = harness();
     render(<AiBatchCorrectionDialog {...h.props} />);
