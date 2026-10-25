@@ -1,3 +1,4 @@
+import { setLessonVisibilityForOwner } from './lessonVisibilityGateway.js';
 import { randomUUID } from 'node:crypto';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
@@ -931,63 +932,77 @@ emulatorDescribe('MULTI-VISUAL-03B — recovery indipendenti e fail-closed', () 
     ).toBe(false);
   });
 
-  it('replay promozione rilegge manifest e byte live e rifiuta una mutazione editoriale', async () => {
-    const now = Date.now();
-    const fixture = await seedIndependentPlan({ db, now, slotCount: 1 });
-    const bucket = new MemoryBucket();
-    await generate(fixture, bucket, 0, now + 100, async () => ({
-      status: 'success',
-      bytes: raw,
-      usage: null,
-      priorBillingRisk: false,
-      metered: false,
-    }));
-    const input = {
-      requestId: fixture.requestId,
-      programId: fixture.programId,
-      importId: fixture.importId,
-      lessonId: fixture.lessonId,
-      slotIndex: 0,
-      promotionRequestId: randomUUID(),
-      mode: { mode: 'add' as const },
-    };
-    await promoteVisualPlanSlotForOwner({
-      db,
-      bucket,
-      ownerUid: fixture.ownerUid,
-      input,
-      nowMs: now + 200,
-      generateAssetId: randomUUID,
-    });
-    const validReplay = await promoteVisualPlanSlotForOwner({
-      db,
-      bucket,
-      ownerUid: fixture.ownerUid,
-      input,
-      nowMs: now + 300,
-      generateAssetId: randomUUID,
-    });
-    expect(validReplay.replayed).toBe(true);
-    const lessonRef = db.doc(
-      `programs/${fixture.programId}/imports/${fixture.importId}/lessons/${fixture.lessonId}`,
-    );
-    const lesson = (await lessonRef.get()).data()!;
-    await lessonRef.update({
-      visuals: {
-        ...lesson.visuals,
-        items: [{ ...lesson.visuals.items[0], caption: 'Didascalia alterata' }],
-      },
-    });
-    await expect(
-      promoteVisualPlanSlotForOwner({
+  it.each([false, true])(
+    'replay promozione rilegge il canonico anche con lezione hidden=%s',
+    async (hidden) => {
+      const now = Date.now();
+      const fixture = await seedIndependentPlan({ db, now, slotCount: 1 });
+      if (hidden) {
+        await db
+          .doc(`programs/${fixture.programId}`)
+          .set({ ownerUid: fixture.ownerUid, activeImportId: fixture.importId });
+        await setLessonVisibilityForOwner(db, fixture.ownerUid, {
+          programId: fixture.programId,
+          importId: fixture.importId,
+          lessonId: fixture.lessonId,
+          hiddenFromStudents: true,
+        });
+      }
+      const bucket = new MemoryBucket();
+      await generate(fixture, bucket, 0, now + 100, async () => ({
+        status: 'success',
+        bytes: raw,
+        usage: null,
+        priorBillingRisk: false,
+        metered: false,
+      }));
+      const input = {
+        requestId: fixture.requestId,
+        programId: fixture.programId,
+        importId: fixture.importId,
+        lessonId: fixture.lessonId,
+        slotIndex: 0,
+        promotionRequestId: randomUUID(),
+        mode: { mode: 'add' as const },
+      };
+      await promoteVisualPlanSlotForOwner({
         db,
         bucket,
         ownerUid: fixture.ownerUid,
         input,
-        nowMs: now + 400,
-      }),
-    ).rejects.toMatchObject({ code: 'corrupted_state' });
-  });
+        nowMs: now + 200,
+        generateAssetId: randomUUID,
+      });
+      const validReplay = await promoteVisualPlanSlotForOwner({
+        db,
+        bucket,
+        ownerUid: fixture.ownerUid,
+        input,
+        nowMs: now + 300,
+        generateAssetId: randomUUID,
+      });
+      expect(validReplay.replayed).toBe(true);
+      const lessonRef = db.doc(
+        `programs/${fixture.programId}/imports/${fixture.importId}/lessons/${fixture.lessonId}`,
+      );
+      const lesson = (await lessonRef.get()).data()!;
+      await lessonRef.update({
+        visuals: {
+          ...lesson.visuals,
+          items: [{ ...lesson.visuals.items[0], caption: 'Didascalia alterata' }],
+        },
+      });
+      await expect(
+        promoteVisualPlanSlotForOwner({
+          db,
+          bucket,
+          ownerUid: fixture.ownerUid,
+          input,
+          nowMs: now + 400,
+        }),
+      ).rejects.toMatchObject({ code: 'corrupted_state' });
+    },
+  );
 
   it('una proiezione pubblica divergente blocca add senza ripararla silenziosamente', async () => {
     const now = Date.now();

@@ -1,3 +1,4 @@
+import { lessonProjectionRef } from '../programs/lessonProjection.js';
 import {
   collection,
   deleteField,
@@ -243,23 +244,34 @@ async function syncLessonMetadataDocs(
   db: Firestore,
   lessonRef: DocumentReference,
   lessonId: string,
-  publicLessonId: string,
-  publicLessonExists: boolean,
   docPatch: LessonDocPatch,
   ownerUid: string,
   publicContent?: string,
 ): Promise<void> {
-  const batch = writeBatch(db);
-  batch.update(lessonRef, docPatch);
-  if (publicContent !== undefined) batch.delete(doc(db, 'publicLessonPractice', publicLessonId));
-  const publicLessonRef = doc(db, 'publicLessons', publicLessonId);
-  if (publicLessonExists) {
-    const publicPatch =
-      publicContent === undefined ? docPatch : { ...docPatch, content: publicContent };
-    batch.update(publicLessonRef, publicPatch);
-  }
-  addAuditEvent(batch, db, ownerUid, 'lesson.updated', lessonId);
-  await batch.commit();
+  await runTransaction(db, async (tx) => {
+    const snapshot = await tx.get(lessonRef);
+    if (!snapshot.exists()) throw new Error('Lezione non trovata.');
+    const lesson = snapshot.data() as LessonDoc;
+    if (lesson.ownerUid !== ownerUid) throw new Error('Lezione non autorizzata.');
+    const publicLessonId = resolvePublicLessonId(lesson, lessonId);
+    const projectionRef = lessonProjectionRef(db, lesson, publicLessonId);
+    const projection = await tx.get(projectionRef);
+    tx.update(lessonRef, docPatch);
+    if (publicContent !== undefined) tx.delete(doc(db, 'publicLessonPractice', publicLessonId));
+    if (projection.exists())
+      tx.update(
+        projectionRef,
+        publicContent === undefined ? docPatch : { ...docPatch, content: publicContent },
+      );
+    tx.set(doc(collection(db, 'auditEvents')), {
+      actorUid: ownerUid,
+      action: 'lesson.updated',
+      targetId: lessonId,
+      outcome: 'success',
+      reason: null,
+      timestamp: serverTimestamp(),
+    });
+  });
 }
 
 /**
@@ -340,8 +352,6 @@ export async function updateLessonMetadata(params: {
   const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
-  const publicLessonId = resolvePublicLessonId(lesson, lessonId);
-  const publicLessonSnap = await getDoc(doc(db, 'publicLessons', publicLessonId));
 
   const frontMatterPatch = lessonFrontMatterFields(fields);
 
@@ -357,15 +367,7 @@ export async function updateLessonMetadata(params: {
   }
 
   try {
-    await syncLessonMetadataDocs(
-      db,
-      lessonRef,
-      lessonId,
-      publicLessonId,
-      publicLessonSnap.exists(),
-      fields,
-      ownerUid,
-    );
+    await syncLessonMetadataDocs(db, lessonRef, lessonId, fields, ownerUid);
   } catch {
     throw new Error(
       'Il file della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
@@ -398,8 +400,6 @@ export async function updateLessonMarkdownBody(params: {
   const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
-  const publicLessonId = resolvePublicLessonId(lesson, lessonId);
-  const publicLessonSnap = await getDoc(doc(db, 'publicLessons', publicLessonId));
 
   let metadata: LessonMetadata;
   let publicBody: string;
@@ -417,16 +417,7 @@ export async function updateLessonMarkdownBody(params: {
   }
 
   try {
-    await syncLessonMetadataDocs(
-      db,
-      lessonRef,
-      lessonId,
-      publicLessonId,
-      publicLessonSnap.exists(),
-      metadata,
-      ownerUid,
-      publicBody,
-    );
+    await syncLessonMetadataDocs(db, lessonRef, lessonId, metadata, ownerUid, publicBody);
   } catch {
     throw new Error(
       'Il contenuto della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
@@ -453,7 +444,7 @@ export async function clearLessonContentState(params: {
       throw new Error('Lezione non autorizzata.');
     }
     const publicLessonId = resolvePublicLessonId(lesson, lessonId);
-    const publicRef = doc(db, 'publicLessons', publicLessonId);
+    const publicRef = lessonProjectionRef(db, lesson, publicLessonId);
     const publicSnap = await tx.get(publicRef);
     tx.delete(doc(db, 'publicLessonPractice', publicLessonId));
     tx.update(lessonRef, {
@@ -793,26 +784,25 @@ export async function reorderLesson(params: {
   const neighborOrder = lesson.order ?? lessonOrderFromFilename(lesson.filename) ?? 0;
 
   try {
-    const batch = writeBatch(db);
-    batch.update(lessonRef, { order });
-    batch.update(neighborRef, { order: neighborOrder });
-
-    const publicLessonRef = doc(db, 'publicLessons', resolvePublicLessonId(lesson, lessonId));
-    const neighborPublicLessonRef = doc(
-      db,
-      'publicLessons',
-      resolvePublicLessonId(neighbor, neighborLessonId),
-    );
-    const [publicLessonSnap, neighborPublicLessonSnap] = await Promise.all([
-      getDoc(publicLessonRef),
-      getDoc(neighborPublicLessonRef),
-    ]);
-    if (publicLessonSnap.exists()) batch.update(publicLessonRef, { order });
-    if (neighborPublicLessonSnap.exists()) {
-      batch.update(neighborPublicLessonRef, { order: neighborOrder });
-    }
-
-    await batch.commit();
+    await runTransaction(db, async (tx) => {
+      const freshLesson = await tx.get(lessonRef);
+      const freshNeighbor = await tx.get(neighborRef);
+      if (!freshLesson.exists() || !freshNeighbor.exists()) throw new Error('Lezione non trovata.');
+      const source = freshLesson.data() as LessonDoc,
+        target = freshNeighbor.data() as LessonDoc;
+      const publicRef = lessonProjectionRef(db, source, resolvePublicLessonId(source, lessonId));
+      const neighborPublicRef = lessonProjectionRef(
+        db,
+        target,
+        resolvePublicLessonId(target, neighborLessonId),
+      );
+      const publicSnap = await tx.get(publicRef),
+        neighborPublicSnap = await tx.get(neighborPublicRef);
+      tx.update(lessonRef, { order });
+      tx.update(neighborRef, { order: neighborOrder });
+      if (publicSnap.exists()) tx.update(publicRef, { order });
+      if (neighborPublicSnap.exists()) tx.update(neighborPublicRef, { order: neighborOrder });
+    });
   } catch {
     throw new Error('Impossibile salvare il nuovo ordine delle lezioni. Riprova.');
   }
@@ -820,6 +810,23 @@ export async function reorderLesson(params: {
   await writeAuditEvent(db, ownerUid, 'lesson.reordered', lessonId);
 
   return { order, neighborOrder };
+}
+
+/** Canonical lesson and both projection routes disappear atomically, within Rules lookup limits. */
+async function deleteLessonProjectionPairs(
+  db: Firestore,
+  lessons: { ref: DocumentReference; publicId: string }[],
+) {
+  for (let offset = 0; offset < lessons.length; offset += 8) {
+    const batch = writeBatch(db);
+    for (const lesson of lessons.slice(offset, offset + 8)) {
+      batch.delete(lesson.ref);
+      batch.delete(doc(db, 'publicLessons', lesson.publicId));
+      batch.delete(doc(db, 'publicLessonPractice', lesson.publicId));
+      batch.delete(doc(db, 'hiddenLessonProjections', lesson.publicId));
+    }
+    await batch.commit();
+  }
 }
 
 // ─── Protected deletion (RE-05) ───────────────────────────────────────────
@@ -1034,6 +1041,7 @@ export async function deleteLesson(params: {
       lessonRef,
       doc(db, 'publicLessons', resolvePublicLessonId(lesson, lessonId)),
       doc(db, 'publicLessonPractice', resolvePublicLessonId(lesson, lessonId)),
+      doc(db, 'hiddenLessonProjections', resolvePublicLessonId(lesson, lessonId)),
       ...questionIndexSnap.docs.map((d) => d.ref),
     ]);
     await updateDoc(doc(db, 'programs', programId, 'imports', importId, 'udas', udaId), {
@@ -1128,17 +1136,14 @@ export async function deleteUda(params: {
   }
 
   try {
-    await deleteDocRefsInBatches(db, [
-      ...lessonsSnap.docs.map((d) => d.ref),
-      ...questionIndexSnap.docs.map((d) => d.ref),
-      ...lessons.map((lesson) =>
-        doc(db, 'publicLessons', resolvePublicLessonId(lesson, lesson.id)),
-      ),
-      ...lessons.map((lesson) =>
-        doc(db, 'publicLessonPractice', resolvePublicLessonId(lesson, lesson.id)),
-      ),
-      udaRef,
-    ]);
+    await deleteLessonProjectionPairs(
+      db,
+      lessons.map((lesson, index) => ({
+        ref: lessonsSnap.docs[index]!.ref,
+        publicId: resolvePublicLessonId(lesson, lesson.id),
+      })),
+    );
+    await deleteDocRefsInBatches(db, [...questionIndexSnap.docs.map((d) => d.ref), udaRef]);
   } catch {
     throw new Error(
       'I file della UDA sono stati eliminati da Storage ma non è stato possibile rimuovere tutti i dati da Firestore. Riprova.',

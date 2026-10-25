@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 /**
  * MULTI-VISUAL-03A — autorizzazione, persistenza e proposta coordinata del
  * piano visivo multi-immagine (roadmap `multi-visual-roadmap.md` §8.1–§8.4,
@@ -616,7 +617,7 @@ async function readAuthoritativeLessonInTx(
   if (!gate.ok) {
     throw new AiVisualError('invalid_input', describeVisualBindingFailure(gate.failure));
   }
-  const publicRef = db.doc(`publicLessons/${gate.publicLessonId}`);
+  const publicRef = db.doc(lessonProjectionPath(lessonData, gate.publicLessonId));
   const publicSnap = await tx.get(publicRef);
   const publicData = publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null;
   const projectionGate = checkProjectionForVisual({
@@ -1051,7 +1052,7 @@ export async function createVisualPlanForOwner(params: {
     if (legacy.status === 'ok' && legacy.adoptedFromSingular) {
       tx.update(lessonRef, { visuals: legacy.manifest, visual: FieldValue.delete() });
       if (lesson.completed) {
-        tx.update(db.doc(`publicLessons/${lesson.publicLessonId}`), {
+        tx.update(db.doc(lessonProjectionPath(lesson.lessonData, lesson.publicLessonId)), {
           visuals: projectLessonVisualsManifest(legacy.manifest),
           visual: FieldValue.delete(),
         });
@@ -1246,7 +1247,9 @@ export async function resumeCoordinatedProposal(params: {
   if (!lessonGate.ok) {
     throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
   }
-  const publicLessonSnap = await db.doc(`publicLessons/${lessonGate.publicLessonId}`).get();
+  const publicLessonSnap = await db
+    .doc(lessonProjectionPath(lessonData, lessonGate.publicLessonId))
+    .get();
   const projectionGate = checkProjectionForVisual({
     lesson: lessonData as Record<string, unknown>,
     publicLesson: publicLessonSnap.exists

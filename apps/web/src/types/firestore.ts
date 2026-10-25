@@ -156,6 +156,8 @@ export interface UdaDoc {
 
 /** Stored at programs/{programId}/imports/{importId}/lessons/{lessonId} */
 export interface LessonDoc {
+  /** Missing means visible; lifecycle is controlled by the owner-only callable. */
+  hiddenFromStudents?: boolean;
   studyPractice?: StudyPractice;
   ownerUid: string;
   importId: string;

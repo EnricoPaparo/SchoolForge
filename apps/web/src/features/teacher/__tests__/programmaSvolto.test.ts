@@ -356,3 +356,13 @@ describe('downloadPdf', () => {
     }
   });
 });
+
+it('includes hidden lessons in the complete teacher export and excludes them from completed export even if legacy completion is inconsistent', () => {
+  const hidden = { ...LESSON_COMPLETED, hiddenFromStudents: true, titolo: 'Lezione nascosta' };
+  expect(generateMarkdown(PROGRAM, [UDA], [hidden], null, { variant: 'complete' })).toContain(
+    'Lezione nascosta',
+  );
+  expect(generateMarkdown(PROGRAM, [UDA], [hidden], null, { variant: 'completed' })).not.toContain(
+    'Lezione nascosta',
+  );
+});

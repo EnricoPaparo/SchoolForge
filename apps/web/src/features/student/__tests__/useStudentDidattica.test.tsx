@@ -11,9 +11,28 @@ import { useStudentDidattica } from '../useStudentDidattica.js';
 
 const mockLibrary = vi.fn();
 const mockCourse = vi.fn();
+const liveCallbacks: ((lessons: StudentLesson[]) => void)[] = [];
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
   loadStudentLibrary: (...args: unknown[]) => mockLibrary(...args),
-  loadStudentCourseLessons: (...args: unknown[]) => mockCourse(...args),
+  subscribeStudentCourseLessons: (
+    program: StudentProgram,
+    database: Firestore,
+    onLessons: (lessons: StudentLesson[]) => void,
+    onError: (error: unknown) => void,
+  ) => {
+    let active = true;
+    liveCallbacks.push(onLessons);
+    void Promise.resolve(mockCourse(program, database))
+      .then((lessons) => {
+        if (active) onLessons(lessons);
+      })
+      .catch((error) => {
+        if (active) onError(error);
+      });
+    return () => {
+      active = false;
+    };
+  },
 }));
 const db = {} as Firestore;
 const A: StudentProgram = { id: 'a', title: 'Alfa', classIds: ['class-a'], activeImportId: 'i1' };
@@ -52,6 +71,7 @@ function lessons(hook: Awaited<ReturnType<typeof ready>>) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  liveCallbacks.length = 0;
   now = 100_000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   mockLibrary.mockResolvedValue(library());
@@ -81,17 +101,17 @@ describe('student metadata and last-course cache', () => {
     expect(mockLibrary).toHaveBeenCalledTimes(2);
     expect(mockCourse).not.toHaveBeenCalled();
   });
-  it('fetches only the opened course; reopening reuses it, but retains no second course', async () => {
+  it('fetches only the opened course; reopening subscribes again without trusting a stale cached course', async () => {
     const hook = await ready();
     await open(hook);
     expect(mockCourse).toHaveBeenCalledWith(A, db);
     act(() => hook.result.current.back());
     await open(hook);
-    expect(mockCourse).toHaveBeenCalledOnce();
+    expect(mockCourse).toHaveBeenCalledTimes(2);
     await open(hook, 'b');
     expect(lessons(hook)).toEqual(['b']);
     await open(hook);
-    expect(mockCourse.mock.calls.map(([p]) => p.id)).toEqual(['a', 'b', 'a']);
+    expect(mockCourse.mock.calls.map(([p]) => p.id)).toEqual(['a', 'a', 'b', 'a']);
   });
   it('coalesces rapid identical opens and ignores superseded course responses', async () => {
     const a = deferred<StudentLesson[]>();
@@ -112,7 +132,7 @@ describe('student metadata and last-course cache', () => {
     await open(hook, 'a');
     expect(mockCourse).toHaveBeenCalledTimes(3);
   });
-  it('coalesces A/B/A while reads are pending', async () => {
+  it('unsubscribes superseded courses while A/B/A is pending', async () => {
     const a = deferred<StudentLesson[]>();
     const b = deferred<StudentLesson[]>();
     mockCourse.mockImplementation((p: StudentProgram) => (p.id === 'a' ? a.promise : b.promise));
@@ -122,7 +142,7 @@ describe('student metadata and last-course cache', () => {
       hook.result.current.open('b');
       hook.result.current.open('a');
     });
-    expect(mockCourse).toHaveBeenCalledTimes(2);
+    expect(mockCourse).toHaveBeenCalledTimes(3);
     await act(async () => a.resolve([lesson('a')]));
     await act(async () => b.resolve([lesson('b')]));
     expect(lessons(hook)).toEqual(['a']);
@@ -195,7 +215,7 @@ describe('student metadata and last-course cache', () => {
     );
     now += 60_001;
     act(() => {
-      void hook.result.current.refresh();
+      void hook.result.current.refresh(true);
     });
     await waitFor(() => expect(mockCourse).toHaveBeenCalledTimes(2));
     await open(hook, 'b');
@@ -322,4 +342,21 @@ describe('invalidation and failed-read recovery', () => {
     expect(hook.result.current.library).toEqual(library([A]));
     expect(hook.result.current.refreshing).toBe(false);
   });
+});
+
+it('revokes current lessons immediately and ignores queued snapshots after course switch, back and unmount', async () => {
+  const hook = await ready();
+  await open(hook, 'a');
+  const oldA = liveCallbacks[0]!;
+  await open(hook, 'b');
+  const currentB = liveCallbacks[1]!;
+  act(() => oldA([lesson('must-not-return')]));
+  expect(lessons(hook)).toEqual(['b']);
+  act(() => currentB([]));
+  expect(lessons(hook)).toEqual([]);
+  act(() => hook.result.current.back());
+  act(() => currentB([lesson('revoked')]));
+  expect(hook.result.current.course.status).toBe('idle');
+  hook.unmount();
+  act(() => oldA([lesson('late')]));
 });

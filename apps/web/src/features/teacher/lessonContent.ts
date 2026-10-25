@@ -1,3 +1,5 @@
+import { lessonProjectionRef } from '../repository/programs/lessonProjection.js';
+import type { LessonDoc } from '../../types/firestore.js';
 import { doc, getDoc } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -34,10 +36,30 @@ export type LessonContentSource = 'firestore' | 'storage';
  * the pool or any private/technical field.
  */
 export async function fetchPublicLessonContent(
-  params: { lessonId: string; programId: string; importId: string; ownerUid: string },
+  params: {
+    lessonId: string;
+    privateLessonId?: string;
+    programId: string;
+    importId: string;
+    ownerUid: string;
+  },
   db: Firestore,
 ): Promise<string | null> {
-  const snap = await getDoc(doc(db, 'publicLessons', params.lessonId));
+  const privateSnap = params.privateLessonId
+    ? await getDoc(
+        doc(
+          db,
+          'programs',
+          params.programId,
+          'imports',
+          params.importId,
+          'lessons',
+          params.privateLessonId,
+        ),
+      )
+    : null;
+  const lesson = privateSnap?.exists() ? (privateSnap.data() as LessonDoc) : null;
+  const snap = await getDoc(lessonProjectionRef(db, lesson, params.lessonId));
   if (!snap.exists()) return null;
   const data = snap.data() as Partial<PublicLessonDoc>;
   if (

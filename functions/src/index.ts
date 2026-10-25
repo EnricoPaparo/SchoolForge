@@ -87,3 +87,5 @@ export {
 export { scheduleForceCloseSubmissions, runScheduledForceClose } from './forceCloseGateway.js';
 
 export { examServerTime } from './examServerTime.js';
+
+export { setLessonVisibility } from './lessonVisibilityGateway.js';

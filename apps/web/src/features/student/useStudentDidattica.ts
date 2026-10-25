@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { Firestore } from 'firebase/firestore';
 import {
   loadStudentLibrary,
-  loadStudentCourseLessons,
+  subscribeStudentCourseLessons,
   type StudentLibraryResult,
   type StudentLesson,
   type StudentProgram,
@@ -23,9 +23,9 @@ function isAccessError(error: unknown): boolean {
   );
 }
 
-/** A mounted/authenticated view owns this cache; nothing survives unmount/logout.
- * Only the last selected course is retained. In-flight reads are coalesced, but
- * responses for a superseded selection or authorization context are not cached.
+/** Metadata keeps its bounded refresh policy. Course content is owned by a
+ * single server-confirmed subscription, fenced on selection/auth/import changes.
+ * Nothing survives unmount/logout and cached snapshots never restore lessons.
  */
 export function useStudentDidattica(uid: string, db: Firestore, initialClassId?: string | null) {
   const [, render] = useReducer((n: number) => n + 1, 0);
@@ -40,7 +40,13 @@ export function useStudentDidattica(uid: string, db: Firestore, initialClassId?:
     let attemptedAt = -Infinity;
     let metadataRequest: Promise<void> | null = null;
     let checkingMetadata = false;
-    const pendingCourses = new Map<string, Promise<StudentLesson[]>>();
+    let liveKey: string | null = null;
+    let unsubscribeCourse: (() => void) | null = null;
+    const stopCourse = () => {
+      unsubscribeCourse?.();
+      unsubscribeCourse = null;
+      liveKey = null;
+    };
     let refreshing = false;
     let libraryError = false;
     // StrictMode can replay mount effects before the first request settles.
@@ -64,52 +70,43 @@ export function useStudentDidattica(uid: string, db: Firestore, initialClassId?:
       courseGeneration++;
       cache = null;
       course = { status: 'idle' };
-      pendingCourses.clear();
+      stopCourse();
     };
     const readCourse = async (force = false) => {
       const program = selectedProgram();
       if (!active || !program) return;
       const key = keyFor(program);
-      if (!force && cache?.key === key && Date.now() - cache.at < STUDENT_DIDATTICA_FRESHNESS_MS) {
-        course = { status: 'ok', lessons: cache.lessons };
-        emit();
-        return;
-      }
-      if (cache?.key !== key) cache = null;
-      if (!cache) course = { status: 'loading' };
-      const epoch = courseGeneration;
-      let request = pendingCourses.get(key);
-      if (!request) {
-        request = loadStudentCourseLessons(program, db);
-        pendingCourses.set(key, request);
-      }
+      if (!force && liveKey === key) return;
+      stopCourse();
+      const epoch = ++courseGeneration;
+      liveKey = key;
+      cache = null;
+      course = { status: 'loading' };
       emit();
-      try {
-        const lessons = await request;
-        if (
-          !active ||
-          epoch !== courseGeneration ||
-          selectedProgram() == null ||
-          keyFor(selectedProgram()!) !== key
-        )
-          return;
-        cache = { key, lessons, at: Date.now() };
-        course = { status: 'ok', lessons };
-      } catch (error) {
-        if (
-          !active ||
-          epoch !== courseGeneration ||
-          selectedProgram() == null ||
-          keyFor(selectedProgram()!) !== key
-        )
-          return;
-        cache = null;
-        if (isAccessError(error)) invalidate();
-        course = { status: 'error' };
-      } finally {
-        if (pendingCourses.get(key) === request) pendingCourses.delete(key);
-        emit();
-      }
+      unsubscribeCourse = subscribeStudentCourseLessons(
+        program,
+        db,
+        (lessons) => {
+          if (
+            !active ||
+            epoch !== courseGeneration ||
+            !selectedProgram() ||
+            keyFor(selectedProgram()!) !== key
+          )
+            return;
+          cache = { key, lessons, at: Date.now() };
+          course = { status: 'ok', lessons };
+          emit();
+        },
+        (error) => {
+          if (!active || epoch !== courseGeneration) return;
+          cache = null;
+          stopCourse();
+          if (isAccessError(error)) invalidate();
+          course = { status: 'error' };
+          emit();
+        },
+      );
     };
     const refresh = (force = false): Promise<void> => {
       if (metadataRequest) return metadataRequest;
@@ -151,7 +148,7 @@ export function useStudentDidattica(uid: string, db: Firestore, initialClassId?:
           initialAttemptSettled = true;
           cache = null;
           courseGeneration++;
-          pendingCourses.clear();
+          stopCourse();
           course = { status: 'error' };
           libraryError = true;
           // Access failures invalidate note identity as well. An ordinary
@@ -207,6 +204,8 @@ export function useStudentDidattica(uid: string, db: Firestore, initialClassId?:
         } else void readCourse();
       },
       back() {
+        courseGeneration++;
+        stopCourse();
         selectedId = null;
         course = { status: 'idle' };
         emit();

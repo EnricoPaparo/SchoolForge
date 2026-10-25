@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 
 const mockGetDoc = vi.fn();
+const readSnapshots = new Map<string, unknown>();
 const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
@@ -29,7 +30,11 @@ vi.mock('firebase/firestore', () => ({
     }
     return { __path: rest.filter((s): s is string => typeof s === 'string').join('/') };
   },
-  getDoc: (...args: unknown[]) => mockGetDoc(...args),
+  getDoc: async (ref: { __path: string }) => {
+    const result = await mockGetDoc(ref);
+    readSnapshots.set(ref.__path, result);
+    return result;
+  },
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
@@ -101,7 +106,22 @@ function writtenContent(): string {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  readSnapshots.clear();
+  mockServerTimestamp.mockReturnValue({ _type: 'serverTimestamp' });
+  mockRunTransaction.mockImplementation(async (_db, callback) => {
+    await callback({
+      get: async (ref: { __path: string }) => {
+        if (ref.__path.startsWith('programs/') && readSnapshots.has(ref.__path))
+          return readSnapshots.get(ref.__path);
+        return mockGetDoc(ref);
+      },
+      update: mockBatchUpdate,
+      set: mockBatchSet,
+      delete: mockBatchDelete,
+    });
+    await mockBatchCommit();
+  });
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
   mockWriteText.mockResolvedValue(undefined);
@@ -2049,4 +2069,42 @@ describe('deleteUda', () => {
     ).rejects.toThrow(/eliminati da Storage ma non è stato possibile rimuovere/);
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
+});
+
+it('routes a body save to the fresh hidden projection when hiding completes during the Storage write', async () => {
+  const lesson = {
+    ownerUid: OWNER_UID,
+    importId: 'imp-1',
+    udaDir: 'uda-01',
+    filename: 'lesson.md',
+    path: 'uda-01/lesson.md',
+    storageRef: 'storage/lesson.md',
+    publicLessonId: 'imp-1_lesson-1',
+  };
+  mockGetDoc
+    .mockResolvedValueOnce({ exists: () => true, data: () => lesson })
+    .mockResolvedValueOnce({ exists: () => true });
+  mockReadText.mockResolvedValue('Corpo precedente');
+  mockWriteText.mockImplementationOnce(async () => {
+    readSnapshots.set('programs/prog-1/imports/imp-1/lessons/lesson-1', {
+      exists: () => true,
+      data: () => ({ ...lesson, hiddenFromStudents: true, completed: false }),
+    });
+  });
+  await updateLessonMarkdownBody({
+    programId: 'prog-1',
+    importId: 'imp-1',
+    lessonId: 'lesson-1',
+    ownerUid: OWNER_UID,
+    body: 'Corpo aggiornato',
+    db: fakeDb,
+    storage: fakeStorage,
+  });
+  expect(mockBatchUpdate).toHaveBeenCalledWith(
+    { __path: 'hiddenLessonProjections/imp-1_lesson-1' },
+    expect.objectContaining({ content: 'Corpo aggiornato' }),
+  );
+  expect(mockBatchUpdate.mock.calls.some(([ref]) => ref.__path.startsWith('publicLessons/'))).toBe(
+    false,
+  );
 });

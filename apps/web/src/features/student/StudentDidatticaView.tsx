@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { IconBookOpen, IconFileText, IconLayers, IconPencil } from '../../components/icons.js';
 import { CourseRecordCard } from '../../components/CourseRecordCard.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
@@ -108,6 +108,23 @@ function StudentDidatticaContent({
   const notes = useLessonNotes(db);
   const isMobile = useIsMobile();
   const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
+
+  const lastVisible = useRef<{ context: string; ids: Set<string> } | null>(null);
+  const revokeLesson = notes.revokeLesson;
+  useLayoutEffect(() => {
+    if (data.course.status !== 'ok' || !data.program) return;
+    const context = `${data.program.id}/${data.program.activeImportId}`;
+    const ids = new Set(data.course.lessons.map((lesson) => lesson.id));
+    const previous = lastVisible.current;
+    if (previous?.context === context) {
+      for (const id of previous.ids) if (!ids.has(id)) revokeLesson(id);
+      if (selection.kind === 'lesson' && !ids.has(selection.lessonId)) {
+        setSelection({ kind: 'course' });
+        setPendingNav(null);
+      }
+    }
+    lastVisible.current = { context, ids };
+  }, [data.course, data.program, revokeLesson, selection]);
 
   function guardNavigation(action: () => void) {
     const openId = notes.openLessonId;

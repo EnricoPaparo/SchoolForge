@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
@@ -864,7 +865,7 @@ export async function promoteVisualForOwner(params: {
 
     // (3) proiezione, all'id **riderivato** dal documento appena letto: mai
     //     quello osservato nel preflight, che nel frattempo poteva cambiare.
-    const freshPublicRef = db.doc(`publicLessons/${lessonGate.publicLessonId}`);
+    const freshPublicRef = db.doc(lessonProjectionPath(freshLesson, lessonGate.publicLessonId));
     const freshPublicSnap = await tx.get(freshPublicRef);
     const projectionGate = checkProjectionForVisual({
       lesson: freshLesson as Record<string, unknown>,
@@ -1040,7 +1041,7 @@ async function readLifecyclePair(
   if (!lessonGate.ok) {
     throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
   }
-  const publicSnap = await db.doc(`publicLessons/${lessonGate.publicLessonId}`).get();
+  const publicSnap = await db.doc(lessonProjectionPath(lesson, lessonGate.publicLessonId)).get();
   const publicLesson = publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null;
   const publicGate =
     projectionContent === 'ignored'
@@ -1136,6 +1137,8 @@ export async function setLessonCompletedForOwner(params: {
 }): Promise<{ status: 'completed' | 'replayed' }> {
   const { db, bucket, ownerUid, input } = params;
   const pair = await readLifecyclePair(db, ownerUid, input);
+  if (input.completed && pair.lesson.hiddenFromStudents === true)
+    throw new AiVisualError('invalid_input', 'Rendi visibile la lezione prima di segnarla svolta.');
   // Nascondere dati pubblici non richiede di interpretare la copia privata:
   // una mappa corrotta blocca la pubblicazione, mai la messa in sicurezza.
   const privateMap = input.completed ? assertPrivateMap(pair.lesson.conceptMapMarkdown) : undefined;
@@ -1224,7 +1227,21 @@ export async function setLessonCompletedForOwner(params: {
       pair.publicLesson.visual === undefined &&
       pair.publicLesson.visuals === undefined &&
       !publicBytesSnap.exists;
-  if (alreadyProjected) return { status: 'replayed' };
+  if (alreadyProjected) {
+    await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(
+        db.doc(lessonPath(input.programId, input.importId, input.lessonId)),
+      );
+      if (!fresh.exists || (input.completed && fresh.data()?.hiddenFromStudents === true))
+        throw new AiVisualError(
+          'invalid_input',
+          'Rendi visibile la lezione prima di segnarla svolta.',
+        );
+      if ((fresh.data()?.completed === true) !== input.completed)
+        throw new AiVisualError('run_conflict', 'Lo stato della lezione è cambiato.');
+    });
+    return { status: 'replayed' };
+  }
 
   const preflightVisual = lifecycleFingerprint(pair.lesson.visual);
   const preflightVisuals = lifecycleFingerprint(pair.lesson.visuals);
@@ -1247,7 +1264,12 @@ export async function setLessonCompletedForOwner(params: {
     if (!lessonGate.ok || lessonGate.publicLessonId !== pair.publicLessonId) {
       throw new AiVisualError('run_conflict', 'La lezione è cambiata durante l’operazione.');
     }
-    const publicRef = db.doc(`publicLessons/${pair.publicLessonId}`);
+    if (input.completed && lesson?.hiddenFromStudents === true)
+      throw new AiVisualError(
+        'invalid_input',
+        'Rendi visibile la lezione prima di segnarla svolta.',
+      );
+    const publicRef = db.doc(lessonProjectionPath(lesson, pair.publicLessonId));
     const publicSnap = await tx.get(publicRef);
     const freshPublic = publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null;
     const publicGate = checkProjectionForVisual({
@@ -1570,7 +1592,7 @@ export async function removeLessonVisualForOwner(params: {
     ) {
       throw new AiVisualError('run_conflict', 'Il visual è cambiato durante la rimozione.');
     }
-    const publicRef = params.db.doc(`publicLessons/${pair.publicLessonId}`);
+    const publicRef = params.db.doc(lessonProjectionPath(lesson, pair.publicLessonId));
     const publicSnap = await tx.get(publicRef);
     const publicGate = checkProjectionForVisual({
       lesson: lesson as Record<string, unknown>,
@@ -1789,7 +1811,7 @@ export async function cleanupVisualArtifactsForDelete(params: {
         ) {
           throw new AiVisualError('run_conflict', 'Una lezione è cambiata durante il cleanup.');
         }
-        const publicRef = params.db.doc(`publicLessons/${item.pair.publicLessonId}`);
+        const publicRef = params.db.doc(lessonProjectionPath(lesson, item.pair.publicLessonId));
         const publicSnap = await tx.get(publicRef);
         // Deletion-specific: il cleanup non legge mai il corpo, quindi non deve
         // rifiutare una proiezione legacy senza `content` — vedi
@@ -2268,7 +2290,7 @@ export async function reanchorLessonVisualForOwner(params: {
     }
 
     // (2) proiezione, all'id **riderivato** dal documento appena letto.
-    const publicRef = db.doc(`publicLessons/${lessonGate.publicLessonId}`);
+    const publicRef = db.doc(lessonProjectionPath(lesson, lessonGate.publicLessonId));
     const publicSnap = await tx.get(publicRef);
     const projectionGate = checkProjectionForVisual({
       lesson: lesson as Record<string, unknown>,

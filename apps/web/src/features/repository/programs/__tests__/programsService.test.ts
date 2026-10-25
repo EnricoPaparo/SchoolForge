@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 
 const mockGetDocs = vi.fn();
+const mockGetDoc = vi.fn();
 const mockCollection = vi.fn();
 const mockDoc = vi.fn();
 const mockDeleteDoc = vi.fn();
@@ -24,7 +25,7 @@ const mockLimit = vi.fn((...args: unknown[]) => ({ __limit: args }));
 vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
   doc: (...args: unknown[]) => mockDoc(...args),
-  getDoc: vi.fn(),
+  getDoc: (...args: unknown[]) => mockGetDoc(...args),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
   // Path-echoing stub: query() passes the collection ref through unchanged
   // so setupGetDocs can keep branching on collRef.__path — the where/limit
@@ -93,6 +94,7 @@ beforeEach(() => {
   mockDeleteFile.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
   mockSetDoc.mockResolvedValue(undefined);
+  mockGetDoc.mockResolvedValue({ exists: () => true, data: () => ({ ownerUid: 'owner-uid' }) });
   // Transazione finta: esegue il callback una volta con un `tx` che registra le
   // chiamate. Le letture sono configurate per test con `mockTxGet`.
   mockRunTransaction.mockImplementation(
@@ -485,6 +487,7 @@ describe('deleteProgram', () => {
     lessons?: { id?: string; ref: unknown; data?: () => Record<string, unknown> }[];
     questionIndex?: { ref: unknown }[];
     publicLessons?: { ref: unknown }[];
+    hiddenLessons?: { id: string; ref: unknown }[];
   }) {
     mockGetDocs.mockImplementation((collRef: { __path: string }) => {
       if (collRef.__path === 'verifications') {
@@ -503,6 +506,8 @@ describe('deleteProgram', () => {
       if (collRef.__path === 'programs/prog-1/imports/imp-1/questionIndex') {
         return Promise.resolve({ docs: overrides.questionIndex ?? [] });
       }
+      if (collRef.__path === 'hiddenLessonProjections')
+        return Promise.resolve({ docs: overrides.hiddenLessons ?? [] });
       if (collRef.__path === 'publicLessons') {
         return Promise.resolve({ docs: overrides.publicLessons ?? [] });
       }
@@ -555,7 +560,7 @@ describe('deleteProgram', () => {
       verifications: [],
       imports: [{ id: 'imp-1' }],
       udas: [{ ref: udaRef }],
-      lessons: [{ ref: lessonRef }],
+      lessons: [{ id: 'lesson-1', ref: lessonRef, data: () => ({}) }],
       questionIndex: [{ ref: questionRef }],
     });
     await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes);
@@ -586,6 +591,18 @@ describe('deleteProgram', () => {
       action: 'program.deleted',
       targetId: 'prog-1',
       outcome: 'success',
+    });
+  });
+
+  it('cleans orphaned shadow bodies on retry after canonical lessons were already removed', async () => {
+    setupGetDocs({
+      hiddenLessons: [
+        { id: 'old-import_lesson', ref: { __path: 'hiddenLessonProjections/old-import_lesson' } },
+      ],
+    });
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes);
+    expect(mockBatchDelete).toHaveBeenCalledWith({
+      __path: 'hiddenLessonProjections/old-import_lesson',
     });
   });
 

@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 /** MULTI-VISUAL-04 — callable owner-only per la revisione gratuita §8.4. */
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
@@ -108,7 +109,7 @@ export async function editVisualPlanSlotForOwner(params: {
     if (!lessonGate.ok) {
       throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
     }
-    const publicRef = db.doc(`publicLessons/${lessonGate.publicLessonId}`);
+    const publicRef = db.doc(lessonProjectionPath(lesson, lessonGate.publicLessonId));
     const publicSnap = await tx.get(publicRef);
     const projectionGate = checkProjectionForVisual({
       lesson: lesson as Record<string, unknown>,

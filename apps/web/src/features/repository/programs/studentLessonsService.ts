@@ -1,5 +1,5 @@
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import type { Firestore } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import type { Firestore, QuerySnapshot } from 'firebase/firestore';
 import type {
   LessonVisualPublicManifest,
   PublicLessonDoc,
@@ -126,6 +126,10 @@ export async function loadStudentCourseLessons(
       where('importId', '==', program.activeImportId),
     ),
   );
+  return mapStudentLessons(lessonsSnap);
+}
+
+function mapStudentLessons(lessonsSnap: Pick<QuerySnapshot, 'docs'>): StudentLesson[] {
   return (
     lessonsSnap.docs
       .map((d) => {
@@ -166,5 +170,30 @@ export async function loadStudentCourseLessons(
           (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
           a.filename.localeCompare(b.filename),
       )
+  );
+}
+
+/** Only the selected course is live. Cached snapshots never resurrect a revoked lesson. */
+export function subscribeStudentCourseLessons(
+  program: StudentProgram,
+  db: Firestore,
+  onLessons: (lessons: StudentLesson[]) => void,
+  onError: (error: unknown) => void,
+): () => void {
+  if (!program.activeImportId) {
+    queueMicrotask(() => onLessons([]));
+    return () => {};
+  }
+  return onSnapshot(
+    query(
+      collection(db, 'publicLessons'),
+      where('programId', '==', program.id),
+      where('importId', '==', program.activeImportId),
+    ),
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      if (!snapshot.metadata.fromCache) onLessons(mapStudentLessons(snapshot));
+    },
+    onError,
   );
 }

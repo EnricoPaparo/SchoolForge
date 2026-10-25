@@ -35,9 +35,21 @@ vi.mock('../../repository/programs/studentLessonsService.js', () => ({
     if (result.status !== 'ok') return result;
     return { status: 'ok', classId: 'class-a', programs: result.programs };
   },
-  loadStudentCourseLessons: async (program: { id: string }) => {
-    const result = await mockLoadStudentLessons.getMockImplementation()?.();
-    return result.lessonsByProgram[program.id] ?? [];
+  subscribeStudentCourseLessons: (
+    program: { id: string },
+    _db: unknown,
+    onLessons: (lessons: never[]) => void,
+    onError: (error: unknown) => void,
+  ) => {
+    let active = true;
+    void Promise.resolve(mockLoadStudentLessons.getMockImplementation()?.())
+      .then((result) => {
+        if (active) onLessons(result.lessonsByProgram[program.id] ?? []);
+      })
+      .catch(onError);
+    return () => {
+      active = false;
+    };
   },
 }));
 

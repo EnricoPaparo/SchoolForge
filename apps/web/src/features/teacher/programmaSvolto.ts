@@ -33,7 +33,9 @@ export function generateMarkdown(
 ): string {
   const variant = options?.variant ?? 'completed';
   const includedLessons =
-    variant === 'complete' ? lessons : lessons.filter((lesson) => lesson.completed === true);
+    variant === 'complete'
+      ? lessons
+      : lessons.filter((lesson) => lesson.completed === true && lesson.hiddenFromStudents !== true);
 
   const lines: string[] = [];
   lines.push(`# Programma ${variant === 'complete' ? 'completo' : 'svolto'} — ${program.title}`);
