@@ -4,7 +4,8 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import type { CallableRequest } from 'firebase-functions/v2/https';
+import type { FunctionsErrorCode, CallableRequest } from 'firebase-functions/v2/https';
+import { AiVisualError } from './aiVisualCore.js';
 import { AiVisualMultiError } from './aiVisualMultiCore.js';
 import { lessonPath, requireOwner } from './aiVisualIdentity.js';
 import {
@@ -225,6 +226,17 @@ async function handle(request: CallableRequest<unknown>, action: 'reorder' | 're
       ? await reorderMultiVisualForOwner({ db: firestore, ownerUid, input: request.data })
       : await removeMultiVisualForOwner({ db: firestore, ownerUid, input: request.data });
   } catch (error) {
+    if (error instanceof AiVisualError) {
+      const code: FunctionsErrorCode =
+        error.code === 'unauthenticated'
+          ? 'unauthenticated'
+          : error.code === 'not_owner'
+            ? 'permission-denied'
+            : error.code === 'invalid_input'
+              ? 'invalid-argument'
+              : 'internal';
+      throw new HttpsError(code, error.message, { code: error.code });
+    }
     if (error instanceof AiVisualMultiError)
       throw new HttpsError('failed-precondition', error.message, { code: error.code });
     throw new HttpsError('internal', 'Errore interno del lifecycle visuale.');
