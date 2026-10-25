@@ -54,6 +54,7 @@ describe('generation cost ledger', () => {
     );
     await client.generate({ kind: 'lesson', requestId: 'lost' });
     expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 40, unknown: true });
+    expect(JSON.parse(sessionStorage.getItem(key)!)[0].pendingCompleted).toBe(true);
     api.status.mockResolvedValue(status({ unknownExecutions: 1 }));
     await recoverContentCost(functions, key, 'lost');
     expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 65, unknown: true });
@@ -313,4 +314,36 @@ it('fences active-call metadata even when it arrives after the failed call finis
   resolveStatus(status({ status: 'failed', executions: 1, knownActualMicroUsd: 25 }));
   await oldRead;
   expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+});
+
+it('keeps a versionless failed retry uncertain when its first status read happens only in finally', async () => {
+  const key = 'content-versionless-finally-only';
+  writeGenerationCost(key, {
+    id: 'retry',
+    phase: 'Contenuto',
+    knownActualMicroUsd: 25,
+    unknown: true,
+    settledMicroUsd: null,
+  });
+  const client = instrumentContentCallables(
+    {
+      generate: async (_req: unknown) => {
+        throw new Error('response lost');
+      },
+    },
+    functions,
+    key,
+  );
+  api.status.mockResolvedValue(
+    status({ status: 'failed', executions: 1, knownActualMicroUsd: 25 }),
+  );
+  await expect(client.generate({ kind: 'lesson', requestId: 'retry' })).rejects.toThrow(
+    'response lost',
+  );
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+  await recoverContentCost(functions, key, 'retry');
+  expect(readGenerationCosts(key)[0].unknown).toBe(true);
+  api.status.mockResolvedValueOnce(status({ executions: 2, updatedAtMs: 2000 }));
+  await recoverContentCost(functions, key, 'retry');
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 65, unknown: false });
 });

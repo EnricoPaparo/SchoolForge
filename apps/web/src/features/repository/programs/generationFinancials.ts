@@ -11,6 +11,7 @@ export interface GenerationCostEntry {
   reservedUnknownMicroUsd?: number;
   version?: CostVersion;
   pendingInvocation?: string;
+  pendingCompleted?: boolean;
   pendingBaseline?: CostVersion;
   pendingImageAttempt?: number;
 }
@@ -143,12 +144,16 @@ export async function recoverContentCost(
             status.status === 'running'))))
   )
     return;
+  const completedReplay =
+    status.status === 'completed' && (allowCompletedReplay || previous.pendingCompleted === true);
   if (
     previous.pendingInvocation &&
-    (observedActiveInvocation || activeContentInvocations.has(previous.pendingInvocation))
+    (observedActiveInvocation ||
+      activeContentInvocations.has(previous.pendingInvocation) ||
+      (!previous.pendingBaseline && !completedReplay))
   ) {
-    // This snapshot may predate reservation of the local retry. Keep it as a
-    // baseline, never as proof that the still-active invocation is settled.
+    // Without a prior baseline or a successful callable, a terminal snapshot
+    // may still belong to an earlier attempt. It cannot settle this invocation.
     const version: CostVersion = {
       executions: status.executions,
       updatedAtMs: status.updatedAtMs,
@@ -172,13 +177,14 @@ export async function recoverContentCost(
     status.executions <= baseline.executions &&
     status.updatedAtMs <= baseline.updatedAtMs &&
     (baseline.terminal || status.status === 'running') &&
-    !(allowCompletedReplay && status.status === 'completed')
+    !completedReplay
   )
     return;
   const unresolved = status.status === 'running';
   writeGenerationCost(key, {
     ...previous,
     pendingInvocation: unresolved ? previous.pendingInvocation : undefined,
+    pendingCompleted: unresolved ? previous.pendingCompleted : undefined,
     pendingBaseline: unresolved ? previous.pendingBaseline : undefined,
     knownActualMicroUsd: status.knownActualMicroUsd,
     unknown: unresolved || status.unknownExecutions > 0 || !status.historyComplete,
@@ -220,6 +226,7 @@ export function instrumentContentCallables<T extends object>(
             unknown: true,
             settledMicroUsd: previous?.settledMicroUsd ?? null,
             pendingInvocation: invocation,
+            pendingCompleted: undefined,
             pendingBaseline: previous?.version,
           });
           let completed = false;
@@ -231,6 +238,7 @@ export function instrumentContentCallables<T extends object>(
             if (current?.pendingInvocation === invocation)
               writeGenerationCost(key, {
                 ...current,
+                pendingCompleted: true,
                 knownActualMicroUsd: Math.max(
                   current.knownActualMicroUsd,
                   result.actualCostMicroUsd ?? 0,
