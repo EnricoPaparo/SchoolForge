@@ -1,3 +1,4 @@
+import { contentFinancialSummary, emptyContentFinancialHistory } from './aiContentFinance.js';
 import { contentPerformanceMetadata } from './aiContentProvider.js';
 /**
  * AIGEN-01 — wiring runtime dei callable di generazione contenuti. Monta il
@@ -36,6 +37,7 @@ import {
   type ReservationStatus,
 } from './aiCorrectionBudget.js';
 import {
+  computeOpaqueRunId,
   AiContentError,
   assertGenericAiContentCallableKind,
   resolveAiContentMode,
@@ -231,6 +233,7 @@ export function createPorts(
       const ledgerRef = database.doc(`aiBudgetLedger/${monthKey}`);
       return database.runTransaction(async (tx): Promise<ReserveOutcome> => {
         const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
+        let financialHistory = emptyContentFinancialHistory();
         if (runSnap.exists) {
           const existing = parseStoredRunDocument(runSnap.data());
           // Documento malformato/legacy/incoerente → conflict (mai replay).
@@ -240,6 +243,7 @@ export function createPorts(
           if (existing.status === 'running' && existing.leaseExpiresAtMs > params.nowMs) {
             return { kind: 'running' };
           }
+          financialHistory = contentFinancialSummary(existing);
           // failed o lease scaduta → takeover consentito.
         }
         const state = readLedgerState(
@@ -259,7 +263,7 @@ export function createPorts(
         );
         if (!reserved.ok) return { kind: 'budget', code: reserved.reason };
         writeLedgerState(tx, ledgerRef, reserved.state);
-        tx.set(runRef, serializeRun(params.run));
+        tx.set(runRef, serializeRun({ ...params.run, financialHistory }));
         return { kind: 'reserved', reservedMicroUsd: reserved.reservedMicroUsd };
       });
     },
@@ -318,7 +322,8 @@ export function createPorts(
         const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
         if (!runSnap.exists) return 'lost_lease';
         const run = parseStoredRunDocument(runSnap.data());
-        if (!run || run.leaseExecutionId !== params.executionId) return 'lost_lease';
+        if (!run || run.status !== 'running' || run.leaseExecutionId !== params.executionId)
+          return 'lost_lease';
         const state = readLedgerState(
           ledgerSnap,
           monthKey,
@@ -354,7 +359,7 @@ export function createPorts(
         const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
         if (!runSnap.exists) return;
         const run = parseStoredRunDocument(runSnap.data());
-        if (!run || run.leaseExecutionId !== params.executionId) return;
+        if (!run || run.status !== 'running' || run.leaseExecutionId !== params.executionId) return;
         const state = readLedgerState(
           ledgerSnap,
           monthKey,
@@ -435,7 +440,7 @@ function readOpenAiSecret(): string | undefined {
   }
 }
 
-type AiContentGatewayPhase = 'preview' | 'generate' | 'prompt_export';
+type AiContentGatewayPhase = 'preview' | 'generate' | 'prompt_export' | 'status';
 type AiContentGatewayTelemetry = { kind: string };
 
 /**
@@ -563,5 +568,37 @@ export const aiContentPromptExport = onCall({ region: SCHOOLFORGE_FUNCTION_REGIO
     const exported = exportCurrentContentPrompt(request.data);
     telemetry.kind = 'content_prompt';
     return exported;
+  }),
+);
+
+/** Metadata only: auth/owner scoped, no configuration, secret, provider or writes. */
+export const aiContentStatus = onCall({ region: SCHOOLFORGE_FUNCTION_REGION }, (request) =>
+  runContentGateway('status', async (database, _mode, telemetry) => {
+    const ownerUid = await requireOwner(request, database);
+    const data = request.data;
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      Object.keys(data).length !== 1 ||
+      typeof data.requestId !== 'string' ||
+      !/^[a-zA-Z0-9_-]{8,128}$/.test(data.requestId)
+    )
+      throw new AiContentError('invalid_input', 'Identità generazione non valida.');
+    const snap = await database
+      .doc(`aiContentRuns/${computeOpaqueRunId(ownerUid, data.requestId)}`)
+      .get();
+    if (!snap.exists) return { status: 'not_found' as const };
+    const run = parseStoredRunDocument(snap.data());
+    if (!run) throw new AiContentError('run_conflict', 'Stato generazione non disponibile.');
+    telemetry.kind = run.kind;
+    return {
+      status: run.status,
+      kind: run.kind,
+      executionId: run.leaseExecutionId,
+      updatedAtMs: run.updatedAtMs,
+      ...contentFinancialSummary(run),
+      // Older documents cannot prove absence of earlier paid retries.
+      historyComplete: run.financialHistory?.historyComplete ?? false,
+    };
   }),
 );

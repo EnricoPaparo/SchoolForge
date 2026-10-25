@@ -94,9 +94,11 @@ export function AiAdvancedReviewResult({
         />
       </div>
       <span>
-        {improved
-          ? 'Il revisore ha controllato e migliorato il contenuto.'
-          : 'Il revisore ha controllato il contenuto e non ha rilevato modifiche necessarie.'}
+        {feedback?.discardedCount
+          ? `Domande escluse perché non verificabili: ${feedback.discardedCount}. Sono disponibili soltanto le domande accettate.`
+          : improved
+            ? 'Il revisore ha controllato e migliorato il contenuto.'
+            : 'Il revisore ha controllato il contenuto e non ha rilevato modifiche necessarie.'}
       </span>
     </div>
   );

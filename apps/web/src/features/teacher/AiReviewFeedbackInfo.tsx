@@ -60,7 +60,7 @@ export function AiReviewFeedbackInfo({
           (item): item is string =>
             typeof item === 'string' && item.length <= 240 && item.trim().length > 0,
         )
-        .slice(0, 3)
+        .slice(0, feedback?.discardedCount ? 8 : 3)
     : [];
   return (
     <div
@@ -106,7 +106,7 @@ export function AiReviewFeedbackInfo({
               style={{ left: position.left, top: position.top }}
             >
               <strong>Resoconto del revisore</strong>
-              {status === 'unchanged' ? (
+              {status === 'unchanged' && !feedback?.discardedCount ? (
                 <p>Nessuna modifica necessaria rilevata.</p>
               ) : changes.length ? (
                 <ul>

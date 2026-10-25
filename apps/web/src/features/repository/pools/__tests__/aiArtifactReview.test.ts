@@ -203,3 +203,24 @@ it.each(['map', 'pool'] as const)(
     expect(api.generateReview).not.toHaveBeenCalled();
   },
 );
+
+it('never restores the unreviewed base for unchanged filtered metadata, including zero accepted questions', async () => {
+  const api: AiContentCallables = {
+    preview: vi.fn(),
+    generate: vi.fn(),
+    previewReview: vi.fn(),
+    generateReview: vi.fn(async () => ({
+      ...pool,
+      kind: 'pool_review' as const,
+      output: {
+        questions: [],
+        reviewOutcome: 'unchanged' as const,
+        issueCodes: [],
+        discardedQuestions: [{ questionOrder: 0, reason: 'Metodo non preparato.' }],
+      },
+    })),
+  };
+  const result = await reviewPoolCandidate(api, poolRequest, pool, 'subset');
+  expect(result.output.questions).toEqual([]);
+  expect(api.generate).not.toHaveBeenCalled();
+});

@@ -1,3 +1,5 @@
+import type { ContentFinancialHistory } from './aiContentFinance.js';
+import { validContentFinancialHistory } from './aiContentFinance.js';
 import { isValidStoredDidacticReview } from './aiContentDidacticReview.js';
 /**
  * AIGEN-01 — (de)serializzazione **rigorosa** del documento tecnico
@@ -39,6 +41,7 @@ const RUN_STATUSES = new Set(['running', 'completed', 'failed']);
 /** Serializza il run con i quattro istanti come `Timestamp` Firestore. */
 export function serializeRun(run: StoredAiContentRun): Record<string, unknown> {
   return {
+    ...(run.financialHistory ? { financialHistory: run.financialHistory } : {}),
     contractVersion: run.contractVersion,
     ...(run.promptContractVersion ? { promptContractVersion: run.promptContractVersion } : {}),
     ...(run.sourceBodyHash ? { sourceBodyHash: run.sourceBodyHash } : {}),
@@ -130,6 +133,8 @@ function isCoherentCompletedOutput(
 function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null {
   if (typeof data !== 'object' || data === null) return null;
   const d = data as Record<string, unknown>;
+  if (d.financialHistory !== undefined && !validContentFinancialHistory(d.financialHistory))
+    return null;
   if (d.contractVersion !== AI_CONTENT_CONTRACT_VERSION) return null;
   if (typeof d.kind !== 'string' || !RUN_KINDS.has(d.kind)) return null;
   if (typeof d.status !== 'string' || !RUN_STATUSES.has(d.status)) return null;
@@ -192,6 +197,9 @@ function parseStoredRunDocumentUnsafe(data: unknown): StoredAiContentRun | null 
           promptContractVersion: d.promptContractVersion as string,
           sourceBodyHash: d.sourceBodyHash as string,
         }
+      : {}),
+    ...(d.financialHistory
+      ? { financialHistory: d.financialHistory as ContentFinancialHistory }
       : {}),
     kind,
     status,

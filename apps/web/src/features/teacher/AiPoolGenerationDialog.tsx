@@ -8,6 +8,7 @@ import {
 } from './AiAdvancedReviewControl.js';
 import {
   reviewPoolCandidate,
+  poolDiscardFeedback,
   type ArtifactReviewStatus,
 } from '../repository/pools/aiArtifactReview.js';
 import {
@@ -267,7 +268,13 @@ export function AiPoolGenerationDialog({
         );
         res = { ...reviewed, kind: 'pool' };
         setReviewStatus(reviewed.output.reviewOutcome);
-        setReviewFeedback(reviewed.reviewFeedback);
+        setReviewFeedback({
+          discardedCount: reviewed.output.discardedQuestions?.length,
+          changes: [
+            ...poolDiscardFeedback(reviewed.output),
+            ...(reviewed.reviewFeedback?.changes ?? []),
+          ],
+        });
         setReviewReplayed(reviewed.replayed);
       }
       if (!mountedRef.current) return;
@@ -332,6 +339,13 @@ export function AiPoolGenerationDialog({
 
   async function doApply() {
     if (applyStartedRef.current) return;
+    if (!localQuestions.length) {
+      setDoneMessage(
+        'Nessuna nuova domanda verificata da salvare. Il pool esistente resta invariato e non è stato revisionato.',
+      );
+      setPhase('done');
+      return;
+    }
     const mapped = buildPoolFromProposal(existingPool?.questions ?? null, localQuestions);
     if (!mapped.ok) {
       setApplyErrors(mapped.errors);
@@ -582,7 +596,9 @@ export function AiPoolGenerationDialog({
 
           {localQuestions.length === 0 ? (
             <p role="alert" className="text-error">
-              Hai rimosso tutte le domande proposte. Annulla la proposta o rigenera.
+              {reviewFeedback?.discardedCount
+                ? 'Nessuna domanda accettata dal revisore. Nessuna nuova domanda sarà salvata; il pool esistente resta invariato e non è stato revisionato.'
+                : 'Hai rimosso tutte le domande proposte. Annulla la proposta o rigenera.'}
             </p>
           ) : (
             <div className={styles.reviewList}>
@@ -610,13 +626,12 @@ export function AiPoolGenerationDialog({
             <button type="button" onClick={() => setShowAbandonConfirm(true)}>
               Annulla proposta
             </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={localQuestions.length === 0}
-              onClick={() => void doApply()}
-            >
-              {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
+            <button type="button" className="btn-primary" onClick={() => void doApply()}>
+              {!localQuestions.length
+                ? 'Concludi senza salvare'
+                : isNewPool
+                  ? 'Crea pool'
+                  : 'Aggiungi al pool'}
             </button>
           </div>
 

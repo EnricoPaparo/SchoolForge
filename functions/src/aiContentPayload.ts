@@ -680,7 +680,18 @@ export function buildContentStructuredRequest(
     request.kind === 'pool_review'
       ? request.purpose === 'practice'
         ? buildPracticeReviewOutputSchema(request)
-        : POOL_REVIEW_OUTPUT_SCHEMA
+        : {
+            ...POOL_REVIEW_OUTPUT_SCHEMA,
+            properties: {
+              ...(POOL_REVIEW_OUTPUT_SCHEMA.properties as Record<string, unknown>),
+              preparationEvidence: {
+                ...((POOL_REVIEW_OUTPUT_SCHEMA.properties as Record<string, unknown>)
+                  .preparationEvidence as Record<string, unknown>),
+                minItems: request.candidateQuestions.length,
+                maxItems: request.candidateQuestions.length,
+              },
+            },
+          }
       : request.kind === 'concept_map_review'
         ? MAP_REVIEW_OUTPUT_SCHEMA
         : request.kind === 'pool'

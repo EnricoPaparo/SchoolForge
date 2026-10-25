@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   mapPreview: vi.fn(),
   mapReviewPreview: vi.fn(),
   reviewEnabled: false,
+  poolReview: 'normal' as 'normal' | 'empty' | 'failure',
   raw: '',
   summary: null as CompleteLessonCompletionSummary | null,
   error: null as unknown,
@@ -26,19 +27,37 @@ vi.mock('../../repository/pools/aiContentClient.js', async (original) => ({
     preview: vi.fn(async () => ({ estimatedCostMicroUsd: 1, reservationCostMicroUsd: 2 })),
     generate: state.generate,
     previewReview: vi.fn(),
-    generateReview: vi.fn(async (request: ContentClient.AiPoolReviewRequest) => ({
-      status: 'completed',
-      kind: 'pool_review',
-      modelProfile: 'economy',
-      actualCostMicroUsd: 1,
-      replayed: false,
-      output: {
-        questions: request.candidateQuestions,
-        studyPlan: request.candidateStudyPlan,
-        reviewOutcome: 'unchanged',
-        issueCodes: [],
-      },
-    })),
+    generateReview: vi.fn(async (request: ContentClient.AiPoolReviewRequest) => {
+      if (!request.purpose && state.poolReview === 'failure')
+        throw { details: { code: 'provider_invalid_output' } };
+      if (!request.purpose && state.poolReview === 'empty')
+        return {
+          status: 'completed',
+          kind: 'pool_review',
+          modelProfile: 'economy',
+          actualCostMicroUsd: 1,
+          replayed: false,
+          output: {
+            questions: [],
+            reviewOutcome: 'unchanged',
+            issueCodes: [],
+            discardedQuestions: [{ questionOrder: 0, reason: 'Metodo non preparato.' }],
+          },
+        };
+      return {
+        status: 'completed',
+        kind: 'pool_review',
+        modelProfile: 'economy',
+        actualCostMicroUsd: 1,
+        replayed: false,
+        output: {
+          questions: request.candidateQuestions,
+          studyPlan: request.candidateStudyPlan,
+          reviewOutcome: 'unchanged',
+          issueCodes: [],
+        },
+      };
+    }),
   }),
 }));
 vi.mock('../../repository/pools/aiConceptMapClient.js', async (original) => ({
@@ -112,6 +131,7 @@ beforeEach(() => {
   state.summary = null;
   state.error = null;
   state.reviewEnabled = false;
+  state.poolReview = 'normal';
 });
 it.each(['\n', '\r\n', '   '])(
   'uses authoritative persisted source through private practice save and pool, with %j raw boundary',
@@ -450,3 +470,68 @@ it('keeps known cost and candidate when map review preview alone fails', async (
   expect(state.mapReviewPreview).toHaveBeenCalledTimes(2);
   expect(state.generate).toHaveBeenCalledTimes(2);
 });
+
+it.each(['empty', 'failure'] as const)(
+  'continues all phases with zero new pool writes after %s review',
+  async (mode) => {
+    state.poolReview = mode;
+    state.reviewEnabled = true;
+    state.raw = STUDY_BODY;
+    const f = studyFixture();
+    state.map.mockResolvedValue({
+      kind: 'concept_map',
+      status: 'completed',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output: { conceptMapMarkdown: '## Sintesi\n\nIl ciclo ripete il corpo.' },
+    });
+    state.generate.mockImplementation(async (request: ContentClient.AiPoolContentRequest) => ({
+      kind: 'pool',
+      status: 'completed',
+      modelProfile: 'economy',
+      actualCostMicroUsd: 1,
+      replayed: false,
+      output:
+        request.purpose === 'practice'
+          ? { questions: f.questions, studyPlan: f.plan }
+          : { questions: [f.questions[0]] },
+    }));
+    const savePool = vi.fn();
+    render(
+      <TotalLessonGenerationDialog
+        identity={{ programId: 'zero', importId: 'i', lessonId: mode }}
+        context={{
+          titolo: 'Cicli',
+          difficolta: 'Base',
+          obiettivi: ['Prevedere output'],
+          udaTitle: 'UDA',
+          currentBody: '',
+        }}
+        onClear={vi.fn()}
+        onPersistBody={vi.fn(async () => STUDY_BODY)}
+        onSaveConceptMap={vi.fn()}
+        onSavePractice={vi.fn()}
+        onVerifyPractice={vi.fn()}
+        onSavePool={savePool}
+        onRefreshVisuals={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() => expect(state.summary).not.toBeNull());
+    expect(state.error).toBeNull();
+    expect(savePool).not.toHaveBeenCalled();
+    expect(state.summary).toMatchObject({
+      questionsGenerated: 0,
+      mapGenerated: true,
+      imagesFailed: 0,
+    });
+    expect(state.summary?.reviewReports?.pool?.status).toBe(
+      mode === 'empty' ? 'unchanged' : 'failed',
+    );
+    if (mode === 'failure')
+      expect(state.summary?.reviewReports?.pool?.reason).toContain('0 domande verificate');
+    expect(state.generate).toHaveBeenCalledTimes(2);
+  },
+);

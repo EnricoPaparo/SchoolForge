@@ -16,6 +16,7 @@ export interface ArtifactState<Base, Review> {
   base: Base | null;
   reviewed: Review | null;
   costUnknown: boolean;
+  reviewFailure?: string;
 }
 export type MapArtifactState = ArtifactState<AiConceptMapGenerateResult, AiConceptMapReviewResult>;
 export type PoolArtifactState = ArtifactState<AiPoolGenerateResult, AiPoolReviewResult>;
@@ -97,9 +98,24 @@ export function parseArtifactState(
         }),
       );
       const mapped = buildPoolFromProposal(null, proposalToLocalQuestions({ questions }));
-      if (!mapped.ok || !questions.length || questions.length > 30)
+      if (
+        (!mapped.ok && questions.length > 0) ||
+        (!questions.length && !review) ||
+        questions.length > 30
+      )
         throw new Error('Domande checkpoint non valide.');
       if (expected) {
+        const filtered = review && 'discardedQuestions' in value.output;
+        if (filtered) {
+          const discarded = (value.output as AiPoolReviewResult['output']).discardedQuestions;
+          const requested = Object.values(expected.counts).reduce((sum, count) => sum + count, 0);
+          if (
+            !Array.isArray(discarded) ||
+            discarded.length + questions.length !== requested ||
+            new Set(discarded.map((d) => d.questionOrder)).size !== discarded.length
+          )
+            throw new Error('Conteggi scarti checkpoint non validi.');
+        }
         const range = {
           base: { min: 1, max: 3 },
           balanced: { min: 1, max: 5 },
@@ -109,8 +125,10 @@ export function parseArtifactState(
           questions.some(
             (q, i) => q.order !== i || q.difficolta < range.min || q.difficolta > range.max,
           ) ||
-          Object.entries(expected.counts).some(
-            ([type, count]) => questions.filter((q) => q.tipo === type).length !== count,
+          Object.entries(expected.counts).some(([type, count]) =>
+            filtered
+              ? questions.filter((q) => q.tipo === type).length > count
+              : questions.filter((q) => q.tipo === type).length !== count,
           )
         )
           throw new Error('Conteggi o livello checkpoint non validi.');
@@ -156,6 +174,25 @@ export function parseArtifactState(
           : reviewed.issueCodes.length === 0)
       )
         throw new Error('Revisione checkpoint non valida.');
+      if (kind === 'pool' && reviewed.discardedQuestions !== undefined) {
+        if (
+          !Array.isArray(reviewed.discardedQuestions) ||
+          reviewed.discardedQuestions.length > 30 ||
+          reviewed.discardedQuestions.some(
+            (d) =>
+              !Number.isInteger(d.questionOrder) ||
+              d.questionOrder < 0 ||
+              d.questionOrder > 29 ||
+              typeof d.reason !== 'string' ||
+              !d.reason.trim() ||
+              d.reason.length > 500,
+          )
+        )
+          throw new Error('Scarti revisione non validi.');
+        output.discardedQuestions = reviewed.discardedQuestions.map(
+          ({ questionOrder, reason }) => ({ questionOrder, reason }),
+        );
+      }
       output.reviewOutcome = reviewed.reviewOutcome;
       output.issueCodes = [...reviewed.issueCodes];
       if (kind === 'map') {
@@ -174,6 +211,9 @@ export function parseArtifactState(
     };
   }
   return {
+    ...(typeof state.reviewFailure === 'string' && state.reviewFailure.length <= 500
+      ? { reviewFailure: state.reviewFailure }
+      : {}),
     base: result(state.base, false),
     reviewed: result(state.reviewed, true),
     costUnknown:

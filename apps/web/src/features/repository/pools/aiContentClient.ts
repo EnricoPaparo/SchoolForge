@@ -20,6 +20,7 @@ import type { Functions } from 'firebase/functions';
 export type PoolModelProfile = 'economy' | 'quality';
 /** Only in-memory callable metadata; never saved with lesson/pool content. */
 export interface AiReviewFeedback {
+  discardedCount?: number;
   changes: string[];
 }
 
@@ -140,6 +141,7 @@ export interface AiPoolReviewResult extends Omit<AiPoolGenerateResult, 'kind' | 
   output: AiPoolProposalOutput & {
     reviewOutcome: 'improved' | 'unchanged';
     issueCodes: string[];
+    discardedQuestions?: { questionOrder: number; reason: string }[];
   };
 }
 

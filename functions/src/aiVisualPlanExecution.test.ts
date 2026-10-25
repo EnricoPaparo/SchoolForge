@@ -574,3 +574,17 @@ describe('guardie strutturali 03B', () => {
       expect(gateway).toContain(guard);
   });
 });
+
+it('keeps known paid image attempts when another attempt has unknown billing', () => {
+  const initial = plan([slot(0)]);
+  const first = { ...initial, settlement: upsertSlotSettlement(initial, 0, 1, 40) };
+  const next = upsertSlotSettlement(first, 0, 2, null);
+  expect(next.slots[0]).toMatchObject({ attempts: 2, actualCost: null, knownActualCost: 40 });
+  const value = {
+    ...initial,
+    status: 'abandoned',
+    slots: [slot(0, { state: 'failed', attempts: 2, lastError: 'uncertain_outcome' })],
+    settlement: next,
+  };
+  expect(validateVisualPlanRun(value).settlement.slots[0]?.knownActualCost).toBe(40);
+});

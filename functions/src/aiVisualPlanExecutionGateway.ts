@@ -1536,3 +1536,31 @@ export const aiVisualPlanPromoteSlot = onCall(
     }
   },
 );
+
+/** Owner-only snapshot; never authorizes a plan, reserves budget or invokes providers. */
+export const aiVisualPlanStatus = onCall(
+  COMMON_OPTIONS,
+  async (request: CallableRequest<unknown>) => {
+    const db = database();
+    try {
+      const ownerUid = await requireOwner(request, db);
+      if (
+        !request.data ||
+        typeof request.data !== 'object' ||
+        Object.keys(request.data).length !== 4
+      )
+        throw new AiVisualMultiError('invalid_input', 'Identità piano non valida.');
+      const input = validateVisualPlanSlotInput({ ...request.data, slotIndex: 0 });
+      const snap = await db
+        .doc(`visualPlanRuns/${computeOpaqueVisualPlanId(ownerUid, input.requestId)}`)
+        .get();
+      if (!snap.exists) return { plan: null };
+      const plan = validateVisualPlanRun(snap.data());
+      assertPlanIdentity(plan, ownerUid, input);
+      return { plan };
+    } catch (error) {
+      if (error instanceof AiVisualError || error instanceof AiVisualMultiError) throw https(error);
+      throw new HttpsError('internal', 'Stato piano immagini non disponibile.');
+    }
+  },
+);

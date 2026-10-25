@@ -2813,7 +2813,7 @@ describe('study generation accounting and replay', () => {
   });
 });
 
-it('settles metered insufficient-source pool review without a completed proposal', async () => {
+it('settles a structurally incomplete source audit without a completed proposal', async () => {
   const request = validateAiContentRequest({
     ...poolPayload(),
     kind: 'pool_review',
@@ -2842,7 +2842,7 @@ it('settles metered insufficient-source pool review without a completed proposal
         finalizeRun: finalizeRun as never,
       }),
     ),
-  ).rejects.toMatchObject({ code: 'source_insufficient' });
+  ).rejects.toMatchObject({ code: 'provider_invalid_output' });
   expect(failRun).toHaveBeenCalledTimes(1);
   expect(failRun).toHaveBeenCalledWith(
     expect.objectContaining({

@@ -1,3 +1,4 @@
+import type { ContentFinancialHistory } from './aiContentFinance.js';
 import { prepareContentStructuredRequest } from './aiContentPayload.js';
 import { materializePracticeSlots } from './aiStudyPracticeSlots.js';
 import { validatePracticeReview } from './aiStudyPracticeReview.js';
@@ -81,6 +82,7 @@ export const AI_CONTENT_LEASE_TTL_MS = computeContentLeaseTtlMs(DEFAULT_OPENAI_R
 
 /** Documento run **privacy-minimal** (nessun UID/testo/prompt/guidance/raw response). */
 export interface StoredAiContentRun {
+  financialHistory?: ContentFinancialHistory;
   contractVersion: number;
   promptContractVersion?: string;
   sourceBodyHash?: string;

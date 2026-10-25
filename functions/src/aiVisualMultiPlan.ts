@@ -740,6 +740,8 @@ function validateVisualPlanBudgetCeiling(
 // ─── Consuntivo (roadmap §5.5, §12) ────────────────────────────────────────────
 
 export interface VisualPlanSettlementSlot {
+  /** Known subtotal remains visible even when another attempt has unknown billing. */
+  knownActualCost?: number;
   slotIndex: number;
   attempts: number;
   actualCost: number | null;
@@ -779,7 +781,12 @@ function validateSettlementSlot(
   slotAttemptsByIndex: ReadonlyMap<number, number>,
 ): VisualPlanSettlementSlot {
   const root = asRecord(value, 'Consuntivo dello slot non valido.', 'corrupted_state');
-  assertExactKeys(root, SETTLEMENT_SLOT_KEYS, 'Consuntivo dello slot', 'corrupted_state');
+  assertExactKeys(
+    root,
+    [...SETTLEMENT_SLOT_KEYS, ...(root.knownActualCost === undefined ? [] : ['knownActualCost'])],
+    'Consuntivo dello slot',
+    'corrupted_state',
+  );
   const slotIndex = assertNonNegativeInt(root.slotIndex, 'slotIndex del consuntivo');
   const expectedAttempts = slotAttemptsByIndex.get(slotIndex);
   if (expectedAttempts === undefined) {
@@ -793,7 +800,18 @@ function validateSettlementSlot(
     invalidSlot('attempts del consuntivo non corrisponde agli attempts dello slot.');
   }
   const actualCost = assertNullableNonNegativeInt(root.actualCost, 'actualCost dello slot');
-  return { slotIndex, attempts, actualCost };
+  const knownActualCost =
+    root.knownActualCost === undefined
+      ? undefined
+      : assertNonNegativeInt(root.knownActualCost, 'knownActualCost dello slot');
+  if (knownActualCost !== undefined && actualCost !== null && knownActualCost !== actualCost)
+    invalidSlot('Subtotale noto dello slot incoerente.');
+  return {
+    slotIndex,
+    attempts,
+    actualCost,
+    ...(knownActualCost === undefined ? {} : { knownActualCost }),
+  };
 }
 
 /**
@@ -834,7 +852,8 @@ function validateVisualPlanSettlement(
   }
 
   const spent =
-    (proposalActualCost ?? 0) + slots.reduce((sum, slot) => sum + (slot.actualCost ?? 0), 0);
+    (proposalActualCost ?? 0) +
+    slots.reduce((sum, slot) => sum + (slot.knownActualCost ?? slot.actualCost ?? 0), 0);
   if (spent > params.totalReserved) {
     invalidSlot('Il consuntivo supera il tetto di budget riservato dal piano.');
   }

@@ -1,3 +1,13 @@
+import { describeAiContentError } from '../repository/pools/aiContentClient.js';
+import {
+  generationCostKey,
+  instrumentContentCallables,
+  clearGenerationCosts,
+  recordVisualPlanCosts,
+  writeGenerationCost,
+  readGenerationCosts,
+  markVisualSlotInvocation,
+} from '../repository/programs/generationFinancials.js';
 import {
   emptyArtifactState,
   type MapArtifactState,
@@ -16,7 +26,11 @@ import {
 } from '../repository/programs/studyPractice.js';
 import type { CompleteReviewReport } from './AiCompleteLessonGenerationDialog.js';
 import { useEffect, useMemo, useRef } from 'react';
-import { reviewMapCandidate, reviewPoolCandidate } from '../repository/pools/aiArtifactReview.js';
+import {
+  reviewMapCandidate,
+  reviewPoolCandidate,
+  poolDiscardFeedback,
+} from '../repository/pools/aiArtifactReview.js';
 import { functions } from '../../lib/firebase.js';
 import {
   buildPoolContentRequest,
@@ -143,15 +157,36 @@ export function TotalLessonGenerationDialog({
   onRefreshVisuals: () => Promise<void>;
   onClose: () => void;
 }) {
-  const lessonCallables = useMemo(() => createAiLessonCallables(functions), []);
-  const mapCallables = useMemo(() => createAiConceptMapCallables(functions), []);
-  const poolCallables = useMemo(() => createAiContentCallables(functions), []);
+  const ledgerKey = generationCostKey(identity);
+  const lessonCallables = useMemo(
+    () => instrumentContentCallables(createAiLessonCallables(functions), functions, ledgerKey),
+    [ledgerKey],
+  );
+  const mapCallables = useMemo(
+    () => instrumentContentCallables(createAiConceptMapCallables(functions), functions, ledgerKey),
+    [ledgerKey],
+  );
+  const poolCallables = useMemo(
+    () => instrumentContentCallables(createAiContentCallables(functions), functions, ledgerKey),
+    [ledgerKey],
+  );
   const visualClient = useMemo(() => createMultiVisualClient(functions), []);
 
   const restoredCheckpoint = useMemo(
     () => readCompleteLessonCheckpoint(identity, context.currentBody),
     [context.currentBody, identity.importId, identity.lessonId, identity.programId],
   );
+
+  useEffect(() => {
+    if (restoredCheckpoint && !readGenerationCosts(ledgerKey).length)
+      writeGenerationCost(ledgerKey, {
+        id: 'legacy:prior',
+        phase: 'Fasi precedenti',
+        knownActualMicroUsd: 0,
+        unknown: true,
+        settledMicroUsd: null,
+      });
+  }, [restoredCheckpoint, ledgerKey]);
 
   const mountedRef = useRef(true);
   const latestBodyRef = useRef(context.currentBody);
@@ -190,7 +225,13 @@ export function TotalLessonGenerationDialog({
     Partial<Record<'map' | 'pool' | 'practice', CompleteReviewReport>>
   >({
     ...(restoredCheckpoint?.mapCompleted ? { map: { status: 'restored' as const } } : {}),
-    ...(restoredCheckpoint?.poolCompleted ? { pool: { status: 'restored' as const } } : {}),
+    ...(restoredCheckpoint?.poolCompleted
+      ? {
+          pool: restoredCheckpoint.poolState?.reviewFailure
+            ? { status: 'failed' as const, reason: restoredCheckpoint.poolState.reviewFailure }
+            : { status: 'restored' as const },
+        }
+      : {}),
   });
   const practiceRef = useRef(
     restoredCheckpoint?.practice ?? createCompletePracticeState(context.obiettivi ?? []),
@@ -545,6 +586,8 @@ export function TotalLessonGenerationDialog({
         if (options.reviewStatus !== 'disabled')
           onProgress({ stage: 'pool', label: 'Revisione delle domande e delle soluzioni…' });
         let reviewInvoked = false;
+        let reviewFailed = false;
+        let failureReason: string | undefined;
         const reviewed =
           options.reviewStatus === 'disabled'
             ? null
@@ -561,28 +604,46 @@ export function TotalLessonGenerationDialog({
               ).catch((error: unknown) => {
                 if (reviewInvoked) poolStateRef.current.costUnknown = true;
                 persistCheckpoint(body, options);
-                throw error;
+                ensureCurrent();
+                reviewFailed = true;
+                failureReason = `0 domande verificate; ${generated.output.questions.length} escluse perché la revisione non è completata. ${describeAiContentError(error)}`;
+                return null;
               })));
         ensureCurrent();
         poolStateRef.current.reviewed = reviewed;
+        poolStateRef.current.reviewFailure = failureReason;
         persistCheckpoint(body, options);
         const reviewReport = reviewed
           ? {
               status: reviewed.output.reviewOutcome,
-              feedback: reviewed.reviewFeedback,
+              feedback: {
+                discardedCount: reviewed.output.discardedQuestions?.length,
+                changes: [
+                  ...poolDiscardFeedback(reviewed.output),
+                  ...(reviewed.reviewFeedback?.changes ?? []),
+                ],
+              },
+              discardedQuestions: reviewed.output.discardedQuestions,
               replayed: reviewed.replayed,
             }
-          : { status: 'disabled' as const };
+          : reviewFailed
+            ? { status: 'failed' as const, reason: failureReason }
+            : { status: 'disabled' as const };
         reviewReportsRef.current.pool = reviewReport;
         onProgress({ stage: 'pool', review: reviewReport });
-        const mapped = buildPoolFromProposal(
-          null,
-          proposalToLocalQuestions(reviewed?.output ?? generated.output),
-        );
-        if (!mapped.ok) throw new Error(mapped.errors.join(' '));
-        ensureCurrent();
-        await onSavePool(mapped.pool);
-        ensureCurrent();
+        const accepted = reviewFailed
+          ? []
+          : (reviewed?.output.questions ?? generated.output.questions);
+        if (accepted.length) {
+          const mapped = buildPoolFromProposal(
+            null,
+            proposalToLocalQuestions({ questions: accepted }),
+          );
+          if (!mapped.ok) throw new Error(mapped.errors.join(' '));
+          ensureCurrent();
+          await onSavePool(mapped.pool);
+          ensureCurrent();
+        }
         poolCostRef.current =
           poolStateRef.current.costUnknown ||
           generated.actualCostMicroUsd === null ||
@@ -618,19 +679,68 @@ export function TotalLessonGenerationDialog({
       persistCheckpoint(body, options);
     }
 
+    if (visualStateRef.current.plan && visualClient.status) {
+      const fresh = await visualClient
+        .status({ ...identity, requestId: visualStateRef.current.planRequestId })
+        .catch(() => null);
+      if (fresh) {
+        visualStateRef.current.plan = fresh;
+        recordVisualPlanCosts(ledgerKey, fresh);
+      }
+    }
     const visualResult = await runCompleteLessonGeneration(
       visualStateRef.current,
       {
         persistBody: async () => undefined,
-        authorizeVisualPlan: (input) =>
-          visualClient.authorize({ ...input, modelProfile: options.modelProfile }),
-        generateVisualSlot: (input) => visualClient.generateSlot(input),
+        authorizeVisualPlan: async (input) => {
+          writeGenerationCost(ledgerKey, {
+            id: `${input.requestId}:proposal`,
+            phase: 'Proposta immagini',
+            knownActualMicroUsd: 0,
+            unknown: true,
+            settledMicroUsd: null,
+          });
+          try {
+            const plan = await visualClient.authorize({
+              ...input,
+              modelProfile: options.modelProfile,
+            });
+            recordVisualPlanCosts(ledgerKey, plan);
+            return plan;
+          } catch (error) {
+            const recovered = await visualClient
+              .status({ ...identity, requestId: input.requestId })
+              .catch(() => null);
+            if (recovered) recordVisualPlanCosts(ledgerKey, recovered);
+            if (recovered && recovered.slots.length > 0) return recovered;
+            throw error;
+          }
+        },
+        generateVisualSlot: async (input) => {
+          const attempts =
+            visualStateRef.current?.plan?.slots.find((slot) => slot.slotIndex === input.slotIndex)
+              ?.attempts ?? 0;
+          markVisualSlotInvocation(ledgerKey, input.requestId, input.slotIndex, attempts + 1);
+          try {
+            return await visualClient.generateSlot(input);
+          } catch (error) {
+            const recovered = await visualClient
+              .status({ ...identity, requestId: input.requestId })
+              .catch(() => null);
+            if (recovered) {
+              recordVisualPlanCosts(ledgerKey, recovered);
+              return recovered;
+            }
+            throw error;
+          }
+        },
         promoteVisualSlot: (input) => visualClient.promoteSlot(input),
       },
       {
         onProgress: (progress) => adaptVisualProgress(progress, onProgress),
         onStateChange: (state) => {
           visualStateRef.current = state;
+          if (state.plan) recordVisualPlanCosts(ledgerKey, state.plan);
           persistCheckpoint(body, options);
         },
       },
@@ -706,7 +816,9 @@ export function TotalLessonGenerationDialog({
       practiceGenerated: options.practiceEnabled ? (options.practiceCount ?? 6) : undefined,
       mapGenerated: mapCompletedRef.current,
       questionsGenerated:
-        options.counts.aperta + options.counts.chiusa_singola + options.counts.chiusa_multipla,
+        options.reviewStatus !== 'disabled'
+          ? (poolStateRef.current.reviewed?.output.questions.length ?? 0)
+          : (poolStateRef.current.base?.output.questions.length ?? 0),
       imagesApplied,
       imagesSkipped,
       imagesFailed,
@@ -725,6 +837,10 @@ export function TotalLessonGenerationDialog({
       context={context}
       callables={lessonCallables}
       onBeforeGenerate={clearOnce}
+      onGenerationStart={() => clearGenerationCosts(ledgerKey)}
+      costLedgerKey={ledgerKey}
+      costFunctions={functions}
+      costIdentity={identity}
       onCompleteDraft={completeDraft}
       describeCompletionError={describeCompleteWorkflowError}
       resumeDraft={

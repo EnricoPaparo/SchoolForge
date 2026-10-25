@@ -17,7 +17,12 @@ export {
 // AIGEN-01 — callable server-side della generazione IA di pool e lezioni
 // (aiContentPreview/aiContentGenerate). Provider reale disabilitato dal kill
 // switch; run server-only in aiContentRuns. Vedi ai-content-generation-roadmap.md.
-export { aiContentPreview, aiContentGenerate, aiContentPromptExport } from './aiContentGateway.js';
+export {
+  aiContentPreview,
+  aiContentGenerate,
+  aiContentPromptExport,
+  aiContentStatus,
+} from './aiContentGateway.js';
 // VISUAL-ENRICHMENT-02 — preview read-only, generazione binaria WebP e cleanup
 // idempotente dello staging alla cancellazione TTL dei run tecnici server-only.
 export {
@@ -50,6 +55,7 @@ export { aiVisualPlanAuthorize } from './aiVisualPlanGateway.js';
 // per singolo slot. Solo la generazione riceve OPENAI_API_KEY.
 export {
   aiVisualPlanGenerateSlot,
+  aiVisualPlanStatus,
   aiVisualPlanPromoteSlot,
 } from './aiVisualPlanExecutionGateway.js';
 // MULTI-VISUAL-04 — revisione gratuita pre-generazione di un singolo slot:
