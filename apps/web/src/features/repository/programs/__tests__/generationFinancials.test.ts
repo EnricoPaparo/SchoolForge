@@ -198,3 +198,119 @@ it('settles an uncertain image only when an authoritative snapshot reaches its a
     unknown: false,
   });
 });
+
+it('does not settle a versionless retry from an earlier terminal status while its call is active', async () => {
+  const key = 'content-versionless-active-retry';
+  writeGenerationCost(key, {
+    id: 'retry',
+    phase: 'Contenuto',
+    knownActualMicroUsd: 25,
+    unknown: true,
+    settledMicroUsd: null,
+  });
+  let rejectCall!: (error: Error) => void;
+  const client = instrumentContentCallables(
+    {
+      generate: (_req: unknown) =>
+        new Promise((_resolve, reject) => {
+          rejectCall = reject;
+        }),
+    },
+    functions,
+    key,
+  );
+  const pending = client.generate({ kind: 'lesson', requestId: 'retry' });
+  api.status.mockResolvedValueOnce(
+    status({ status: 'failed', executions: 1, knownActualMicroUsd: 25 }),
+  );
+  await recoverContentCost(functions, key, 'retry');
+  const activeEntry = readGenerationCosts(key)[0];
+  api.status.mockRejectedValueOnce(new Error('status offline'));
+  rejectCall(new Error('response lost'));
+  await expect(pending).rejects.toThrow('response lost');
+  expect(activeEntry).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+  api.status.mockResolvedValueOnce(
+    status({ status: 'failed', executions: 1, knownActualMicroUsd: 25 }),
+  );
+  await recoverContentCost(functions, key, 'retry');
+  expect(readGenerationCosts(key)[0].unknown).toBe(true);
+  api.status.mockResolvedValueOnce(status({ executions: 2, updatedAtMs: 2000 }));
+  await recoverContentCost(functions, key, 'retry');
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 65, unknown: false });
+});
+
+it('settles a successful replay after metadata was observed while the callable was active', async () => {
+  const key = 'content-active-replay';
+  let finishCall!: (result: { actualCostMicroUsd: number }) => void;
+  const client = instrumentContentCallables(
+    {
+      generate: (_req: unknown) =>
+        new Promise((resolve) => {
+          finishCall = resolve;
+        }),
+    },
+    functions,
+    key,
+  );
+  const pending = client.generate({ kind: 'lesson', requestId: 'replay' });
+  api.status.mockResolvedValue(status());
+  await recoverContentCost(functions, key, 'replay');
+  expect(readGenerationCosts(key)[0].unknown).toBe(true);
+  finishCall({ actualCostMicroUsd: 40 });
+  await pending;
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 65, unknown: false });
+});
+
+it('recognizes a terminal transition at the active running baseline timestamp', async () => {
+  const key = 'content-active-terminal-rank';
+  let rejectCall!: (error: Error) => void;
+  const client = instrumentContentCallables(
+    {
+      generate: (_req: unknown) =>
+        new Promise((_resolve, reject) => {
+          rejectCall = reject;
+        }),
+    },
+    functions,
+    key,
+  );
+  const pending = client.generate({ kind: 'lesson', requestId: 'transition' });
+  api.status.mockResolvedValueOnce(status({ status: 'running' }));
+  await recoverContentCost(functions, key, 'transition');
+  expect(readGenerationCosts(key)[0].unknown).toBe(true);
+  api.status.mockResolvedValueOnce(status({ status: 'failed' }));
+  rejectCall(new Error('response lost'));
+  await expect(pending).rejects.toThrow('response lost');
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 65, unknown: false });
+});
+
+it('fences active-call metadata even when it arrives after the failed call finishes', async () => {
+  const key = 'content-active-delayed-status';
+  let rejectCall!: (error: Error) => void;
+  let resolveStatus!: (value: unknown) => void;
+  const client = instrumentContentCallables(
+    {
+      generate: (_req: unknown) =>
+        new Promise((_resolve, reject) => {
+          rejectCall = reject;
+        }),
+    },
+    functions,
+    key,
+  );
+  const pending = client.generate({ kind: 'lesson', requestId: 'late' });
+  api.status.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+  );
+  const oldRead = recoverContentCost(functions, key, 'late');
+  api.status.mockRejectedValueOnce(new Error('status offline'));
+  rejectCall(new Error('response lost'));
+  await expect(pending).rejects.toThrow('response lost');
+  resolveStatus(status({ status: 'failed', executions: 1, knownActualMicroUsd: 25 }));
+  await oldRead;
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+});

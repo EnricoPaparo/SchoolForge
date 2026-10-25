@@ -17,6 +17,7 @@ export interface GenerationCostEntry {
 export type GenerationCostLedger = GenerationCostEntry[];
 const snapshots = new Map<string, GenerationCostLedger>();
 const listeners = new Set<() => void>();
+const activeContentInvocations = new Set<string>();
 export const generationCostKey = (identity: {
   programId: string;
   importId: string;
@@ -104,6 +105,8 @@ export async function recoverContentCost(
   const observedInvocation = readGenerationCosts(key).find(
     (e) => e.id === requestId,
   )?.pendingInvocation;
+  const observedActiveInvocation =
+    observedInvocation !== undefined && activeContentInvocations.has(observedInvocation);
   const status = (
     await httpsCallable<{ requestId: string }, ContentCostStatus>(
       functions,
@@ -140,12 +143,35 @@ export async function recoverContentCost(
             status.status === 'running'))))
   )
     return;
+  if (
+    previous.pendingInvocation &&
+    (observedActiveInvocation || activeContentInvocations.has(previous.pendingInvocation))
+  ) {
+    // This snapshot may predate reservation of the local retry. Keep it as a
+    // baseline, never as proof that the still-active invocation is settled.
+    const version: CostVersion = {
+      executions: status.executions,
+      updatedAtMs: status.updatedAtMs,
+      terminal: status.status !== 'running',
+    };
+    writeGenerationCost(key, {
+      ...previous,
+      knownActualMicroUsd: Math.max(previous.knownActualMicroUsd, status.knownActualMicroUsd),
+      unknown: true,
+      settledMicroUsd: status.settledMicroUsd,
+      reservedUnknownMicroUsd: status.reservedUnknownMicroUsd,
+      version,
+      pendingBaseline: previous.pendingBaseline ?? version,
+    });
+    return;
+  }
   const baseline = previous.pendingBaseline;
   if (
     previous.pendingInvocation &&
     baseline &&
     status.executions <= baseline.executions &&
     status.updatedAtMs <= baseline.updatedAtMs &&
+    (baseline.terminal || status.status === 'running') &&
     !(allowCompletedReplay && status.status === 'completed')
   )
     return;
@@ -185,6 +211,7 @@ export function instrumentContentCallables<T extends object>(
                 : 'Esercitazioni'
               : (labels[request.kind] ?? request.kind);
           const invocation = crypto.randomUUID();
+          activeContentInvocations.add(invocation);
           writeGenerationCost(key, {
             ...previous,
             id: request.requestId,
@@ -212,6 +239,7 @@ export function instrumentContentCallables<T extends object>(
               });
             return result;
           } finally {
+            activeContentInvocations.delete(invocation);
             await recoverContentCost(functions, key, request.requestId, completed).catch(
               () => undefined,
             );
