@@ -1,3 +1,4 @@
+import { resolvePublicLessonId } from './publicLessonId.js';
 import {
   collection,
   deleteDoc,
@@ -410,12 +411,17 @@ export async function deleteProgram(
   // propagate a readable error and the course is left completely intact so the
   // teacher can retry — no partial deletion, no false success audit. The
   // teacher never reads note content (the server deletes them).
-  await cleanupLessonNotes(programId);
+  if ((await getDoc(doc(db, 'programs', programId))).exists()) await cleanupLessonNotes(programId);
 
-  const [importsSnap, publicLessonsSnap] = await Promise.all([
-    getDocs(collection(db, 'programs', programId, 'imports')),
-    getDocs(query(collection(db, 'publicLessons'), where('programId', '==', programId))),
-  ]);
+  const [importsSnap, publicLessonsSnap, visibilityLocksSnap, hiddenLessonsSnap] =
+    await Promise.all([
+      getDocs(collection(db, 'programs', programId, 'imports')),
+      getDocs(query(collection(db, 'publicLessons'), where('programId', '==', programId))),
+      getDocs(collection(db, 'lessonVisibilityLocks', programId, 'imports')),
+      getDocs(
+        query(collection(db, 'hiddenLessonProjections'), where('programId', '==', programId)),
+      ),
+    ]);
 
   const imports = await Promise.all(
     importsSnap.docs.map(async (importDoc) => {
@@ -480,7 +486,29 @@ export async function deleteProgram(
     publicLessonsSnap.docs.flatMap((d) => [d.ref, doc(db, 'publicLessonPractice', d.id)]),
   );
 
+  // Private lessons are already gone: bounded shadow deletes satisfy the canonical cleanup gate.
+  const shadowIds = [
+    ...new Set([
+      ...hiddenLessonsSnap.docs.map((snapshot) => snapshot.id),
+      ...imports.flatMap((item) =>
+        item.lessonsSnap.docs.map((snapshot) =>
+          resolvePublicLessonId(snapshot.data() as LessonDoc, snapshot.id),
+        ),
+      ),
+    ]),
+  ];
+  for (let offset = 0; offset < shadowIds.length; offset += 8) {
+    const batch = writeBatch(db);
+    shadowIds
+      .slice(offset, offset + 8)
+      .forEach((id) => batch.delete(doc(db, 'hiddenLessonProjections', id)));
+    await batch.commit();
+  }
   await deleteDoc(doc(db, 'programs', programId));
+  await deleteDocsInBatches(
+    db,
+    visibilityLocksSnap.docs.map((snapshot) => snapshot.ref),
+  );
 
   await setDoc(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,

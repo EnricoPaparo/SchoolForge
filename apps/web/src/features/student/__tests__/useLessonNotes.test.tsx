@@ -314,3 +314,65 @@ describe('useLessonNotes — dirty tracking', () => {
     expect(mockLoad).toHaveBeenCalledTimes(1);
   });
 });
+
+it('revokes only the targeted local draft and cancels its autosave without deleting persisted notes', async () => {
+  const { result } = renderHook(() => useLessonNotes(db));
+  act(() => result.current.open(identity));
+  await waitFor(() => expect(result.current.current?.loadState).toBe('loaded'));
+  vi.useFakeTimers();
+  act(() => result.current.setDraft('Draft da revocare'));
+  act(() => result.current.revokeLesson(identity.publicLessonId));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(NOTE_AUTOSAVE_DELAY_MS + 1);
+  });
+  expect(result.current.current).toBeNull();
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockDelete).not.toHaveBeenCalled();
+});
+
+it('ignores an old save response after revoke and reopen even when the new save has the same sequence ordinal', async () => {
+  let resolveOld!: () => void, resolveNew!: () => void;
+  mockCreate
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOld = resolve;
+        }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveNew = resolve;
+        }),
+    );
+  const { result } = renderHook(() => useLessonNotes(db));
+  act(() => result.current.open(identity));
+  await waitFor(() => expect(result.current.current?.loadState).toBe('loaded'));
+  act(() => {
+    result.current.setDraft('Vecchia bozza');
+    result.current.saveNow();
+  });
+  act(() => result.current.revokeLesson(identity.publicLessonId));
+  act(() => result.current.open(identity));
+  await waitFor(() => expect(result.current.current?.loadState).toBe('loaded'));
+  act(() => {
+    result.current.setDraft('Nuova bozza');
+    result.current.saveNow();
+  });
+  await act(async () => {
+    resolveOld();
+  });
+  expect(result.current.current).toMatchObject({
+    draft: 'Nuova bozza',
+    saveState: 'saving',
+    dirty: true,
+  });
+  await act(async () => {
+    resolveNew();
+  });
+  expect(result.current.current).toMatchObject({
+    draft: 'Nuova bozza',
+    saveState: 'idle',
+    dirty: false,
+  });
+});

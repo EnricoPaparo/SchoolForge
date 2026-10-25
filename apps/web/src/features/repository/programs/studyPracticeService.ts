@@ -1,3 +1,4 @@
+import { lessonProjectionRef } from './lessonProjection.js';
 import {
   collection,
   doc,
@@ -61,7 +62,7 @@ export async function saveStudyPractice(params: {
       importId: params.importId,
     });
     if (!gate.ok) throw new Error(identityFailureMessage(gate.failure));
-    const projectionRef = doc(params.db, 'publicLessons', gate.publicLessonId);
+    const projectionRef = lessonProjectionRef(params.db, lesson, gate.publicLessonId);
     const projectionSnap = await tx.get(projectionRef);
     const publicLesson = projectionSnap.exists()
       ? (projectionSnap.data() as PublicLessonDoc)
@@ -76,7 +77,10 @@ export async function saveStudyPractice(params: {
     if (!identity.ok) throw new Error(identityFailureMessage(identity.failure));
     if (publicLesson?.content !== params.sourceBody)
       throw new Error('La lezione è cambiata: ricarica prima di salvare.');
-    if (params.publish && (!lesson?.completed || !publicLesson?.completed))
+    if (
+      params.publish &&
+      (lesson?.hiddenFromStudents === true || !lesson?.completed || !publicLesson?.completed)
+    )
       throw new Error('Segna la lezione come svolta prima di pubblicare.');
     tx.update(lessonRef, { studyPractice: practice });
     const publicRef = doc(params.db, 'publicLessonPractice', gate.publicLessonId);

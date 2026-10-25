@@ -848,3 +848,15 @@
 .promptToastError {
   background: #b91c1c;
 }
+
+.lessonHiddenIcon {
+  color: var(--color-error);
+}
+
+@media (max-width: 640px) {
+  .toolbarLesson > .visibilityActionBtn {
+    grid-column: 1 / -1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

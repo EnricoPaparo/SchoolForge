@@ -1031,6 +1031,37 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
+    // Server-owned membership is shared by every lesson of an import. This keeps
+    // the supported atomic forty-lesson publication below the Rules access cap.
+    function lessonIsVisible(programId, importId, lessonId) {
+      let lock = /databases/$(database)/documents/lessonVisibilityLocks/$(programId)/imports/$(importId);
+      return !existsAfter(lock) || !(lessonId in getAfter(lock).data.hiddenPublicLessonIds);
+    }
+    match /lessonVisibilityLocks/{programId}/imports/{importId} {
+      allow read: if isOwner();
+      allow create, update: if false;
+      allow delete: if isOwner() && !existsAfter(/databases/$(database)/documents/programs/$(programId));
+    }
+    match /hiddenLessonProjections/{lessonId} {
+      allow read: if isOwner();
+      allow create: if false;
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'content', 'titolo', 'sottotitolo', 'difficolta', 'concettiChiave', 'obiettivi', 'order', 'completed'
+        ])
+        && request.resource.data.completed == false
+        && !request.resource.data.keys().hasAny(['conceptMapMarkdown', 'visual', 'visuals'])
+        && getAfter(/databases/$(database)/documents/programs/$(resource.data.programId)/imports/$(resource.data.importId)/lessons/$(resource.data.lessonId)).data.hiddenFromStudents == true;
+      // A teacher may remove the shadow only with/after its canonical lesson.
+      // Absent shadows are valid no-ops, including a hide racing with deletion.
+      allow delete: if isOwner() && (
+        !exists(/databases/$(database)/documents/hiddenLessonProjections/$(lessonId))
+        || (resource.data.ownerUid == request.auth.uid
+          && !existsAfter(/databases/$(database)/documents/programs/$(resource.data.programId)/imports/$(resource.data.importId)/lessons/$(resource.data.lessonId)))
+      );
+    }
+
     match /publicLessons/{lessonId} {
       allow read: if isOwner()
         || (
@@ -1061,6 +1092,7 @@ service cloud.firestore {
       // garanzia che non possono dare sarebbe peggio che dichiararne il limite.
       allow create, update: if isOwner()
         && request.resource.data.ownerUid == request.auth.uid
+        && lessonIsVisible(request.resource.data.programId, request.resource.data.importId, lessonId)
         && (
           !('conceptMapMarkdown' in request.resource.data)
           || (

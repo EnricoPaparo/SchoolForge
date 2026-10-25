@@ -1,3 +1,4 @@
+import { lessonProjectionRef } from './lessonProjection.js';
 import { collection, deleteField, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { LessonDoc, PublicLessonDoc } from '../../../types/firestore.js';
@@ -90,7 +91,7 @@ export async function saveLessonConceptMap(params: SaveLessonConceptMapParams): 
     if (!gate.ok) throw new ConceptMapSaveError(identityFailureMessage(gate.failure));
 
     // 2. proiezione all'indirizzo **derivato**, mai a quello ricevuto.
-    const publicRef = doc(db, 'publicLessons', gate.publicLessonId);
+    const publicRef = lessonProjectionRef(db, lesson, gate.publicLessonId);
     const publicSnap = await tx.get(publicRef);
     const publicLesson = publicSnap.exists() ? (publicSnap.data() as PublicLessonDoc) : null;
     const projectionGate = checkProjectionMatchesLesson({

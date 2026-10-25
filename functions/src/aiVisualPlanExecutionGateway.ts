@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 /**
  * MULTI-VISUAL-03B — generazione/retry e promozione di un singolo slot.
  * Le due callable condividono il piano/lease/budget di 03A; solo la prima ha
@@ -782,7 +783,7 @@ async function assertPromotionReplayIsLive(params: {
     .filter((slot) => slot.state === 'promoted')
     .map((slot) => slot.slotIndex);
   const [publicSnap, publicBytesSnap, ...promotionSnaps] = await Promise.all([
-    db.doc(`publicLessons/${lessonGate.publicLessonId}`).get(),
+    db.doc(lessonProjectionPath(lesson, lessonGate.publicLessonId)).get(),
     db.doc(`${PUBLIC_BYTES}/${lessonGate.publicLessonId}`).get(),
     ...promotedIndexes.map((index) => db.doc(`${PROMOTIONS}/${promotionId(plan, index)}`).get()),
   ]);
@@ -1008,7 +1009,9 @@ export async function promoteVisualPlanSlotForOwner(params: {
       'invalid_input',
       describeVisualBindingFailure(lessonPreflightGate.failure),
     );
-  const publicPreflight = await db.doc(`publicLessons/${lessonPreflightGate.publicLessonId}`).get();
+  const publicPreflight = await db
+    .doc(lessonProjectionPath(lessonPreflightData, lessonPreflightGate.publicLessonId))
+    .get();
   const projectionPreflight = checkProjectionForVisual({
     lesson: lessonPreflightData,
     publicLesson: publicPreflight.exists
@@ -1182,7 +1185,7 @@ export async function promoteVisualPlanSlotForOwner(params: {
     });
     if (!lessonGate.ok)
       throw new AiVisualError('invalid_input', describeVisualBindingFailure(lessonGate.failure));
-    const publicRef = db.doc(`publicLessons/${lessonGate.publicLessonId}`);
+    const publicRef = db.doc(lessonProjectionPath(lessonData, lessonGate.publicLessonId));
     const publicSnap = await tx.get(publicRef);
     const projectionGate = checkProjectionForVisual({
       lesson: lessonData,

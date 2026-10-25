@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 /**
  * VISUAL-ENRICHMENT — autenticazione owner-only e rilettura autorevole di
  * identità della lezione, condivise da **tutti** i gateway del dominio
@@ -82,7 +83,7 @@ export async function readAuthoritativeLesson(
     throw new AiVisualError('invalid_input', describeVisualBindingFailure(gate.failure));
   }
 
-  const publicSnap = await db.doc(`publicLessons/${gate.publicLessonId}`).get();
+  const publicSnap = await db.doc(lessonProjectionPath(lesson, gate.publicLessonId)).get();
   const projectionGate = checkProjectionForVisual({
     lesson: lesson as Record<string, unknown>,
     publicLesson: publicSnap.exists ? (publicSnap.data() as Record<string, unknown>) : null,

@@ -30,6 +30,12 @@ const mockUpdateUdaMetadata = vi.fn();
 const mockDeleteUda = vi.fn();
 const mockImportRepository = vi.fn();
 const mockReadZipFile = vi.fn();
+const mockSetLessonVisibility = vi.fn();
+vi.mock('../../repository/programs/lessonVisibilityClient.js', () => ({
+  createLessonVisibilityClient: () => ({
+    set: (...args: unknown[]) => mockSetLessonVisibility(...args),
+  }),
+}));
 const mockSetLessonCompleted = vi.fn();
 const mockCreateLesson = vi.fn();
 const mockDeleteLesson = vi.fn();
@@ -931,7 +937,13 @@ describe('CourseWorkspace — Firestore projection primary source (MOB-01C)', ()
     expect(screen.getByTestId('md').textContent).toContain('Corpo dalla proiezione.');
     expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(1);
     expect(mockFetchPublicLessonContent).toHaveBeenCalledWith(
-      { lessonId: 'l1', programId: 'p1', importId: 'imp1', ownerUid: 'owner' },
+      {
+        lessonId: 'l1',
+        privateLessonId: 'l1',
+        programId: 'p1',
+        importId: 'imp1',
+        ownerUid: 'owner',
+      },
       expect.anything(),
     );
     expect(mockFetchLessonContent).not.toHaveBeenCalled();
@@ -2985,8 +2997,8 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     // Entrambi i comandi vivono nella stessa toolbar (stessa riga su mobile).
     expect(toolbar.contains(screen.getByRole('button', { name: 'Azioni lezione' }))).toBe(true);
     expect(toolbar.contains(screen.getByRole('button', { name: /^Segna svolta/i }))).toBe(true);
-    // Su mobile la toolbar della lezione ha esattamente questi due comandi.
-    expect(toolbar.querySelectorAll('button').length).toBe(2);
+    // La visibilità usa una riga dedicata oltre ai due comandi storici.
+    expect(toolbar.querySelectorAll('button').length).toBe(3);
   });
 
   it('preserves state, callback and a busy lock on the svolta toggle', async () => {
@@ -3034,4 +3046,65 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     await waitFor(() => expect(screen.getByRole('table')).toBeTruthy());
     expect(document.querySelectorAll('[class*="titleCell"]').length).toBeGreaterThan(0);
   });
+});
+
+it('hides a completed lesson with one explicit action, keeps teacher content and restores it as not completed', async () => {
+  mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+  mockListLessons.mockResolvedValue([
+    lesson('l1', 'uda-01-reti', { titolo: 'Lezione A', completed: true }),
+  ]);
+  mockFetchLessonContent.mockResolvedValue('Corpo docente conservato');
+  mockSetLessonVisibility.mockImplementation(async (input) => ({
+    ...input,
+    completed: false,
+    publicLessonId: 'l1',
+  }));
+  render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Lezione A' }));
+  await screen.findByTestId('md');
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Nascondi agli studenti e segna non svolta' }),
+  );
+  await screen.findByRole('img', { name: 'Lezione nascosta agli studenti' });
+  expect(screen.getByTestId('md').textContent).toContain('Corpo docente conservato');
+  expect(screen.getByRole('button', { name: /^Segna svolta/ })).toHaveProperty('disabled', true);
+  expect(mockSetLessonVisibility).toHaveBeenCalledWith({
+    programId: 'p1',
+    importId: 'imp1',
+    lessonId: 'l1',
+    hiddenFromStudents: true,
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Rendi visibile agli studenti' }));
+  await screen.findByRole('button', { name: 'Nascondi agli studenti' });
+  expect(screen.getByRole('button', { name: /^Segna svolta/ })).toHaveProperty('disabled', false);
+  expect(screen.queryByRole('img', { name: 'Lezione svolta' })).toBeNull();
+});
+
+it('merges visibility into the latest tree without overwriting metadata saved while the request is pending', async () => {
+  let resolveVisibility!: (value: { hiddenFromStudents: boolean; completed: boolean }) => void;
+  mockSetLessonVisibility.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveVisibility = resolve;
+      }),
+  );
+  mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+  mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+  mockFetchLessonContent.mockResolvedValue('Corpo conservato');
+  mockUpdateLessonMetadata.mockResolvedValue(undefined);
+  render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Lezione A' }));
+  await screen.findByTestId('md');
+  fireEvent.click(screen.getByRole('button', { name: 'Nascondi agli studenti' }));
+  clickMenuAction('Azioni lezione', 'Modifica informazioni');
+  fireEvent.change(screen.getByLabelText('Titolo lezione'), {
+    target: { value: 'Titolo più recente' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+  await screen.findByText('Informazioni salvate');
+  await act(async () => resolveVisibility({ hiddenFromStudents: true, completed: false }));
+  expect(screen.getByRole('button', { name: 'Titolo più recente' })).toBeTruthy();
+  expect(screen.getByRole('img', { name: 'Lezione nascosta agli studenti' })).toBeTruthy();
 });

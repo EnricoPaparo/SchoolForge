@@ -111,3 +111,29 @@ describe('fetchLessonContent (fallback legacy via gateway, SGW-01)', () => {
     );
   });
 });
+
+it('reads hidden teacher content using fresh private visibility rather than a public fallback', async () => {
+  mockGetDoc
+    .mockResolvedValueOnce(projectionSnap({ ownerUid: 'owner', hiddenFromStudents: true }))
+    .mockResolvedValueOnce(
+      projectionSnap({
+        ownerUid: 'owner',
+        programId: 'p1',
+        importId: 'imp1',
+        content: 'Corpo privato',
+      }),
+    );
+  await expect(
+    fetchPublicLessonContent({ ...VALID, privateLessonId: 'private-l1' }, mockDb),
+  ).resolves.toBe('Corpo privato');
+  expect(mockDoc).toHaveBeenCalledWith(
+    mockDb,
+    'programs',
+    'p1',
+    'imports',
+    'imp1',
+    'lessons',
+    'private-l1',
+  );
+  expect(mockDoc).toHaveBeenCalledWith(mockDb, 'hiddenLessonProjections', 'l1');
+});

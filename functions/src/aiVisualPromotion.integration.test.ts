@@ -1,3 +1,4 @@
+import { setLessonVisibilityForOwner } from './lessonVisibilityGateway.js';
 import { randomUUID } from 'node:crypto';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
@@ -620,5 +621,39 @@ emulatorDescribe('promozione — corse reali su Firestore e Storage Emulator', (
     expect(first).toEqual({ requestId, replayed: false, assetId });
     expect(second).toEqual({ requestId, replayed: true, assetId });
     expect((await db.collection('auditEvents').get()).size).toBe(1);
+  });
+  it('routes a promotion to the freshly hidden lesson after visibility changes between preflight and commit', async () => {
+    const requestId = randomUUID(),
+      assetId = randomUUID();
+    await seedPromotable({ requestId, completed: false });
+    await db.doc(`programs/${PROGRAM}`).set({ ownerUid: OWNER, activeImportId: IMPORT });
+    writtenObjects.push(
+      canonicalVisualStorageRef({ ownerUid: OWNER, importId: IMPORT, udaDir: UDA, assetId }),
+    );
+    const result = await promoteVisualForOwner({
+      db,
+      bucket,
+      ownerUid: OWNER,
+      input: promotionInput(requestId),
+      nowMs: NOW,
+      generateAssetId: () => assetId,
+      beforeTransaction: async () => {
+        await setLessonVisibilityForOwner(db, OWNER, {
+          programId: PROGRAM,
+          importId: IMPORT,
+          lessonId: LESSON,
+          hiddenFromStudents: true,
+        });
+      },
+    });
+    expect(result.assetId).toBe(assetId);
+    expect((await lessonRef().get()).data()?.visual?.assetId).toBe(assetId);
+    expect((await publicRef().get()).exists).toBe(false);
+    expect((await publicVisualRef().get()).exists).toBe(false);
+    expect((await db.doc(`hiddenLessonProjections/${PUBLIC_LESSON}`).get()).data()?.content).toBe(
+      BODY,
+    );
+    await db.doc(`hiddenLessonProjections/${PUBLIC_LESSON}`).delete();
+    await db.doc(`lessonVisibilityLocks/${PROGRAM}/imports/${IMPORT}`).delete();
   });
 });

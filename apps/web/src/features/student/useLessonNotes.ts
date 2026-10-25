@@ -73,6 +73,8 @@ export interface LessonNotesController {
   retryLoad: () => void;
   /** Unconditional close (callers apply the dirty guard before calling this). */
   close: () => void;
+  /** Revocation drops only local state, never deletes the persisted note. */
+  revokeLesson: (publicLessonId: string) => void;
   /** Drops the local draft back to its last persisted baseline, then closes. */
   discardAndClose: () => boolean;
   setDraft: (text: string) => void;
@@ -175,7 +177,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
         const cur = cacheRef.current.get(publicLessonId);
         // Ignore a superseded response (entry replaced) — never let an old
         // write's success overwrite a newer local state.
-        if (!mountedRef.current || !cur || cur.saveSeq !== seq) return;
+        if (!mountedRef.current || cur !== entry || cur.saveSeq !== seq) return;
         const persisted = draft.trim() !== '';
         cur.baseline = persisted ? draft : '';
         cur.draft = persisted ? cur.draft : '';
@@ -194,7 +196,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
         if (saveLatest) void performSaveRef.current(publicLessonId);
       } catch (err) {
         const cur = cacheRef.current.get(publicLessonId);
-        if (!mountedRef.current || !cur || cur.saveSeq !== seq) return;
+        if (!mountedRef.current || cur !== entry || cur.saveSeq !== seq) return;
         cur.saveState = 'error';
         cur.savePending = false;
         cur.errorCode = err instanceof StudentLessonNoteError ? err.code : 'unavailable';
@@ -343,7 +345,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     try {
       await deleteStudentLessonNote(entry.identity, db);
       const cur = cacheRef.current.get(publicLessonId);
-      if (!mountedRef.current || !cur || cur.saveSeq !== seq) return false;
+      if (!mountedRef.current || cur !== entry || cur.saveSeq !== seq) return false;
       // Document is now absent; local state reset to empty/clean, panel stays open.
       cur.exists = false;
       cur.draft = '';
@@ -360,7 +362,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
       return true;
     } catch (err) {
       const cur = cacheRef.current.get(publicLessonId);
-      if (!mountedRef.current || !cur || cur.saveSeq !== seq) return false;
+      if (!mountedRef.current || cur !== entry || cur.saveSeq !== seq) return false;
       cur.saveState = 'error';
       cur.savePending = false;
       cur.errorCode = err instanceof StudentLessonNoteError ? err.code : 'unavailable';
@@ -432,6 +434,21 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     return false;
   }, []);
 
+  const revokeLesson = useCallback(
+    (publicLessonId: string) => {
+      clearTimer(publicLessonId);
+      const cached = cacheRef.current.get(publicLessonId);
+      if (cached) {
+        cached.saveSeq++;
+        cached.savePending = false;
+      }
+      cacheRef.current.delete(publicLessonId);
+      setOpenLessonId((current) => (current === publicLessonId ? null : current));
+      bump();
+    },
+    [clearTimer],
+  );
+
   const entry = openLessonId ? cacheRef.current.get(openLessonId) : undefined;
   const current: OpenNote | null =
     openLessonId && entry
@@ -457,6 +474,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     open,
     retryLoad,
     close,
+    revokeLesson,
     discardAndClose,
     setDraft,
     saveNow,

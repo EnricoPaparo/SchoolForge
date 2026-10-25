@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 /** MULTI-VISUAL-UPLOAD-01A — adozione atomica di un upload normalizzato. */
 
 import { randomUUID } from 'node:crypto';
@@ -426,7 +427,7 @@ async function verifyReplay(params: {
   if (!gate.ok || gate.publicLessonId !== params.run.publicLessonId)
     throw new AiVisualMultiError('corrupted_state', 'LessonDoc divergente nel replay.');
   const [publicSnap, bytesSnap] = await Promise.all([
-    params.db.doc(`publicLessons/${gate.publicLessonId}`).get(),
+    params.db.doc(lessonProjectionPath(lesson, gate.publicLessonId)).get(),
     params.db.doc(`${PUBLIC_BYTES}/${gate.publicLessonId}`).get(),
   ]);
   const projection = checkProjectionForVisual({
@@ -647,7 +648,7 @@ export async function promoteVisualUploadForOwner(params: {
         'invalid_input',
         gate.ok ? 'publicLessonId divergente.' : describeVisualBindingFailure(gate.failure),
       );
-    const publicRef = db.doc(`publicLessons/${gate.publicLessonId}`);
+    const publicRef = db.doc(lessonProjectionPath(lesson, gate.publicLessonId));
     const publicSnap = await tx.get(publicRef);
     const projection = checkProjectionForVisual({
       lesson,

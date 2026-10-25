@@ -293,3 +293,16 @@ describe('audit e fedeltà del testo', () => {
     expect((publicWrite?.[1] as { conceptMapMarkdown: string }).conceptMapMarkdown).toBe(quirky);
   });
 });
+
+it('saves a hidden lesson map only privately while routing its source through the shadow', async () => {
+  await save({
+    lesson: { ...LESSON, hiddenFromStudents: true },
+    publicLesson: { ...PUBLIC, completed: false },
+  });
+  expect(mockTxGet).toHaveBeenCalledWith({ __path: 'hiddenLessonProjections/import-1_lesson-1' });
+  expect(mockTxUpdate).toHaveBeenCalledTimes(1);
+  expect(mockTxUpdate).toHaveBeenCalledWith(
+    { __path: 'programs/program-1/imports/import-1/lessons/lesson-1' },
+    { conceptMapMarkdown: MAP },
+  );
+});

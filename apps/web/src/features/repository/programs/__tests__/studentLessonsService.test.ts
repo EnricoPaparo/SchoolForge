@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../lib/firebase.js', () => ({ db: {} }));
 
 const mockGetDocs = vi.fn();
+const mockOnSnapshot = vi.fn();
 const mockGetOwnStudentDoc = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
@@ -10,13 +11,18 @@ vi.mock('firebase/firestore', () => ({
   query: (collRef: unknown, ...clauses: unknown[]) => ({ __collRef: collRef, __clauses: clauses }),
   where: (field: string, op: string, value: unknown) => ({ field, op, value }),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
+  onSnapshot: (...args: unknown[]) => mockOnSnapshot(...args),
 }));
 
 vi.mock('../../students/studentsService.js', () => ({
   getOwnStudentDoc: (...args: unknown[]) => mockGetOwnStudentDoc(...args),
 }));
 
-import { loadStudentLibrary, loadStudentCourseLessons } from '../studentLessonsService.js';
+import {
+  loadStudentLibrary,
+  loadStudentCourseLessons,
+  subscribeStudentCourseLessons,
+} from '../studentLessonsService.js';
 import type { Firestore } from 'firebase/firestore';
 
 const fakeDb = {} as Firestore;
@@ -469,5 +475,34 @@ describe('loadStudentCourseLessons — active import gating (HARD-02B-1)', () =>
         { field: 'importId', op: '==', value: 'i2' },
       ]),
     );
+  });
+});
+
+it('ignores cached live snapshots until the selected course is confirmed by the server', () => {
+  const next = vi.fn(),
+    error = vi.fn(),
+    unsubscribe = vi.fn();
+  mockOnSnapshot.mockReturnValue(unsubscribe);
+  expect(
+    subscribeStudentCourseLessons(
+      { id: 'p', title: 'Corso', classIds: ['class'], activeImportId: 'i' },
+      fakeDb,
+      next,
+      error,
+    ),
+  ).toBe(unsubscribe);
+  const onSnapshot = mockOnSnapshot.mock.calls[0][2] as (value: unknown) => void;
+  onSnapshot({
+    metadata: { fromCache: true },
+    docs: [{ id: 'revoked', data: () => ({ content: 'Vecchio corpo' }) }],
+  });
+  expect(next).not.toHaveBeenCalled();
+  onSnapshot({ metadata: { fromCache: false }, docs: [] });
+  expect(next).toHaveBeenCalledWith([]);
+  expect(mockOnSnapshot.mock.calls[0][0]).toMatchObject({
+    __clauses: [
+      { field: 'programId', op: '==', value: 'p' },
+      { field: 'importId', op: '==', value: 'i' },
+    ],
   });
 });

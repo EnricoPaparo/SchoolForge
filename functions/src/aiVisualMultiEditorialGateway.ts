@@ -1,3 +1,4 @@
+import { lessonProjectionPath } from './lessonProjection.js';
 /** MULTI-VISUAL-03C — lifecycle editoriale owner-only. */
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, type Firestore } from 'firebase-admin/firestore';
@@ -77,7 +78,7 @@ async function lifecycle(
     fail('invalid_input', 'Lezione non appartenente al docente.');
   const publicLessonId =
     typeof lesson.publicLessonId === 'string' ? lesson.publicLessonId : input.lessonId;
-  const publicRef = dbRef.doc(`publicLessons/${publicLessonId}`);
+  const publicRef = dbRef.doc(lessonProjectionPath(lesson, publicLessonId));
   const publicSnap = await publicRef.get();
   if (!publicSnap.exists) fail('invalid_input', 'Proiezione non trovata.');
   const publicLesson = publicSnap.data() as Record<string, unknown>;
@@ -108,8 +109,9 @@ export async function reorderMultiVisualForOwner(params: {
   const pair = await lifecycle(params.db, params.ownerUid, base);
   await params.db.runTransaction(async (tx) => {
     const lessonSnap = await tx.get(pair.lessonRef);
-    const publicSnap = await tx.get(pair.publicRef);
     const fresh = lessonSnap.data() as Record<string, unknown>;
+    const publicRef = params.db.doc(lessonProjectionPath(fresh, pair.publicLessonId));
+    const publicSnap = await tx.get(publicRef);
     const freshPublic = publicSnap.data() as Record<string, unknown>;
     if (freshPublic.completed !== pair.publicLesson.completed)
       fail('visual_plan_external_mutation', 'Lo stato pubblico della lezione è cambiato.');
@@ -123,7 +125,7 @@ export async function reorderMultiVisualForOwner(params: {
     const publicNext = projectEditorialVisuals(next);
     tx.update(pair.lessonRef, { visuals: next, visual: FieldValue.delete() });
     if (freshPublic.completed === true)
-      tx.update(pair.publicRef, { visuals: publicNext, visual: FieldValue.delete() });
+      tx.update(publicRef, { visuals: publicNext, visual: FieldValue.delete() });
     tx.set(params.db.collection('auditEvents').doc(), {
       actorUid: params.ownerUid,
       action: 'lesson.visualsReordered',
@@ -154,8 +156,9 @@ export async function removeMultiVisualForOwner(params: {
   let recovery: Omit<VisualCleanupRecoveryRecord, 'createdAt'> | null = null;
   await params.db.runTransaction(async (tx) => {
     const freshSnap = await tx.get(pair.lessonRef);
-    const publicSnap = await tx.get(pair.publicRef);
     const fresh = freshSnap.data() as Record<string, unknown>;
+    const publicRef = params.db.doc(lessonProjectionPath(fresh, pair.publicLessonId));
+    const publicSnap = await tx.get(publicRef);
     const freshPublic = publicSnap.data() as Record<string, unknown>;
     if (freshPublic.completed !== pair.publicLesson.completed)
       fail('visual_plan_external_mutation', 'Lo stato pubblico della lezione è cambiato.');
@@ -184,11 +187,10 @@ export async function removeMultiVisualForOwner(params: {
     };
     if (next) {
       tx.update(pair.lessonRef, { visuals: next });
-      if (freshPublic.completed === true) tx.update(pair.publicRef, { visuals: publicNext });
+      if (freshPublic.completed === true) tx.update(publicRef, { visuals: publicNext });
     } else {
       tx.update(pair.lessonRef, { visuals: FieldValue.delete() });
-      if (freshPublic.completed === true)
-        tx.update(pair.publicRef, { visuals: FieldValue.delete() });
+      if (freshPublic.completed === true) tx.update(publicRef, { visuals: FieldValue.delete() });
     }
     tx.set(params.db.doc(`${CLEANUPS}/${base.lessonId}_${assetId}`), {
       ...recovery,

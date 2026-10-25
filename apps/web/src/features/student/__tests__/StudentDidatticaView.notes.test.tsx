@@ -6,6 +6,7 @@ const mockLoadNote = vi.fn();
 const mockLoadNoteIndex = vi.fn();
 const mockCreateNote = vi.fn();
 const mockDeleteNote = vi.fn();
+let emitLiveLessons: ((lessons: unknown[]) => void) | null = null;
 let mockUid: string | null = 'student-uid';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
@@ -18,9 +19,24 @@ vi.mock('../../repository/programs/studentLessonsService.js', () => ({
     if (result.status !== 'ok') return result;
     return { status: 'ok', classId: 'class-a', programs: result.programs };
   },
-  loadStudentCourseLessons: async (program: { id: string }) => {
-    const result = await mockLoadLessons.getMockImplementation()?.();
-    return result.lessonsByProgram[program.id] ?? [];
+  subscribeStudentCourseLessons: (
+    program: { id: string },
+    _db: unknown,
+    onLessons: (lessons: never[]) => void,
+    onError: (error: unknown) => void,
+  ) => {
+    let active = true;
+    emitLiveLessons = (lessons) => {
+      if (active) onLessons(lessons as never[]);
+    };
+    void Promise.resolve(mockLoadLessons.getMockImplementation()?.())
+      .then((result) => {
+        if (active) onLessons(result.lessonsByProgram[program.id] ?? []);
+      })
+      .catch(onError);
+    return () => {
+      active = false;
+    };
   },
 }));
 vi.mock('../studentLessonNotesService.js', async () => {
@@ -320,4 +336,21 @@ describe('StudentDidatticaView — Appunti entry point', () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 420, behavior: 'auto' });
   });
+});
+
+it('revokes an open lesson and its dirty local note immediately without deleting the saved note or showing a dirty-navigation popup', async () => {
+  render(<StudentDidatticaView />);
+  await openCourseAndSelectLesson();
+  fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+  fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
+    target: { value: 'Bozza privata da revocare' },
+  });
+  await act(async () => {
+    emitLiveLessons?.([]);
+  });
+  expect(screen.queryByText('Corpo lezione')).toBeNull();
+  expect(screen.queryByLabelText('Testo degli appunti')).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(mockDeleteNote).not.toHaveBeenCalled();
+  expect(mockCreateNote).not.toHaveBeenCalled();
 });

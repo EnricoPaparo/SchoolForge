@@ -110,3 +110,16 @@ it('loads the current private draft by identity and never falls back to a stale 
     await expect(loadPrivateStudyPractice(params)).rejects.toThrow();
   }
 });
+
+it('allows a hidden private practice draft but rejects publishing it', async () => {
+  const hidden = { ...lesson, hiddenFromStudents: true, completed: false };
+  const shadow = { ...projection, completed: false };
+  await save(false, shadow, hidden);
+  expect(mocks.get).toHaveBeenCalledWith('hiddenLessonProjections/i1_l1');
+  mocks.update.mockClear();
+  mocks.set.mockClear();
+  mocks.get.mockReset();
+  await expect(save(true, shadow, hidden)).rejects.toThrow(/svolta/);
+  expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.set).not.toHaveBeenCalled();
+});

@@ -1,3 +1,4 @@
+import { createLessonVisibilityClient } from '../repository/programs/lessonVisibilityClient.js';
 import {
   saveStudyPractice,
   verifyStudyPracticeDraft,
@@ -362,6 +363,9 @@ function CourseWorkspaceSession({
 }: CourseWorkspaceProps) {
   const [lessonCache] = useState(() => new LessonContentCache<CachedLessonContent>());
   const [tree, setTreeState] = useState<Tree | null>(null);
+  const latestTreeRef = useRef(tree);
+  latestTreeRef.current = tree;
+  const lessonStateBusyRef = useRef(false);
   const setTree = useCallback<typeof setTreeState>(
     (next) => {
       // Conservative invalidation on every committed local tree update,
@@ -693,7 +697,8 @@ function CourseWorkspaceSession({
           try {
             const projected = await fetchPublicLessonContent(
               {
-                lessonId: lesson.id,
+                lessonId: resolvePublicLessonId(lesson, lesson.id),
+                privateLessonId: lesson.id,
                 programId: card.programId,
                 importId: card.activeImportId ?? '',
                 ownerUid,
@@ -1759,8 +1764,53 @@ function CourseWorkspaceSession({
     );
   }
 
+  function handleToggleVisibility(lesson: LessonItem) {
+    if (!card.activeImportId || lessonStateBusyRef.current) return;
+    lessonStateBusyRef.current = true;
+    setCompletedBusy(true);
+    setCompletedError(null);
+    void createLessonVisibilityClient(functions)
+      .set({
+        programId: card.programId,
+        importId: card.activeImportId,
+        lessonId: lesson.id,
+        hiddenFromStudents: lesson.hiddenFromStudents !== true,
+      })
+      .then((result) => {
+        const latest = latestTreeRef.current;
+        if (!mountedRef.current || !latest) return;
+        const nextTree: Tree = {
+          udas: latest.udas,
+          lessons: latest.lessons.map((item) =>
+            item.id === lesson.id
+              ? {
+                  ...item,
+                  hiddenFromStudents: result.hiddenFromStudents,
+                  completed: result.completed,
+                  completedAt: result.completed ? item.completedAt : null,
+                }
+              : item,
+          ),
+        };
+        setTree(nextTree);
+        patchCardCounts(nextTree);
+      })
+      .catch((error: unknown) => {
+        if (mountedRef.current)
+          setCompletedError(
+            error instanceof Error ? error.message : 'Impossibile aggiornare la visibilità.',
+          );
+      })
+      .finally(() => {
+        lessonStateBusyRef.current = false;
+        if (mountedRef.current) setCompletedBusy(false);
+      });
+  }
+
   function handleToggleCompleted(lesson: LessonItem) {
-    if (!card.activeImportId) return;
+    if (!card.activeImportId || lesson.hiddenFromStudents === true || lessonStateBusyRef.current)
+      return;
+    lessonStateBusyRef.current = true;
     const importId = card.activeImportId;
     const next = !(lesson.completed ?? false);
     setCompletedBusy(true);
@@ -1793,6 +1843,7 @@ function CourseWorkspaceSession({
             err instanceof Error ? err.message : 'Impossibile aggiornare lo stato.',
           );
       } finally {
+        lessonStateBusyRef.current = false;
         if (mountedRef.current) setCompletedBusy(false);
       }
     })();
@@ -2322,19 +2373,29 @@ function CourseWorkspaceSession({
                                 >
                                   <span
                                     className={
-                                      lesson.completed
-                                        ? styles.lessonCompletedIcon
-                                        : styles.lessonPendingIcon
+                                      lesson.hiddenFromStudents
+                                        ? styles.lessonHiddenIcon
+                                        : lesson.completed
+                                          ? styles.lessonCompletedIcon
+                                          : styles.lessonPendingIcon
                                     }
                                     role="img"
                                     aria-label={
-                                      lesson.completed ? 'Lezione svolta' : 'Lezione da svolgere'
+                                      lesson.hiddenFromStudents
+                                        ? 'Lezione nascosta agli studenti'
+                                        : lesson.completed
+                                          ? 'Lezione svolta'
+                                          : 'Lezione da svolgere'
                                     }
                                     title={
-                                      lesson.completed ? 'Lezione svolta' : 'Lezione da svolgere'
+                                      lesson.hiddenFromStudents
+                                        ? 'Lezione nascosta agli studenti'
+                                        : lesson.completed
+                                          ? 'Lezione svolta'
+                                          : 'Lezione da svolgere'
                                     }
                                   >
-                                    {lesson.completed ? (
+                                    {lesson.completed && !lesson.hiddenFromStudents ? (
                                       <IconFileCheck size={14} />
                                     ) : (
                                       <IconFileText size={14} />
@@ -2819,9 +2880,15 @@ function CourseWorkspaceSession({
                 type="button"
                 className={styles.toolbarActionBtn}
                 onClick={() => handleToggleCompleted(selectedLesson)}
-                disabled={completedBusy}
+                disabled={completedBusy || selectedLesson.hiddenFromStudents === true}
                 aria-pressed={selectedLesson.completed ?? false}
-                title={selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
+                title={
+                  selectedLesson.hiddenFromStudents
+                    ? 'Rendi visibile la lezione prima di segnarla svolta'
+                    : selectedLesson.completed
+                      ? 'Segna non svolta'
+                      : 'Segna svolta'
+                }
                 aria-label={`${selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'} — ${
                   selectedLesson.titolo ?? selectedLesson.filename
                 }`}
@@ -2832,6 +2899,29 @@ function CourseWorkspaceSession({
                   <IconFileCheck size={15} />
                 )}
                 <span>{selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}</span>
+              </button>
+              <button
+                type="button"
+                className={`${styles.toolbarActionBtn} ${styles.visibilityActionBtn}`}
+                disabled={completedBusy}
+                aria-pressed={selectedLesson.hiddenFromStudents === true}
+                onClick={() => handleToggleVisibility(selectedLesson)}
+                title={
+                  selectedLesson.hiddenFromStudents
+                    ? 'Rendi visibile agli studenti'
+                    : selectedLesson.completed
+                      ? 'Nascondi agli studenti e segna non svolta'
+                      : 'Nascondi agli studenti'
+                }
+              >
+                <IconFileText size={15} />
+                <span>
+                  {selectedLesson.hiddenFromStudents
+                    ? 'Rendi visibile agli studenti'
+                    : selectedLesson.completed
+                      ? 'Nascondi agli studenti e segna non svolta'
+                      : 'Nascondi agli studenti'}
+                </span>
               </button>
               {contentStatus.saved && <span className={styles.savedNote}>Contenuto salvato</span>}
               {infoStatus.saved && <span className={styles.savedNote}>Informazioni salvate</span>}
