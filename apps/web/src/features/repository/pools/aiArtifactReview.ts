@@ -42,7 +42,8 @@ export async function reviewPoolCandidate(
     !['improved', 'unchanged'].includes(reviewed.output?.reviewOutcome)
   )
     throw new Error('La revisione delle domande non è valida.');
-  return reviewed.output.reviewOutcome === 'unchanged'
+  return reviewed.output.reviewOutcome === 'unchanged' &&
+    reviewed.output.discardedQuestions === undefined
     ? { ...reviewed, output: { ...reviewed.output, questions: candidate.output.questions } }
     : reviewed;
 }
@@ -87,4 +88,20 @@ export async function reviewMapCandidate(
   const validation = validateConceptMapResult({ ...final, kind: 'concept_map' });
   if (!validation.ok) throw new Error(validation.error);
   return final;
+}
+
+export function poolDiscardFeedback(output: AiPoolReviewResult['output']): string[] {
+  const discarded = output.discardedQuestions ?? [];
+
+  if (!discarded.length) return [];
+
+  const reasons = new Map<string, number>();
+
+  for (const d of discarded) reasons.set(d.reason, (reasons.get(d.reason) ?? 0) + 1);
+
+  return [
+    `Domande accettate: ${output.questions.length}; scartate: ${discarded.length}.`,
+
+    ...[...reasons].map(([reason, count]) => `${count}: ${reason}`),
+  ];
 }

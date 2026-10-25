@@ -54,6 +54,7 @@ export interface MultiVisualPlan {
       slotIndex: number;
       attempts: number;
       actualCost: number | null;
+      knownActualCost?: number;
     }>;
   };
 }
@@ -114,6 +115,10 @@ export function createMultiVisualClient(functions: Functions) {
   // 70 s. Il client attende più del timeout server (300 s), come già accade per
   // la generazione testuale 420/450 s.
   const longRunningOptions = { timeout: 330_000 } as const;
+  const status = httpsCallable<
+    MultiVisualIdentity & { requestId: string },
+    { plan: MultiVisualPlan | null }
+  >(functions, 'aiVisualPlanStatus');
   const authorize = httpsCallable<MultiVisualPlanRequest, MultiVisualPlan>(
     functions,
     'aiVisualPlanAuthorize',
@@ -155,6 +160,10 @@ export function createMultiVisualClient(functions: Functions) {
     PlanEnvelope
   >(functions, 'aiVisualPlanEditSlot');
   return {
+    status: async (input: MultiVisualIdentity & { requestId: string }) => {
+      const result = (await status(input)).data;
+      return result.plan === null ? null : parsePlan(result.plan);
+    },
     authorize: async (input: MultiVisualPlanRequest) => {
       try {
         return parsePlan((await authorize(input)).data);

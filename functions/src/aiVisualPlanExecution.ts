@@ -461,7 +461,12 @@ export function upsertSlotSettlement(
     ...plan.settlement,
     slots: [
       ...plan.settlement.slots.filter((entry) => entry.slotIndex !== slotIndex),
-      { slotIndex, attempts, actualCost },
+      {
+        slotIndex,
+        attempts,
+        actualCost,
+        knownActualCost: (current?.knownActualCost ?? known ?? 0) + (attemptCostMicroUsd ?? 0),
+      },
     ].sort((a, b) => a.slotIndex - b.slotIndex),
   };
 }

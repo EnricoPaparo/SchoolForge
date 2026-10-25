@@ -182,12 +182,12 @@ describe('didactic content review', () => {
         request,
       ),
     ).toThrow();
-    expect(() =>
-      validatePoolReview(
-        { ...output, replacementQuestions: [{ ...replacement, difficolta: 6 }] },
-        request,
-      ),
-    ).toThrow();
+    const filtered = validatePoolReview(
+      { ...output, replacementQuestions: [{ ...replacement, difficolta: 6 }] },
+      request,
+    );
+    expect(filtered.questions).toHaveLength(1);
+    expect(filtered.discardedQuestions).toHaveLength(1);
     expect(isValidStoredDidacticReview('pool_review', result)).toBe(true);
   });
   it('rejects duplicates within pool and against normalized existing stems', () => {
@@ -335,12 +335,12 @@ it('allows duplicate candidates to reach review and rejects an unchanged duplica
       { ...candidateQuestions[1], testo: candidateQuestions[0]!.testo },
     ],
   }) as PoolReviewRequest;
-  expect(() =>
+  expect(
     validatePoolReview(
       { reviewOutcome: 'unchanged', issueCodes: [], failedOrdinals: [], replacementQuestions: [] },
       request,
-    ),
-  ).toThrow(/duplicata/);
+    ).discardedQuestions,
+  ).toEqual([{ questionOrder: 1, reason: 'Domanda o soluzione non valida o duplicata.' }]);
   const result = validatePoolReview(
     {
       reviewOutcome: 'improved',
@@ -362,7 +362,7 @@ it('allows duplicate candidates to reach review and rejects an unchanged duplica
 
 it('blocks an insufficient-source audit before repair/outcome constraints and preserves legacy outputs', () => {
   expect(() => validatePoolReviewCanonical({ sourceInsufficient: true }, pool())).toThrow(
-    expect.objectContaining({ code: 'source_insufficient' }),
+    expect.objectContaining({ code: 'provider_invalid_output' }),
   );
   const legacy = {
     reviewOutcome: 'unchanged',
@@ -387,7 +387,7 @@ it('forbids teaching a missing procedure inside a repaired assessment question',
   expect(prompt.user).toContain('nessuna riparazione applicabile');
 });
 
-it('requires complete ordered preparation evidence for final questions, with exact source support', () => {
+it('filters unprepared or unverifiable proofs individually, normalizes typography and reindexes the accepted subset', () => {
   const request = pool();
   const raw = {
     sourceInsufficient: false,
@@ -401,31 +401,42 @@ it('requires complete ordered preparation evidence for final questions, with exa
   for (const override of [
     { sourceInsufficient: undefined },
     { preparationEvidence: undefined },
-    { preparationEvidence: [] },
-    { preparationEvidence: [evidence(request)[1], evidence(request)[0]] },
     { preparationEvidence: [evidence(request)[0], evidence(request)[0]] },
-    {
-      preparationEvidence: evidence(request).map((e) => ({
-        ...e,
-        sourceQuote: 'Citazione inventata',
-      })),
-    },
   ])
     expect(() => validatePoolReviewCanonical({ ...raw, ...override }, request)).toThrow();
-  for (const override of [{ status: 'missing' }, { sourceQuote: '' }])
-    expect(() =>
-      validatePoolReviewCanonical(
-        { ...raw, preparationEvidence: evidence(request).map((e) => ({ ...e, ...override })) },
-        request,
-      ),
-    ).toThrow(expect.objectContaining({ code: 'source_insufficient' }));
-  expect(validatePoolReviewCanonical(raw, request)).not.toHaveProperty('preparationEvidence');
-  const legacy = {
-    questions: request.candidateQuestions,
-    reviewOutcome: 'unchanged',
-    issueCodes: [],
-  };
-  expect(isValidStoredDidacticReview('pool_review', legacy)).toBe(true);
+  for (const override of [
+    { status: 'missing' },
+    { sourceQuote: '' },
+    { sourceQuote: 'Citazione inventata' },
+  ]) {
+    const result = validatePoolReviewCanonical(
+      {
+        ...raw,
+        preparationEvidence: evidence(request).map((e, i) => (i === 0 ? { ...e, ...override } : e)),
+      },
+      request,
+    );
+    expect(result.questions).toEqual([{ ...request.candidateQuestions[1], order: 0 }]);
+    expect(result.discardedQuestions).toHaveLength(1);
+    expect(isValidStoredDidacticReview('pool_review', result)).toBe(true);
+  }
+  const empty = validatePoolReviewCanonical({ ...raw, preparationEvidence: [] }, request);
+  expect(empty.questions).toEqual([]);
+  expect(empty.discardedQuestions).toHaveLength(2);
+  expect(isValidStoredDidacticReview('pool_review', empty)).toBe(true);
+  const typography = { ...request, lessonSource: 'Una rete\r\n   collega i nodi.' };
+  const prepared = evidence(request).map((e) => ({
+    ...e,
+    sourceQuote: 'Una rete collega i nodi.',
+  }));
+  expect(
+    validatePoolReviewCanonical({ ...raw, preparationEvidence: prepared }, typography).questions,
+  ).toHaveLength(2);
+  const structured = buildContentStructuredRequest(request, 'gpt-5.6-luna');
+  expect(
+    (structured.text.format.schema as { properties: { preparationEvidence: unknown } }).properties
+      .preparationEvidence,
+  ).toMatchObject({ minItems: 2, maxItems: 2 });
 });
 it('uses the lesson quality reviewer and binds its model and price into audit identity and estimate', () => {
   const resolved = resolveContentModelForRequest(pool());
@@ -473,3 +484,53 @@ it.each([null, ''])(
     ).toThrow();
   },
 );
+
+it('rebuilds coverage for accepted capabilities and drops advanced indices of discarded questions', () => {
+  const request = pool();
+  const proofs = evidence(request).map((e, i) => ({
+    ...e,
+    capability: i === 0 ? 'Solo scartata' : 'Accettata',
+    status: i === 0 ? 'missing' : 'prepared',
+  }));
+  const raw = {
+    sourceInsufficient: false,
+    reviewOutcome: 'unchanged',
+    issueCodes: [],
+    failedOrdinals: [],
+    replacementQuestions: [],
+    preparationEvidence: proofs,
+    coverageSummary: {
+      coveredCapabilities: ['Solo scartata', 'Accettata'],
+      gaps: [],
+      advancedOrdinals: [0, 1],
+    },
+  };
+  const result = validatePoolReviewCanonical(raw, request);
+  expect(result.coverageSummary).toMatchObject({
+    coveredCapabilities: ['Accettata'],
+    advancedOrdinals: [0],
+  });
+  expect(
+    validatePoolReviewCanonical({ ...raw, preparationEvidence: [] }, request).coverageSummary,
+  ).toMatchObject({ coveredCapabilities: [], advancedOrdinals: [] });
+});
+
+it('discards existing stems with case, spacing and Unicode typography differences', () => {
+  const request = pool();
+  request.existingQuestionStems = [
+    request.candidateQuestions[0]!.testo.toLocaleUpperCase('it').replaceAll(' ', '   '),
+  ];
+  const result = validatePoolReviewCanonical(
+    {
+      sourceInsufficient: false,
+      preparationEvidence: evidence(request),
+      reviewOutcome: 'unchanged',
+      issueCodes: [],
+      failedOrdinals: [],
+      replacementQuestions: [],
+    },
+    request,
+  );
+  expect(result.questions).toHaveLength(1);
+  expect(result.discardedQuestions?.[0]?.questionOrder).toBe(0);
+});

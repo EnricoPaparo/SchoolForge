@@ -78,3 +78,44 @@ describe('complete lesson session checkpoint', () => {
     expect(window.sessionStorage.getItem(completeLessonCheckpointKey(identity))).toBeNull();
   });
 });
+
+it('roundtrips a reviewed empty subset without restoring base questions', () => {
+  const value = checkpoint();
+  value.options.counts = { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 };
+  value.poolCompleted = true;
+  const base = {
+    kind: 'pool' as const,
+    status: 'completed' as const,
+    modelProfile: 'quality',
+    actualCostMicroUsd: 1,
+    replayed: false,
+    output: {
+      questions: [
+        {
+          order: 0,
+          tipo: 'aperta' as const,
+          difficolta: 2,
+          testo: 'Domanda',
+          soluzione: 'Risposta',
+        },
+      ],
+    },
+  };
+  value.poolState = {
+    costUnknown: false,
+    base,
+    reviewed: {
+      ...base,
+      kind: 'pool_review',
+      output: {
+        questions: [],
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+        discardedQuestions: [{ questionOrder: 0, reason: 'Non preparata.' }],
+      },
+    },
+  };
+  const parsed = parseCompleteLessonCheckpoint(JSON.stringify(value), identity, body, 2000);
+  expect(parsed?.poolState?.reviewed?.output.questions).toEqual([]);
+  expect(parsed?.poolState?.base?.output.questions).toHaveLength(1);
+});

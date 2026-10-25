@@ -29,7 +29,7 @@ vi.mock('firebase-admin/firestore', async (importOriginal) => ({
 
 vi.mock('firebase-admin/storage', () => ({ getStorage }));
 
-const { aiVisualPlanGenerateSlot, aiVisualPlanPromoteSlot } =
+const { aiVisualPlanGenerateSlot, aiVisualPlanPromoteSlot, aiVisualPlanStatus } =
   await import('./aiVisualPlanExecutionGateway.js');
 
 beforeEach(() => {
@@ -37,6 +37,7 @@ beforeEach(() => {
 });
 
 describe.each([
+  ['aiVisualPlanStatus', aiVisualPlanStatus],
   ['aiVisualPlanGenerateSlot', aiVisualPlanGenerateSlot],
   ['aiVisualPlanPromoteSlot', aiVisualPlanPromoteSlot],
 ] as const)('%s authorization', (_name, handler) => {

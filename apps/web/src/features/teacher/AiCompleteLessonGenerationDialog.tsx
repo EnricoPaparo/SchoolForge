@@ -1,3 +1,6 @@
+import type { MultiVisualIdentity } from '../repository/programs/multiVisualClient.js';
+import type { Functions } from 'firebase/functions';
+import { GenerationCostSummary } from './GenerationCostSummary.js';
 import type { AiReviewFeedback } from '../repository/pools/aiContentClient.js';
 import { AiModelProfileField } from './AiModelProfileField.js';
 import {
@@ -40,7 +43,9 @@ import {
 import styles from './AiCompleteLessonGenerationDialog.module.css';
 
 export interface CompleteReviewReport {
-  status: 'disabled' | 'improved' | 'unchanged' | 'restored';
+  status: 'disabled' | 'improved' | 'unchanged' | 'restored' | 'failed';
+  discardedQuestions?: { questionOrder: number; reason: string }[];
+  reason?: string;
   feedback?: AiReviewFeedback;
   replayed?: boolean;
 }
@@ -127,6 +132,9 @@ export function AiCompleteLessonGenerationDialog({
   resumeDraft,
   onDiscardResume,
   onBeforeGenerate,
+  costLedgerKey,
+  costFunctions,
+  costIdentity,
   onClose,
 }: {
   context: LessonAiContext;
@@ -140,6 +148,9 @@ export function AiCompleteLessonGenerationDialog({
   resumeDraft?: { body: string; options: CompleteLessonOptions; message: string };
   onDiscardResume?: () => void;
   onBeforeGenerate?: () => Promise<void>;
+  costLedgerKey?: string;
+  costFunctions?: Functions;
+  costIdentity?: MultiVisualIdentity;
   onClose: () => void;
 }) {
   const [modelProfile, setModelProfile] = useState<PoolModelProfile>(
@@ -773,6 +784,14 @@ export function AiCompleteLessonGenerationDialog({
         </div>
       )}
 
+      {costLedgerKey && costFunctions && (
+        <GenerationCostSummary
+          ledgerKey={costLedgerKey}
+          functions={costFunctions}
+          identity={costIdentity}
+        />
+      )}
+
       {phase === 'previewing' && <BusyStatus label="Calcolo della stima…" />}
 
       {phase === 'generating' && <BusyStatus label="Generazione del contenuto…" />}
@@ -793,7 +812,9 @@ export function AiCompleteLessonGenerationDialog({
                 <h4>
                   {stage === 'map' ? 'Mappa' : stage === 'practice' ? 'Esercitazioni' : 'Domande'}
                 </h4>
-                {report.status === 'restored' ? (
+                {report.status === 'failed' ? (
+                  <p>Revisione non completata: {report.reason}</p>
+                ) : report.status === 'restored' ? (
                   <p>Fase già salvata: resoconto della revisione non disponibile.</p>
                 ) : (
                   <AiAdvancedReviewResult
@@ -849,7 +870,7 @@ export function AiCompleteLessonGenerationDialog({
                   : `${summary.imagesFailed} immagini non sono state completate.`}
               </p>
             )}
-            {totalActualCostMicroUsd !== undefined && (
+            {!costLedgerKey && totalActualCostMicroUsd !== undefined && (
               <p>
                 {totalActualCostMicroUsd === null
                   ? 'Costo reale totale non completamente disponibile.'

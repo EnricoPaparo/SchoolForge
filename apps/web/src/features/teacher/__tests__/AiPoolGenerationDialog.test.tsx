@@ -1188,3 +1188,30 @@ describe('AiPoolGenerationDialog — direct apply (no redundant confirmation)', 
     expect(onApply).not.toHaveBeenCalled();
   });
 });
+
+it('finishes an empty reviewed subset without saving an empty pool or restoring unreviewed candidates', async () => {
+  const onApply = vi.fn();
+  const { callables } = makeCallables({
+    generateReview: async () => ({
+      ...generateResult(),
+      kind: 'pool_review',
+      output: {
+        questions: [],
+        reviewOutcome: 'unchanged',
+        issueCodes: [],
+        discardedQuestions: [
+          { questionOrder: 0, reason: 'Metodo non preparato.' },
+          { questionOrder: 1, reason: 'Metodo non preparato.' },
+        ],
+      },
+    }),
+  });
+  await goToReview(callables, onApply);
+  expect(screen.getByText(/Nessuna domanda accettata dal revisore/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Resoconto del revisore' }));
+  expect(screen.getByText('Domande accettate: 0; scartate: 2.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Resoconto del revisore' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Concludi senza salvare' }));
+  expect(onApply).not.toHaveBeenCalled();
+  expect(await screen.findByText(/Nessuna nuova domanda verificata da salvare/)).toBeTruthy();
+});
