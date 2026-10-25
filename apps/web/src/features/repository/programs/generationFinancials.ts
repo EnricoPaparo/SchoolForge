@@ -1,6 +1,7 @@
 import { httpsCallable, type Functions } from 'firebase/functions';
 import type { MultiVisualPlan } from './multiVisualClient.js';
 
+type CostVersion = { executions: number; updatedAtMs: number; terminal: boolean };
 export interface GenerationCostEntry {
   id: string;
   phase: string;
@@ -8,7 +9,10 @@ export interface GenerationCostEntry {
   unknown: boolean;
   settledMicroUsd: number | null;
   reservedUnknownMicroUsd?: number;
-  version?: { executions: number; updatedAtMs: number; terminal: boolean };
+  version?: CostVersion;
+  pendingInvocation?: string;
+  pendingBaseline?: CostVersion;
+  pendingImageAttempt?: number;
 }
 export type GenerationCostLedger = GenerationCostEntry[];
 const snapshots = new Map<string, GenerationCostLedger>();
@@ -91,7 +95,15 @@ interface ContentCostStatus {
   executions: number;
   updatedAtMs: number;
 }
-export async function recoverContentCost(functions: Functions, key: string, requestId: string) {
+export async function recoverContentCost(
+  functions: Functions,
+  key: string,
+  requestId: string,
+  allowCompletedReplay = false,
+) {
+  const observedInvocation = readGenerationCosts(key).find(
+    (e) => e.id === requestId,
+  )?.pendingInvocation;
   const status = (
     await httpsCallable<{ requestId: string }, ContentCostStatus>(
       functions,
@@ -99,7 +111,12 @@ export async function recoverContentCost(functions: Functions, key: string, requ
     )({ requestId })
   ).data;
   const previous = readGenerationCosts(key).find((e) => e.id === requestId);
-  if (!previous || status.status === 'not_found') return;
+  if (
+    !previous ||
+    status.status === 'not_found' ||
+    previous.pendingInvocation !== observedInvocation
+  )
+    return;
   if (
     ![
       status.knownActualMicroUsd,
@@ -123,10 +140,22 @@ export async function recoverContentCost(functions: Functions, key: string, requ
             status.status === 'running'))))
   )
     return;
+  const baseline = previous.pendingBaseline;
+  if (
+    previous.pendingInvocation &&
+    baseline &&
+    status.executions <= baseline.executions &&
+    status.updatedAtMs <= baseline.updatedAtMs &&
+    !(allowCompletedReplay && status.status === 'completed')
+  )
+    return;
+  const unresolved = status.status === 'running';
   writeGenerationCost(key, {
     ...previous,
+    pendingInvocation: unresolved ? previous.pendingInvocation : undefined,
+    pendingBaseline: unresolved ? previous.pendingBaseline : undefined,
     knownActualMicroUsd: status.knownActualMicroUsd,
-    unknown: status.unknownExecutions > 0 || !status.historyComplete,
+    unknown: unresolved || status.unknownExecutions > 0 || !status.historyComplete,
     settledMicroUsd: status.settledMicroUsd,
     reservedUnknownMicroUsd: status.reservedUnknownMicroUsd,
     version: {
@@ -155,38 +184,61 @@ export function instrumentContentCallables<T extends object>(
                 ? 'Revisione esercitazioni'
                 : 'Esercitazioni'
               : (labels[request.kind] ?? request.kind);
-          writeGenerationCost(
-            key,
-            previous ?? {
-              id: request.requestId,
-              phase,
-              knownActualMicroUsd: 0,
-              unknown: true,
-              settledMicroUsd: null,
-            },
-          );
+          const invocation = crypto.randomUUID();
+          writeGenerationCost(key, {
+            ...previous,
+            id: request.requestId,
+            phase,
+            knownActualMicroUsd: previous?.knownActualMicroUsd ?? 0,
+            unknown: true,
+            settledMicroUsd: previous?.settledMicroUsd ?? null,
+            pendingInvocation: invocation,
+            pendingBaseline: previous?.version,
+          });
+          let completed = false;
           try {
             const result = (await method(request)) as { actualCostMicroUsd: number | null };
-            // Provisional until the owner-scoped metadata read also accounts for prior paid failures.
-            writeGenerationCost(key, {
-              ...previous,
-              id: request.requestId,
-              phase,
-              knownActualMicroUsd: Math.max(
-                previous?.knownActualMicroUsd ?? 0,
-                result.actualCostMicroUsd ?? 0,
-              ),
-              unknown: true,
-              settledMicroUsd: previous?.settledMicroUsd ?? null,
-            });
+            completed = true;
+            const current = readGenerationCosts(key).find((e) => e.id === request.requestId);
+            // A completed metadata read may already have settled this invocation.
+            if (current?.pendingInvocation === invocation)
+              writeGenerationCost(key, {
+                ...current,
+                knownActualMicroUsd: Math.max(
+                  current.knownActualMicroUsd,
+                  result.actualCostMicroUsd ?? 0,
+                ),
+                unknown: true,
+              });
             return result;
           } finally {
-            await recoverContentCost(functions, key, request.requestId).catch(() => undefined);
+            await recoverContentCost(functions, key, request.requestId, completed).catch(
+              () => undefined,
+            );
           }
         },
       ];
     }),
   ) as T;
+}
+/** Record risk before invoking an image provider; old plan snapshots cannot settle this attempt. */
+export function markVisualSlotInvocation(
+  key: string,
+  requestId: string,
+  slotIndex: number,
+  expectedAttempt: number,
+) {
+  const id = `${requestId}:image:${slotIndex}`;
+  const previous = readGenerationCosts(key).find((e) => e.id === id);
+  writeGenerationCost(key, {
+    ...previous,
+    id,
+    phase: `Immagine ${slotIndex + 1}`,
+    knownActualMicroUsd: previous?.knownActualMicroUsd ?? 0,
+    unknown: true,
+    settledMicroUsd: previous?.settledMicroUsd ?? null,
+    pendingImageAttempt: Math.max(expectedAttempt, previous?.pendingImageAttempt ?? 0),
+  });
 }
 export function recordVisualPlanCosts(key: string, plan: MultiVisualPlan) {
   const proposalId = `${plan.requestId}:proposal`;
@@ -217,15 +269,23 @@ export function recordVisualPlanCosts(key: string, plan: MultiVisualPlan) {
     const terminal =
       plan.slots?.find((s) => s.slotIndex === slot.slotIndex)?.state !== 'generating';
     if (
-      previous?.version &&
-      (previous.version.executions > slot.attempts ||
-        (previous.version.executions === slot.attempts && previous.version.terminal && !terminal))
+      (previous?.pendingImageAttempt !== undefined &&
+        previous.pendingImageAttempt > slot.attempts) ||
+      (previous?.version &&
+        (previous.version.executions > slot.attempts ||
+          (previous.version.executions === slot.attempts &&
+            previous.version.terminal &&
+            !terminal)))
     )
       continue;
     writeGenerationCost(key, {
       id: `${plan.requestId}:image:${slot.slotIndex}`,
       phase: `Immagine ${slot.slotIndex + 1} (${slot.attempts} tentativi)`,
-      knownActualMicroUsd: slot.knownActualCost ?? slot.actualCost ?? 0,
+      knownActualMicroUsd: Math.max(
+        previous?.knownActualMicroUsd ?? 0,
+        slot.knownActualCost ?? slot.actualCost ?? 0,
+      ),
+      pendingImageAttempt: terminal ? undefined : previous?.pendingImageAttempt,
       unknown: slot.actualCost === null || !terminal,
       settledMicroUsd: null,
       version: { executions: slot.attempts, updatedAtMs: 0, terminal },

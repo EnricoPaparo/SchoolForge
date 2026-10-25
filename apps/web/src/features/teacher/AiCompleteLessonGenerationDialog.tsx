@@ -132,6 +132,7 @@ export function AiCompleteLessonGenerationDialog({
   resumeDraft,
   onDiscardResume,
   onBeforeGenerate,
+  onGenerationStart,
   costLedgerKey,
   costFunctions,
   costIdentity,
@@ -148,6 +149,7 @@ export function AiCompleteLessonGenerationDialog({
   resumeDraft?: { body: string; options: CompleteLessonOptions; message: string };
   onDiscardResume?: () => void;
   onBeforeGenerate?: () => Promise<void>;
+  onGenerationStart?: () => void;
   costLedgerKey?: string;
   costFunctions?: Functions;
   costIdentity?: MultiVisualIdentity;
@@ -191,6 +193,7 @@ export function AiCompleteLessonGenerationDialog({
   const [resumeAvailable, setResumeAvailable] = useState(Boolean(resumeDraft));
 
   const requestIdRef = useRef(newRequestId());
+  const startedGenerationRef = useRef<string | null>(null);
   const reviewRequestIdRef = useRef(newRequestId());
   const runningRef = useRef(false);
   const mountedRef = useRef(true);
@@ -307,6 +310,10 @@ export function AiCompleteLessonGenerationDialog({
 
   async function generateAndComplete(request: AiLessonContentRequest) {
     if (!validatedCounts) throw new Error('Quantità di domande non valida.');
+    if (startedGenerationRef.current !== request.requestId) {
+      onGenerationStart?.();
+      startedGenerationRef.current = request.requestId;
+    }
     setErrorStage('generate');
     setPhase('generating');
     let generated: AiLessonGenerateResult;

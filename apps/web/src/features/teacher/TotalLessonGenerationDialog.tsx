@@ -6,6 +6,7 @@ import {
   recordVisualPlanCosts,
   writeGenerationCost,
   readGenerationCosts,
+  markVisualSlotInvocation,
 } from '../repository/programs/generationFinancials.js';
 import {
   emptyArtifactState,
@@ -356,7 +357,6 @@ export function TotalLessonGenerationDialog({
   async function clearOnce() {
     if (clearedRef.current) return;
     await onClear();
-    clearGenerationCosts(ledgerKey);
     ownClearPendingRef.current = true;
     clearedRef.current = true;
   }
@@ -717,6 +717,10 @@ export function TotalLessonGenerationDialog({
           }
         },
         generateVisualSlot: async (input) => {
+          const attempts =
+            visualStateRef.current?.plan?.slots.find((slot) => slot.slotIndex === input.slotIndex)
+              ?.attempts ?? 0;
+          markVisualSlotInvocation(ledgerKey, input.requestId, input.slotIndex, attempts + 1);
           try {
             return await visualClient.generateSlot(input);
           } catch (error) {
@@ -833,6 +837,7 @@ export function TotalLessonGenerationDialog({
       context={context}
       callables={lessonCallables}
       onBeforeGenerate={clearOnce}
+      onGenerationStart={() => clearGenerationCosts(ledgerKey)}
       costLedgerKey={ledgerKey}
       costFunctions={functions}
       costIdentity={identity}

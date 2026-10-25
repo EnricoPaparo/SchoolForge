@@ -4,6 +4,7 @@ const api = vi.hoisted(() => ({ status: vi.fn() }));
 vi.mock('firebase/functions', () => ({ httpsCallable: () => api.status }));
 import {
   instrumentContentCallables,
+  markVisualSlotInvocation,
   readGenerationCosts,
   recoverContentCost,
   recordVisualPlanCosts,
@@ -123,4 +124,77 @@ it('does not let an old proposing snapshot erase settled proposal costs', () => 
   expect(readGenerationCosts(key)).toEqual([
     expect.objectContaining({ knownActualMicroUsd: 5, unknown: false }),
   ]);
+});
+
+it('marks retries unknown before invocation and fences pre-retry metadata responses', async () => {
+  const key = 'content-retry-uncertain';
+  writeGenerationCost(key, {
+    id: 'retry',
+    phase: 'Contenuto',
+    knownActualMicroUsd: 25,
+    unknown: false,
+    settledMicroUsd: 25,
+    version: { executions: 1, updatedAtMs: 1000, terminal: true },
+  });
+  let resolveOld!: (value: unknown) => void;
+  api.status
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    )
+    .mockRejectedValueOnce(new Error('status offline'));
+  const oldRead = recoverContentCost(functions, key, 'retry');
+  const client = instrumentContentCallables(
+    {
+      generate: async (_req: unknown) => {
+        throw new Error('response lost');
+      },
+    },
+    functions,
+    key,
+  );
+  await expect(client.generate({ kind: 'lesson', requestId: 'retry' })).rejects.toThrow(
+    'response lost',
+  );
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+  resolveOld(
+    status({ status: 'failed', executions: 1, knownActualMicroUsd: 25, settledMicroUsd: 25 }),
+  );
+  await oldRead;
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 25, unknown: true });
+  api.status.mockResolvedValueOnce(
+    status({ status: 'failed', executions: 1, knownActualMicroUsd: 25, settledMicroUsd: 25 }),
+  );
+  await recoverContentCost(functions, key, 'retry');
+  expect(readGenerationCosts(key)[0].unknown).toBe(true);
+  api.status.mockResolvedValueOnce(status({ executions: 2, updatedAtMs: 2000 }));
+  await recoverContentCost(functions, key, 'retry');
+  expect(readGenerationCosts(key)[0]).toMatchObject({ knownActualMicroUsd: 65, unknown: false });
+});
+it('settles an uncertain image only when an authoritative snapshot reaches its attempted ordinal', () => {
+  const key = 'image-pending';
+  const plan = {
+    requestId: 'images',
+    status: 'proposed',
+    slots: [{ slotIndex: 0, state: 'failed' }],
+    settlement: { proposalActualCost: 5, slots: [{ slotIndex: 0, attempts: 1, actualCost: 20 }] },
+  } as MultiVisualPlan;
+  recordVisualPlanCosts(key, plan);
+  markVisualSlotInvocation(key, plan.requestId, 0, 2);
+  recordVisualPlanCosts(key, plan);
+  expect(readGenerationCosts(key).find((e) => e.id.endsWith(':image:0'))).toMatchObject({
+    knownActualMicroUsd: 20,
+    unknown: true,
+    pendingImageAttempt: 2,
+  });
+  recordVisualPlanCosts(key, {
+    ...plan,
+    settlement: { ...plan.settlement, slots: [{ slotIndex: 0, attempts: 2, actualCost: 50 }] },
+  });
+  expect(readGenerationCosts(key).find((e) => e.id.endsWith(':image:0'))).toMatchObject({
+    knownActualMicroUsd: 50,
+    unknown: false,
+  });
 });
