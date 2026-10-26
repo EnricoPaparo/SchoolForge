@@ -950,19 +950,6 @@ export function QuestionPoolEditor({
         />
       )}
 
-      {poolState.status === 'valid' &&
-        aiContextReady &&
-        lessonSource &&
-        !editorOpen &&
-        !anyQuestionEditorOpen && (
-          <PoolCoherenceAudit
-            key={JSON.stringify([poolState.pool, lessonSource, approvedPractice])}
-            pool={poolState.pool}
-            lessonSource={lessonSource}
-            approvedPractice={approvedPractice}
-            onApply={applyAiPool}
-          />
-        )}
       {/* Pool absent */}
       {poolState.status === 'absent' && !editorOpen && (
         <div className={styles.absentState}>
@@ -1012,6 +999,15 @@ export function QuestionPoolEditor({
           <div className={styles.poolMeta}>
             <span className={styles.poolCount}>{poolState.pool.questions.length} domande</span>
             <div className={styles.poolMetaActions}>
+              {aiContextReady && lessonSource && !anyQuestionEditorOpen && (
+                <PoolCoherenceAudit
+                  className={`${styles.btn} ${styles.btnSecondary}`}
+                  pool={poolState.pool}
+                  lessonSource={lessonSource}
+                  approvedPractice={approvedPractice}
+                  onApply={applyAiPool}
+                />
+              )}
               {!anyQuestionEditorOpen && (
                 <button
                   type="button"
