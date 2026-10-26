@@ -412,3 +412,31 @@ it('preserves multiple-choice identity and scoring while replacing options and s
     soluzione: ['a', 'c'],
   });
 });
+
+it.each(['unchanged', 'all-discarded'])(
+  'closes completed %s audits without warning about nonexistent changes',
+  async (outcome) => {
+    mocks.preview.mockResolvedValue({ estimatedCostMicroUsd: 50, reservationCostMicroUsd: 100 });
+    mocks.review.mockImplementation(async (request) => {
+      const result = reviewResult(request, outcome === 'all-discarded' ? [0] : []);
+      if (outcome === 'unchanged') result.output.reviewOutcome = 'unchanged';
+      return result;
+    });
+    render(<PoolCoherenceAudit pool={makePool(1)} lessonSource="Lezione" onApply={vi.fn()} />);
+    await startAudit();
+    await screen.findByText(/Controllo completato/);
+    expect(screen.queryByText('Applica proposta al pool')).toBeNull();
+    fireEvent.click(screen.getByText('Chiudi'));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  },
+);
+
+it('does not describe a first pending run as interrupted or needing retry', async () => {
+  mocks.preview.mockResolvedValue({ estimatedCostMicroUsd: 50, reservationCostMicroUsd: 100 });
+  mocks.review.mockImplementation(() => new Promise(() => {}));
+  render(<PoolCoherenceAudit pool={makePool(1)} lessonSource="Lezione" onApply={vi.fn()} />);
+  await startAudit();
+  expect(screen.getByText(/Controllo in corso: blocco 1 di 1/)).toBeTruthy();
+  expect(screen.queryByText(/Il tentativo interrotto/)).toBeNull();
+});

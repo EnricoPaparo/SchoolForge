@@ -161,7 +161,7 @@ function AuditDialog({
   }
   function close() {
     if (lock.current) return;
-    if (attempted && !accepted) setExitConfirm(true);
+    if (attempted && !accepted && (phase !== 'results' || changes.length > 0)) setExitConfirm(true);
     else onClose();
   }
   function configure() {
@@ -332,7 +332,7 @@ function AuditDialog({
               </li>
             </ul>
             <p>Nessuna modifica automatica al pool.</p>
-            {attempted && (
+            {uncertainCost && (
               <p>
                 Il tentativo interrotto potrebbe aver consumato credito: il totale complessivo non è
                 disponibile. Il retry usa le stesse richieste e conserva i blocchi riusciti.
@@ -364,7 +364,8 @@ function AuditDialog({
           <>
             <p role="status">
               {phase === 'results' ? 'Controllo completato.' : 'Risultati parziali conservati.'}{' '}
-              {changes.length} proposte applicabili.{' '}
+              {changes.length}{' '}
+              {changes.length === 1 ? 'proposta applicabile' : 'proposte applicabili'}.{' '}
               {allKnown
                 ? `Costo noto dei blocchi completati: ${formatMicroUsd(results.reduce((n, r) => n + r.actualCostMicroUsd!, 0))}.`
                 : 'Consumo esatto non disponibile.'}
@@ -377,8 +378,11 @@ function AuditDialog({
             )}
             {unvalidated > 0 && (
               <p role="alert">
-                {unvalidated} domande non convalidate restano nel pool senza modifiche. Il controllo
-                non ne certifica la coerenza.
+                {unvalidated}{' '}
+                {unvalidated === 1
+                  ? 'domanda non convalidata resta'
+                  : 'domande non convalidate restano'}{' '}
+                nel pool senza modifiche. Il controllo non ne certifica la coerenza.
               </p>
             )}
             {results.map((r, block) => (
